@@ -38,6 +38,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     readonly string _path;
 
     public string DeviceName { get; }
+    public string Pid { get; }
     public DeviceKind Kind { get; }
 
     internal MouseBatteryDevice(string path, string displayName, DeviceKind kind)
@@ -45,6 +46,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         _path = path;
         DeviceName = displayName;
         Kind = kind;
+        Pid = DeviceRegistry.ExtractPid(path);
     }
 
     public int GetBatteryPercent()
