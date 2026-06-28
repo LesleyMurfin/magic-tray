@@ -49,7 +49,7 @@ internal static class DeviceCapability
              "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
         _ => // NotInstalled (and any non-Ok fallthrough)
             ("Install Apple driver (scroll fix)",
-             "https://github.com/tealtadpole/MagicMouse2DriversWin11x64"),
+             "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
     };
 
     const string KbPatchAnchor   = "https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-battery-patch";

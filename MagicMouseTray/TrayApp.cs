@@ -25,6 +25,8 @@ internal sealed class TrayApp : IDisposable
     // Per-device menu items for live battery display in the right-click menu.
     readonly Dictionary<string, ToolStripMenuItem> _deviceMenuItems = new(StringComparer.OrdinalIgnoreCase);
     ToolStripMenuItem? _deviceSection;
+    ToolStripMenuItem? _driverWarningItem;
+    ToolStripSeparator? _driverWarningSeparator;
 
     // Alert boundaries fired per-device this drain cycle. Cleared per-device when battery recovers.
     readonly Dictionary<string, HashSet<int>> _firedBoundaries = new(StringComparer.OrdinalIgnoreCase);
@@ -82,7 +84,7 @@ internal sealed class TrayApp : IDisposable
 
         // Recompute driver status + rebuild the matrix on every open so a just-applied
         // driver fix shows without restart. GetStatus() is registry-only and fast.
-        menu.Opening += (_, _) => { _driverStatus = DriverHealthChecker.GetStatus(); UpdateDeviceMenuItems(); };
+        menu.Opening += (_, _) => { _driverStatus = DriverHealthChecker.GetStatus(); UpdateDeviceMenuItems(); UpdateDriverWarningItem(); };
 
         // --- Device battery status (dynamically updated) ---
         _deviceSection = new ToolStripMenuItem("Devices") { Enabled = false };
@@ -119,27 +121,27 @@ internal sealed class TrayApp : IDisposable
         menu.Items.Add(new ToolStripSeparator());
 
         // --- Driver warning (shown when scroll driver is missing, unbound, or unknown model) ---
-        if (_driverStatus != DriverStatus.Ok)
+        _driverWarningItem = new ToolStripMenuItem("") { ForeColor = System.Drawing.Color.OrangeRed };
+        _driverWarningItem.Click += (_, _) =>
         {
-            var (label, url) = _driverStatus switch
+            if (_driverWarningItem.Tag is string url)
             {
-                DriverStatus.UnknownAppleMouse =>
-                    ("⚠ Unknown mouse model — check for app update",
-                     "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
-                DriverStatus.NotBound =>
-                    ("⚠ Driver not bound — scroll fix needed",
-                     "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-                _ =>
-                    ("⚠ Install Apple Driver (scroll fix)",
-                     "https://github.com/tealtadpole/MagicMouse2DriversWin11x64"),
-            };
-            var driverItem = new ToolStripMenuItem(label) { ForeColor = System.Drawing.Color.OrangeRed };
-            driverItem.Click += (_, _) =>
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
-                    { UseShellExecute = true });
-            menu.Items.Add(driverItem);
-            menu.Items.Add(new ToolStripSeparator());
-        }
+                if (url.Contains("tealtadpole"))
+                {
+                    var res = MessageBox.Show(
+                        "This is a community driver, not affiliated with Apple or Microsoft.\nPlease verify its signature before installing.\n\nDo you want to proceed to the download page?",
+                        "Community Driver Notice",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (res != DialogResult.Yes) return;
+                }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+        };
+        _driverWarningSeparator = new ToolStripSeparator();
+        menu.Items.Add(_driverWarningItem);
+        menu.Items.Add(_driverWarningSeparator);
+        UpdateDriverWarningItem();
 
         // --- Battery Reads toggle (PATH-B v3 recycle on/off) ---
         var battReadItem = new ToolStripMenuItem("Battery Reads [On]")
@@ -214,6 +216,36 @@ internal sealed class TrayApp : IDisposable
         return menu;
     }
 
+    void UpdateDriverWarningItem()
+    {
+        if (_driverWarningItem == null || _driverWarningSeparator == null) return;
+
+        if (_driverStatus == DriverStatus.Ok)
+        {
+            _driverWarningItem.Visible = false;
+            _driverWarningSeparator.Visible = false;
+            return;
+        }
+
+        var (label, url) = _driverStatus switch
+        {
+            DriverStatus.UnknownAppleMouse =>
+                ("⚠ Unknown mouse model — check for app update",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
+            DriverStatus.NotBound =>
+                ("⚠ Driver not bound — scroll fix needed",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+            _ =>
+                ("⚠ Install Apple Driver (scroll fix)",
+                 "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
+        };
+
+        _driverWarningItem.Text = label;
+        _driverWarningItem.Tag = url;
+        _driverWarningItem.Visible = true;
+        _driverWarningSeparator.Visible = true;
+    }
+
     void OnThresholdClick(int value)
     {
         _config.SetThreshold(value);
@@ -286,6 +318,8 @@ internal sealed class TrayApp : IDisposable
         // Marshal to WPF/STA thread — NotifyIcon was created there
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
+            _driverStatus = DriverHealthChecker.GetStatus();
+
             if (string.IsNullOrEmpty(name))
             {
                 // Sentinel from AdaptivePoller: no devices found this cycle — clear all state
