@@ -22,15 +22,9 @@
 //   - Consecutive failure cap: 3 → log + reset counter
 //   - 24h failure rate: >10 failures → auto-disable + toast
 //
-// Note: SelfHealManager.OnBatteryObserved sees pct>=0 (split mode) during the recycle window
-// (~8–16s). Because SelfHealManager requires 2 *consecutive* AdaptivePoller poll events showing
-// split before triggering, and the recycle completes within seconds, there is no interference.
-//
 // Mode A entry recovery (2026-05-08): if the device is found in Mode A at cycle start
 // (e.g., post-reboot, prior cycle crashed mid-flip), the cycle now reads battery directly
-// from col02 and then restores Mode B — instead of skipping and waiting for SelfHealManager.
-// This eliminates a deadlock observed when SelfHealManager fails to fire post-boot: the
-// recycler used to skip every cycle indefinitely, leaving stale battery cache and no alerts.
+// from col02 and then restores Mode B.
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -130,13 +124,12 @@ internal sealed class V3RecycleManager : IDisposable
 
         // Pre-check 1: BT stack health — BTHENUM parent must be DN_STARTED before we flip.
         // If BTHENUM is not started, the wedge is pre-existing; flipping would fail and
-        // leave the device in an unknown state. Let SelfHealManager handle recovery.
+        // leave the device in an unknown state.
         bool btHealthy = await Task.Run(HidNative.IsV3BtStackHealthy, ct);
         Logger.Log($"V3RECYCLE pre-check BTHENUM healthy={btHealthy}");
         if (!btHealthy)
         {
-            // Pre-existing wedge — not caused by this manager. Do NOT count against
-            // the failure budget; SelfHealManager handles BTHENUM recovery.
+            // Pre-existing wedge — not caused by this manager.
             Logger.Log("V3RECYCLE pre-check: BTHENUM not DN_STARTED — skipping cycle, BT stack wedged");
             return;
         }
@@ -144,9 +137,7 @@ internal sealed class V3RecycleManager : IDisposable
         // Pre-check 2: device state at entry.
         // - Mode B (normal): full cycle = FLIP:NoFilter -> read -> FLIP:AppleFilter
         // - Mode A (recovery): skip the FLIP:NoFilter step on attempt 1, read directly,
-        //   then FLIP:AppleFilter to restore. Earlier code skipped the cycle entirely
-        //   and deferred to SelfHealManager — that created a deadlock when SelfHeal
-        //   failed to fire post-reboot, leaving battery stale forever.
+        //   then FLIP:AppleFilter to restore.
         bool startedInModeA = await Task.Run(IsV3InModeA, ct);
         if (startedInModeA)
         {
@@ -171,7 +162,7 @@ internal sealed class V3RecycleManager : IDisposable
             if (needsFlipToA)
             {
                 bool flipOk = await Task.Run(
-                    () => SelfHealRequest.SubmitFlipAndWait(FlipPhase.NoFilter, 30_000), ct);
+                    () => SubmitFlipAndWait(FlipPhase.NoFilter, 30_000), ct);
 
                 if (!flipOk)
                 {
@@ -273,7 +264,7 @@ internal sealed class V3RecycleManager : IDisposable
                 Thread.Sleep(500);
             }
 
-            bool flipOk = SelfHealRequest.SubmitFlipAndWait(FlipPhase.AppleFilter, 30_000);
+            bool flipOk = SubmitFlipAndWait(FlipPhase.AppleFilter, 30_000);
             Logger.Log($"V3RECYCLE FLIP:AppleFilter attempt={i} ok={flipOk}");
 
             if (WaitForModeB(ModeBVerifyMs))
@@ -398,5 +389,65 @@ internal sealed class V3RecycleManager : IDisposable
             _lastCursorMoveTick = Environment.TickCount64;
         }
         return (int)(Environment.TickCount64 - _lastCursorMoveTick);
+    }
+
+    internal enum FlipPhase { NoFilter, AppleFilter }
+    
+    internal static bool SubmitFlipAndWait(FlipPhase phase, int timeoutMs = 30_000)
+    {
+        var phaseStr = phase == FlipPhase.NoFilter ? "FLIP:NoFilter" : "FLIP:AppleFilter";
+        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+
+        if (!WriteRequest(phaseStr, nonce)) return false;
+        if (!StartTask(phaseStr)) return false;
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(100);
+            try
+            {
+                if (!File.Exists(@"C:\mm-dev-queue\result.txt")) continue;
+                var raw = File.ReadAllText(@"C:\mm-dev-queue\result.txt").Trim();
+                if (!raw.EndsWith($"|{nonce}")) continue;
+
+                var exitCode = int.TryParse(raw.Split('|', 2)[0], out var rc) ? rc : -1;
+                Logger.Log($"FLIP phase={phaseStr} exitCode={exitCode} nonce={nonce}");
+                return exitCode == 0;
+            }
+            catch { }
+        }
+        return false;
+    }
+
+    static bool WriteRequest(string phase, string nonce)
+    {
+        try
+        {
+            File.WriteAllText(@"C:\mm-dev-queue\request.txt", $"{phase}|{nonce}");
+            return true;
+        }
+        catch { return false; }
+    }
+
+    static bool StartTask(string phase)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "schtasks.exe",
+                Arguments = $"/run /tn \"MM-Dev-Cycle\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var p = Process.Start(psi);
+            if (p is null) return false;
+            p.WaitForExit(5000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
     }
 }
