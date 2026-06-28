@@ -20,6 +20,7 @@ internal sealed class Config
     internal bool StartWithWindows { get; private set; }
     internal bool EnableV3Recycle { get; private set; } = true;
     internal bool EnableThirdParty { get; private set; } = false;
+    internal bool UpdateCheck { get; private set; } = true;
 
     internal static Config Load()
     {
@@ -43,6 +44,8 @@ internal sealed class Config
                     cfg.EnableV3Recycle = r;
                 else if (key == "enable_third_party" && bool.TryParse(val, out bool tp))
                     cfg.EnableThirdParty = tp;
+                else if (key == "update_check" && bool.TryParse(val, out bool uc))
+                    cfg.UpdateCheck = uc;
             }
         }
         catch (Exception ex)
@@ -93,7 +96,8 @@ internal sealed class Config
                 $"threshold={Threshold}",
                 $"start_with_windows={StartWithWindows.ToString().ToLower()}",
                 $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
-                $"enable_third_party={EnableThirdParty.ToString().ToLower()}"
+                $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
+                $"update_check={UpdateCheck.ToString().ToLower()}"
             ]);
         }
         catch { }
