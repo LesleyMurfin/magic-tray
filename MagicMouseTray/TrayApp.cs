@@ -40,8 +40,9 @@ internal sealed class TrayApp : IDisposable
 
     Icon? _currentIcon;
 
-    // Cached taskbar theme (light/dark); refreshed on system-visual change and at startup.
     static bool _lightTaskbar;
+
+    ToolStripMenuItem? _updateItem;
 
     internal TrayApp(Config config)
     {
@@ -74,6 +75,27 @@ internal sealed class TrayApp : IDisposable
         // _poller) is assigned — the first poll cycle can raise BatteryChanged, and
         // OnBatteryChanged dereferences _recycleManager in UpdateTrayIcon.
         _poller.Start();
+
+        if (_config.UpdateCheck)
+        {
+            _ = CheckForUpdateBackgroundAsync();
+        }
+    }
+
+    async Task CheckForUpdateBackgroundAsync()
+    {
+        var tag = await UpdateChecker.CheckForUpdateAsync();
+        if (tag != null)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (_updateItem != null)
+                {
+                    _updateItem.Text = $"Update available — {tag}";
+                    _updateItem.Visible = true;
+                }
+            });
+        }
     }
 
     ContextMenuStrip BuildMenu(
@@ -212,6 +234,22 @@ internal sealed class TrayApp : IDisposable
             System.Windows.Application.Current.Shutdown();
         };
         menu.Items.Add(quit);
+
+        menu.Items.Add(new ToolStripSeparator());
+
+        // --- Version Info ---
+        var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var semver = asmVer != null ? $"{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "1.0.0";
+        var versionItem = new ToolStripMenuItem($"magic_tray v{semver}") { Enabled = false };
+        menu.Items.Add(versionItem);
+
+        // --- Update Item (Hidden by default) ---
+        _updateItem = new ToolStripMenuItem("Update available") { Visible = false };
+        _updateItem.Click += (_, _) =>
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/LesleyMurfin/magic-mouse-tray/releases/latest") { UseShellExecute = true });
+        };
+        menu.Items.Add(_updateItem);
 
         return menu;
     }
