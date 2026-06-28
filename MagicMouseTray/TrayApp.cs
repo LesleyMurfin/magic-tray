@@ -15,12 +15,11 @@ internal sealed class TrayApp : IDisposable
     readonly NotifyIcon _tray;
     readonly Config _config;
     readonly AdaptivePoller _poller;
-    readonly ToolStripMenuItem[] _thresholdItems;
     readonly ToolStripMenuItem _startupItem;
 
     // Per-device battery state, keyed by device name. Updated per poll event.
     // Cleared when no devices are detected (empty name from AdaptivePoller).
-    readonly Dictionary<string, (int Pct, DeviceKind Kind)> _deviceBatteries = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, (int Pct, DeviceKind Kind, string Pid)> _deviceBatteries = new(StringComparer.OrdinalIgnoreCase);
 
     // Per-device menu items for live battery display in the right-click menu.
     readonly Dictionary<string, ToolStripMenuItem> _deviceMenuItems = new(StringComparer.OrdinalIgnoreCase);
@@ -47,10 +46,10 @@ internal sealed class TrayApp : IDisposable
     internal TrayApp(Config config)
     {
         _config = config;
-        (_thresholdItems, _startupItem) = (null!, null!); // assigned by BuildMenu
+        _startupItem = null!; // assigned by BuildMenu
 
         _driverStatus = DriverHealthChecker.GetStatus();
-        var menu = BuildMenu(out _thresholdItems, out _startupItem);
+        var menu = BuildMenu(out _startupItem);
 
         RefreshTheme();   // must run before the first MakeIcon
         _currentIcon = MakeIcon(-1, false, Marker.Mouse, _driverStatus != DriverStatus.Ok);
@@ -99,7 +98,6 @@ internal sealed class TrayApp : IDisposable
     }
 
     ContextMenuStrip BuildMenu(
-        out ToolStripMenuItem[] thresholdItems,
         out ToolStripMenuItem startupItem)
     {
         var menu = new ContextMenuStrip();
@@ -112,21 +110,6 @@ internal sealed class TrayApp : IDisposable
         _deviceSection = new ToolStripMenuItem("Devices") { Enabled = false };
         menu.Items.Add(_deviceSection);
         menu.Items.Add(new ToolStripSeparator());
-
-        // --- Low Battery Threshold submenu ---
-        var thresholdMenu = new ToolStripMenuItem("Low Battery Threshold");
-        thresholdItems = new[] { 10, 15, 20, 25 }.Select(t =>
-        {
-            var item = new ToolStripMenuItem($"{t}%")
-            {
-                Tag = t,
-                Checked = t == _config.Threshold
-            };
-            item.Click += (_, _) => OnThresholdClick(t);
-            return item;
-        }).ToArray();
-        thresholdMenu.DropDownItems.AddRange(thresholdItems);
-        menu.Items.Add(thresholdMenu);
 
         // --- Start with Windows ---
         startupItem = new ToolStripMenuItem("Start with Windows")
@@ -284,12 +267,7 @@ internal sealed class TrayApp : IDisposable
         _driverWarningSeparator.Visible = true;
     }
 
-    void OnThresholdClick(int value)
-    {
-        _config.SetThreshold(value);
-        foreach (var item in _thresholdItems)
-            item.Checked = (int)item.Tag! == _config.Threshold;
-    }
+
 
     // Opens debug.log in Notepad++ if installed, falls back to notepad.exe.
     // Notepad++ tail-follows the file (Settings > Misc > File Status Auto-Detection).
@@ -351,7 +329,7 @@ internal sealed class TrayApp : IDisposable
         return null;
     }
 
-    void OnBatteryChanged(int pct, string name, DeviceKind kind)
+    void OnBatteryChanged(int pct, string name, DeviceKind kind, string pid)
     {
         // Marshal to WPF/STA thread — NotifyIcon was created there
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -366,10 +344,12 @@ internal sealed class TrayApp : IDisposable
             }
             else
             {
-                _deviceBatteries[name] = (pct, kind);
+                name = new string(name.Where(c => !char.IsControl(c)).ToArray());
+                _deviceBatteries[name] = (pct, kind, pid);
 
                 // Per-device alert boundaries
-                if (pct < 0 || pct > _config.Threshold)
+                var threshold = _config.GetThreshold(pid);
+                if (pct < 0 || pct > threshold)
                 {
                     _firedBoundaries.Remove(name);
                 }
@@ -378,9 +358,9 @@ internal sealed class TrayApp : IDisposable
                     if (!_firedBoundaries.TryGetValue(name, out var fired))
                         _firedBoundaries[name] = fired = new HashSet<int>();
 
-                    var boundaries = _config.Threshold > 10
-                        ? new[] { _config.Threshold, 10 }
-                        : new[] { _config.Threshold };
+                    var boundaries = threshold > 10
+                        ? new[] { threshold, 10 }
+                        : new[] { threshold };
 
                     foreach (var boundary in boundaries)
                     {
@@ -432,7 +412,12 @@ internal sealed class TrayApp : IDisposable
             if (lowestPct < 0 || kv.Value.Pct < lowestPct) { lowestPct = kv.Value.Pct; lowestName = kv.Key; }
         }
 
-        bool anyLow = lowestPct >= 0 && lowestPct <= _config.Threshold;
+        bool anyLow = false;
+        foreach (var kv in _deviceBatteries)
+        {
+            if (kv.Value.Pct >= 0 && kv.Value.Pct <= _config.GetThreshold(kv.Value.Pid))
+                anyLow = true;
+        }
 
         var newIcon = MakeIcon(lowestPct, anyLow, MarkerFor(lowestName), _driverStatus != DriverStatus.Ok);
         var oldIcon = _currentIcon;
@@ -444,7 +429,7 @@ internal sealed class TrayApp : IDisposable
         string tip;
         if (_deviceBatteries.Count == 0)
         {
-            tip = "Magic Mouse Battery — no devices detected";
+            tip = "Magic Mouse Battery - no devices detected";
         }
         else
         {
@@ -455,7 +440,8 @@ internal sealed class TrayApp : IDisposable
                 var pctStr = pct switch {
                     >= 0 => $"{pct}%",
                     -2   => "N/A",
-                    _    => "—",
+                    -3   => "Battery unavailable - see logs",
+                    _    => "-",
                 };
                 var nameStr = pct == -2 && kind == DeviceKind.MagicKeyboard ? "Keyboard (needs patch)" : kv.Key;
                 var estDaysStr = "";
@@ -471,8 +457,8 @@ internal sealed class TrayApp : IDisposable
             var hasV3Reading = _deviceBatteries.Any(kv =>
                 kv.Key.Contains("2024", StringComparison.OrdinalIgnoreCase) && kv.Value.Pct >= 0);
             var interval = hasV3Reading ? _recycleManager.NextInterval : _poller.LastInterval;
-            tip = $"{joined} · {FormatInterval(interval)}";
-            if (_driverStatus != DriverStatus.Ok) tip = $"⚠ {tip}";
+            tip = $"{joined} . {FormatInterval(interval)}";
+            if (_driverStatus != DriverStatus.Ok) tip = $"! {tip}";
         }
 
         _tray.Text = tip.Length > 63 ? tip[..63] : tip;
@@ -511,7 +497,8 @@ internal sealed class TrayApp : IDisposable
             var pctStr = pct switch {
                 >= 0 => $"{pct}%",
                 -2   => "N/A (Mode B)",
-                _    => "—"
+                -3   => "Unavailable - see logs",
+                _    => "-"
             };
 
             var rate = DrainRateTracker.GetDrainRatePctPerHour(kv.Key);
@@ -534,7 +521,7 @@ internal sealed class TrayApp : IDisposable
             var isPatchNeeded = pct == -2 && kind == DeviceKind.MagicKeyboard;
             if (isPatchNeeded)
             {
-                label = "Keyboard battery unavailable — descriptor patch required";
+                label = "Keyboard battery unavailable - descriptor patch required";
             }
 
             if (!_deviceMenuItems.TryGetValue(kv.Key, out var item))
@@ -589,6 +576,20 @@ internal sealed class TrayApp : IDisposable
                     item.DropDownItems.Add(action);
                 }
             }
+
+            item.DropDownItems.Add(new ToolStripSeparator());
+            var thrMenu = new ToolStripMenuItem("Low Battery Threshold");
+            var currentThr = _config.GetThreshold(kv.Value.Pid);
+            foreach(var t in new[]{10, 15, 20, 25}) {
+                var tItem = new ToolStripMenuItem($"{t}%") { Checked = t == currentThr };
+                var pidStr = kv.Value.Pid;
+                tItem.Click += (_, _) => {
+                    _config.SetThreshold(pidStr, t);
+                    UpdateTrayIcon();
+                };
+                thrMenu.DropDownItems.Add(tItem);
+            }
+            item.DropDownItems.Add(thrMenu);
         }
 
         // Remove stale items for devices no longer present

@@ -28,6 +28,7 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
     readonly string _path;
 
     public string DeviceName { get; } = "Logitech Mouse"; // provisional; name query out of scope
+    public string Pid { get; } = "logi";
     public DeviceKind Kind => DeviceKind.LogitechMouse;
 
     internal LogitechBatteryDevice(string path) => _path = path;

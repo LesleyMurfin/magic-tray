@@ -13,8 +13,8 @@ namespace MagicMouseTray;
 internal sealed class AdaptivePoller : IDisposable
 {
     // Fired once per discovered device per poll cycle.
-    // percent sentinel values: -1=not found/disconnected, -2=present but unreadable (Mode B).
-    internal event Action<int, string, DeviceKind>? BatteryChanged;
+    // percent sentinel values: -1=not found/disconnected, -2=present but unreadable (Mode B), -3=battery unavailable.
+    internal event Action<int, string, DeviceKind, string>? BatteryChanged;
 
     // Last computed interval — readable by TrayApp for tooltip.
     internal TimeSpan LastInterval { get; private set; } = TimeSpan.FromMinutes(5);
@@ -22,6 +22,7 @@ internal sealed class AdaptivePoller : IDisposable
     readonly Config _config;
     CancellationTokenSource _cts = new();
     Task? _pollTask;
+    readonly Dictionary<string, int> _consecutiveFailures = new();
 
     // Per-device read budget. A synchronous HID IOCTL (HidD_GetFeature / HidD_GetInputReport)
     // can block indefinitely on a wedged device, and before this guard one stuck device froze
@@ -94,10 +95,11 @@ internal sealed class AdaptivePoller : IDisposable
 
                 int lowestPct = -1;
                 string lowestDevice = string.Empty;
+                string lowestPid = string.Empty;
 
                 if (devices.Count == 0)
                 {
-                    BatteryChanged?.Invoke(-1, string.Empty);
+                    BatteryChanged?.Invoke(-1, string.Empty, DeviceKind.MagicMouseV1, string.Empty);
                 }
                 else
                 {
@@ -116,7 +118,18 @@ internal sealed class AdaptivePoller : IDisposable
                             if (ReadingRank(pct) > ReadingRank(best)) best = pct;
                         }
 
-                        BatteryChanged?.Invoke(best, group.Key, group.First().Kind);
+                        if (best == -1)
+                        {
+                            _consecutiveFailures.TryGetValue(group.Key, out int fails);
+                            _consecutiveFailures[group.Key] = ++fails;
+                            if (fails >= 3) best = -3;
+                        }
+                        else
+                        {
+                            _consecutiveFailures[group.Key] = 0;
+                        }
+
+                        BatteryChanged?.Invoke(best, group.Key, group.First().Kind, group.First().Pid);
 
                         if (best >= 0)
                         {
@@ -127,6 +140,7 @@ internal sealed class AdaptivePoller : IDisposable
                             {
                                 lowestPct = best;
                                 lowestDevice = group.Key;
+                                lowestPid = group.First().Pid;
                             }
                         }
                     }
@@ -137,7 +151,7 @@ internal sealed class AdaptivePoller : IDisposable
                 var lowestIsV3 = devices.FirstOrDefault(d => d.DeviceName == lowestDevice)
                                          ?.Kind == DeviceKind.MagicMouseV3;
                 interval = DrainRateTracker.GetNextInterval(
-                    lowestDevice, lowestPct, _config.Threshold, lowestIsV3);
+                    lowestDevice, lowestPct, _config.GetThreshold(lowestPid), lowestIsV3);
                 LastInterval = interval;
 
                 Logger.Log($"POLL_SCHEDULED devices={devices.Count} lowest_pct={lowestPct} next_in={interval}");

@@ -15,6 +15,7 @@ public enum DeviceKind
 public interface IBatteryDevice
 {
     string DeviceName { get; }
+    string Pid { get; }
     DeviceKind Kind { get; }
 
     /// <summary>

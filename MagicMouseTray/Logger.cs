@@ -31,6 +31,7 @@ internal static class Logger
 
     internal static void Log(string message)
     {
+        message = new string(message.Where(c => !char.IsControl(c) || c == '\r' || c == '\n').ToArray());
         message = System.Text.RegularExpressions.Regex.Replace(message, @"[^\x00-\x7F]", string.Empty);
         try
         {

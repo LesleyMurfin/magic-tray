@@ -32,7 +32,7 @@ namespace MagicMouseTray;
 
 internal sealed class V3RecycleManager : IDisposable
 {
-    internal event Action<int, string, DeviceKind>? BatteryRead;
+    internal event Action<int, string, DeviceKind, string>? BatteryRead;
 
     const int IdleThresholdMs    = 30_000; // 30s
     const int RetryDelayMs       = 500;
@@ -54,6 +54,7 @@ internal sealed class V3RecycleManager : IDisposable
     readonly Config _config;
     int _lastKnownPct = -1;
     string _lastKnownDevice = "Magic Mouse 2024";
+    string _lastKnownPid = "0323";
 
     // Exposed for TrayApp tooltip — set after each cycle completes.
     internal TimeSpan NextInterval { get; private set; } = DrainRateTracker.CeilingNormal;
@@ -105,7 +106,7 @@ internal sealed class V3RecycleManager : IDisposable
             }
 
             var interval = DrainRateTracker.GetNextInterval(
-                _lastKnownDevice, _lastKnownPct, _config.Threshold, isV3: true);
+                _lastKnownDevice, _lastKnownPct, _config.GetThreshold(_lastKnownPid), isV3: true);
             NextInterval = interval;
             Logger.Log($"V3RECYCLE next in {interval} pct={_lastKnownPct} rate={DrainRateTracker.GetDrainRatePctPerHour(_lastKnownDevice):F3}%/h");
             try { await Task.Delay(interval, ct); } catch { return; }
@@ -186,13 +187,14 @@ internal sealed class V3RecycleManager : IDisposable
             string deviceName = string.Empty;
             int pct = -1;
 
+            string? col02Path = null;
             if (modeAReached)
             {
                 // In Mode A, both col01 (mouse) and col02 (vendor battery) HID paths are present.
                 // DeviceRegistry.Discover() returns the first VID/PID match — col01 may precede col02
                 // in SetupDi enumeration order. col01's UsagePage is the standard HID mouse page, so
                 // GetBatteryPercent() returns -1 silently (splitVendor=false). Target col02 explicitly.
-                var col02Path = HidNative.EnumerateHidPaths()
+                col02Path = HidNative.EnumerateHidPaths()
                     .FirstOrDefault(p => IsV3Path(p) &&
                         p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
@@ -236,12 +238,14 @@ internal sealed class V3RecycleManager : IDisposable
             // Step 5: Evaluate result
             if (pct >= 0)
             {
+                var pid = DeviceRegistry.ExtractPid(col02Path ?? "");
                 _lastKnownPct = pct;
                 _lastKnownDevice = deviceName;
+                _lastKnownPid = pid;
                 _consecutiveFailures = 0;
                 DrainRateTracker.Record(deviceName, pct);
-                BatteryRead?.Invoke(pct, deviceName, DeviceKind.MagicMouseV3);
-                Logger.Log($"V3RECYCLE cycle SUCCESS pct={pct} rate={DrainRateTracker.GetDrainRatePctPerHour(deviceName):F3}%/h hoursLeft={DrainRateTracker.GetHoursToThreshold(deviceName, pct, _config.Threshold):F1}");
+                BatteryRead?.Invoke(pct, deviceName, DeviceKind.MagicMouseV3, pid);
+                Logger.Log($"V3RECYCLE cycle SUCCESS pct={pct} rate={DrainRateTracker.GetDrainRatePctPerHour(deviceName):F3}%/h hoursLeft={DrainRateTracker.GetHoursToThreshold(deviceName, pct, _config.GetThreshold(pid)):F1}");
                 return;
             }
 
