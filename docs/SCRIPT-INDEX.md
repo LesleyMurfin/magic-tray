@@ -198,7 +198,9 @@ These are orchestrated by `mm-task-runner.ps1` phases (see Task Runner Phases se
 
 ## Task Runner Phases
 
-Script: `/home/lesley/projects/Personal/magic-mouse-tray/scripts/mm-task-runner.ps1` (51K)
+Script: `/home/lesley/projects/Revive_Labs/scripts/windows/mm-task-runner.ps1` — moved here
+2026-07-08 as the single canonical copy shared across mm3-driver, orca, and RILEY VPN
+(previously drifting between this repo and `D:\mm3-driver\scripts`; see `README.txt` there).
 
 Queue protocol: filesystem (`C:\mm-dev-queue\request.txt` / `result.txt` / `running.lock`)
 
@@ -234,7 +236,7 @@ Runner also supports legacy phases for M12 mouse driver (BUILD→mm-dev.ps1, dir
 
 ### Runner references to scripts
 
-File: `/home/lesley/projects/Personal/magic-mouse-tray/scripts/mm-task-runner.ps1`
+File: `/home/lesley/projects/Revive_Labs/scripts/windows/mm-task-runner.ps1`
 
 | Line(s) | Reference | Type | Status |
 |---------|-----------|------|--------|
