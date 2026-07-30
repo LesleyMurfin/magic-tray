@@ -26,6 +26,7 @@
 // (e.g., post-reboot, prior cycle crashed mid-flip), the cycle now reads battery directly
 // from col02 and then restores Mode B.
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 

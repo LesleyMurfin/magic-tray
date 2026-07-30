@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 using System.IO;
+// GetCustomAttribute<T>() on Assembly is an extension method in
+// System.Reflection.CustomAttributeExtensions — fully-qualifying the attribute
+// type does NOT bring it into scope, so this using is load-bearing (CS1061).
+using System.Reflection;
 
 namespace MagicMouseTray;
 
