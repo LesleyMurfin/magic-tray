@@ -26,6 +26,7 @@ internal sealed class TrayApp : IDisposable
     ToolStripMenuItem? _deviceSection;
     ToolStripMenuItem? _driverWarningItem;
     ToolStripSeparator? _driverWarningSeparator;
+    ToolStripMenuItem? _battReadItem;
 
     // Alert boundaries fired per-device this drain cycle. Cleared per-device when battery recovers.
     readonly Dictionary<string, HashSet<int>> _firedBoundaries = new(StringComparer.OrdinalIgnoreCase);
@@ -111,21 +112,13 @@ internal sealed class TrayApp : IDisposable
         menu.Items.Add(_deviceSection);
         menu.Items.Add(new ToolStripSeparator());
 
-        // --- Start with Windows ---
-        startupItem = new ToolStripMenuItem("Start with Windows")
-        {
-            Checked = _config.StartWithWindows
-        };
-        startupItem.Click += (_, _) =>
-        {
-            _config.SetStartWithWindows(!_config.StartWithWindows);
-            _startupItem.Checked = _config.StartWithWindows;
-        };
-        menu.Items.Add(startupItem);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        // --- Driver warning (shown when scroll driver is missing, unbound, or unknown model) ---
+        // --- Driver warning: scoped to UnknownAppleMouse only (an unrecognized Apple PID has
+        // no IBatteryDevice, so it can never get a real per-device row like the mice/keyboards
+        // below — this is the one remaining case that needs a floating banner). NotBound/
+        // NotInstalled/Error for KNOWN devices are surfaced per-row instead (see the capability
+        // matrix dropdown below), so this banner no longer duplicates those warnings. Positioned
+        // right under the device rows (not after Start with Windows) so it still reads as
+        // device-scoped rather than a general settings-area warning.
         _driverWarningItem = new ToolStripMenuItem("") { ForeColor = System.Drawing.Color.OrangeRed };
         _driverWarningItem.Click += (_, _) =>
         {
@@ -148,19 +141,33 @@ internal sealed class TrayApp : IDisposable
         menu.Items.Add(_driverWarningSeparator);
         UpdateDriverWarningItem();
 
-        // --- Battery Reads toggle (PATH-B v3 recycle on/off) ---
-        var battReadItem = new ToolStripMenuItem("Battery Reads [On]")
+        // --- Global settings ---
+        startupItem = new ToolStripMenuItem("Start with Windows")
+        {
+            Checked = _config.StartWithWindows
+        };
+        startupItem.Click += (_, _) =>
+        {
+            _config.SetStartWithWindows(!_config.StartWithWindows);
+            _startupItem.Checked = _config.StartWithWindows;
+        };
+        menu.Items.Add(startupItem);
+
+        // --- Battery Reads toggle (PATH-B v3 recycle on/off). Visibility is conditional:
+        // only meaningful when a v3 Magic Mouse is connected AND its driver is Patched
+        // (recomputed on every device-list refresh in UpdateDeviceMenuItems -> UpdateBatteryReadsVisibility).
+        _battReadItem = new ToolStripMenuItem("Battery Reads [On]")
         {
             Checked = _config.EnableV3Recycle
         };
-        battReadItem.Click += (_, _) =>
+        _battReadItem.Click += (_, _) =>
         {
             _config.SetEnableV3Recycle(!_config.EnableV3Recycle);
-            battReadItem.Text = _config.EnableV3Recycle ? "Battery Reads [On]" : "Battery Reads [Off]";
-            battReadItem.Checked = _config.EnableV3Recycle;
+            _battReadItem.Text = _config.EnableV3Recycle ? "Battery Reads [On]" : "Battery Reads [Off]";
+            _battReadItem.Checked = _config.EnableV3Recycle;
             if (_config.EnableV3Recycle) _recycleManager.ReEnable();
         };
-        menu.Items.Add(battReadItem);
+        menu.Items.Add(_battReadItem);
 
         // --- Third-party devices toggle (B2 experimental, default off) ---
         var thirdPartyItem = new ToolStripMenuItem(
@@ -176,6 +183,9 @@ internal sealed class TrayApp : IDisposable
         };
         menu.Items.Add(thirdPartyItem);
 
+        menu.Items.Add(new ToolStripSeparator());
+
+        // --- Actions ---
         // --- Refresh Now ---
         var refresh = new ToolStripMenuItem("Refresh Now (All Devices)");
         refresh.Click += (_, _) => _poller.RefreshNow();
@@ -237,35 +247,22 @@ internal sealed class TrayApp : IDisposable
         return menu;
     }
 
+    // Scoped to UnknownAppleMouse only — NotBound/NotInstalled/Error are surfaced per-row
+    // instead (the affected device already shows its own remediation action in the capability
+    // matrix dropdown; see DeviceCapability.Describe). Showing both would be a duplicate warning.
     void UpdateDriverWarningItem()
     {
         if (_driverWarningItem == null || _driverWarningSeparator == null) return;
 
-        if (_driverStatus == DriverStatus.Ok)
+        if (_driverStatus != DriverStatus.UnknownAppleMouse)
         {
             _driverWarningItem.Visible = false;
             _driverWarningSeparator.Visible = false;
             return;
         }
 
-        var (label, url) = _driverStatus switch
-        {
-            DriverStatus.UnknownAppleMouse =>
-                ("⚠ Unknown mouse model — check for app update",
-                 "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
-            DriverStatus.NotBound =>
-                ("⚠ Driver not bound — scroll fix needed",
-                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-            DriverStatus.Error =>
-                ("⚠ Driver reported an error — check Device Manager",
-                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-            _ =>
-                ("⚠ Install Apple Driver (scroll fix)",
-                 "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
-        };
-
-        _driverWarningItem.Text = label;
-        _driverWarningItem.Tag = url;
+        _driverWarningItem.Text = "⚠ Unknown mouse model — check for app update";
+        _driverWarningItem.Tag = "https://github.com/ReviveBusiness/magic-mouse-tray/releases";
         _driverWarningItem.Visible = true;
         _driverWarningSeparator.Visible = true;
     }
@@ -487,6 +484,7 @@ internal sealed class TrayApp : IDisposable
                 _tray.ContextMenuStrip?.Items.Remove(_deviceMenuItems[key]);
                 _deviceMenuItems.Remove(key);
             }
+            UpdateBatteryReadsVisibility();
             return;
         }
 
@@ -557,7 +555,13 @@ internal sealed class TrayApp : IDisposable
             var knd = DeviceCapability.KindForName(kv.Key);
             if (knd is { } k)
             {
-                var row = DeviceCapability.Describe(k, kv.Value.Pct, _driverStatus);
+                // v3 gets its own per-PID driver status instead of the global worst-state-wins
+                // value — otherwise an unrelated v1/v2 mouse in a bad driver state would
+                // incorrectly badge a fine v3 mouse (and vice versa).
+                var driverForRow = k == DeviceKind.MagicMouseV3
+                    ? DriverHealthChecker.GetStatusForPid(kv.Value.Pid)
+                    : _driverStatus;
+                var row = DeviceCapability.Describe(k, kv.Value.Pct, driverForRow);
                 item.DropDownItems.Add(new ToolStripMenuItem($"Read method: {row.ReadMethod}") { Enabled = false });
                 item.DropDownItems.Add(new ToolStripMenuItem($"Status: {row.Status}") { Enabled = false });
                 if (row.ActionLabel is { } al)
@@ -603,6 +607,22 @@ internal sealed class TrayApp : IDisposable
         }
 
         _deviceSection.Text = $"Devices ({_deviceBatteries.Count})";
+        UpdateBatteryReadsVisibility();
+    }
+
+    // Battery Reads only does anything for a v3 Magic Mouse with the patched driver bound
+    // (PATH-B recycle needs applewirelessmouse present to restore Mode B between reads) —
+    // noise for v1/v2 or for a v3 still on the stock driver. Recomputed on every device-list
+    // refresh (poll + menu Opening), matching the design's "not a static settings item" rule.
+    void UpdateBatteryReadsVisibility()
+    {
+        if (_battReadItem is null) return;
+
+        bool show = _deviceBatteries.Any(kv =>
+            kv.Value.Kind == DeviceKind.MagicMouseV3 &&
+            DriverHealthChecker.GetStatusForPid(kv.Value.Pid) == DriverStatus.Ok);
+
+        _battReadItem.Visible = show;
     }
 
     static string FormatInterval(TimeSpan t)
