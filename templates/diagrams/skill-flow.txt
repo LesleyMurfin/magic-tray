@@ -1,0 +1,7 @@
+   /<FILL: skill> invoked
+        |
+        v
+   <FILL: step 1> --> <FILL: step 2> --> <FILL: gate> --> <FILL: result>
+
+   CURRENT: <FILL: today's flow, or (none)>
+   FUTURE:  <FILL: what this PR adds or changes>
