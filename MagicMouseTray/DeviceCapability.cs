@@ -47,7 +47,10 @@ internal static class DeviceCapability
         DriverStatus.NotBound =>
             ("Driver not bound — scroll fix needed",
              "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-        _ => // NotInstalled (and any non-Ok fallthrough)
+        DriverStatus.Error =>
+            ("Driver reported an error — check Device Manager",
+             "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+        _ => // NotInstalled (and any other fallthrough)
             ("Install Apple driver (scroll fix)",
              "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
     };

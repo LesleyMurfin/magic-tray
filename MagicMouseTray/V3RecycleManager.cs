@@ -25,6 +25,7 @@
 // Mode A entry recovery (2026-05-08): if the device is found in Mode A at cycle start
 // (e.g., post-reboot, prior cycle crashed mid-flip), the cycle now reads battery directly
 // from col02 and then restores Mode B.
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 

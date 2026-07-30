@@ -256,6 +256,9 @@ internal sealed class TrayApp : IDisposable
             DriverStatus.NotBound =>
                 ("⚠ Driver not bound — scroll fix needed",
                  "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+            DriverStatus.Error =>
+                ("⚠ Driver reported an error — check Device Manager",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
             _ =>
                 ("⚠ Install Apple Driver (scroll fix)",
                  "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
@@ -429,7 +432,7 @@ internal sealed class TrayApp : IDisposable
         string tip;
         if (_deviceBatteries.Count == 0)
         {
-            tip = "Magic Mouse Battery - no devices detected";
+            tip = "Magic Mouse Battery — no devices detected";
         }
         else
         {
@@ -441,7 +444,7 @@ internal sealed class TrayApp : IDisposable
                     >= 0 => $"{pct}%",
                     -2   => "N/A",
                     -3   => "Battery unavailable - see logs",
-                    _    => "-",
+                    _    => "—",
                 };
                 var nameStr = pct == -2 && kind == DeviceKind.MagicKeyboard ? "Keyboard (needs patch)" : kv.Key;
                 var estDaysStr = "";
@@ -457,8 +460,8 @@ internal sealed class TrayApp : IDisposable
             var hasV3Reading = _deviceBatteries.Any(kv =>
                 kv.Key.Contains("2024", StringComparison.OrdinalIgnoreCase) && kv.Value.Pct >= 0);
             var interval = hasV3Reading ? _recycleManager.NextInterval : _poller.LastInterval;
-            tip = $"{joined} . {FormatInterval(interval)}";
-            if (_driverStatus != DriverStatus.Ok) tip = $"! {tip}";
+            tip = $"{joined} · {FormatInterval(interval)}";
+            if (_driverStatus != DriverStatus.Ok) tip = $"⚠ {tip}";
         }
 
         _tray.Text = tip.Length > 63 ? tip[..63] : tip;
@@ -498,7 +501,7 @@ internal sealed class TrayApp : IDisposable
                 >= 0 => $"{pct}%",
                 -2   => "N/A (Mode B)",
                 -3   => "Unavailable - see logs",
-                _    => "-"
+                _    => "—"
             };
 
             var rate = DrainRateTracker.GetDrainRatePctPerHour(kv.Key);
@@ -521,7 +524,7 @@ internal sealed class TrayApp : IDisposable
             var isPatchNeeded = pct == -2 && kind == DeviceKind.MagicKeyboard;
             if (isPatchNeeded)
             {
-                label = "Keyboard battery unavailable - descriptor patch required";
+                label = "Keyboard battery unavailable — descriptor patch required";
             }
 
             if (!_deviceMenuItems.TryGetValue(kv.Key, out var item))
@@ -554,7 +557,7 @@ internal sealed class TrayApp : IDisposable
             var knd = DeviceCapability.KindForName(kv.Key);
             if (knd is { } k)
             {
-                var row = DeviceCapability.Describe(k, kv.Value, _driverStatus);
+                var row = DeviceCapability.Describe(k, kv.Value.Pct, _driverStatus);
                 item.DropDownItems.Add(new ToolStripMenuItem($"Read method: {row.ReadMethod}") { Enabled = false });
                 item.DropDownItems.Add(new ToolStripMenuItem($"Status: {row.Status}") { Enabled = false });
                 if (row.ActionLabel is { } al)

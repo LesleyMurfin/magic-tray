@@ -10,6 +10,7 @@ public class DeviceCapabilityTests
     {
         DriverStatus.Ok, DriverStatus.NotInstalled,
         DriverStatus.NotBound, DriverStatus.UnknownAppleMouse,
+        DriverStatus.Error,
     };
 
     static readonly int[] AllSentinels = { 75, 0, -2, -1 }; // >=0, edge 0, blocked, absent
@@ -105,5 +106,13 @@ public class DeviceCapabilityTests
             var row = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, drv);
             Assert.Equal(ScrollFixUrl(drv), row.ActionUrl);
         }
+    }
+
+    [Fact]
+    public void Error_HasDistinctMessage()
+    {
+        var errorRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.Error);
+        var notInstalledRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.NotInstalled);
+        Assert.NotEqual(notInstalledRow.ActionLabel, errorRow.ActionLabel);
     }
 }
