@@ -10,6 +10,7 @@ public class DeviceCapabilityTests
     {
         DriverStatus.Ok, DriverStatus.NotInstalled,
         DriverStatus.NotBound, DriverStatus.UnknownAppleMouse,
+        DriverStatus.Error,
     };
 
     static readonly int[] AllSentinels = { 75, 0, -2, -1 }; // >=0, edge 0, blocked, absent
@@ -17,11 +18,14 @@ public class DeviceCapabilityTests
     // The remediation URLs the matrix is expected to point at, per DriverStatus. These are the
     // SAME URLs used by TrayApp.BuildMenu. We assert URL-equality only — labels intentionally
     // differ (BuildMenu prefixes "⚠ " and uses capital "Driver"); do NOT assert label equality.
+    // Must mirror DeviceCapability.ScrollFix / TrayApp.BuildMenu arm for arm, Error included —
+    // Error routes to the scroll-fix anchor, NOT to the Apple driver release like NotInstalled.
     static string ScrollFixUrl(DriverStatus d) => d switch
     {
         DriverStatus.UnknownAppleMouse => "https://github.com/ReviveBusiness/magic-mouse-tray/releases",
         DriverStatus.NotBound          => "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working",
-        _                              => "https://github.com/tealtadpole/MagicMouse2DriversWin11x64",
+        DriverStatus.Error             => "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working",
+        _                              => "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0",
     };
 
     [Fact]
@@ -105,5 +109,13 @@ public class DeviceCapabilityTests
             var row = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, drv);
             Assert.Equal(ScrollFixUrl(drv), row.ActionUrl);
         }
+    }
+
+    [Fact]
+    public void Error_HasDistinctMessage()
+    {
+        var errorRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.Error);
+        var notInstalledRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.NotInstalled);
+        Assert.NotEqual(notInstalledRow.ActionLabel, errorRow.ActionLabel);
     }
 }

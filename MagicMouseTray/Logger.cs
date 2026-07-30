@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 using System.IO;
+// GetCustomAttribute<T>() on Assembly is an extension method in
+// System.Reflection.CustomAttributeExtensions — fully-qualifying the attribute
+// type does NOT bring it into scope, so this using is load-bearing (CS1061).
+using System.Reflection;
 
 namespace MagicMouseTray;
 
@@ -16,9 +20,23 @@ internal static class Logger
 
     const long MaxBytes = 1024 * 1024; // 1 MB rotation threshold
     static readonly object Lock = new();
+    static string _appStartBanner = string.Empty;
+
+    internal static void LogAppStart()
+    {
+        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+        var ver = asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? asm.GetName().Version?.ToString() ?? "unknown";
+        var fx = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
+        var os = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
+        var pid = Environment.ProcessId;
+        _appStartBanner = $"INFO APP_START version={ver} framework={fx} os=\"{os}\" pid={pid}";
+        Log(_appStartBanner);
+    }
 
     internal static void Log(string message)
     {
+        message = new string(message.Where(c => !char.IsControl(c) || c == '\r' || c == '\n').ToArray());
+        message = System.Text.RegularExpressions.Regex.Replace(message, @"[^\x00-\x7F]", string.Empty);
         try
         {
             lock (Lock)
@@ -27,10 +45,17 @@ internal static class Logger
                 Directory.CreateDirectory(dir);
 
                 if (File.Exists(LogPath) && new FileInfo(LogPath).Length >= MaxBytes)
+                {
                     File.Move(LogPath, LogPath + ".1", overwrite: true);
+                    if (!string.IsNullOrEmpty(_appStartBanner))
+                    {
+                        File.AppendAllText(LogPath,
+                            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {_appStartBanner}{Environment.NewLine}", new System.Text.UTF8Encoding(true));
+                    }
+                }
 
                 File.AppendAllText(LogPath,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}", new System.Text.UTF8Encoding(true));
             }
         }
         catch { }

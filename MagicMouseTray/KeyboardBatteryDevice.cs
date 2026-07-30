@@ -68,12 +68,14 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     readonly string _path;
 
     public string DeviceName { get; }
+    public string Pid { get; }
     public DeviceKind Kind => DeviceKind.MagicKeyboard;
 
     internal KeyboardBatteryDevice(string path, string displayName)
     {
         _path = path;
         DeviceName = displayName;
+        Pid = DeviceRegistry.ExtractPid(path);
     }
 
     // Active read of the col02 Battery Strength Feature report (RID 0x47).

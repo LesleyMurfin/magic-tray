@@ -15,16 +15,17 @@ internal sealed class TrayApp : IDisposable
     readonly NotifyIcon _tray;
     readonly Config _config;
     readonly AdaptivePoller _poller;
-    readonly ToolStripMenuItem[] _thresholdItems;
     readonly ToolStripMenuItem _startupItem;
 
     // Per-device battery state, keyed by device name. Updated per poll event.
     // Cleared when no devices are detected (empty name from AdaptivePoller).
-    readonly Dictionary<string, int> _deviceBatteries = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, (int Pct, DeviceKind Kind, string Pid)> _deviceBatteries = new(StringComparer.OrdinalIgnoreCase);
 
     // Per-device menu items for live battery display in the right-click menu.
     readonly Dictionary<string, ToolStripMenuItem> _deviceMenuItems = new(StringComparer.OrdinalIgnoreCase);
     ToolStripMenuItem? _deviceSection;
+    ToolStripMenuItem? _driverWarningItem;
+    ToolStripSeparator? _driverWarningSeparator;
 
     // Alert boundaries fired per-device this drain cycle. Cleared per-device when battery recovers.
     readonly Dictionary<string, HashSet<int>> _firedBoundaries = new(StringComparer.OrdinalIgnoreCase);
@@ -38,16 +39,17 @@ internal sealed class TrayApp : IDisposable
 
     Icon? _currentIcon;
 
-    // Cached taskbar theme (light/dark); refreshed on system-visual change and at startup.
     static bool _lightTaskbar;
+
+    ToolStripMenuItem? _updateItem;
 
     internal TrayApp(Config config)
     {
         _config = config;
-        (_thresholdItems, _startupItem) = (null!, null!); // assigned by BuildMenu
+        _startupItem = null!; // assigned by BuildMenu
 
         _driverStatus = DriverHealthChecker.GetStatus();
-        var menu = BuildMenu(out _thresholdItems, out _startupItem);
+        var menu = BuildMenu(out _startupItem);
 
         RefreshTheme();   // must run before the first MakeIcon
         _currentIcon = MakeIcon(-1, false, Marker.Mouse, _driverStatus != DriverStatus.Ok);
@@ -72,37 +74,42 @@ internal sealed class TrayApp : IDisposable
         // _poller) is assigned — the first poll cycle can raise BatteryChanged, and
         // OnBatteryChanged dereferences _recycleManager in UpdateTrayIcon.
         _poller.Start();
+
+        if (_config.UpdateCheck)
+        {
+            _ = CheckForUpdateBackgroundAsync();
+        }
+    }
+
+    async Task CheckForUpdateBackgroundAsync()
+    {
+        var tag = await UpdateChecker.CheckForUpdateAsync();
+        if (tag != null)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (_updateItem != null)
+                {
+                    _updateItem.Text = $"Update available — {tag}";
+                    _updateItem.Visible = true;
+                }
+            });
+        }
     }
 
     ContextMenuStrip BuildMenu(
-        out ToolStripMenuItem[] thresholdItems,
         out ToolStripMenuItem startupItem)
     {
         var menu = new ContextMenuStrip();
 
         // Recompute driver status + rebuild the matrix on every open so a just-applied
         // driver fix shows without restart. GetStatus() is registry-only and fast.
-        menu.Opening += (_, _) => { _driverStatus = DriverHealthChecker.GetStatus(); UpdateDeviceMenuItems(); };
+        menu.Opening += (_, _) => { _driverStatus = DriverHealthChecker.GetStatus(); UpdateDeviceMenuItems(); UpdateDriverWarningItem(); };
 
         // --- Device battery status (dynamically updated) ---
         _deviceSection = new ToolStripMenuItem("Devices") { Enabled = false };
         menu.Items.Add(_deviceSection);
         menu.Items.Add(new ToolStripSeparator());
-
-        // --- Low Battery Threshold submenu ---
-        var thresholdMenu = new ToolStripMenuItem("Low Battery Threshold");
-        thresholdItems = new[] { 10, 15, 20, 25 }.Select(t =>
-        {
-            var item = new ToolStripMenuItem($"{t}%")
-            {
-                Tag = t,
-                Checked = t == _config.Threshold
-            };
-            item.Click += (_, _) => OnThresholdClick(t);
-            return item;
-        }).ToArray();
-        thresholdMenu.DropDownItems.AddRange(thresholdItems);
-        menu.Items.Add(thresholdMenu);
 
         // --- Start with Windows ---
         startupItem = new ToolStripMenuItem("Start with Windows")
@@ -119,27 +126,27 @@ internal sealed class TrayApp : IDisposable
         menu.Items.Add(new ToolStripSeparator());
 
         // --- Driver warning (shown when scroll driver is missing, unbound, or unknown model) ---
-        if (_driverStatus != DriverStatus.Ok)
+        _driverWarningItem = new ToolStripMenuItem("") { ForeColor = System.Drawing.Color.OrangeRed };
+        _driverWarningItem.Click += (_, _) =>
         {
-            var (label, url) = _driverStatus switch
+            if (_driverWarningItem.Tag is string url)
             {
-                DriverStatus.UnknownAppleMouse =>
-                    ("⚠ Unknown mouse model — check for app update",
-                     "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
-                DriverStatus.NotBound =>
-                    ("⚠ Driver not bound — scroll fix needed",
-                     "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-                _ =>
-                    ("⚠ Install Apple Driver (scroll fix)",
-                     "https://github.com/tealtadpole/MagicMouse2DriversWin11x64"),
-            };
-            var driverItem = new ToolStripMenuItem(label) { ForeColor = System.Drawing.Color.OrangeRed };
-            driverItem.Click += (_, _) =>
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
-                    { UseShellExecute = true });
-            menu.Items.Add(driverItem);
-            menu.Items.Add(new ToolStripSeparator());
-        }
+                if (url.Contains("tealtadpole"))
+                {
+                    var res = MessageBox.Show(
+                        "This is a community driver, not affiliated with Apple or Microsoft.\nPlease verify its signature before installing.\n\nDo you want to proceed to the download page?",
+                        "Community Driver Notice",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (res != DialogResult.Yes) return;
+                }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+        };
+        _driverWarningSeparator = new ToolStripSeparator();
+        menu.Items.Add(_driverWarningItem);
+        menu.Items.Add(_driverWarningSeparator);
+        UpdateDriverWarningItem();
 
         // --- Battery Reads toggle (PATH-B v3 recycle on/off) ---
         var battReadItem = new ToolStripMenuItem("Battery Reads [On]")
@@ -170,7 +177,7 @@ internal sealed class TrayApp : IDisposable
         menu.Items.Add(thirdPartyItem);
 
         // --- Refresh Now ---
-        var refresh = new ToolStripMenuItem("Refresh Now");
+        var refresh = new ToolStripMenuItem("Refresh Now (All Devices)");
         refresh.Click += (_, _) => _poller.RefreshNow();
         menu.Items.Add(refresh);
 
@@ -178,15 +185,15 @@ internal sealed class TrayApp : IDisposable
         //     surfaced contextually in the per-device matrix dropdown. ---
         var diagnostics = new ToolStripMenuItem("Diagnostics");
 
-        var readNow = new ToolStripMenuItem("Read Battery Now");
+        var readNow = new ToolStripMenuItem("Read Battery Now (V3 Flip)");
         readNow.Click += (_, _) => _ = _recycleManager.ForceReadNowAsync();
         diagnostics.DropDownItems.Add(readNow);
 
         var testToast = new ToolStripMenuItem("Test Notification");
         testToast.Click += (_, _) =>
         {
-            var (name, pct) = _deviceBatteries.FirstOrDefault(kv => kv.Value >= 0);
-            ToastNotifier.Show(pct >= 0 ? pct : 15, name?.Length > 0 ? name : "Magic Mouse");
+            var (name, batt) = _deviceBatteries.FirstOrDefault(kv => kv.Value.Pct >= 0);
+            ToastNotifier.Show(batt.Pct >= 0 ? batt.Pct : 15, name?.Length > 0 ? name : "Magic Mouse");
         };
         diagnostics.DropDownItems.Add(testToast);
 
@@ -211,15 +218,59 @@ internal sealed class TrayApp : IDisposable
         };
         menu.Items.Add(quit);
 
+        menu.Items.Add(new ToolStripSeparator());
+
+        // --- Version Info ---
+        var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var semver = asmVer != null ? $"{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "1.0.0";
+        var versionItem = new ToolStripMenuItem($"magic_tray v{semver}") { Enabled = false };
+        menu.Items.Add(versionItem);
+
+        // --- Update Item (Hidden by default) ---
+        _updateItem = new ToolStripMenuItem("Update available") { Visible = false };
+        _updateItem.Click += (_, _) =>
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/LesleyMurfin/magic-mouse-tray/releases/latest") { UseShellExecute = true });
+        };
+        menu.Items.Add(_updateItem);
+
         return menu;
     }
 
-    void OnThresholdClick(int value)
+    void UpdateDriverWarningItem()
     {
-        _config.SetThreshold(value);
-        foreach (var item in _thresholdItems)
-            item.Checked = (int)item.Tag! == _config.Threshold;
+        if (_driverWarningItem == null || _driverWarningSeparator == null) return;
+
+        if (_driverStatus == DriverStatus.Ok)
+        {
+            _driverWarningItem.Visible = false;
+            _driverWarningSeparator.Visible = false;
+            return;
+        }
+
+        var (label, url) = _driverStatus switch
+        {
+            DriverStatus.UnknownAppleMouse =>
+                ("⚠ Unknown mouse model — check for app update",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
+            DriverStatus.NotBound =>
+                ("⚠ Driver not bound — scroll fix needed",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+            DriverStatus.Error =>
+                ("⚠ Driver reported an error — check Device Manager",
+                 "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+            _ =>
+                ("⚠ Install Apple Driver (scroll fix)",
+                 "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
+        };
+
+        _driverWarningItem.Text = label;
+        _driverWarningItem.Tag = url;
+        _driverWarningItem.Visible = true;
+        _driverWarningSeparator.Visible = true;
     }
+
+
 
     // Opens debug.log in Notepad++ if installed, falls back to notepad.exe.
     // Notepad++ tail-follows the file (Settings > Misc > File Status Auto-Detection).
@@ -281,11 +332,13 @@ internal sealed class TrayApp : IDisposable
         return null;
     }
 
-    void OnBatteryChanged(int pct, string name)
+    void OnBatteryChanged(int pct, string name, DeviceKind kind, string pid)
     {
         // Marshal to WPF/STA thread — NotifyIcon was created there
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
+            _driverStatus = DriverHealthChecker.GetStatus();
+
             if (string.IsNullOrEmpty(name))
             {
                 // Sentinel from AdaptivePoller: no devices found this cycle — clear all state
@@ -294,10 +347,12 @@ internal sealed class TrayApp : IDisposable
             }
             else
             {
-                _deviceBatteries[name] = pct;
+                name = new string(name.Where(c => !char.IsControl(c)).ToArray());
+                _deviceBatteries[name] = (pct, kind, pid);
 
                 // Per-device alert boundaries
-                if (pct < 0 || pct >= _config.Threshold)
+                var threshold = _config.GetThreshold(pid);
+                if (pct < 0 || pct > threshold)
                 {
                     _firedBoundaries.Remove(name);
                 }
@@ -306,13 +361,13 @@ internal sealed class TrayApp : IDisposable
                     if (!_firedBoundaries.TryGetValue(name, out var fired))
                         _firedBoundaries[name] = fired = new HashSet<int>();
 
-                    var boundaries = _config.Threshold > 10
-                        ? new[] { _config.Threshold, 10 }
-                        : new[] { _config.Threshold };
+                    var boundaries = threshold > 10
+                        ? new[] { threshold, 10 }
+                        : new[] { threshold };
 
                     foreach (var boundary in boundaries)
                     {
-                        if (pct < boundary && fired.Add(boundary))
+                        if (pct <= boundary && fired.Add(boundary))
                         {
                             ToastNotifier.Show(pct, name);
                             break;
@@ -321,7 +376,8 @@ internal sealed class TrayApp : IDisposable
                 }
 
                 // Critical alert at 1% — use first device that hits it
-                if (pct == 1 && _criticalAlert == null)
+                const int CriticalPct = 1;
+                if (pct >= 0 && pct <= CriticalPct && _criticalAlert == null)
                 {
                     _criticalAlert = new CriticalAlert(pct, name);
                     _criticalAlert.FormClosed += (_, _) => _criticalAlert = null;
@@ -332,7 +388,7 @@ internal sealed class TrayApp : IDisposable
 
             // Close critical alert when all devices are gone or the alerting device reconnects
             if (_criticalAlert != null && (_deviceBatteries.Count == 0 ||
-                _deviceBatteries.Values.All(p => p < 0)))
+                _deviceBatteries.Values.All(p => p.Pct < 0)))
             {
                 _criticalAlert.Close();
                 Logger.Log("CRITICAL_ALERT_CLOSED reason=no_devices");
@@ -355,11 +411,16 @@ internal sealed class TrayApp : IDisposable
         string lowestName = string.Empty;
         foreach (var kv in _deviceBatteries)
         {
-            if (kv.Value < 0) continue;
-            if (lowestPct < 0 || kv.Value < lowestPct) { lowestPct = kv.Value; lowestName = kv.Key; }
+            if (kv.Value.Pct < 0) continue; // Note: kv.Value is now a tuple (int Pct, DeviceKind Kind)
+            if (lowestPct < 0 || kv.Value.Pct < lowestPct) { lowestPct = kv.Value.Pct; lowestName = kv.Key; }
         }
 
-        bool anyLow = lowestPct >= 0 && lowestPct < _config.Threshold;
+        bool anyLow = false;
+        foreach (var kv in _deviceBatteries)
+        {
+            if (kv.Value.Pct >= 0 && kv.Value.Pct <= _config.GetThreshold(kv.Value.Pid))
+                anyLow = true;
+        }
 
         var newIcon = MakeIcon(lowestPct, anyLow, MarkerFor(lowestName), _driverStatus != DriverStatus.Ok);
         var oldIcon = _currentIcon;
@@ -377,17 +438,27 @@ internal sealed class TrayApp : IDisposable
         {
             var parts = _deviceBatteries.Select(kv =>
             {
-                var pctStr = kv.Value switch {
-                    >= 0 => $"{kv.Value}%",
+                var pct = kv.Value.Pct;
+                var kind = kv.Value.Kind;
+                var pctStr = pct switch {
+                    >= 0 => $"{pct}%",
                     -2   => "N/A",
+                    -3   => "Battery unavailable - see logs",
                     _    => "—",
                 };
-                return $"{kv.Key}: {pctStr}";
+                var nameStr = pct == -2 && kind == DeviceKind.MagicKeyboard ? "Keyboard (needs patch)" : kv.Key;
+                var estDaysStr = "";
+                if (pct >= 0)
+                {
+                    var hoursLeft = DrainRateTracker.GetHoursToThreshold(kv.Key, pct, 0); // hours to 0%
+                    if (hoursLeft > 24) estDaysStr = $" (~{(hoursLeft/24.0):F1}d est.)";
+                }
+                return $"{nameStr}: {pctStr}{estDaysStr}";
             });
             var joined = string.Join(" | ", parts);
             // Show V3RecycleManager interval if v3 has a valid reading; otherwise AdaptivePoller
             var hasV3Reading = _deviceBatteries.Any(kv =>
-                kv.Key.Contains("2024", StringComparison.OrdinalIgnoreCase) && kv.Value >= 0);
+                kv.Key.Contains("2024", StringComparison.OrdinalIgnoreCase) && kv.Value.Pct >= 0);
             var interval = hasV3Reading ? _recycleManager.NextInterval : _poller.LastInterval;
             tip = $"{joined} · {FormatInterval(interval)}";
             if (_driverStatus != DriverStatus.Ok) tip = $"⚠ {tip}";
@@ -424,19 +495,47 @@ internal sealed class TrayApp : IDisposable
 
         foreach (var kv in _deviceBatteries)
         {
-            var pctStr = kv.Value switch {
-                >= 0 => $"{kv.Value}%",
+            var pct = kv.Value.Pct;
+            var kind = kv.Value.Kind;
+            var pctStr = pct switch {
+                >= 0 => $"{pct}%",
                 -2   => "N/A (Mode B)",
+                -3   => "Unavailable - see logs",
                 _    => "—"
             };
 
             var rate = DrainRateTracker.GetDrainRatePctPerHour(kv.Key);
             var rateStr = rate > 0.001 ? $"  {rate:F2}%/h" : string.Empty;
-            var label = $"{kv.Key}: {pctStr}{rateStr}";
+            
+            var estDaysStr = string.Empty;
+            if (pct >= 0)
+            {
+                var hoursLeft = DrainRateTracker.GetHoursToThreshold(kv.Key, pct, 0);
+                if (hoursLeft > 24)
+                {
+                    estDaysStr = $"  ~{(hoursLeft/24.0):F1} days est.";
+                }
+            }
+
+            var label = $"{kv.Key}: {pctStr}{rateStr}{estDaysStr}";
+
+            // TODO(human): Trackpad hardware verification
+
+            var isPatchNeeded = pct == -2 && kind == DeviceKind.MagicKeyboard;
+            if (isPatchNeeded)
+            {
+                label = "Keyboard battery unavailable — descriptor patch required";
+            }
 
             if (!_deviceMenuItems.TryGetValue(kv.Key, out var item))
             {
-                item = new ToolStripMenuItem(label);   // enabled — carries the matrix dropdown
+                item = new ToolStripMenuItem(label) { Enabled = !isPatchNeeded };
+                if (isPatchNeeded)
+                {
+                    item.Enabled = true;
+                    item.ForeColor = System.Drawing.Color.OrangeRed;
+                    item.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-descriptor-patch") { UseShellExecute = true });
+                }
                 _deviceMenuItems[kv.Key] = item;
                 // Insert before the separator that follows the device section
                 var sepIdx = _tray.ContextMenuStrip!.Items.IndexOf(_deviceSection) + 1;
@@ -445,6 +544,12 @@ internal sealed class TrayApp : IDisposable
             else
             {
                 item.Text = label;
+                if (isPatchNeeded && item.ForeColor != System.Drawing.Color.OrangeRed)
+                {
+                    item.Enabled = true;
+                    item.ForeColor = System.Drawing.Color.OrangeRed;
+                    item.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-descriptor-patch") { UseShellExecute = true });
+                }
             }
 
             // Capability matrix dropdown for this device.
@@ -452,7 +557,7 @@ internal sealed class TrayApp : IDisposable
             var knd = DeviceCapability.KindForName(kv.Key);
             if (knd is { } k)
             {
-                var row = DeviceCapability.Describe(k, kv.Value, _driverStatus);
+                var row = DeviceCapability.Describe(k, kv.Value.Pct, _driverStatus);
                 item.DropDownItems.Add(new ToolStripMenuItem($"Read method: {row.ReadMethod}") { Enabled = false });
                 item.DropDownItems.Add(new ToolStripMenuItem($"Status: {row.Status}") { Enabled = false });
                 if (row.ActionLabel is { } al)
@@ -474,6 +579,20 @@ internal sealed class TrayApp : IDisposable
                     item.DropDownItems.Add(action);
                 }
             }
+
+            item.DropDownItems.Add(new ToolStripSeparator());
+            var thrMenu = new ToolStripMenuItem("Low Battery Threshold");
+            var currentThr = _config.GetThreshold(kv.Value.Pid);
+            foreach(var t in new[]{10, 15, 20, 25}) {
+                var tItem = new ToolStripMenuItem($"{t}%") { Checked = t == currentThr };
+                var pidStr = kv.Value.Pid;
+                tItem.Click += (_, _) => {
+                    _config.SetThreshold(pidStr, t);
+                    UpdateTrayIcon();
+                };
+                thrMenu.DropDownItems.Add(tItem);
+            }
+            item.DropDownItems.Add(thrMenu);
         }
 
         // Remove stale items for devices no longer present

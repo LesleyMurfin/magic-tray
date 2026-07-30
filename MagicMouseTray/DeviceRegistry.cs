@@ -63,4 +63,12 @@ internal static class DeviceRegistry
 
     static bool IsLogitechReceiver(string path) =>
         Array.Exists(LogitechReceiverPids, pid => path.Contains(pid, StringComparison.OrdinalIgnoreCase));
+
+    internal static string ExtractPid(string path)
+    {
+        int idx = path.IndexOf("pid_", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) idx = path.IndexOf("pid&", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0 && idx + 8 <= path.Length) return path.Substring(idx + 4, 4).ToLowerInvariant();
+        return "0000";
+    }
 }

@@ -21,7 +21,7 @@ internal static class DeviceCapability
         string? ActionUrl);   // doc/remediation URL for ActionLabel (null = in-app action)
 
     // Map a device display name back to its Kind without changing the event signature.
-    // NOTE: both "Magic Mouse 2024" KnownMice entries share one display name -> 10 distinct names.
+    // NOTE: BT and USB entries for the same model share one display name -> 22 distinct names.
     internal static DeviceKind? KindForName(string name)
     {
         foreach (var m in MouseBatteryDevice.KnownMice)
@@ -47,9 +47,12 @@ internal static class DeviceCapability
         DriverStatus.NotBound =>
             ("Driver not bound — scroll fix needed",
              "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-        _ => // NotInstalled (and any non-Ok fallthrough)
+        DriverStatus.Error =>
+            ("Driver reported an error — check Device Manager",
+             "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
+        _ => // NotInstalled (and any other fallthrough)
             ("Install Apple driver (scroll fix)",
-             "https://github.com/tealtadpole/MagicMouse2DriversWin11x64"),
+             "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
     };
 
     const string KbPatchAnchor   = "https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-battery-patch";

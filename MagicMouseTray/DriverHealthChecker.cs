@@ -8,9 +8,11 @@ internal enum DriverStatus
     Ok,               // service present + LowerFilters bound (or no Apple BT device paired)
     NotInstalled,     // AppleWirelessMouse service key absent
     NotBound,         // service present, known Apple PID paired, but LowerFilters not applied
-    UnknownAppleMouse // Apple-vendor HID device with a PID not in our INF — likely a new model
+    UnknownAppleMouse, // Apple-vendor HID device with a PID not in our INF — likely a new model
+    Error             // transient registry error
 }
 
+// TODO(human): confirm whether driver needs DSE-disable; add disclosure if so.
 // Checks whether the AppleWirelessMouse filter driver is installed and bound to the device.
 //
 // The service can be registered but not bound if:
@@ -151,7 +153,7 @@ internal static class DriverHealthChecker
         catch (Exception ex)
         {
             Logger.Log($"DRIVER_CHECK_FAILED err={ex.Message}");
-            return DriverStatus.Ok; // fail open — don't nag user on transient registry errors
+            return DriverStatus.Error; // fail open — don't nag user on transient registry errors, but surface as error state
         }
     }
 }

@@ -22,15 +22,16 @@ public class KindForNameTests
     }
 
     [Fact]
-    public void TenDistinctDisplayNames_AllResolve()
+    public void AllDistinctDisplayNames_Resolve()
     {
-        // 4 mouse entries (two "Magic Mouse 2024" share one name) + 7 keyboards = 10 distinct names.
+        // 6 distinct mouse/trackpad names (BT+USB pairs share a name) + 16 keyboard = 22.
+        // Update the count when a device is added; the sibling tests above cover per-entry resolution.
         var names = MouseBatteryDevice.KnownMice.Select(m => m.DisplayName)
             .Concat(KeyboardBatteryDevice.KnownKeyboards.Select(k => k.DisplayName))
             .Distinct(System.StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        Assert.Equal(10, names.Count);
+        Assert.Equal(22, names.Count);
         Assert.All(names, n => Assert.NotNull(DeviceCapability.KindForName(n)));
     }
 

@@ -16,41 +16,57 @@ internal sealed class Config
     const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
     const string AppName = "MagicMouseTray";
 
-    internal int Threshold { get; private set; } = 20;
+    internal int GlobalThreshold { get; private set; } = 20;
+    internal Dictionary<string, int> Thresholds { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+
     internal bool StartWithWindows { get; private set; }
     internal bool EnableV3Recycle { get; private set; } = true;
     internal bool EnableThirdParty { get; private set; } = false;
+    internal bool UpdateCheck { get; private set; } = true;
 
     internal static Config Load()
     {
         var cfg = new Config();
         if (!File.Exists(ConfigPath)) return cfg;
 
-        foreach (var line in File.ReadAllLines(ConfigPath))
+        try
         {
-            var eq = line.IndexOf('=');
-            if (eq < 0) continue;
-            var key = line[..eq].Trim();
-            var val = line[(eq + 1)..].Trim();
+            foreach (var line in File.ReadAllLines(ConfigPath))
+            {
+                var eq = line.IndexOf('=');
+                if (eq < 0) continue;
+                var key = line[..eq].Trim();
+                var val = line[(eq + 1)..].Trim();
 
-            if (key == "threshold" && int.TryParse(val, out int t) && IsValid(t))
-                cfg.Threshold = t;
-            else if (key == "start_with_windows" && bool.TryParse(val, out bool s))
-                cfg.StartWithWindows = s;
-            else if (key == "enable_v3_recycle" && bool.TryParse(val, out bool r))
-                cfg.EnableV3Recycle = r;
-            else if (key == "enable_third_party" && bool.TryParse(val, out bool tp))
-                cfg.EnableThirdParty = tp;
+                if (key == "threshold" && int.TryParse(val, out int t) && IsValid(t))
+                    cfg.GlobalThreshold = t;
+                else if (key.StartsWith("threshold_") && int.TryParse(val, out int t2) && IsValid(t2))
+                    cfg.Thresholds[key.Substring(10)] = t2;
+                else if (key == "start_with_windows" && bool.TryParse(val, out bool s))
+                    cfg.StartWithWindows = s;
+                else if (key == "enable_v3_recycle" && bool.TryParse(val, out bool r))
+                    cfg.EnableV3Recycle = r;
+                else if (key == "enable_third_party" && bool.TryParse(val, out bool tp))
+                    cfg.EnableThirdParty = tp;
+                else if (key == "update_check" && bool.TryParse(val, out bool uc))
+                    cfg.UpdateCheck = uc;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"CONFIG_LOAD_FAILED err=\"{ex.Message}\"");
         }
         return cfg;
     }
 
-    internal void SetThreshold(int value)
+    internal int GetThreshold(string pid) => Thresholds.TryGetValue(pid, out var t) ? t : GlobalThreshold;
+
+    internal void SetThreshold(string pid, int value)
     {
         if (!IsValid(value)) return;
-        Threshold = value;
+        Thresholds[pid] = value;
         Persist();
-        Logger.Log($"CONFIG threshold={value}");
+        Logger.Log($"CONFIG threshold pid={pid} val={value}");
     }
 
     internal void SetStartWithWindows(bool value)
@@ -82,12 +98,17 @@ internal sealed class Config
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-            File.WriteAllLines(ConfigPath, [
-                $"threshold={Threshold}",
+            var lines = new List<string>
+            {
+                $"threshold={GlobalThreshold}",
                 $"start_with_windows={StartWithWindows.ToString().ToLower()}",
                 $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
-                $"enable_third_party={EnableThirdParty.ToString().ToLower()}"
-            ]);
+                $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
+                $"update_check={UpdateCheck.ToString().ToLower()}"
+            };
+            foreach (var kv in Thresholds)
+                lines.Add($"threshold_{kv.Key}={kv.Value}");
+            File.WriteAllLines(ConfigPath, lines);
         }
         catch { }
     }
