@@ -80,9 +80,21 @@ internal static class DeviceCapability
             case DeviceKind.MagicMouseV3:
                 // v3 IS coupled to the filter: PATH-B recycle does FLIP:NoFilter -> read ->
                 // FLIP:AppleFilter, which needs applewirelessmouse present for Mode B restore.
+                // `driver` here is expected to be the PID-SCOPED status for this specific v3
+                // device (DriverHealthChecker.GetStatusForPid), not the global worst-state-wins
+                // value — the caller (TrayApp) is responsible for that distinction. Badge label
+                // is derived from the same "bound == Patched" fact the v1-binary-patch installer
+                // writes (LowerFilters=applewirelessmouse); there is no third driver to detect
+                // yet (v2-kmdf-driver has no shipped installer as of this writing).
+                var badge = driver switch
+                {
+                    DriverStatus.Ok => "Patched",
+                    DriverStatus.NotBound or DriverStatus.NotInstalled => "Stock/KMDF",
+                    _ => "Unknown",
+                };
                 if (lastPct >= 0)
                     return new("Split-vendor 0x90 via PATH-B recycle",
-                               "Battery read OK (reverts to Mode B between reads)", null, null);
+                               $"Driver: {badge} — battery read OK (reverts to Mode B between reads)", null, null);
                 if (lastPct == -2)
                 {
                     // Mode B: battery N/A until the next idle-gated recycle.
@@ -90,14 +102,14 @@ internal static class DeviceCapability
                     {
                         var (lbl, url) = ScrollFix(driver);
                         return new("Unified Feature 0x47 (blocked by Apple driver)",
-                                   "Mode B — recycle needs the Apple scroll driver", lbl, url);
+                                   $"Driver: {badge} — recycle needs the Apple scroll driver", lbl, url);
                     }
                     return new("Unified Feature 0x47 (blocked by Apple driver)",
-                               "Mode B — battery N/A until next read",
+                               $"Driver: {badge} — battery N/A until next read",
                                "Read Battery Now", null); // in-app: V3RecycleManager.ForceReadNowAsync
                 }
                 return new("Split-vendor 0x90 via PATH-B recycle",
-                           "No reading — check driver/pairing", "Scroll/driver help", ScrollFixAnchor);
+                           $"Driver: {badge} — no reading, check driver/pairing", "Scroll/driver help", ScrollFixAnchor);
 
             case DeviceKind.MagicKeyboard:
                 // ACTIVE-READ target: -2 means "present but Feature 0x47 cap absent"

@@ -156,4 +156,62 @@ internal static class DriverHealthChecker
             return DriverStatus.Error; // fail open — don't nag user on transient registry errors, but surface as error state
         }
     }
+
+    // Per-PID variant of GetStatus(), scoped to one device (e.g. the v3 Magic Mouse, PID 0323)
+    // instead of worst-state-wins across every paired Apple mouse. Needed because the v3 driver
+    // badge must reflect THAT device's binding, not whatever other mouse happens to be unbound.
+    // Reuses the same BTHENUM/LowerFilters mechanism as GetStatus() — verified against
+    // v1-binary-patch/installer/Install-MagicMousePatch.ps1, which registers the SAME
+    // "applewirelessmouse" service/LowerFilters entry for the v3 mouse as for v1/v2.
+    internal static DriverStatus GetStatusForPid(string pid)
+    {
+        pid = pid.ToLowerInvariant();
+        try
+        {
+            using var svcKey = Registry.LocalMachine.OpenSubKey(ServiceKey, writable: false);
+            if (svcKey == null) return DriverStatus.NotInstalled;
+
+            using var btEnumKey = Registry.LocalMachine.OpenSubKey(BtHidEnumBase, writable: false);
+            if (btEnumKey == null) return DriverStatus.Ok; // service present, nothing paired
+
+            foreach (var subkeyName in btEnumKey.GetSubKeyNames())
+            {
+                if (!subkeyName.StartsWith(HidUuidPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                bool isApple = false;
+                foreach (var seg in AppleVidSegments)
+                    if (subkeyName.Contains(seg, StringComparison.OrdinalIgnoreCase))
+                    { isApple = true; break; }
+                if (!isApple) continue;
+
+                int pidIdx = subkeyName.LastIndexOf("_PID&", StringComparison.OrdinalIgnoreCase);
+                if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) continue;
+                var keyPid = subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
+                if (keyPid != pid) continue;
+
+                using var deviceKey = btEnumKey.OpenSubKey(subkeyName, writable: false);
+                if (deviceKey == null) continue;
+                var instances = deviceKey.GetSubKeyNames();
+                if (instances.Length == 0) continue; // key exists but not currently paired
+
+                foreach (var instanceName in instances)
+                {
+                    using var instance = deviceKey.OpenSubKey(instanceName, writable: false);
+                    var filters = instance?.GetValue("LowerFilters") as string[];
+                    bool isBound = filters != null && Array.Exists(filters,
+                        f => f.Equals("applewirelessmouse", StringComparison.OrdinalIgnoreCase));
+                    Logger.Log($"DRIVER_CHECK_PID pid=0x{pid.ToUpper()} bound={isBound}");
+                    return isBound ? DriverStatus.Ok : DriverStatus.NotBound;
+                }
+            }
+
+            return DriverStatus.Ok; // PID not currently paired — nothing to warn about
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"DRIVER_CHECK_PID_FAILED pid={pid} err={ex.Message}");
+            return DriverStatus.Error;
+        }
+    }
 }
