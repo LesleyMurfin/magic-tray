@@ -1,0 +1,5 @@
+   CURRENT                                 FUTURE
+   +---------------------+                 +---------------------+
+   | <FILL: host / svc>  |  -- this PR --> | <FILL: host / svc>  |
+   | <FILL: state now>   |                 | <FILL: new state>   |
+   +---------------------+                 +---------------------+
