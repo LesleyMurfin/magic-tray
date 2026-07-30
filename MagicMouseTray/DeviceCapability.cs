@@ -21,7 +21,7 @@ internal static class DeviceCapability
         string? ActionUrl);   // doc/remediation URL for ActionLabel (null = in-app action)
 
     // Map a device display name back to its Kind without changing the event signature.
-    // NOTE: both "Magic Mouse 2024" KnownMice entries share one display name -> 10 distinct names.
+    // NOTE: BT and USB entries for the same model share one display name -> 22 distinct names.
     internal static DeviceKind? KindForName(string name)
     {
         foreach (var m in MouseBatteryDevice.KnownMice)
