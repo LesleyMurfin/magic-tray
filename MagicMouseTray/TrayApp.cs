@@ -493,14 +493,15 @@ internal sealed class TrayApp : IDisposable
         var extra = string.Equals(boundFilter, DriverHealthChecker.KmdfFilterName, StringComparison.OrdinalIgnoreCase)
             ? $"Currently bound to {boundFilter}. This installs the selected public package (no silent rebind).\n\n"
             : "";
+        var how = pkg.Kind == InstallKind.KmdfPull
+            ? "Needs administrator approval. This pulls magic-mouse-v3-windows-fix and runs THAT repo's sign+install script (not a script from magic-tray). No leftover mm-dev scripts, no Magic Utilities binaries."
+            : "Needs administrator approval. No leftover mm-dev scripts, no Magic Utilities binaries.";
         var confirm = MessageBox.Show(
             $"Install {pkg.MenuLabel} for {deviceName} (PID {pid})?\n\n" +
             $"Pull from {pkg.Owner}/{pkg.Repo}@{pkg.GitRef}  ({pkg.PathInRepo})\n" +
             $"{pkg.RepoUrl}\n\n" +
             extra +
-            (pkg.Kind == InstallKind.KmdfPull
-                ? "Needs administrator approval. This pulls magic-mouse-v3-windows-fix and runs THAT repo's sign+install script (not a script from magic-tray). No leftover mm-dev scripts, no Magic Utilities binaries."
-                : "Needs administrator approval. No leftover mm-dev scripts, no Magic Utilities binaries.");
+            how,
             "Install driver",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
