@@ -41,8 +41,10 @@ internal static class DriverPackageCatalog
     internal const string KmdfOwner = "LesleyMurfin";
     internal const string KmdfRepo = "magic-mouse-v3-windows-fix";
     internal const string KmdfRef = "main";
-    // KMDF one-click lives under v2-kmdf-driver in that repo. PATH-A is forbidden.
-    internal const string KmdfPath = "v2-kmdf-driver";
+    // Default-branch path. Draft magic-mouse-v3-windows-fix #3 has this file;
+    // until it lands on main, SELECT reports missing and stops.
+    internal const string KmdfPath = "v2-kmdf-driver/Install-KMDF.cmd";
+    internal const string KmdfOneClickName = "Install-KMDF.cmd";
     internal const string KmdfRepoUrl = "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix";
 
     internal const string TealOwner = "tealtadpole";

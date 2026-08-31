@@ -13,7 +13,8 @@ public class DriverPackageCatalogTests
         Assert.Equal(DriverPackageId.Best, best.Id);
         Assert.Equal("LesleyMurfin", best.Owner);
         Assert.Equal("magic-mouse-v3-windows-fix", best.Repo);
-        Assert.Equal("v2-kmdf-driver", best.PathInRepo);
+        Assert.Equal("main", best.GitRef);
+        Assert.Equal("v2-kmdf-driver/Install-KMDF.cmd", best.PathInRepo);
         Assert.Equal(InstallKind.KmdfPull, best.Kind);
         Assert.True(best.Published);
         Assert.False(DriverPackageCatalog.IsForbiddenSource(best));
@@ -65,7 +66,7 @@ public class DriverPackageCatalogTests
             Assert.True(c.Published);
             Assert.Equal("magic-mouse-v3-windows-fix", c.Repo);
             Assert.Equal(InstallKind.KmdfPull, c.Kind);
-            Assert.Equal("v2-kmdf-driver", c.PathInRepo);
+            Assert.Equal("v2-kmdf-driver/Install-KMDF.cmd", c.PathInRepo);
             Assert.NotEqual("chrischip", c.Owner, StringComparer.OrdinalIgnoreCase);
             Assert.NotEqual("sbagirici", c.Owner, StringComparer.OrdinalIgnoreCase);
             Assert.False(DriverInstaller.IsPathAInstaller(c.PathInRepo));
@@ -80,7 +81,7 @@ public class DriverPackageCatalogTests
             DriverPackageId.Best, "tray", "LesleyMurfin", "magic-tray", "main", "driver",
             InstallKind.InfPnputil, ["0323"], true, null)));
         Assert.True(DriverPackageCatalog.IsLocalVendorPath(@"C:\src\magic-tray\driver\MagicMouseDriver.inf"));
-        Assert.False(DriverPackageCatalog.IsLocalVendorPath("v2-kmdf-driver"));
+        Assert.False(DriverPackageCatalog.IsLocalVendorPath("v2-kmdf-driver/Install-KMDF.cmd"));
     }
 
     [Fact]
@@ -88,7 +89,10 @@ public class DriverPackageCatalogTests
     {
         Assert.True(DriverInstaller.IsPathAInstaller("v1-binary-patch/installer/Install-MagicMousePatch.ps1"));
         Assert.True(DriverInstaller.IsPathAInstaller(@"C:\cache\v1-binary-patch\installer\Install-MagicMousePatch.ps1"));
-        Assert.False(DriverInstaller.IsPathAInstaller("v2-kmdf-driver/Install-MagicMouseDriver.ps1"));
+        Assert.False(DriverInstaller.IsPathAInstaller("v2-kmdf-driver/Install-KMDF.cmd"));
+        Assert.True(DriverInstaller.IsKmdfOneClick("v2-kmdf-driver/Install-KMDF.cmd"));
+        Assert.False(DriverInstaller.IsKmdfOneClick("v2-kmdf-driver/Install-KMDF.ps1"));
+        Assert.False(DriverInstaller.IsKmdfOneClick("v1-binary-patch/installer/Install-MagicMousePatch.ps1"));
     }
 
     [Fact]
@@ -136,10 +140,12 @@ public class DriverPackageCatalogTests
             var pathA = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v1-binary-patch", "installer");
             Directory.CreateDirectory(v2);
             Directory.CreateDirectory(pathA);
-            var kmdf = Path.Combine(v2, "Install-MagicMouseDriver.ps1");
-            File.WriteAllText(kmdf, "# KMDF one-click");
+            var kmdf = Path.Combine(v2, "Install-KMDF.cmd");
+            File.WriteAllText(kmdf, "@echo off");
+            File.WriteAllText(Path.Combine(v2, "Install-KMDF.ps1"), "# not the entry point");
             File.WriteAllText(Path.Combine(pathA, "Install-MagicMousePatch.ps1"), "# PATH-A forbidden");
 
+            Assert.Equal(kmdf, DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver/Install-KMDF.cmd"));
             Assert.Equal(kmdf, DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver"));
             Assert.Null(DriverInstaller.FindKmdfOneClick(
                 root, "v1-binary-patch/installer/Install-MagicMousePatch.ps1"));
@@ -181,7 +187,26 @@ public class DriverPackageCatalogTests
         try
         {
             Directory.CreateDirectory(Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver"));
-            Assert.Null(DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver"));
+            Assert.Null(DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver/Install-KMDF.cmd"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindKmdfOneClick_IgnoresOtherV2Scripts_RequiresInstallKmdfCmd()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mm-tray-ps1-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var v2 = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver");
+            Directory.CreateDirectory(v2);
+            File.WriteAllText(Path.Combine(v2, "Install-KMDF.ps1"), "# not the one-click");
+            File.WriteAllText(Path.Combine(v2, "Install-MagicMouseDriver.ps1"), "# not the one-click");
+            Assert.Null(DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver/Install-KMDF.cmd"));
         }
         finally
         {

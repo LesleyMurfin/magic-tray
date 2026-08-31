@@ -8,8 +8,8 @@ using System.Text.RegularExpressions;
 namespace MagicMouseTray;
 
 // Pulls a user-selected package and installs it.
-// 0323: zip LesleyMurfin/magic-mouse-v3-windows-fix and run THAT repo's
-// KMDF one-click under v2-kmdf-driver. Never PATH-A Install-MagicMousePatch.ps1.
+// 0323: zip LesleyMurfin/magic-mouse-v3-windows-fix (default branch) and run
+// v2-kmdf-driver/Install-KMDF.cmd. Never PATH-A Install-MagicMousePatch.ps1.
 // Never vendor Driver.c / INF / .sys / install scripts. No bind-filter generation.
 internal static class DriverInstaller
 {
@@ -78,21 +78,24 @@ internal static class DriverInstaller
         var extractDir = await DownloadZipAsync(pkg, ct);
         var script = FindKmdfOneClick(extractDir, pkg.PathInRepo)
             ?? throw new InvalidOperationException(
-                $"Pulled {pkg.Owner}/{pkg.Repo} but v2-kmdf-driver has no KMDF one-click " +
-                "(sign/install / SYSTEM task). Will not run PATH-A Install-MagicMousePatch.ps1. " +
-                "Will not generate bind-filter.ps1. Publish the KMDF installer in that folder.");
+                $"Pulled {pkg.Owner}/{pkg.Repo}@{pkg.GitRef} but v2-kmdf-driver/Install-KMDF.cmd " +
+                "is not on this branch (KMDF one-click is draft on magic-mouse-v3-windows-fix #3). " +
+                "Will not run PATH-A Install-MagicMousePatch.ps1. Will not generate bind-filter.ps1.");
 
         if (DriverPackageCatalog.IsLocalVendorPath(script))
             throw new InvalidOperationException("Refusing local magic-tray/driver script.");
         if (IsPathAInstaller(script))
             throw new InvalidOperationException("Refusing PATH-A Install-MagicMousePatch.ps1.");
+        if (!IsKmdfOneClick(script))
+            throw new InvalidOperationException("Refusing a script that is not v2-kmdf-driver/Install-KMDF.cmd.");
 
         Logger.Log($"DRIVER_KMDF_ONECLICK script={script} pid={devicePid}");
         RunElevated(
-            "powershell.exe",
-            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
+            "cmd.exe",
+            $"/c \"{script}\"",
             workingDirectory: Path.GetDirectoryName(script),
-            windowStyle: ProcessWindowStyle.Normal);
+            windowStyle: ProcessWindowStyle.Normal,
+            timeout: TimeSpan.FromMinutes(15));
         return script;
     }
 
@@ -104,7 +107,16 @@ internal static class DriverInstaller
             || n.Contains("Install-MagicMousePatch", StringComparison.OrdinalIgnoreCase);
     }
 
-    // KMDF one-click under v2-kmdf-driver only. Null if they have not published it.
+    internal static bool IsKmdfOneClick(string path)
+    {
+        if (string.IsNullOrEmpty(path) || IsPathAInstaller(path))
+            return false;
+        var n = path.Replace('\\', '/');
+        return n.Contains("v2-kmdf-driver/", StringComparison.OrdinalIgnoreCase)
+            && n.EndsWith("/" + DriverPackageCatalog.KmdfOneClickName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Install-KMDF.cmd under v2-kmdf-driver only. Null if default branch has not landed it.
     internal static string? FindKmdfOneClick(string extractRoot, string pathInRepo)
     {
         if (!Directory.Exists(extractRoot))
@@ -115,42 +127,18 @@ internal static class DriverInstaller
             var rel = pathInRepo.Replace('/', Path.DirectorySeparatorChar);
             foreach (var file in Directory.EnumerateFiles(extractRoot, "*", SearchOption.AllDirectories))
             {
-                if (file.EndsWith(rel, StringComparison.OrdinalIgnoreCase)
-                    && file.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)
-                    && !IsPathAInstaller(file))
+                if (file.EndsWith(rel, StringComparison.OrdinalIgnoreCase) && IsKmdfOneClick(file))
                     return file;
-            }
-
-            var dir = FindPackageDir(extractRoot, pathInRepo);
-            if (dir != null)
-            {
-                var inDir = FirstKmdfScriptUnder(dir);
-                if (inDir != null) return inDir;
             }
         }
 
         foreach (var dir in Directory.EnumerateDirectories(extractRoot, "v2-kmdf-driver", SearchOption.AllDirectories))
         {
-            var found = FirstKmdfScriptUnder(dir);
-            if (found != null) return found;
+            var cmd = Path.Combine(dir, DriverPackageCatalog.KmdfOneClickName);
+            if (File.Exists(cmd) && IsKmdfOneClick(cmd))
+                return cmd;
         }
 
-        return null;
-    }
-
-    static string? FirstKmdfScriptUnder(string dir)
-    {
-        foreach (var pattern in new[] { "*Install*.ps1", "*OneClick*.ps1", "*Sign*.ps1", "*Easy*.ps1" })
-        {
-            foreach (var file in Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories))
-            {
-                if (Path.GetFileName(file).Contains("Uninstall", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (IsPathAInstaller(file))
-                    continue;
-                return file;
-            }
-        }
         return null;
     }
 

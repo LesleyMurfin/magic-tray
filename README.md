@@ -22,7 +22,7 @@ Apple Magic Mouse and Magic Keyboard on Windows have no native battery indicator
 
 | Model | PID | Best |
 |-------|-----|------|
-| Magic Mouse 2024 (USB-C) | 0x0323 | **Pull** [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `v2-kmdf-driver` and run **that repo’s KMDF one-click** — not PATH-A, not vendored here |
+| Magic Mouse 2024 (USB-C) | 0x0323 | **Pull** [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) default branch and run `v2-kmdf-driver/Install-KMDF.cmd` — not PATH-A, not vendored here |
 | Magic Mouse v1 | 0x030D | [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) Boot Camp INF |
 | Magic Mouse v2 | 0x0269 | Same tealtadpole INF |
 
@@ -36,7 +36,7 @@ Keyboard Best is the **PATH-C BTHPORT SDP cache patch** (`scripts/kbd-patch-cach
 
 | Device | Action | Notes |
 |--------|--------|--------|
-| 0323 | Pull `LesleyMurfin/magic-mouse-v3-windows-fix` and run **that repo’s** KMDF one-click under `v2-kmdf-driver` | Never PATH-A `Install-MagicMousePatch.ps1`. If `v2-kmdf-driver` has no installer, install reports that and stops. No bind-filter.ps1. No Driver.c / INF / .sys copied here. |
+| 0323 | Pull `LesleyMurfin/magic-mouse-v3-windows-fix` **default branch** and run `v2-kmdf-driver/Install-KMDF.cmd` (SYSTEM tasks `MM-Kmdf-Install` / `MM-Kmdf-PostBoot`) | Never PATH-A `Install-MagicMousePatch.ps1`. If `Install-KMDF.cmd` is not on the default branch yet (draft [KMDF PR #3](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/3)), install reports that and stops. No bind-filter.ps1. No Driver.c / INF / .sys copied here. |
 | 030D / 0310 / 0269 | Pull tealtadpole INF + `pnputil` | Stock Apple PIDs |
 | Keyboard | Elevated SDP patch | PATH-C only |
 
@@ -67,7 +67,7 @@ No Magic Utilities binaries. No leftover `mm-dev` / `install-driver` dual-filter
 dotnet publish -c Release
 ```
 
-KMDF and its one-click live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `v2-kmdf-driver/`. This repo pulls that tree and runs their KMDF installer only.
+KMDF and `Install-KMDF.cmd` live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `v2-kmdf-driver/`. This repo pulls the default branch and runs that cmd only.
 
 ## License
 

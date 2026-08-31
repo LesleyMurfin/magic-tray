@@ -494,7 +494,7 @@ internal sealed class TrayApp : IDisposable
             ? $"Currently bound to {boundFilter}. This installs the selected public package (no silent rebind).\n\n"
             : "";
         var how = pkg.Kind == InstallKind.KmdfPull
-            ? "Needs administrator approval. This pulls magic-mouse-v3-windows-fix / v2-kmdf-driver and runs THAT repo's KMDF one-click (not PATH-A Install-MagicMousePatch.ps1, not a script from magic-tray)."
+            ? "Needs administrator approval. This pulls magic-mouse-v3-windows-fix (default branch) and runs v2-kmdf-driver/Install-KMDF.cmd (SYSTEM tasks MM-Kmdf-Install / MM-Kmdf-PostBoot). Not PATH-A Install-MagicMousePatch.ps1."
             : "Needs administrator approval. No leftover mm-dev scripts, no Magic Utilities binaries.";
         var confirm = MessageBox.Show(
             $"Install {pkg.MenuLabel} for {deviceName} (PID {pid})?\n\n" +
