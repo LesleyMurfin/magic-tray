@@ -1,44 +1,20 @@
-# MagicMouseDriver (KMDF)
+# KMDF does not live here
 
-This folder **is** the KMDF driver. `MagicMouseDriver.vcxproj` / `MagicMouseDriver.sln` build `MagicMouseDriver.sys`. The tray in `MagicMouseTray/` is a user client only — it does **not** install, bind, write `LowerFilters`, run `pnputil`, or start/stop this service.
+`LesleyMurfin/magic-tray` is the tray client. It does **not** vendor `MagicMouseDriver` source, INF, vcxproj, or `.sys`.
 
-| File | Role |
-|------|------|
-| `Driver.c` / `Driver.h` | KMDF filter: SDP IOCTL 0x410210 completion + 0323-only inject |
-| `InputHandler.c` / `.h` | Rewrite SDP attribute 0x0206 (HIDDescriptorList) |
-| `HidDescriptor.c` / `.h` | Descriptor C (RID 0x02 scroll + RID 0x90 battery) |
-| `GestureEngine.c` / `.h` | RID 0x12 → RID 0x02 scroll translation (0323) |
-| `MagicMouseDriver.inf` | PnP package: **PID 0323 only**, sole `LowerFilters=MagicMouseDriver` |
-| `MagicMouseDriver.vcxproj` | EWDK / WDK KMDF project |
+**KMDF Magic Mouse home:** https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix
 
-## Live bind (do not undo)
+The tray **pulls** the package the user selects (or Best for the detected PID) from that repo and installs it. It does not treat this folder as SSOT.
 
-Magic Mouse 2024 (PID **0323**):
+Verified packages in that repo (do not invent names):
 
-`LowerFilters=MagicMouseDriver` (sole filter)
+| Tray choice | Path in `magic-mouse-v3-windows-fix` | Notes |
+|-------------|--------------------------------------|--------|
+| v1 | `v1-binary-patch/` | Binary-patch package for Magic Mouse v3 (PID 0323) |
+| v2 / KMDF | `v2-kmdf-driver/` | KMDF rewrite for the same 0323 mouse |
+| v3 | same repo (0323 device) | “v3” is the Magic Mouse 2024 hardware this repo targets |
+| Best | KMDF (`v2-kmdf-driver/`) for PID 0323 | User must choose; no silent rebind |
 
-Stack: `HidBth` / `MagicMouseDriver` / `BthEnum`.
+No LesleyMurfin GitHub repo was found for keyboard drivers (`apple-kb-monitor`, `apple-peripherals` — 404) or for Magic Mouse v1/v2 hardware (030D / 0269). Those picker rows stay disabled until a home exists.
 
-The older Magic Mouse (PID **030D**) stays on `applewirelessmouse`. The INF does not list 030D or 0310. The source injects Descriptor C only when `ProductId == 0x0323`.
-
-Do **not** install a dual filter (`MagicMouseDriver,applewirelessmouse`). Do **not** import leftover `v2-kmdf-driver/{install-driver,mm-dev}.ps1` — those clobber the live sole bind.
-
-## Build
-
-Requires Enterprise WDK (EWDK). No `.sys` binary is checked in; build from this source.
-
-```
-<EWDK>\LaunchBuildEnv.cmd
-cd driver
-msbuild MagicMouseDriver.vcxproj /p:Configuration=Release /p:Platform=x64
-```
-
-Signing is off in the vcxproj (`SignMode=Off`). Operators sign the package; the tray never does.
-
-## Operator install (not a tray action)
-
-```
-pnputil /add-driver MagicMouseDriver.inf /install
-```
-
-This is kernel packaging work. It does not belong in the tray UI or in `scripts/mm-task-setup.ps1`.
+Do not copy leftover WSL `v2-kmdf-driver/install-driver.ps1` or `mm-dev.ps1` into this tree.

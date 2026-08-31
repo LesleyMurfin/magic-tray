@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Per-device status row for the tray menu. Status only — no driver install,
-// bind, repair, or PowerShell remediation actions. The KMDF driver lives in
-// driver/; this tray never launches an installer.
+// Per-device status row for the tray menu. Driver SELECT lives on the device
+// row and pulls from LesleyMurfin/magic-mouse-v3-windows-fix — not from driver/.
 internal static class DeviceCapability
 {
     internal readonly record struct Row(

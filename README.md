@@ -2,7 +2,9 @@
 
 Windows tray app that shows Apple Magic Mouse (and keyboard) battery on Windows 10/11. No subscription.
 
-The tray is a **user-facing client**: status, battery when the device already exposes it, start with Windows, quit. It does **not** install, bind, or repair the kernel driver.
+The tray is a **user-facing client**: status, battery when the device already exposes it, start with Windows, quit, and a **driver SELECT**. On select (or Best for the detected device) it **pulls** the package from the GitHub repo that owns that driver and installs it. It does **not** vendor KMDF source, INF, or `.sys`.
+
+**KMDF Magic Mouse home:** https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix
 
 ![Tray icon showing 83% battery](docs/screenshot-tray.png)
 
@@ -17,49 +19,58 @@ Apple Magic Mouse on Windows 11 has no native battery indicator. Magic Mouse Uti
 - Adaptive polling: checks every 24h above 20%; tightens when the battery is low
 - Low-battery toast at your threshold (10 / 15 / 20 / 25%), plus a 1% persistent warning
 - Start with Windows (a per-user registry entry — no installer)
-- Single `.exe`, no admin rights, no PowerShell
+- Driver SELECT per device: Best / KMDF / v3 / v2 / v1 — pull from GitHub, then elevated `pnputil`
+- Single `.exe`, no leftover `C:\mm-dev-queue` / `MM-Dev-Cycle` flip UX
 
 ## Supported Mice
 
 | Model | Bluetooth PID | Status |
 |-------|--------------|--------|
-| Magic Mouse 2024 (USB-C) | 0x0323 | ✅ Confirmed |
-| Magic Mouse v1 (AA battery) | 0x030D | ✅ Confirmed |
-| Magic Mouse v2 | 0x0269 | ⚠ Included, not tested (device not available) |
+| Magic Mouse 2024 (USB-C) | 0x0323 | ✅ Confirmed — driver packages in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) |
+| Magic Mouse v1 (AA battery) | 0x030D | Battery read if present. No LesleyMurfin driver repo (do not retarget unless this device is present and you pick a package) |
+| Magic Mouse v2 | 0x0269 | ⚠ Included, not tested. No LesleyMurfin driver repo |
 
 ## Supported Keyboards
 
 | Model | Bluetooth PID | Status |
 |-------|--------------|--------|
-| Apple Wireless Keyboard (2011, A1314) ANSI/ISO/JIS | 0x0239 / 0x023A / 0x023B | ✅ Confirmed when the keyboard already exposes a battery Feature report |
-| Magic Keyboard (A1644) / ISO | 0x024F / 0x0250 | ⚠ Included, not tested (device not available) |
-| Magic Keyboard with Touch ID (A2449) / ISO | 0x0267 / 0x026C | ⚠ Included, not tested (device not available) |
+| Apple Wireless Keyboard (2011, A1314) ANSI/ISO/JIS | 0x0239 / 0x023A / 0x023B | Battery when a Feature report is already exposed. No LesleyMurfin keyboard-driver repo (`apple-kb-monitor` / `apple-peripherals` not found) |
+| Magic Keyboard (A1644) / ISO | 0x024F / 0x0250 | ⚠ Included, not tested |
+| Magic Keyboard with Touch ID (A2449) / ISO | 0x0267 / 0x026C | ⚠ Included, not tested |
 
 ## Install
 
 1. Download `MagicMouseTray.exe` from [Releases](../../releases)
-2. Run it — no installer, no admin rights
-3. A tray icon appears. Right-click for status, Start with Windows, and Quit.
+2. Run it — no installer
+3. A tray icon appears. Right-click for status, Start with Windows, driver SELECT, and Quit.
 
 **Requires**: Windows 10 1809+ (build 17763) or Windows 11, x64
 
 Use the release build. Do not replace a working install from a leftover copy under `C:\temp`.
 
-## Scroll and the KMDF driver
+## Driver SELECT (pull, do not vendor)
 
-Scroll on Magic Mouse 2024 (PID **0323**) is handled by the **KMDF filter** shipped in [`driver/`](driver/) (`MagicMouseDriver.vcxproj`, `Driver.c`, `MagicMouseDriver.inf`). The INF matches **0323 only**. Live bind is sole `LowerFilters=MagicMouseDriver` on the 0323 stack (`HidBth` / `MagicMouseDriver` / `BthEnum`).
+KMDF and the v1/v2 0323 packages live in **https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix**, not in this repo.
 
-The tray **does not** install that driver, write `LowerFilters`, run `pnputil`, start/stop the service, or reboot you into a driver. If scroll already works, leave the bind alone.
+| Menu choice | Pulled from |
+|-------------|-------------|
+| Best | `v2-kmdf-driver/` (KMDF) for PID 0323 |
+| KMDF | `v2-kmdf-driver/` |
+| v3 | `v2-kmdf-driver/` (Magic Mouse 2024 / 0323) |
+| v2 | `v2-kmdf-driver/` |
+| v1 | `v1-binary-patch/` |
 
-The older Magic Mouse (PID **030D**) stays on `applewirelessmouse`. Do not retarget 030D to `MagicMouseDriver`, and do not install both filters (`MagicMouseDriver,applewirelessmouse`).
+The tray downloads that repo’s `main` zip, looks for an INF under the package path, and runs elevated `pnputil /add-driver`. It does **not** run leftover `install-driver.ps1` / `mm-dev.ps1`, does **not** flip `LowerFilters` via `MM-Dev-Cycle`, and does **not** install from `magic-tray/driver/`.
 
-Operator build/install for the KMDF package lives in `driver/` — not in this tray UI.
+If the pulled path has no INF, install fails with that message — the package is not published yet. The tray never silently rebinds; install runs only after the user picks a package and confirms.
+
+030D unpaired: no 030D install unless that mouse is present and you select a package. There is no LesleyMurfin 030D driver repo.
 
 ## Right-click menu
 
 | Item | What it does |
 |------|-------------|
-| Device rows | Name, battery %, and (for mice) which filter is already bound |
+| Device rows | Name, battery %, bound filter, **Driver** picker |
 | Low battery alert | 10 / 15 / 20 / 25% per device |
 | Start with Windows | Toggle auto-start on login |
 | Show Logitech devices | Optional HID++ battery for directly connected Logitech mice |
@@ -81,7 +92,7 @@ dotnet publish -c Release
 # Output: bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\MagicMouseTray.exe
 ```
 
-The KMDF driver is a separate Visual Studio / MSBuild project: `driver/MagicMouseDriver.vcxproj`.
+KMDF is built and published in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), not here.
 
 ## SmartScreen warning
 
@@ -96,19 +107,14 @@ If you downloaded the file and it shows the full SmartScreen block ("Windows pro
 Log file: `%APPDATA%\MagicMouseTray\debug.log`
 
 Key log lines:
-- `MOUSE_BATTERY_OK` / `OK battery=` — successful read
-- `OPEN_FAILED err=5` — COL01 skipped (normal — Windows holds this handle)
-- `DRIVER_CHECK status=Ok/NotInstalled/NotBound/UnknownAppleMouse` — read-only filter detection
+- `MOUSE_BATTERY_OK` — successful read
+- `DRIVER_PULL` / `DRIVER_INSTALL` — GitHub pull + pnputil
+- `DRIVER_CHECK status=...` — read-only filter detection
 - `TOAST_SENT` — notification fired
-- `CRITICAL_ALERT_SHOWN` — 1% persistent window shown
 
 ## Releases & versioning
 
-Releases are built by CI on a `v*` tag (`.github/workflows/release.yml`): the workflow builds,
-runs the unit tests on a `windows-latest` runner, publishes the single-file `win-x64` exe,
-optionally Authenticode-signs it (if cert secrets are configured), and attaches it to a GitHub
-release. The build stamps `FileVersion`/`AssemblyVersion` (currently `1.0.0.0`), visible via the
-exe's Properties → Details tab.
+Releases are built by CI on a `v*` tag (`.github/workflows/release.yml`).
 
 ## License
 

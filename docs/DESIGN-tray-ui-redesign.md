@@ -1,37 +1,39 @@
-# DESIGN — Tray menu (superseded)
+# DESIGN — Tray menu + driver SELECT
 
-Status: **SUPERSEDED** — 2026-08-31. The 2026-07-29 proposal (per-device driver badges plus auto-remediation / “Fix scroll driver” / Battery Reads recycle) is withdrawn.
+Status: **ACTIVE** — 2026-08-31. KMDF is **not** in this repo.
 
-Hard split (Lesley Murfin, 2026-08-30):
+Hard rule (Lesley Murfin):
 
-- KMDF belongs in `driver/` (`MagicMouseDriver`), **not** in the tray.
-- The tray does not install, bind, write `LowerFilters`, run `pnputil`, start/stop the service, repair M13, dual-filter, or reboot into a driver.
-- The tray is a user-facing client: status, battery if already readable, start with Windows, quit.
+- KMDF Magic Mouse lives at https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix
+- `LesleyMurfin/magic-tray` must not vendor `MagicMouseDriver` source / INF / vcxproj / `.sys`
+- Tray is a simple client (status, battery, Start with Windows, Quit) **plus** driver SELECT
+- On select (or Best), the tray **pulls** that package from the owning GitHub repo and installs it
+- No leftover operator UX: no `V3RecycleManager`, no `C:\mm-dev-queue`, no `MM-Dev-Cycle` flip, no tealtadpole, no F7 DSE story
 
-Live Windows state this design must not fight:
+## Verified repos (2026-08-31)
 
-- PID **0323** — sole `LowerFilters=MagicMouseDriver`.
-- PID **030D** — stays `applewirelessmouse`.
+| Need | Repo | Result |
+|------|------|--------|
+| KMDF / mouse v3 packages | `LesleyMurfin/magic-mouse-v3-windows-fix` | **Home.** `v1-binary-patch/`, `v2-kmdf-driver/` |
+| Keyboard | `LesleyMurfin/apple-kb-monitor`, `apple-peripherals` | **Not found** (404) |
+| Mouse hardware 030D / 0269 | LesleyMurfin siblings | **Not found.** v3-windows-fix is 0323-only |
 
-## Current menu (this repo)
+## Menu
 
 ```
-device rows (name + battery + already-bound filter name)
+device rows (name + battery + bound filter)
+  Driver → Best | KMDF | v3 | v2 | v1   (pull from magic-mouse-v3-windows-fix)
 ---
 Start with Windows
-Show Logitech devices
 ---
 Refresh battery
-Test battery alert
 Open logs
 ---
 Quit
 ```
 
-No “Install Apple Driver”, no tealtadpole download, no Battery Reads / PATH-B flip, no PowerShell.
-
 ## Related
 
-- `README.md` — user-facing client docs
-- `driver/README.md` — KMDF home
-- `MagicMouseTray/DriverHealthChecker.cs` — read-only status (0323 → MagicMouseDriver, 030D → applewirelessmouse)
+- `MagicMouseTray/DriverPackageCatalog.cs` — package map
+- `MagicMouseTray/DriverInstaller.cs` — zip pull + elevated pnputil
+- `driver/README.md` — pointer only, not SSOT

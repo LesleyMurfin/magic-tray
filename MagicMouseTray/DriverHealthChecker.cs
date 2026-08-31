@@ -12,14 +12,18 @@ internal enum DriverStatus
     Error              // transient registry error
 }
 
-// Read-only health check. The tray never installs, binds, or repairs a driver.
+// Read-only health check for the menu badge. Driver SELECT is a separate,
+// explicit pull from LesleyMurfin/magic-mouse-v3-windows-fix — never from
+// magic-tray/driver/.
 //
 // Live split (do not fight this):
-//   PID 0323 (Magic Mouse 2024) — sole LowerFilters=MagicMouseDriver (KMDF in driver/).
-//   PID 030D / 0269 / 0310      — applewirelessmouse. Do not retarget 030D.
+//   PID 0323 (Magic Mouse 2024) — sole LowerFilters=MagicMouseDriver.
+//   PID 030D / 0269 / 0310      — applewirelessmouse. Do not retarget 030D
+//                                 unless that device is present and selected.
 //
 // A 0323 still showing applewirelessmouse is treated as bound so we do not nag
-// the user to "fix" a working legacy bind. We never offer to change it.
+// the user to "fix" a working legacy bind. Changing the bind happens only
+// when the user picks a package in Driver SELECT.
 internal static class DriverHealthChecker
 {
     internal const string AppleFilterName = "applewirelessmouse";

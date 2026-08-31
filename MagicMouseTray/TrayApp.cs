@@ -9,7 +9,7 @@ using System.Windows.Forms;
 namespace MagicMouseTray;
 
 // System tray icon and a simple right-click menu: device status, battery,
-// start with Windows, quit. The tray does not install, bind, or repair drivers.
+// start with Windows, quit, and a driver SELECT that pulls from GitHub.
 internal sealed class TrayApp : IDisposable
 {
     readonly NotifyIcon _tray;
@@ -422,6 +422,8 @@ internal sealed class TrayApp : IDisposable
                 item.DropDownItems.Add(action);
             }
 
+            AddDriverPicker(item, knd, kv.Value.Pid, kv.Key, boundFilter);
+
             item.DropDownItems.Add(new ToolStripSeparator());
             var thrMenu = new ToolStripMenuItem("Low battery alert");
             var currentThr = _config.GetThreshold(kv.Value.Pid);
@@ -446,6 +448,69 @@ internal sealed class TrayApp : IDisposable
         }
 
         _deviceSection.Text = _deviceBatteries.Count == 1 ? "1 device" : $"{_deviceBatteries.Count} devices";
+    }
+
+    void AddDriverPicker(ToolStripMenuItem item, DeviceKind kind, string pid, string deviceName, string? boundFilter)
+    {
+        var picker = new ToolStripMenuItem("Driver");
+        var choices = DriverPackageCatalog.ChoicesFor(kind, pid);
+        if (choices.Count == 0)
+        {
+            picker.DropDownItems.Add(new ToolStripMenuItem("No driver packages for this device") { Enabled = false });
+            item.DropDownItems.Add(picker);
+            return;
+        }
+
+        foreach (var pkg in choices)
+        {
+            var label = pkg.Published
+                ? $"{pkg.MenuLabel}  ({pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo})"
+                : $"{pkg.MenuLabel}  (no GitHub repo)";
+            var choice = new ToolStripMenuItem(label) { Enabled = pkg.Published };
+            var captured = pkg;
+            var capturedPid = pid;
+            var capturedName = deviceName;
+            var capturedBound = boundFilter;
+            choice.Click += (_, _) => _ = InstallChosenDriverAsync(captured, capturedPid, capturedName, capturedBound);
+            picker.DropDownItems.Add(choice);
+        }
+
+        item.DropDownItems.Add(picker);
+    }
+
+    async Task InstallChosenDriverAsync(DriverPackage pkg, string pid, string deviceName, string? boundFilter)
+    {
+        if (!pkg.Published)
+        {
+            MessageBox.Show(pkg.MissingReason ?? "No published driver repo.", "Magic Tray",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var alreadyKmdf = string.Equals(boundFilter, DriverHealthChecker.KmdfFilterName, StringComparison.OrdinalIgnoreCase);
+        var confirm = MessageBox.Show(
+            $"Install {pkg.MenuLabel} for {deviceName} (PID {pid})?\n\n" +
+            $"Pull from {pkg.Owner}/{pkg.Repo}@{pkg.GitRef}  ({pkg.PathInRepo})\n" +
+            $"{DriverPackageCatalog.KmdfRepoUrl}\n\n" +
+            (alreadyKmdf
+                ? $"Currently bound to {boundFilter}. This pulls that GitHub package again (no silent rebind).\n\n"
+                : "") +
+            "This needs administrator approval (pnputil). The tray will not use leftover dual-filter scripts or magic-tray/driver/.",
+            "Install driver",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (confirm != DialogResult.Yes) return;
+
+        try
+        {
+            var inf = await DriverInstaller.PullAndInstallAsync(pkg, pid);
+            MessageBox.Show($"Installed from {inf}", "Magic Tray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"DRIVER_INSTALL_FAIL pkg={pkg.Id} pid={pid} err={ex.Message}");
+            MessageBox.Show(ex.Message, "Driver install failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     static string FormatInterval(TimeSpan t)
