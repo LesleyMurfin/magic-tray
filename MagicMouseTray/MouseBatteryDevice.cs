@@ -88,7 +88,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             var caps = new HidNative.HIDP_CAPS();
             if (HidNative.HidP_GetCaps(preparsed, ref caps) != HidNative.HIDP_STATUS_SUCCESS)
                 return -1;
-            inLen = Math.Max(caps.InputReportByteLength, 64);
+            inLen = Math.Max((int)caps.InputReportByteLength, 64);
         }
         finally
         {
