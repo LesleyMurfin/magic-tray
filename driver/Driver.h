@@ -28,10 +28,11 @@
 #define M13_POOL_TAG 'D31M'
 
 // Known Apple Magic Mouse Bluetooth Product IDs.
-// Used by ProductId PID guard in OnSdpQueryComplete (PR-SS-1).
+// Injection target is 0323 only. 030D / 0310 stay on applewirelessmouse;
+// the INF does not match them. Runtime still refuses to inject if we see them.
 #define MM_PID_V3   0x0323u   // Magic Mouse 2024 (USB-C) — Descriptor C target
-#define MM_PID_V1A  0x030Du   // Magic Mouse 2 (Lightning, batch A)
-#define MM_PID_V1B  0x0310u   // Magic Mouse 2 (Lightning, batch B)
+#define MM_PID_V1A  0x030Du   // older Magic Mouse — pass through, do not retarget
+#define MM_PID_V1B  0x0310u   // older Magic Mouse (wireless) — pass through
 
 // IOCTL_BTH_SDP_SERVICE_SEARCH_ATTRIBUTE
 // CTL_CODE(FILE_DEVICE_BLUETOOTH=0x41, Function=0x84, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
@@ -51,10 +52,8 @@ typedef struct _DEVICE_CONTEXT
     BOOLEAN EnableInjection;
 
     // BT Product ID — populated at AddDevice via IoGetDeviceProperty on PDO.
-    // 0x0323 = Magic Mouse 2024 (v3) — receives Descriptor C injection.
-    // 0x030D / 0x0310 = Magic Mouse 2 (v1) — pass through native descriptor.
-    // 0 = unknown (PID could not be read) — injection allowed (safe fallback,
-    //     preserves prior behaviour for any device not positively identified as v1).
+    // 0x0323 = Magic Mouse 2024 — sole live bind; receives Descriptor C.
+    // Any other PID (including 0x030D / 0x0310, or 0 if unread) — pass through.
     USHORT  ProductId;
 
     // Diagnostic counters (inspectable via Services\MagicMouseDriver\Diag).

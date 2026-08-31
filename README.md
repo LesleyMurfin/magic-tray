@@ -47,7 +47,7 @@ Use the release build. Do not replace a working install from a leftover copy und
 
 ## Scroll and the KMDF driver
 
-Scroll on Magic Mouse 2024 (PID **0323**) is handled by the **KMDF filter** in [`driver/`](driver/) (`MagicMouseDriver.vcxproj`). Live bind is sole `LowerFilters=MagicMouseDriver` on the 0323 stack (`HidBth` / `MagicMouseDriver` / `BthEnum`).
+Scroll on Magic Mouse 2024 (PID **0323**) is handled by the **KMDF filter** shipped in [`driver/`](driver/) (`MagicMouseDriver.vcxproj`, `Driver.c`, `MagicMouseDriver.inf`). The INF matches **0323 only**. Live bind is sole `LowerFilters=MagicMouseDriver` on the 0323 stack (`HidBth` / `MagicMouseDriver` / `BthEnum`).
 
 The tray **does not** install that driver, write `LowerFilters`, run `pnputil`, start/stop the service, or reboot you into a driver. If scroll already works, leave the bind alone.
 

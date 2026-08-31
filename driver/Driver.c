@@ -65,10 +65,8 @@ EvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
 
     DbgPrint("M13: AddDevice — EnableInjection=%d\n", ctx->EnableInjection);
 
-    // Populate ProductId from hardware ID so OnSdpQueryComplete can gate
-    // Descriptor C injection to v3 (PID 0x0323) only.
-    // v1 (PIDs 0x030D / 0x0310) has a native HID descriptor with RID=0x47
-    // for battery; overwriting it with Descriptor C would break v1 battery.
+    // Populate ProductId from hardware ID so OnSdpQueryComplete injects
+    // Descriptor C for PID 0x0323 only. 030D / 0310 stay on applewirelessmouse.
     //
     // Hardware ID format (BT stack):
     //   BTHENUM\{...}_VID&XXXXXXXX_PID&NNNN_REV&XXXX
@@ -77,7 +75,7 @@ EvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
     // IoGetDeviceProperty on the PDO works at PASSIVE_LEVEL (EvtDeviceAdd runs
     // at PASSIVE_LEVEL), requires no extra allocation handles, and is the
     // standard WDM approach for lower filter drivers that don't own the PDO.
-    ctx->ProductId = 0;  // safe default: unknown → injection allowed
+    ctx->ProductId = 0;  // unread → no injection (0323-only)
     {
         PDEVICE_OBJECT pdo = WdfDeviceWdmGetPhysicalDevice(device);
         if (pdo != NULL)
@@ -429,15 +427,12 @@ OnSdpQueryComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
     if (snapLen < 64) RtlZeroMemory(ctx->LastSdpBytes + snapLen, 64 - snapLen);
     WdfSpinLockRelease(ctx->Lock);
 
-    // v1 pass-through guard: only inject Descriptor C for v3 (PID 0x0323).
-    // v1 (PIDs 0x030D / 0x0310) has a native HID descriptor with RID=0x47 for
-    // battery; overwriting it with Descriptor C would break v1 battery permanently.
-    // ProductId == 0 means we could not read the PID — allow injection (safe
-    // fallback: preserves behaviour for unknown devices, same as before this guard).
-    if (ctx->ProductId != 0 && ctx->ProductId != MM_PID_V3)
+    // 0323-only: inject Descriptor C solely for the live Magic Mouse 2024 bind.
+    // Unread PID (0) and older mice (030D / 0310) pass through — do not retarget.
+    if (ctx->ProductId != MM_PID_V3)
     {
-        DbgPrint("M13: OnSdpQueryComplete — PID=0x%04X is not v3 (0x%04X), pass-through (no injection)\n",
-                 ctx->ProductId, (USHORT)MM_PID_V3);
+        DbgPrint("M13: OnSdpQueryComplete — PID=0x%04X is not 0323, pass-through (no injection)\n",
+                 ctx->ProductId);
         WdfRequestComplete(Request, status);
         return;
     }
