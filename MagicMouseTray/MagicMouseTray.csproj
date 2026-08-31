@@ -21,5 +21,11 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="MagicMouseTray.Tests" />
+    <Content Include="..\scripts\kbd-patch-cachedservices.ps1">
+      <Link>scripts\kbd-patch-cachedservices.ps1</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 </Project>

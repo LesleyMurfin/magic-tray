@@ -12,9 +12,8 @@ internal enum DriverStatus
     Error              // transient registry error
 }
 
-// Read-only health check for the menu badge. Driver SELECT is a separate,
-// user-confirmed pull of a public GitHub / Apple Boot Camp package — never
-// from magic-tray/driver/, never from LesleyMurfin driver repos.
+// Read-only health check for the menu badge. Driver SELECT pulls KMDF from
+// LesleyMurfin/magic-mouse-v3-windows-fix (never from magic-tray/driver/).
 //
 // Live split (do not fight this until the user picks a package):
 //   PID 0323 — may still show MagicMouseDriver (May 20 custom). Best pull is

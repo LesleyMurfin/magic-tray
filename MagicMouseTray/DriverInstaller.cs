@@ -3,18 +3,17 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 
 namespace MagicMouseTray;
 
-// Pulls a user-selected public package and installs it.
-// Never LesleyMurfin/*, never magic-tray/driver/, never leftover mm-dev / MM-Dev-Cycle.
+// Pulls a user-selected package and installs it.
+// KMDF is downloaded from LesleyMurfin/magic-mouse-v3-windows-fix — never from
+// magic-tray/driver/. No leftover mm-dev / install-driver dual-filter scripts.
 internal static class DriverInstaller
 {
     internal const string ZipUrlFormat =
         "https://github.com/{0}/{1}/archive/refs/heads/{2}.zip";
-
-    internal const string BrigadierExeUrl =
-        "https://github.com/timsutton/brigadier/releases/download/0.2.6/brigadier.exe";
 
     static readonly HttpClient Http = new()
     {
@@ -37,20 +36,18 @@ internal static class DriverInstaller
     {
         if (string.IsNullOrEmpty(devicePid))
             throw new InvalidOperationException("No device PID — will not install.");
-        if (!pkg.Published || string.IsNullOrEmpty(pkg.Repo))
-            throw new InvalidOperationException(pkg.MissingReason ?? "No published driver repo for this device.");
+        if (!pkg.Published)
+            throw new InvalidOperationException(pkg.MissingReason ?? "No published package for this device.");
         if (DriverPackageCatalog.IsForbiddenSource(pkg))
-            throw new InvalidOperationException("Refusing LesleyMurfin / magic-tray package source.");
-        if (DriverPackageCatalog.IsLocalVendorPath(pkg.PathInRepo))
-            throw new InvalidOperationException("Refusing to install from magic-tray/driver/.");
+            throw new InvalidOperationException("Refusing magic-tray/driver/ as a package source.");
 
         Logger.Log($"DRIVER_PULL repo={pkg.Owner}/{pkg.Repo} ref={pkg.GitRef} kind={pkg.Kind} path={pkg.PathInRepo} pid={devicePid}");
 
         return pkg.Kind switch
         {
+            InstallKind.KmdfPull => await PullKmdfAndBindAsync(pkg, devicePid, ct),
             InstallKind.InfPnputil => await PullInfAndPnputilAsync(pkg, devicePid, ct),
-            InstallKind.OfficialSysBind => await PullSysAndBindAsync(pkg, devicePid, ct),
-            InstallKind.BrigadierKeyboard => await PullBrigadierKeyboardAsync(pkg, devicePid, ct),
+            InstallKind.KeyboardSdpPatch => RunKeyboardSdpPatch(devicePid),
             _ => throw new InvalidOperationException($"Unknown install kind {pkg.Kind}."),
         };
     }
@@ -72,6 +69,29 @@ internal static class DriverInstaller
         return extractDir;
     }
 
+    static async Task<string> PullKmdfAndBindAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
+    {
+        if (!devicePid.Equals("0323", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("KMDF MagicMouseDriver is 0323-only. Will not retarget 030D.");
+
+        var extractDir = await DownloadZipAsync(pkg, ct);
+        var packageDir = FindPackageDir(extractDir, pkg.PathInRepo)
+            ?? throw new InvalidOperationException($"Pulled {pkg.Owner}/{pkg.Repo} but '{pkg.PathInRepo}' was not in the zip.");
+
+        var inf = Directory.EnumerateFiles(packageDir, "*.inf", SearchOption.AllDirectories).FirstOrDefault();
+        if (inf is null)
+            throw new InvalidOperationException(
+                $"No INF in {pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo}. KMDF ships from that repo — magic-tray will not vendor Driver.c / INF / .sys. Publish MagicMouseDriver.inf there.");
+
+        if (DriverPackageCatalog.IsLocalVendorPath(inf))
+            throw new InvalidOperationException("Refusing local magic-tray/driver INF.");
+
+        Logger.Log($"DRIVER_INSTALL inf={inf} pid={devicePid}");
+        RunElevated("pnputil.exe", $"/add-driver \"{inf}\" /install");
+        RunElevatedBindFilter(devicePid, DriverHealthChecker.KmdfFilterName);
+        return inf;
+    }
+
     static async Task<string> PullInfAndPnputilAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
     {
         var extractDir = await DownloadZipAsync(pkg, ct);
@@ -89,52 +109,54 @@ internal static class DriverInstaller
         return inf;
     }
 
-    static async Task<string> PullSysAndBindAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
+    static string RunKeyboardSdpPatch(string devicePid)
     {
-        var extractDir = await DownloadZipAsync(pkg, ct);
-        var packageDir = FindPackageDir(extractDir, pkg.PathInRepo)
-            ?? throw new InvalidOperationException($"Pulled {pkg.Owner}/{pkg.Repo} but '{pkg.PathInRepo}' was not in the zip.");
+        var script = FindKeyboardPatchScript()
+            ?? throw new InvalidOperationException(
+                "scripts/kbd-patch-cachedservices.ps1 not found next to the tray. Keyboard Best is the PATH-C SDP patch, not Keymagic2.");
 
-        var sys = Directory.EnumerateFiles(packageDir, "applewirelessmouse.sys", SearchOption.AllDirectories).FirstOrDefault()
-            ?? throw new InvalidOperationException($"No applewirelessmouse.sys in {pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo}.");
+        var mac = TryDiscoverKeyboardMac(devicePid);
+        var args = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"";
+        if (!string.IsNullOrEmpty(mac))
+            args += $" -Mac \"{mac}\"";
 
-        Logger.Log($"DRIVER_BIND sys={sys} pid={devicePid}");
-        RunElevatedBind(sys, devicePid);
-        return sys;
+        Logger.Log($"DRIVER_SDP script={script} mac={mac ?? "(script default)"} pid={devicePid}");
+        RunElevated("powershell.exe", args);
+        return script;
     }
 
-    static async Task<string> PullBrigadierKeyboardAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
+    internal static string? FindKeyboardPatchScript()
     {
-        Directory.CreateDirectory(CacheRoot);
-        var exePath = Path.Combine(CacheRoot, "brigadier.exe");
-        if (!File.Exists(exePath))
+        var names = new[]
         {
-            Logger.Log($"DRIVER_PULL brigadier url={BrigadierExeUrl}");
-            await using var net = await Http.GetStreamAsync(BrigadierExeUrl, ct);
-            await using var file = File.Create(exePath);
-            await net.CopyToAsync(file, ct);
-        }
+            Path.Combine(AppContext.BaseDirectory, "scripts", "kbd-patch-cachedservices.ps1"),
+            Path.Combine(AppContext.BaseDirectory, "kbd-patch-cachedservices.ps1"),
+        };
+        foreach (var p in names)
+            if (File.Exists(p)) return p;
 
-        var outDir = Path.Combine(CacheRoot, "bootcamp-esd");
-        Directory.CreateDirectory(outDir);
-        Logger.Log($"DRIVER_BRIGADIER model={DriverPackageCatalog.BrigadierModel} out={outDir}");
-        RunElevated(exePath, $"-m {DriverPackageCatalog.BrigadierModel} -o \"{outDir}\"", TimeSpan.FromMinutes(30));
-
-        var inf = Directory.EnumerateFiles(outDir, "Keymagic2.inf", SearchOption.AllDirectories).FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                "Brigadier finished but AppleKeyboardMagic2/Keymagic2.inf was not in the extract.");
-
-        Logger.Log($"DRIVER_INSTALL inf={inf} pid={devicePid}");
-        RunElevated("pnputil.exe", $"/add-driver \"{inf}\" /install");
-
-        var keymagic64 = Directory.EnumerateFiles(outDir, "Keymagic64.inf", SearchOption.AllDirectories).FirstOrDefault();
-        if (keymagic64 is not null)
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 6 && dir is not null; i++, dir = dir.Parent)
         {
-            Logger.Log($"DRIVER_INSTALL inf={keymagic64} pid={devicePid}");
-            RunElevated("pnputil.exe", $"/add-driver \"{keymagic64}\" /install");
+            var candidate = Path.Combine(dir.FullName, "scripts", "kbd-patch-cachedservices.ps1");
+            if (File.Exists(candidate)) return candidate;
         }
+        return null;
+    }
 
-        return inf;
+    // BTHENUM instance tails with the BT MAC, e.g. ...&E806884B0741_C00000000
+    internal static string? TryDiscoverKeyboardMac(string pid)
+    {
+        foreach (var path in HidNative.EnumerateHidPaths())
+        {
+            if (!path.Contains("pid&" + pid, StringComparison.OrdinalIgnoreCase)
+                && !path.Contains("pid_" + pid, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var m = Regex.Match(path, @"([0-9A-Fa-f]{12})_C00000000", RegexOptions.IgnoreCase);
+            if (m.Success)
+                return m.Groups[1].Value.ToLowerInvariant();
+        }
+        return null;
     }
 
     internal static string? FindPackageDir(string extractRoot, string pathInRepo)
@@ -150,13 +172,13 @@ internal static class DriverInstaller
         return null;
     }
 
-    static void RunElevatedBind(string sysPath, string pid)
+    static void RunElevatedBindFilter(string pid, string filterName)
     {
-        var script = Path.Combine(CacheRoot, "bind-applewirelessmouse.ps1");
+        var script = Path.Combine(CacheRoot, "bind-filter.ps1");
         Directory.CreateDirectory(CacheRoot);
-        File.WriteAllText(script, BindScript);
+        File.WriteAllText(script, BindFilterScript);
         RunElevated("powershell.exe",
-            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -SysPath \"{sysPath}\" -DevicePid \"{pid}\"");
+            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -DevicePid \"{pid}\" -FilterName \"{filterName}\"");
     }
 
     static void RunElevated(string fileName, string arguments, TimeSpan? timeout = null)
@@ -181,26 +203,18 @@ internal static class DriverInstaller
             throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited {p.ExitCode}.");
     }
 
-    // Binds WHQL applewirelessmouse.sys to the selected PID only. Replaces LowerFilters
-    // (does not append MagicMouseDriver). User-selected — not a silent rebind.
-    const string BindScript = """
-        param([Parameter(Mandatory=$true)][string]$SysPath, [Parameter(Mandatory=$true)][string]$DevicePid)
+    // Sole LowerFilters on the selected PID. 0323-only callers pass MagicMouseDriver.
+    const string BindFilterScript = """
+        param([Parameter(Mandatory=$true)][string]$DevicePid, [Parameter(Mandatory=$true)][string]$FilterName)
         $ErrorActionPreference = 'Stop'
         $pidToken = "PID&$DevicePid"
         $dev = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
             $_.InstanceId -match 'BTHENUM' -and $_.InstanceId -match [regex]::Escape($pidToken) -and $_.Class -eq 'HIDClass'
         } | Select-Object -First 1
-        if (-not $dev) { Write-Error "No paired HID device for PID $DevicePid — will not install."; exit 2 }
-        $dest = "$env:SystemRoot\System32\drivers\applewirelessmouse.sys"
-        Copy-Item -LiteralPath $SysPath -Destination $dest -Force
-        $svc = Get-Service -Name applewirelessmouse -ErrorAction SilentlyContinue
-        if (-not $svc) {
-            & sc.exe create applewirelessmouse type= kernel start= demand error= ignore binPath= System32\drivers\applewirelessmouse.sys DisplayName= "Apple Wireless Mouse"
-            if ($LASTEXITCODE -ne 0) { throw "sc.exe create failed ($LASTEXITCODE)" }
-        }
+        if (-not $dev) { Write-Error "No paired HID device for PID $DevicePid — will not bind."; exit 2 }
         $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)"
         if (-not (Test-Path $reg)) { throw "Device registry path missing: $reg" }
-        Set-ItemProperty -Path $reg -Name LowerFilters -Value @('applewirelessmouse') -Type MultiString
+        Set-ItemProperty -Path $reg -Name LowerFilters -Value @($FilterName) -Type MultiString
         try {
             Disable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction Stop
             Start-Sleep -Seconds 2

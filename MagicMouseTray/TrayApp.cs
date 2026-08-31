@@ -463,8 +463,11 @@ internal sealed class TrayApp : IDisposable
 
         foreach (var pkg in choices)
         {
+            var loc = string.IsNullOrEmpty(pkg.Repo)
+                ? pkg.PathInRepo
+                : $"{pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo}";
             var label = pkg.Published
-                ? $"{pkg.MenuLabel}  ({pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo})"
+                ? $"{pkg.MenuLabel}  ({loc})"
                 : $"{pkg.MenuLabel}  (no GitHub repo)";
             var choice = new ToolStripMenuItem(label) { Enabled = pkg.Published };
             var captured = pkg;
@@ -495,7 +498,7 @@ internal sealed class TrayApp : IDisposable
             $"Pull from {pkg.Owner}/{pkg.Repo}@{pkg.GitRef}  ({pkg.PathInRepo})\n" +
             $"{pkg.RepoUrl}\n\n" +
             extra +
-            "Needs administrator approval. The tray will not vendor KMDF, will not pull LesleyMurfin driver repos, and will not use leftover mm-dev scripts.",
+            "Needs administrator approval. KMDF is pulled from magic-mouse-v3-windows-fix (not copied into this repo). No leftover mm-dev scripts, no Magic Utilities binaries.",
             "Install driver",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);

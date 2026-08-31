@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Per-device status row for the tray menu. Driver SELECT lives on the device
-// row and pulls a public GitHub / Boot Camp package — not from driver/.
+// Per-device status row. Driver SELECT pulls 0323 KMDF from
+// magic-mouse-v3-windows-fix — not from magic-tray/driver/.
 internal static class DeviceCapability
 {
     internal readonly record struct Row(

@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Public GitHub / Apple Boot Camp packages the tray may SELECT.
-// Never LesleyMurfin/*, never Magic Utilities binaries, never magic-tray/driver/.
+// Packages the tray may SELECT. KMDF is pulled from
+// LesleyMurfin/magic-mouse-v3-windows-fix — never copied into magic-tray/driver/.
 internal enum DriverPackageId
 {
     Best,
+    MagicMouseDriver,
     AppleWirelessMouse,
-    AppleKeyboardMagic2,
+    KeyboardSdpPatch,
 }
 
 internal enum InstallKind
 {
-    InfPnputil,           // zip has INF + CAT + SYS (tealtadpole / Rain9333 dump)
-    OfficialSysBind,      // zip has WHQL AppleWirelessMouse.sys; bind selected PID
-    BrigadierKeyboard,    // fetch Boot Camp ESD via brigadier; Keymagic2.inf
+    KmdfPull,             // zip magic-mouse-v3-windows-fix / v2-kmdf-driver + pnputil + 0323 bind
+    InfPnputil,           // tealtadpole Boot Camp INF (030D / 0310 / 0269)
+    KeyboardSdpPatch,     // scripts/kbd-patch-cachedservices.ps1 — no kernel
 }
 
 internal sealed record DriverPackage(
@@ -29,39 +30,33 @@ internal sealed record DriverPackage(
     bool Published,
     string? MissingReason)
 {
-    internal string RepoUrl => $"https://github.com/{Owner}/{Repo}";
+    internal string RepoUrl => string.IsNullOrEmpty(Repo)
+        ? ""
+        : $"https://github.com/{Owner}/{Repo}";
 }
 
 internal static class DriverPackageCatalog
 {
-    // Verified 2026-08-31 against Lesley's mapping + GitHub contents.
-    // tealtadpole and Rain9333 are the same Boot Camp dump (identical INF/CAT/SYS SHAs).
-    // INF DriverVer 08/08/2019,6.1.7700.0 lists 030D / 0310 / 0269 only — not 0323.
-    // Rain9333 is not strictly better (same bits). Her tray cites tealtadpole for Win11.
+    internal const string KmdfOwner = "LesleyMurfin";
+    internal const string KmdfRepo = "magic-mouse-v3-windows-fix";
+    internal const string KmdfRef = "main";
+    internal const string KmdfPath = "v2-kmdf-driver";
+    internal const string KmdfRepoUrl = "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix";
+
     internal const string TealOwner = "tealtadpole";
     internal const string TealRepo = "MagicMouse2DriversWin11x64";
     internal const string TealRef = "master";
 
-    // Same AppleWirelessMouse.sys blob as tealtadpole/Rain9333 (WHQL). No INF; binds 0323.
-    internal const string SbagiriciOwner = "sbagirici";
-    internal const string SbagiriciRepo = "apple-magic-mouse-scroll-fix-windows";
-    internal const string SbagiriciRef = "master";
-
-    internal const string BrigadierOwner = "timsutton";
-    internal const string BrigadierRepo = "brigadier";
-    internal const string BrigadierRef = "main";
-    internal const string BrigadierModel = "MacBookAir9,1";
-
     static readonly DriverPackage Mouse0323 = new(
         DriverPackageId.Best, "Best for this mouse",
-        SbagiriciOwner, SbagiriciRepo, SbagiriciRef, "driver",
-        InstallKind.OfficialSysBind,
+        KmdfOwner, KmdfRepo, KmdfRef, KmdfPath,
+        InstallKind.KmdfPull,
         ["0323"], Published: true, MissingReason: null);
 
     static readonly DriverPackage Mouse0323Named = Mouse0323 with
     {
-        Id = DriverPackageId.AppleWirelessMouse,
-        MenuLabel = "AppleWirelessMouse (WHQL)",
+        Id = DriverPackageId.MagicMouseDriver,
+        MenuLabel = "MagicMouseDriver (KMDF)",
     };
 
     static readonly DriverPackage MouseStock = new(
@@ -76,16 +71,16 @@ internal static class DriverPackageCatalog
         MenuLabel = "AppleWirelessMouse (Boot Camp INF)",
     };
 
-    static readonly DriverPackage KeyboardBest = new(
+    static readonly DriverPackage KeyboardSdp = new(
         DriverPackageId.Best, "Best for this keyboard",
-        BrigadierOwner, BrigadierRepo, BrigadierRef, "AppleKeyboardMagic2",
-        InstallKind.BrigadierKeyboard,
+        "", "", "", "scripts/kbd-patch-cachedservices.ps1",
+        InstallKind.KeyboardSdpPatch,
         [], Published: true, MissingReason: null);
 
-    static readonly DriverPackage KeyboardNamed = KeyboardBest with
+    static readonly DriverPackage KeyboardSdpNamed = KeyboardSdp with
     {
-        Id = DriverPackageId.AppleKeyboardMagic2,
-        MenuLabel = "Keymagic2 (Boot Camp)",
+        Id = DriverPackageId.KeyboardSdpPatch,
+        MenuLabel = "Battery SDP patch (PATH-C)",
     };
 
     internal static DriverPackage BestForPid(string pid)
@@ -93,7 +88,7 @@ internal static class DriverPackageCatalog
         pid = pid.ToLowerInvariant();
         if (pid == "0323") return Mouse0323;
         if (pid is "030d" or "0310" or "0269") return MouseStock;
-        return KeyboardBest with { Pids = [pid] };
+        return KeyboardSdp with { Pids = [pid] };
     }
 
     internal static IReadOnlyList<DriverPackage> ChoicesFor(DeviceKind kind, string pid)
@@ -105,21 +100,14 @@ internal static class DriverPackageCatalog
             || pid is "030d" or "0310" or "0269")
             return [MouseStock, MouseStockNamed];
         if (kind == DeviceKind.MagicKeyboard)
-            return [KeyboardBest, KeyboardNamed];
+            return [KeyboardSdp, KeyboardSdpNamed];
         return [];
     }
 
+    // magic-tray must not be a driver package source. KMDF home is allowed as a pull.
     internal static bool IsForbiddenSource(DriverPackage pkg) =>
-        IsForbiddenOwnerRepo(pkg.Owner, pkg.Repo);
-
-    internal static bool IsForbiddenOwnerRepo(string owner, string repo)
-    {
-        if (owner.Equals("LesleyMurfin", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return repo.Contains("magic-tray", StringComparison.OrdinalIgnoreCase)
-            || repo.Contains("magic-mouse-v3-windows-fix", StringComparison.OrdinalIgnoreCase)
-            || repo.Contains("apple-kb-monitor", StringComparison.OrdinalIgnoreCase);
-    }
+        pkg.Repo.Contains("magic-tray", StringComparison.OrdinalIgnoreCase)
+        || IsLocalVendorPath(pkg.PathInRepo);
 
     internal static bool IsLocalVendorPath(string path)
     {
