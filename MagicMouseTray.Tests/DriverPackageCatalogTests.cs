@@ -27,6 +27,7 @@ public class DriverPackageCatalogTests
         Assert.DoesNotContain("Install-MagicMousePatch", best.PathInRepo, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("v1-binary-patch", best.PathInRepo, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("bind-filter", best.PathInRepo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kmdf-0323-package", best.GitRef, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
