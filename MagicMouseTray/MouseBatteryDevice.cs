@@ -3,7 +3,7 @@
 // Battery read strategy (read-only HID — the tray never binds or flips filters):
 //   Split path (COL02): UsagePage=0xFF00/Usage=0x0014, Input Report 0x90, buf[2]=pct.
 //   Unified path: Feature Battery Strength (Generic Device Controls). Returns -2 when
-//   the device is present but the report is not exposed. 0323 Best is sbagirici, not driver/.
+//   the device is present but the report is not exposed. 0323 Best pulls KMDF, not driver/.
 using System.Runtime.InteropServices;
 using System.Threading;
 

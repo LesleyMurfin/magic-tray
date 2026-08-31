@@ -16,8 +16,7 @@ internal enum DriverStatus
 // LesleyMurfin/magic-mouse-v3-windows-fix (never from magic-tray/driver/).
 //
 // Live split (do not fight this until the user picks a package):
-//   PID 0323 — may still show MagicMouseDriver (May 20 custom). Best pull is
-//              sbagirici WHQL AppleWirelessMouse.sys bound to 0323.
+//   PID 0323 — MagicMouseDriver (KMDF pulled from magic-mouse-v3-windows-fix).
 //   PID 030D / 0269 / 0310 — applewirelessmouse (tealtadpole Boot Camp INF).
 //
 // A 0323 still showing applewirelessmouse is treated as bound so we do not nag.
