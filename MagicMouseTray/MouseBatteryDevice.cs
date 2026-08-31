@@ -1,10 +1,9 @@
 // IBatteryDevice implementation for Apple Magic Mouse (all generations).
 //
-// Battery read strategy:
-//   Split path (COL02, Mode A): UsagePage=0xFF00/Usage=0x0014, Input Report 0x90, buf[2]=pct.
-//     Requires applewirelessmouse NOT in LowerFilters (PATH-B via FLIP:NoFilter).
-//   Unified path (Mode B): Feature 0x47 Battery Strength — blocked by Apple driver (err=87).
-//     Returns -2 so callers can distinguish "present but unreadable" from "not found".
+// Battery read strategy (read-only HID — the tray never binds or flips filters):
+//   Split path (COL02): UsagePage=0xFF00/Usage=0x0014, Input Report 0x90, buf[2]=pct.
+//   Unified path: Feature Battery Strength (Generic Device Controls). Returns -2 when
+//   the device is present but the report is not exposed. KMDF for 0323 lives in driver/.
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -142,8 +141,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 return -1;
             }
             int err = Marshal.GetLastWin32Error();
-            // Apple driver (6.2.0.0) traps Feature 0x47 — empirically confirmed 2026-04-27.
-            Logger.Log($"MOUSE_UNIFIED_BLOCKED device={DeviceName} err={err} (Mode B — needs PATH-B recycle)");
+            Logger.Log($"MOUSE_UNIFIED_BLOCKED device={DeviceName} err={err} (battery report not exposed)");
             return -2;
         }
 

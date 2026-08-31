@@ -21,7 +21,7 @@ public interface IBatteryDevice
     /// <summary>
     /// Returns battery percentage (0–100), or a sentinel:
     ///   -1  device not found
-    ///   -2  device present but descriptor blocks read (unified/Mode-B)
+    ///   -2  device present but battery report is not exposed
     /// </summary>
     int GetBatteryPercent();
 }

@@ -20,7 +20,9 @@ internal sealed class Config
     internal Dictionary<string, int> Thresholds { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
 
     internal bool StartWithWindows { get; private set; }
-    internal bool EnableV3Recycle { get; private set; } = true;
+    // Retained so older config.ini files still load. The tray no longer flips
+    // LowerFilters; this flag is ignored by the UI and poller.
+    internal bool EnableV3Recycle { get; private set; } = false;
     internal bool EnableThirdParty { get; private set; } = false;
     internal bool UpdateCheck { get; private set; } = true;
 

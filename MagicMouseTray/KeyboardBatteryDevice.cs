@@ -18,9 +18,8 @@
 //   This is an active synchronous read on col02; DeviceRegistry.Discover() hands us the col02
 //   interface path and creates a fresh instance per poll, so no caching/monitor thread is needed.
 //   When the patch is absent (e.g. erased by a re-pair) the Feature cap is missing and we return
-//   -2 ("present but blocked"). The tray surfaces a how-to link to the patch instructions
-//   (DeviceCapability.KbPatchAnchor); auto-patch is NOT wired (the patch needs admin and there
-//   is no installed scheduled task for it, unlike MM-Dev-Cycle for the mouse flip).
+//   -2 ("present but blocked"). The tray shows that as status only — it does not run the
+//   admin SDP-cache script.
 
 using System.Runtime.InteropServices;
 

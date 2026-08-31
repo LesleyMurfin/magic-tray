@@ -19,7 +19,7 @@ internal static class UpdateChecker
             var asmVer = Assembly.GetExecutingAssembly().GetName().Version;
             var semver = asmVer != null ? $"{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "1.0.0";
             
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/LesleyMurfin/magic-mouse-tray/releases/latest");
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/LesleyMurfin/magic-tray/releases/latest");
             request.Headers.UserAgent.ParseAdd($"MagicMouseTray/{semver}");
             
             var response = await _client.SendAsync(request);

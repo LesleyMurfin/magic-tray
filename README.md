@@ -1,24 +1,23 @@
-# Magic Mouse Battery Tray
+# Magic Tray
 
-Free Windows tray app that shows Apple Magic Mouse battery percentage on Windows 11. No subscription required.
+Windows tray app that shows Apple Magic Mouse (and keyboard) battery on Windows 10/11. No subscription.
+
+The tray is a **user-facing client**: status, battery when the device already exposes it, start with Windows, quit. It does **not** install, bind, or repair the kernel driver.
 
 ![Tray icon showing 83% battery](docs/screenshot-tray.png)
 
 ## The Problem
 
-Apple Magic Mouse on Windows 11 has no native battery indicator. Magic Mouse Utilities — the only working solution — requires a paid subscription that breaks scroll entirely when the trial expires.
+Apple Magic Mouse on Windows 11 has no native battery indicator. Magic Mouse Utilities — the only working commercial solution — requires a paid subscription that breaks scroll entirely when the trial expires.
 
 ## Features
 
-- Battery % in tray icon (color-coded: green → yellow → orange → red as battery drains)
-- Tooltip shows device name, battery %, and time until next poll
-- Adaptive polling: checks every 24h above 20%; tightens to rate-based below 20% (floor: 5 min for Magic Mouse 2024, 30 min for other devices)
-- Low battery toast notification at your configured threshold (10/15/20/25%)
-- Cascading alerts: second toast fires automatically at 10% critical if your threshold is higher
-- Persistent warning window at 1% that stays visible until you plug in the Lightning cable
-- Driver health detection: warns if the Apple scroll driver isn't installed
-- Start with Windows toggle (no installer required — just a registry entry)
-- Single .exe, no dependencies, no install friction
+- Battery % in the tray icon (color-coded: green → yellow → orange → red as battery drains)
+- Tooltip and right-click menu show each device and its battery
+- Adaptive polling: checks every 24h above 20%; tightens when the battery is low
+- Low-battery toast at your threshold (10 / 15 / 20 / 25%), plus a 1% persistent warning
+- Start with Windows (a per-user registry entry — no installer)
+- Single `.exe`, no admin rights, no PowerShell
 
 ## Supported Mice
 
@@ -30,104 +29,50 @@ Apple Magic Mouse on Windows 11 has no native battery indicator. Magic Mouse Uti
 
 ## Supported Keyboards
 
-Keyboard battery requires a one-time SDP-cache patch (see [Keyboard battery patch](#keyboard-battery-patch)).
-
 | Model | Bluetooth PID | Status |
 |-------|--------------|--------|
-| Apple Wireless Keyboard (2011, A1314) ANSI/ISO/JIS | 0x0239 / 0x023A / 0x023B | ✅ Confirmed |
+| Apple Wireless Keyboard (2011, A1314) ANSI/ISO/JIS | 0x0239 / 0x023A / 0x023B | ✅ Confirmed when the keyboard already exposes a battery Feature report |
 | Magic Keyboard (A1644) / ISO | 0x024F / 0x0250 | ⚠ Included, not tested (device not available) |
 | Magic Keyboard with Touch ID (A2449) / ISO | 0x0267 / 0x026C | ⚠ Included, not tested (device not available) |
 
 ## Install
 
 1. Download `MagicMouseTray.exe` from [Releases](../../releases)
-2. Run it — no installer, no admin rights required
-3. Tray icon appears immediately
+2. Run it — no installer, no admin rights
+3. A tray icon appears. Right-click for status, Start with Windows, and Quit.
 
 **Requires**: Windows 10 1809+ (build 17763) or Windows 11, x64
 
-## Scroll Not Working?
+Use the release build. Do not replace a working install from a leftover copy under `C:\temp`.
 
-Scroll requires the Apple wireless mouse filter driver (`applewirelessmouse.sys`) to be installed **and bound** to your specific mouse model. The fix differs by model.
+## Scroll and the KMDF driver
 
-### Magic Mouse v1 / v2 (PID 030D, 0269)
+Scroll on Magic Mouse 2024 (PID **0323**) is handled by the **KMDF filter** in [`driver/`](driver/) (`MagicMouseDriver.vcxproj`). Live bind is sole `LowerFilters=MagicMouseDriver` on the 0323 stack (`HidBth` / `MagicMouseDriver` / `BthEnum`).
 
-Install the driver from [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64). The tray app will show **⚠ Install Apple Driver** in the right-click menu if the driver is missing.
+The tray **does not** install that driver, write `LowerFilters`, run `pnputil`, start/stop the service, or reboot you into a driver. If scroll already works, leave the bind alone.
 
-### Magic Mouse 2024 (USB-C, PID 0323)
+The older Magic Mouse (PID **030D**) stays on `applewirelessmouse`. Do not retarget 030D to `MagicMouseDriver`, and do not install both filters (`MagicMouseDriver,applewirelessmouse`).
 
-The tealtadpole driver does not cover PID 0323 — the INF was written in 2019 and the 2024 model was never added. Even with the driver installed, scroll will not work until the patched INF is applied.
+Operator build/install for the KMDF package lives in `driver/` — not in this tray UI.
 
-**Fix** (one-time, requires admin):
-
-1. **Boot with Driver Signature Enforcement disabled** — Start → Power → hold Shift → Restart → Troubleshoot → Advanced Options → Startup Settings → Restart → press **F7**
-
-2. **Run the fix script** in an elevated PowerShell:
-   ```powershell
-   .\sign-and-install.ps1
-   ```
-   The script: creates a self-signed code cert, generates and signs a catalog for the patched INF (adds PID 0323), enables test signing mode, and installs the driver package.
-
-3. **Remove and re-pair the mouse** in Bluetooth Settings.
-
-4. **Reboot normally** — test signing activates, driver persists.
-
-**After confirming scroll works**, you can remove the test-signing watermark:
-```powershell
-bcdedit /set testsigning off
-# then reboot
-```
-> Note: re-enabling test signing is required if you ever need to reinstall the driver.
-
-### Magic Mouse 2024 (v3) — brief scroll interruption during battery reads
-
-The 2024 Magic Mouse exposes battery only through a unified Feature report that the Apple
-driver blocks (Mode B). To read it, the app momentarily flips the device to the legacy
-split-report mode (Mode A), reads, then flips back. Each scheduled read is **idle-gated** —
-the app waits for the cursor to be idle for ≥30 seconds before flipping — so the brief scroll
-interruption happens during the idle window, not mid-scroll. The exception is the manual
-**Diagnostics → Read Battery Now** (and the per-device matrix "Read Battery Now") action,
-which bypasses the idle wait and can therefore interrupt an active scroll.
-
-## Keyboard battery patch
-
-Apple wireless keyboards declare their battery report as Input-only in the native HID
-descriptor, so Windows cannot read it (the device only pushes on Bluetooth connect). The
-one-time fix patches the Bluetooth SDP cache (`HKLM\...\BTHPORT\Parameters\Devices\<MAC>`)
-to expose the battery report as a readable *Feature* report.
-
-**Fix** (one-time, requires admin):
-
-```powershell
-# Elevated PowerShell:
-.\scripts\kbd-patch-cachedservices.ps1
-```
-
-The script backs up the existing SDP blobs before modifying them. **Re-pairing the keyboard
-erases the patch** — re-run the script if you remove and re-add the keyboard. Until the patch
-is applied, the tray shows **Needs SDP-cache patch** in the keyboard's matrix dropdown, linking
-back to this section.
-
-## Right-Click Menu
+## Right-click menu
 
 | Item | What it does |
 |------|-------------|
-| Devices → *(per device)* | Each detected device expands to a capability matrix: read method, status, and a context action (e.g. "Read Battery Now" for a v3 in Mode B, "Needs SDP-cache patch" for an unpatched keyboard) |
-| Low Battery Threshold | Set alert level: 10 / 15 / 20 / 25% |
+| Device rows | Name, battery %, and (for mice) which filter is already bound |
+| Low battery alert | 10 / 15 / 20 / 25% per device |
 | Start with Windows | Toggle auto-start on login |
-| Battery Reads [On/Off] | Toggle the v3 Mode-A recycle that reads the 2024 mouse battery |
-| Refresh Now | Force an immediate battery read |
-| Diagnostics | Submenu: Read Battery Now, Test Notification (debug toast), Open Logs, Open Diagnostics Folder |
-| ⚠ Install Apple Driver | Opens driver download (shown if driver missing) |
-| ⚠ Driver not bound — scroll fix needed | Opens this README's scroll fix section (driver installed but not bound) |
-| ⚠ Unknown mouse model — check for app update | Opens Releases page (future Apple mouse with unknown PID) |
-| Quit | Exit the app |
+| Show Logitech devices | Optional HID++ battery for directly connected Logitech mice |
+| Refresh battery | Read now |
+| Test battery alert | Fire a sample toast |
+| Open logs | `%APPDATA%\MagicMouseTray\debug.log` |
+| Quit | Exit |
 
-## How Battery Reading Works
+## How battery reading works
 
-Uses Apple's proprietary HID Input Report `0x90` via direct Win32 P/Invoke (`HidD_GetInputReport`). Standard BLE Battery Service doesn't work for Apple devices on Windows — this is the same approach used by [WinMagicBattery](https://github.com/hank1101444/WinMagicBattery), confirmed working against the COL02 battery collection (COL01 is the pointer, held exclusively by Windows).
+The tray reads Apple HID reports with Win32 P/Invoke (`HidD_GetInputReport` / `HidD_GetFeature`). It never flips the device stack to take a reading. If a device is present but the report is not exposed, the menu shows **Battery unavailable**.
 
-## Building from Source
+## Building from source
 
 Requires .NET 8 SDK (Windows).
 
@@ -136,23 +81,24 @@ dotnet publish -c Release
 # Output: bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\MagicMouseTray.exe
 ```
 
-## SmartScreen Warning
+The KMDF driver is a separate Visual Studio / MSBuild project: `driver/MagicMouseDriver.vcxproj`.
+
+## SmartScreen warning
 
 When you first run `MagicMouseTray.exe`, Windows may show "We can't verify who created this file." This is normal for unsigned open-source software — click **Run**.
 
 If you downloaded the file and it shows the full SmartScreen block ("Windows protected your PC"), click **More info → Run anyway**. Alternatively, right-click the file → Properties → check **Unblock** → OK.
 
-**For developers building from source on WSL**: Windows treats the WSL filesystem as a network path, which always triggers this dialog. Copy the built exe to a local Windows path (e.g. `C:\Temp\`) before running to avoid it.
+**For developers building from source on WSL**: Windows treats the WSL filesystem as a network path, which always triggers this dialog. Copy the built exe to a local Windows folder (for example `%USERPROFILE%\Downloads`) before running.
 
 ## Diagnostics
 
 Log file: `%APPDATA%\MagicMouseTray\debug.log`
 
 Key log lines:
-- `OK battery=83%` — successful read
+- `MOUSE_BATTERY_OK` / `OK battery=` — successful read
 - `OPEN_FAILED err=5` — COL01 skipped (normal — Windows holds this handle)
-- `DRIVER_CHECK status=Ok/NotInstalled/NotBound/UnknownAppleMouse` — driver detection result
-- `DRIVER_CHECK unknown_apple_pid=0xXXXX` — future/unknown Apple mouse PID detected
+- `DRIVER_CHECK status=Ok/NotInstalled/NotBound/UnknownAppleMouse` — read-only filter detection
 - `TOAST_SENT` — notification fired
 - `CRITICAL_ALERT_SHOWN` — 1% persistent window shown
 

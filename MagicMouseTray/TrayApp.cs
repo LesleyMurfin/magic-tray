@@ -8,8 +8,8 @@ using System.Windows.Forms;
 
 namespace MagicMouseTray;
 
-// Manages the system tray icon, right-click menu, and battery change display.
-// All UI updates are marshaled to the WPF dispatcher (NotifyIcon requires STA thread).
+// System tray icon and a simple right-click menu: device status, battery,
+// start with Windows, quit. The tray does not install, bind, or repair drivers.
 internal sealed class TrayApp : IDisposable
 {
     readonly NotifyIcon _tray;
@@ -18,25 +18,18 @@ internal sealed class TrayApp : IDisposable
     readonly ToolStripMenuItem _startupItem;
 
     // Per-device battery state, keyed by device name. Updated per poll event.
-    // Cleared when no devices are detected (empty name from AdaptivePoller).
     readonly Dictionary<string, (int Pct, DeviceKind Kind, string Pid)> _deviceBatteries = new(StringComparer.OrdinalIgnoreCase);
 
-    // Per-device menu items for live battery display in the right-click menu.
     readonly Dictionary<string, ToolStripMenuItem> _deviceMenuItems = new(StringComparer.OrdinalIgnoreCase);
     ToolStripMenuItem? _deviceSection;
     ToolStripMenuItem? _driverWarningItem;
     ToolStripSeparator? _driverWarningSeparator;
-    ToolStripMenuItem? _battReadItem;
 
-    // Alert boundaries fired per-device this drain cycle. Cleared per-device when battery recovers.
     readonly Dictionary<string, HashSet<int>> _firedBoundaries = new(StringComparer.OrdinalIgnoreCase);
 
-    // Persistent critical alert shown at 1%; auto-closed when mouse unplugs.
     CriticalAlert? _criticalAlert;
 
-    // Not readonly: recomputed on menu Opening so a just-applied driver fix shows without restart.
     DriverStatus _driverStatus;
-    readonly V3RecycleManager _recycleManager;
 
     Icon? _currentIcon;
 
@@ -47,33 +40,26 @@ internal sealed class TrayApp : IDisposable
     internal TrayApp(Config config)
     {
         _config = config;
-        _startupItem = null!; // assigned by BuildMenu
+        _startupItem = null!;
 
         _driverStatus = DriverHealthChecker.GetStatus();
         var menu = BuildMenu(out _startupItem);
 
-        RefreshTheme();   // must run before the first MakeIcon
+        RefreshTheme();
         _currentIcon = MakeIcon(-1, false, Marker.Mouse, _driverStatus != DriverStatus.Ok);
         _tray = new NotifyIcon
         {
             Icon = _currentIcon,
             ContextMenuStrip = menu,
             Visible = true,
-            Text = "Magic Mouse Battery — starting..."
+            Text = "Magic Tray — starting..."
         };
 
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnSystemVisualChanged;
-        Microsoft.Win32.SystemEvents.UserPreferenceChanged  += OnSystemVisualChanged;
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemVisualChanged;
 
         _poller = new AdaptivePoller(_config);
         _poller.BatteryChanged += OnBatteryChanged;
-
-        _recycleManager = new V3RecycleManager(_config);
-        _recycleManager.BatteryRead += OnBatteryChanged;
-
-        // Start polling only after every field OnBatteryChanged touches (_recycleManager,
-        // _poller) is assigned — the first poll cycle can raise BatteryChanged, and
-        // OnBatteryChanged dereferences _recycleManager in UpdateTrayIcon.
         _poller.Start();
 
         if (_config.UpdateCheck)
@@ -98,50 +84,34 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
-    ContextMenuStrip BuildMenu(
-        out ToolStripMenuItem startupItem)
+    ContextMenuStrip BuildMenu(out ToolStripMenuItem startupItem)
     {
         var menu = new ContextMenuStrip();
 
-        // Recompute driver status + rebuild the matrix on every open so a just-applied
-        // driver fix shows without restart. GetStatus() is registry-only and fast.
-        menu.Opening += (_, _) => { _driverStatus = DriverHealthChecker.GetStatus(); UpdateDeviceMenuItems(); UpdateDriverWarningItem(); };
+        menu.Opening += (_, _) =>
+        {
+            _driverStatus = DriverHealthChecker.GetStatus();
+            UpdateDeviceMenuItems();
+            UpdateDriverWarningItem();
+        };
 
-        // --- Device battery status (dynamically updated) ---
         _deviceSection = new ToolStripMenuItem("Devices") { Enabled = false };
         menu.Items.Add(_deviceSection);
         menu.Items.Add(new ToolStripSeparator());
 
-        // --- Driver warning: scoped to UnknownAppleMouse only (an unrecognized Apple PID has
-        // no IBatteryDevice, so it can never get a real per-device row like the mice/keyboards
-        // below — this is the one remaining case that needs a floating banner). NotBound/
-        // NotInstalled/Error for KNOWN devices are surfaced per-row instead (see the capability
-        // matrix dropdown below), so this banner no longer duplicates those warnings. Positioned
-        // right under the device rows (not after Start with Windows) so it still reads as
-        // device-scoped rather than a general settings-area warning.
-        _driverWarningItem = new ToolStripMenuItem("") { ForeColor = System.Drawing.Color.OrangeRed };
+        // Unknown-model banner only. Missing/unbound filters are status text on
+        // the device row — never an "install driver" or PowerShell action.
+        _driverWarningItem = new ToolStripMenuItem("") { ForeColor = Color.OrangeRed };
         _driverWarningItem.Click += (_, _) =>
         {
             if (_driverWarningItem.Tag is string url)
-            {
-                if (url.Contains("tealtadpole"))
-                {
-                    var res = MessageBox.Show(
-                        "This is a community driver, not affiliated with Apple or Microsoft.\nPlease verify its signature before installing.\n\nDo you want to proceed to the download page?",
-                        "Community Driver Notice",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Warning);
-                    if (res != DialogResult.Yes) return;
-                }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            }
         };
         _driverWarningSeparator = new ToolStripSeparator();
         menu.Items.Add(_driverWarningItem);
         menu.Items.Add(_driverWarningSeparator);
         UpdateDriverWarningItem();
 
-        // --- Global settings ---
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
             Checked = _config.StartWithWindows
@@ -153,73 +123,39 @@ internal sealed class TrayApp : IDisposable
         };
         menu.Items.Add(startupItem);
 
-        // --- Battery Reads toggle (PATH-B v3 recycle on/off). Visibility is conditional:
-        // only meaningful when a v3 Magic Mouse is connected AND its driver is Patched
-        // (recomputed on every device-list refresh in UpdateDeviceMenuItems -> UpdateBatteryReadsVisibility).
-        _battReadItem = new ToolStripMenuItem("Battery Reads [On]")
-        {
-            Checked = _config.EnableV3Recycle
-        };
-        _battReadItem.Click += (_, _) =>
-        {
-            _config.SetEnableV3Recycle(!_config.EnableV3Recycle);
-            _battReadItem.Text = _config.EnableV3Recycle ? "Battery Reads [On]" : "Battery Reads [Off]";
-            _battReadItem.Checked = _config.EnableV3Recycle;
-            if (_config.EnableV3Recycle) _recycleManager.ReEnable();
-        };
-        menu.Items.Add(_battReadItem);
-
-        // --- Third-party devices toggle (B2 experimental, default off) ---
         var thirdPartyItem = new ToolStripMenuItem(
-            _config.EnableThirdParty ? "Third-party devices [On]" : "Third-party devices [Off]")
+            _config.EnableThirdParty ? "Show Logitech devices [On]" : "Show Logitech devices [Off]")
         {
             Checked = _config.EnableThirdParty
         };
         thirdPartyItem.Click += (_, _) =>
         {
             _config.SetEnableThirdParty(!_config.EnableThirdParty);
-            thirdPartyItem.Text = _config.EnableThirdParty ? "Third-party devices [On]" : "Third-party devices [Off]";
+            thirdPartyItem.Text = _config.EnableThirdParty ? "Show Logitech devices [On]" : "Show Logitech devices [Off]";
             thirdPartyItem.Checked = _config.EnableThirdParty;
         };
         menu.Items.Add(thirdPartyItem);
 
         menu.Items.Add(new ToolStripSeparator());
 
-        // --- Actions ---
-        // --- Refresh Now ---
-        var refresh = new ToolStripMenuItem("Refresh Now (All Devices)");
+        var refresh = new ToolStripMenuItem("Refresh battery");
         refresh.Click += (_, _) => _poller.RefreshNow();
         menu.Items.Add(refresh);
 
-        // --- Diagnostics (debug surface). The v3 "Read Battery Now" action is also
-        //     surfaced contextually in the per-device matrix dropdown. ---
-        var diagnostics = new ToolStripMenuItem("Diagnostics");
-
-        var readNow = new ToolStripMenuItem("Read Battery Now (V3 Flip)");
-        readNow.Click += (_, _) => _ = _recycleManager.ForceReadNowAsync();
-        diagnostics.DropDownItems.Add(readNow);
-
-        var testToast = new ToolStripMenuItem("Test Notification");
+        var testToast = new ToolStripMenuItem("Test battery alert");
         testToast.Click += (_, _) =>
         {
             var (name, batt) = _deviceBatteries.FirstOrDefault(kv => kv.Value.Pct >= 0);
             ToastNotifier.Show(batt.Pct >= 0 ? batt.Pct : 15, name?.Length > 0 ? name : "Magic Mouse");
         };
-        diagnostics.DropDownItems.Add(testToast);
+        menu.Items.Add(testToast);
 
-        var openLogs = new ToolStripMenuItem("Open Logs");
+        var openLogs = new ToolStripMenuItem("Open logs");
         openLogs.Click += (_, _) => OpenLogsInEditor();
-        diagnostics.DropDownItems.Add(openLogs);
-
-        var openDiagFolder = new ToolStripMenuItem("Open Diagnostics Folder");
-        openDiagFolder.Click += (_, _) => OpenDiagnosticsFolder();
-        diagnostics.DropDownItems.Add(openDiagFolder);
-
-        menu.Items.Add(diagnostics);
+        menu.Items.Add(openLogs);
 
         menu.Items.Add(new ToolStripSeparator());
 
-        // --- Quit ---
         var quit = new ToolStripMenuItem("Quit");
         quit.Click += (_, _) =>
         {
@@ -230,26 +166,21 @@ internal sealed class TrayApp : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
 
-        // --- Version Info ---
         var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         var semver = asmVer != null ? $"{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "1.0.0";
-        var versionItem = new ToolStripMenuItem($"magic_tray v{semver}") { Enabled = false };
-        menu.Items.Add(versionItem);
+        menu.Items.Add(new ToolStripMenuItem($"Magic Tray {semver}") { Enabled = false });
 
-        // --- Update Item (Hidden by default) ---
         _updateItem = new ToolStripMenuItem("Update available") { Visible = false };
         _updateItem.Click += (_, _) =>
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/LesleyMurfin/magic-mouse-tray/releases/latest") { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "https://github.com/LesleyMurfin/magic-tray/releases/latest") { UseShellExecute = true });
         };
         menu.Items.Add(_updateItem);
 
         return menu;
     }
 
-    // Scoped to UnknownAppleMouse only — NotBound/NotInstalled/Error are surfaced per-row
-    // instead (the affected device already shows its own remediation action in the capability
-    // matrix dropdown; see DeviceCapability.Describe). Showing both would be a duplicate warning.
     void UpdateDriverWarningItem()
     {
         if (_driverWarningItem == null || _driverWarningSeparator == null) return;
@@ -261,16 +192,12 @@ internal sealed class TrayApp : IDisposable
             return;
         }
 
-        _driverWarningItem.Text = "⚠ Unknown mouse model — check for app update";
-        _driverWarningItem.Tag = "https://github.com/ReviveBusiness/magic-mouse-tray/releases";
+        _driverWarningItem.Text = "Unknown Apple mouse — check for an app update";
+        _driverWarningItem.Tag = "https://github.com/LesleyMurfin/magic-tray/releases";
         _driverWarningItem.Visible = true;
         _driverWarningSeparator.Visible = true;
     }
 
-
-
-    // Opens debug.log in Notepad++ if installed, falls back to notepad.exe.
-    // Notepad++ tail-follows the file (Settings > Misc > File Status Auto-Detection).
     void OpenLogsInEditor()
     {
         var logPath = Logger.LogPath;
@@ -298,25 +225,6 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
-    void OpenDiagnosticsFolder()
-    {
-        try
-        {
-            System.IO.Directory.CreateDirectory(Logger.LogDir);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"\"{Logger.LogDir}\"",
-                UseShellExecute = true
-            });
-            Logger.Log($"OPEN_DIAG_FOLDER path={Logger.LogDir}");
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"OPEN_DIAG_FOLDER_FAIL err={ex.Message}");
-        }
-    }
-
     static string? FindNotepadPlusPlus()
     {
         string[] candidates =
@@ -331,14 +239,12 @@ internal sealed class TrayApp : IDisposable
 
     void OnBatteryChanged(int pct, string name, DeviceKind kind, string pid)
     {
-        // Marshal to WPF/STA thread — NotifyIcon was created there
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             _driverStatus = DriverHealthChecker.GetStatus();
 
             if (string.IsNullOrEmpty(name))
             {
-                // Sentinel from AdaptivePoller: no devices found this cycle — clear all state
                 _deviceBatteries.Clear();
                 _firedBoundaries.Clear();
             }
@@ -347,7 +253,6 @@ internal sealed class TrayApp : IDisposable
                 name = new string(name.Where(c => !char.IsControl(c)).ToArray());
                 _deviceBatteries[name] = (pct, kind, pid);
 
-                // Per-device alert boundaries
                 var threshold = _config.GetThreshold(pid);
                 if (pct < 0 || pct > threshold)
                 {
@@ -372,7 +277,6 @@ internal sealed class TrayApp : IDisposable
                     }
                 }
 
-                // Critical alert at 1% — use first device that hits it
                 const int CriticalPct = 1;
                 if (pct >= 0 && pct <= CriticalPct && _criticalAlert == null)
                 {
@@ -383,7 +287,6 @@ internal sealed class TrayApp : IDisposable
                 }
             }
 
-            // Close critical alert when all devices are gone or the alerting device reconnects
             if (_criticalAlert != null && (_deviceBatteries.Count == 0 ||
                 _deviceBatteries.Values.All(p => p.Pct < 0)))
             {
@@ -395,20 +298,16 @@ internal sealed class TrayApp : IDisposable
         });
     }
 
-    // Theme/display change → refresh cached theme and re-render. Marshaled to the
-    // WPF/STA dispatcher like OnBatteryChanged.
     void OnSystemVisualChanged(object? sender, EventArgs e) =>
         System.Windows.Application.Current?.Dispatcher.Invoke(() => { RefreshTheme(); UpdateTrayIcon(); });
 
     void UpdateTrayIcon()
     {
-        // Icon driven by the lowest valid battery across all devices; also capture
-        // that device's name so the icon can show its device-type marker.
         int lowestPct = -1;
         string lowestName = string.Empty;
         foreach (var kv in _deviceBatteries)
         {
-            if (kv.Value.Pct < 0) continue; // Note: kv.Value is now a tuple (int Pct, DeviceKind Kind)
+            if (kv.Value.Pct < 0) continue;
             if (lowestPct < 0 || kv.Value.Pct < lowestPct) { lowestPct = kv.Value.Pct; lowestName = kv.Key; }
         }
 
@@ -425,40 +324,23 @@ internal sealed class TrayApp : IDisposable
         _currentIcon = newIcon;
         oldIcon?.Dispose();
 
-        // Tooltip: list all devices, truncate to 63 chars (Windows limit)
         string tip;
         if (_deviceBatteries.Count == 0)
         {
-            tip = "Magic Mouse Battery — no devices detected";
+            tip = "Magic Tray — no devices detected";
         }
         else
         {
             var parts = _deviceBatteries.Select(kv =>
             {
                 var pct = kv.Value.Pct;
-                var kind = kv.Value.Kind;
-                var pctStr = pct switch {
-                    >= 0 => $"{pct}%",
-                    -2   => "N/A",
-                    -3   => "Battery unavailable - see logs",
-                    _    => "—",
-                };
-                var nameStr = pct == -2 && kind == DeviceKind.MagicKeyboard ? "Keyboard (needs patch)" : kv.Key;
-                var estDaysStr = "";
-                if (pct >= 0)
-                {
-                    var hoursLeft = DrainRateTracker.GetHoursToThreshold(kv.Key, pct, 0); // hours to 0%
-                    if (hoursLeft > 24) estDaysStr = $" (~{(hoursLeft/24.0):F1}d est.)";
-                }
-                return $"{nameStr}: {pctStr}{estDaysStr}";
+                var pctStr = DeviceCapability.BatteryLabel(pct);
+                return $"{kv.Key}: {pctStr}";
             });
             var joined = string.Join(" | ", parts);
-            // Show V3RecycleManager interval if v3 has a valid reading; otherwise AdaptivePoller
-            var hasV3Reading = _deviceBatteries.Any(kv =>
-                kv.Key.Contains("2024", StringComparison.OrdinalIgnoreCase) && kv.Value.Pct >= 0);
-            var interval = hasV3Reading ? _recycleManager.NextInterval : _poller.LastInterval;
-            tip = $"{joined} · {FormatInterval(interval)}";
-            if (_driverStatus != DriverStatus.Ok) tip = $"⚠ {tip}";
+            tip = $"{joined} · {FormatInterval(_poller.LastInterval)}";
+            if (_driverStatus != DriverStatus.Ok && _driverStatus != DriverStatus.Error)
+                tip = $"⚠ {tip}";
         }
 
         _tray.Text = tip.Length > 63 ? tip[..63] : tip;
@@ -473,18 +355,15 @@ internal sealed class TrayApp : IDisposable
         if (_deviceBatteries.Count == 0)
         {
             _deviceSection.Text = "No devices detected";
-            // Empty-state guidance (non-clickable child hint).
-            _deviceSection.Enabled = true; // enable so the hint dropdown is reachable
+            _deviceSection.Enabled = true;
             _deviceSection.DropDownItems.Clear();
             _deviceSection.DropDownItems.Add(new ToolStripMenuItem(
-                "Pair a Magic Mouse/Keyboard via Bluetooth, then Refresh Now") { Enabled = false });
-            // Drop any stale per-device rows
+                "Pair a Magic Mouse or keyboard over Bluetooth, then Refresh battery") { Enabled = false });
             foreach (var key in _deviceMenuItems.Keys.ToList())
             {
                 _tray.ContextMenuStrip?.Items.Remove(_deviceMenuItems[key]);
                 _deviceMenuItems.Remove(key);
             }
-            UpdateBatteryReadsVisibility();
             return;
         }
 
@@ -494,103 +373,64 @@ internal sealed class TrayApp : IDisposable
         foreach (var kv in _deviceBatteries)
         {
             var pct = kv.Value.Pct;
-            var kind = kv.Value.Kind;
-            var pctStr = pct switch {
-                >= 0 => $"{pct}%",
-                -2   => "N/A (Mode B)",
-                -3   => "Unavailable - see logs",
-                _    => "—"
-            };
+            var knd = DeviceCapability.KindForName(kv.Key) ?? kv.Value.Kind;
+            var driverForRow = knd == DeviceKind.MagicMouseV3
+                ? DriverHealthChecker.GetStatusForPid(kv.Value.Pid)
+                : (knd is DeviceKind.MagicMouseV1 or DeviceKind.MagicMouseV2
+                    ? DriverHealthChecker.GetStatusForPid(kv.Value.Pid)
+                    : DriverStatus.Ok);
+            var boundFilter = DriverHealthChecker.GetBoundFilterForPid(kv.Value.Pid);
+            var row = DeviceCapability.Describe(knd, pct, driverForRow, boundFilter);
 
             var rate = DrainRateTracker.GetDrainRatePctPerHour(kv.Key);
-            var rateStr = rate > 0.001 ? $"  {rate:F2}%/h" : string.Empty;
-            
-            var estDaysStr = string.Empty;
+            var extras = new List<string>();
+            if (rate > 0.001) extras.Add($"{rate:F1}%/h");
             if (pct >= 0)
             {
                 var hoursLeft = DrainRateTracker.GetHoursToThreshold(kv.Key, pct, 0);
-                if (hoursLeft > 24)
-                {
-                    estDaysStr = $"  ~{(hoursLeft/24.0):F1} days est.";
-                }
+                if (hoursLeft > 24) extras.Add($"~{(hoursLeft / 24.0):F1}d");
             }
-
-            var label = $"{kv.Key}: {pctStr}{rateStr}{estDaysStr}";
-
-            // TODO(human): Trackpad hardware verification
-
-            var isPatchNeeded = pct == -2 && kind == DeviceKind.MagicKeyboard;
-            if (isPatchNeeded)
-            {
-                label = "Keyboard battery unavailable — descriptor patch required";
-            }
+            var extra = extras.Count > 0 ? "  " + string.Join("  ", extras) : "";
+            var label = $"{kv.Key}: {DeviceCapability.BatteryLabel(pct)}{extra}";
 
             if (!_deviceMenuItems.TryGetValue(kv.Key, out var item))
             {
-                item = new ToolStripMenuItem(label) { Enabled = !isPatchNeeded };
-                if (isPatchNeeded)
-                {
-                    item.Enabled = true;
-                    item.ForeColor = System.Drawing.Color.OrangeRed;
-                    item.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-descriptor-patch") { UseShellExecute = true });
-                }
+                item = new ToolStripMenuItem(label);
                 _deviceMenuItems[kv.Key] = item;
-                // Insert before the separator that follows the device section
                 var sepIdx = _tray.ContextMenuStrip!.Items.IndexOf(_deviceSection) + 1;
                 _tray.ContextMenuStrip.Items.Insert(sepIdx, item);
             }
             else
             {
                 item.Text = label;
-                if (isPatchNeeded && item.ForeColor != System.Drawing.Color.OrangeRed)
-                {
-                    item.Enabled = true;
-                    item.ForeColor = System.Drawing.Color.OrangeRed;
-                    item.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-descriptor-patch") { UseShellExecute = true });
-                }
+                item.Enabled = true;
+                item.ForeColor = SystemColors.ControlText;
             }
 
-            // Capability matrix dropdown for this device.
             item.DropDownItems.Clear();
-            var knd = DeviceCapability.KindForName(kv.Key);
-            if (knd is { } k)
+            item.DropDownItems.Add(new ToolStripMenuItem($"Status: {row.Status}") { Enabled = false });
+            if (!string.IsNullOrEmpty(boundFilter))
+                item.DropDownItems.Add(new ToolStripMenuItem($"Driver: {boundFilter}") { Enabled = false });
+            else if (knd is DeviceKind.MagicMouseV1 or DeviceKind.MagicMouseV2 or DeviceKind.MagicMouseV3)
+                item.DropDownItems.Add(new ToolStripMenuItem($"Driver: {DeviceCapability.DriverLabel(driverForRow, null)}") { Enabled = false });
+
+            if (row.ActionLabel is { } al && row.ActionUrl is { } url)
             {
-                // v3 gets its own per-PID driver status instead of the global worst-state-wins
-                // value — otherwise an unrelated v1/v2 mouse in a bad driver state would
-                // incorrectly badge a fine v3 mouse (and vice versa).
-                var driverForRow = k == DeviceKind.MagicMouseV3
-                    ? DriverHealthChecker.GetStatusForPid(kv.Value.Pid)
-                    : _driverStatus;
-                var row = DeviceCapability.Describe(k, kv.Value.Pct, driverForRow);
-                item.DropDownItems.Add(new ToolStripMenuItem($"Read method: {row.ReadMethod}") { Enabled = false });
-                item.DropDownItems.Add(new ToolStripMenuItem($"Status: {row.Status}") { Enabled = false });
-                if (row.ActionLabel is { } al)
-                {
-                    var action = new ToolStripMenuItem(al) { ForeColor = System.Drawing.Color.OrangeRed };
-                    if (row.ActionUrl is { } url)
-                        action.Click += (_, _) => System.Diagnostics.Process.Start(
-                            new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-                    else // in-app action (today only v3 "Read Battery Now")
-                    {
-                        // ForceReadNowAsync runs the FLIP cycle unconditionally, so if Battery
-                        // Reads is Off or recycle auto-disabled it would no-op/RecordFailure
-                        // silently. Gate the action on the live recycle state.
-                        bool canRead = _config.EnableV3Recycle && !_recycleManager.AutoDisabled;
-                        action.Enabled = canRead;
-                        if (canRead) action.Click += (_, _) => _ = _recycleManager.ForceReadNowAsync();
-                        else action.Text = al + " (enable Battery Reads first)";
-                    }
-                    item.DropDownItems.Add(action);
-                }
+                var action = new ToolStripMenuItem(al);
+                action.Click += (_, _) => System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                item.DropDownItems.Add(action);
             }
 
             item.DropDownItems.Add(new ToolStripSeparator());
-            var thrMenu = new ToolStripMenuItem("Low Battery Threshold");
+            var thrMenu = new ToolStripMenuItem("Low battery alert");
             var currentThr = _config.GetThreshold(kv.Value.Pid);
-            foreach(var t in new[]{10, 15, 20, 25}) {
+            foreach (var t in new[] { 10, 15, 20, 25 })
+            {
                 var tItem = new ToolStripMenuItem($"{t}%") { Checked = t == currentThr };
                 var pidStr = kv.Value.Pid;
-                tItem.Click += (_, _) => {
+                tItem.Click += (_, _) =>
+                {
                     _config.SetThreshold(pidStr, t);
                     UpdateTrayIcon();
                 };
@@ -599,30 +439,13 @@ internal sealed class TrayApp : IDisposable
             item.DropDownItems.Add(thrMenu);
         }
 
-        // Remove stale items for devices no longer present
         foreach (var key in _deviceMenuItems.Keys.Except(_deviceBatteries.Keys).ToList())
         {
             _tray.ContextMenuStrip?.Items.Remove(_deviceMenuItems[key]);
             _deviceMenuItems.Remove(key);
         }
 
-        _deviceSection.Text = $"Devices ({_deviceBatteries.Count})";
-        UpdateBatteryReadsVisibility();
-    }
-
-    // Battery Reads only does anything for a v3 Magic Mouse with the patched driver bound
-    // (PATH-B recycle needs applewirelessmouse present to restore Mode B between reads) —
-    // noise for v1/v2 or for a v3 still on the stock driver. Recomputed on every device-list
-    // refresh (poll + menu Opening), matching the design's "not a static settings item" rule.
-    void UpdateBatteryReadsVisibility()
-    {
-        if (_battReadItem is null) return;
-
-        bool show = _deviceBatteries.Any(kv =>
-            kv.Value.Kind == DeviceKind.MagicMouseV3 &&
-            DriverHealthChecker.GetStatusForPid(kv.Value.Pid) == DriverStatus.Ok);
-
-        _battReadItem.Visible = show;
+        _deviceSection.Text = _deviceBatteries.Count == 1 ? "1 device" : $"{_deviceBatteries.Count} devices";
     }
 
     static string FormatInterval(TimeSpan t)
@@ -631,9 +454,7 @@ internal sealed class TrayApp : IDisposable
     public void Dispose()
     {
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnSystemVisualChanged;
-        Microsoft.Win32.SystemEvents.UserPreferenceChanged  -= OnSystemVisualChanged;
-        _recycleManager.BatteryRead -= OnBatteryChanged;
-        _recycleManager.Dispose();
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemVisualChanged;
         _poller.BatteryChanged -= OnBatteryChanged;
         _poller.Dispose();
         _criticalAlert?.Close();
@@ -642,22 +463,9 @@ internal sealed class TrayApp : IDisposable
         _currentIcon?.Dispose();
     }
 
-    // --- Icon generation ---
-    // Draws a macOS-style battery glyph from scratch (no embedded art): an outlined body
-    // with a terminal nub, a left-anchored fill bar whose width tracks the battery %, and a
-    // device-type marker (mouse/keyboard capsule) in the strip below the body. Colors follow
-    // tier semantics; low/critical states tint the whole glyph for at-a-glance warning.
-    //
-    // DPI: the process is System-DPI-aware (WPF default, no manifest), so SmallIconSize is
-    // fixed at the DPI present when the process starts. The glyph is rendered crisp at that
-    // launch size; runtime scale changes are bitmap-virtualized by the OS (see spec §0.1).
-
     [DllImport("user32.dll")]
     static extern bool DestroyIcon(IntPtr hIcon);
 
-    // Device-type marker chosen from the display name (the only per-device signal carried in
-    // _deviceBatteries). Every name in KnownKeyboards contains "Keyboard"; no name in
-    // KnownMice does.
     enum Marker { Mouse, Keyboard }
 
     static Marker MarkerFor(string name) =>
@@ -665,32 +473,29 @@ internal sealed class TrayApp : IDisposable
 
     static Icon MakeIcon(int pct, bool isLow, Marker marker, bool driverMissing = false)
     {
-        int S = SystemInformation.SmallIconSize.Width;     // launch-DPI: 16@100% 20@125% 24@150% 32@200%
+        int S = SystemInformation.SmallIconSize.Width;
         float k = S / 16f;
         int R(float v) => (int)Math.Round(v * k, MidpointRounding.AwayFromZero);
 
         using var bmp = new Bitmap(S, S, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(bmp);
         g.Clear(Color.Transparent);
-        g.SmoothingMode = SmoothingMode.None;              // crisp integer body fills
+        g.SmoothingMode = SmoothingMode.None;
 
-        // Alert states glow the whole glyph (outline + marker + bar) for at-a-glance warning.
         bool alert = pct >= 0 && (isLow || pct < 10);
         Color outline = alert ? FillColor(pct, isLow) : ThemeOutlineColor();
 
-        // --- battery body: 4 integer fills + nub (see geometry table) ---
         int bx = R(1), by = R(3), bw = R(11), bh = R(7);
-        int t  = Math.Max(1, R(1));
+        int t = Math.Max(1, R(1));
         using (var ob = new SolidBrush(outline))
         {
-            g.FillRectangle(ob, bx, by, bw, t);                       // top
-            g.FillRectangle(ob, bx, by + bh - t, bw, t);             // bottom
-            g.FillRectangle(ob, bx, by, t, bh);                      // left
-            g.FillRectangle(ob, bx + bw - t, by, t, bh);            // right
-            g.FillRectangle(ob, bx + bw, by + R(2), R(1.5f), R(3)); // terminal nub
+            g.FillRectangle(ob, bx, by, bw, t);
+            g.FillRectangle(ob, bx, by + bh - t, bw, t);
+            g.FillRectangle(ob, bx, by, t, bh);
+            g.FillRectangle(ob, bx + bw - t, by, t, bh);
+            g.FillRectangle(ob, bx + bw, by + R(2), R(1.5f), R(3));
         }
 
-        // --- fill bar (tier color; >=1px once any charge exists; none when disconnected) ---
         if (pct >= 0)
         {
             int tx = bx + t, ty = by + t, tw = bw - 2 * t, th = bh - 2 * t;
@@ -699,67 +504,60 @@ internal sealed class TrayApp : IDisposable
                 using (var fb = new SolidBrush(FillColor(pct, isLow)))
                     g.FillRectangle(fb, tx, ty, fw, th);
 
-            // --- device marker (bottom strip; never drawn when disconnected) ---
-            // AA only at S>=20: a sub-5px AA capsule at S=16 reads as a smudge, so draw it crisp there.
             g.SmoothingMode = S >= 20 ? SmoothingMode.AntiAlias : SmoothingMode.None;
             DrawMarker(g, marker, outline, R);
             g.SmoothingMode = SmoothingMode.None;
         }
 
-        // --- driver-missing badge (top-right) ---
         if (driverMissing)
             using (var dot = new SolidBrush(Color.FromArgb(255, 220, 30)))
                 g.FillRectangle(dot, S - R(3), 0, R(3), R(3));
 
         var hIcon = bmp.GetHicon();
         var icon = (Icon)Icon.FromHandle(hIcon).Clone();
-        DestroyIcon(hIcon);                                // keep existing leak-free tail
+        DestroyIcon(hIcon);
         return icon;
     }
 
-    // isLow (below user threshold) overrides the tier, preserving the old TintColor semantics.
     static Color FillColor(int pct, bool isLow) => (pct, isLow) switch
     {
-        (_, true)   => Color.FromArgb(255,  64,  13),  // below user threshold (orange-red)
-        ( > 50, _)  => Color.FromArgb( 52, 199,  89),  // macOS green
-        ( >= 20, _) => Color.FromArgb(255, 204,   0),  // yellow
-        ( >= 10, _) => Color.FromArgb(255, 149,   0),  // orange
-        _           => Color.FromArgb(255,  59,  48),  // macOS red (critical)
+        (_, true) => Color.FromArgb(255, 64, 13),
+        (> 50, _) => Color.FromArgb(52, 199, 89),
+        (>= 20, _) => Color.FromArgb(255, 204, 0),
+        (>= 10, _) => Color.FromArgb(255, 149, 0),
+        _ => Color.FromArgb(255, 59, 48),
     };
 
     static void DrawMarker(Graphics g, Marker m, Color color, Func<float, int> R)
     {
         using var b = new SolidBrush(color);
-        // Both markers sit in the free strip BELOW the body (body fills rows 3..9; strip is rows 10+).
         var rect = m == Marker.Mouse
-            ? new Rectangle(R(6), R(10), R(4), R(6))   // mouse: vertical capsule (taller than wide)
-            : new Rectangle(R(5), R(11), R(6), R(4));  // keyboard: horizontal capsule (wider than tall)
+            ? new Rectangle(R(6), R(10), R(4), R(6))
+            : new Rectangle(R(5), R(11), R(6), R(4));
         using var path = Capsule(rect);
         g.FillPath(b, path);
     }
 
-    // Orientation-aware stadium: separate arc geometry for vertical vs horizontal capsules.
     static GraphicsPath Capsule(Rectangle r)
     {
         var p = new GraphicsPath();
         if (r.Width <= 1 || r.Height <= 1) { p.AddRectangle(r); return p; }
-        if (r.Height > r.Width)                                   // vertical capsule
+        if (r.Height > r.Width)
         {
             int d = r.Width;
-            p.AddArc(r.X, r.Y,          d, d, 180, 180);         // top semicircle
-            p.AddArc(r.X, r.Bottom - d, d, d,   0, 180);         // bottom semicircle
+            p.AddArc(r.X, r.Y, d, d, 180, 180);
+            p.AddArc(r.X, r.Bottom - d, d, d, 0, 180);
         }
-        else                                                     // horizontal capsule
+        else
         {
             int d = r.Height;
-            p.AddArc(r.X,         r.Y, d, d,  90, 180);          // left semicircle
-            p.AddArc(r.Right - d, r.Y, d, d, 270, 180);          // right semicircle
+            p.AddArc(r.X, r.Y, d, d, 90, 180);
+            p.AddArc(r.Right - d, r.Y, d, d, 270, 180);
         }
         p.CloseFigure();
         return p;
     }
 
-    // Cached taskbar theme read (avoids a registry read per render).
     static void RefreshTheme()
     {
         try
@@ -771,7 +569,6 @@ internal sealed class TrayApp : IDisposable
         catch { _lightTaskbar = false; }
     }
 
-    // Light taskbar => dark outline; dark taskbar => light outline.
     static Color ThemeOutlineColor() =>
         _lightTaskbar ? Color.FromArgb(70, 70, 70) : Color.FromArgb(220, 220, 220);
 }

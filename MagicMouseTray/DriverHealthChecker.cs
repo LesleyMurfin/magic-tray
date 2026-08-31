@@ -5,25 +5,28 @@ namespace MagicMouseTray;
 
 internal enum DriverStatus
 {
-    Ok,               // service present + LowerFilters bound (or no Apple BT device paired)
-    NotInstalled,     // AppleWirelessMouse service key absent
-    NotBound,         // service present, known Apple PID paired, but LowerFilters not applied
-    UnknownAppleMouse, // Apple-vendor HID device with a PID not in our INF — likely a new model
-    Error             // transient registry error
+    Ok,                // expected filter bound for that PID (or no Apple mouse paired)
+    NotInstalled,      // no relevant filter service and no recognized filter on a paired mouse
+    NotBound,          // service present, known Apple PID paired, expected filter not in LowerFilters
+    UnknownAppleMouse, // Apple-vendor HID device with a PID not in our known list
+    Error              // transient registry error
 }
 
-// TODO(human): confirm whether driver needs DSE-disable; add disclosure if so.
-// Checks whether the AppleWirelessMouse filter driver is installed and bound to the device.
+// Read-only health check. The tray never installs, binds, or repairs a driver.
 //
-// The service can be registered but not bound if:
-//   (a) the INF predates the connected model (e.g. PID 0323 absent from the 2019 tealtadpole INF)
-//   (b) the device was never re-paired after driver installation
+// Live split (do not fight this):
+//   PID 0323 (Magic Mouse 2024) — sole LowerFilters=MagicMouseDriver (KMDF in driver/).
+//   PID 030D / 0269 / 0310      — applewirelessmouse. Do not retarget 030D.
 //
-// UnknownAppleMouse is returned when we find a paired Apple-vendor BT HID device whose PID
-// is not in our known list — this tells the user a future model needs an app/driver update.
+// A 0323 still showing applewirelessmouse is treated as bound so we do not nag
+// the user to "fix" a working legacy bind. We never offer to change it.
 internal static class DriverHealthChecker
 {
-    const string ServiceKey = @"SYSTEM\CurrentControlSet\Services\AppleWirelessMouse";
+    internal const string AppleFilterName = "applewirelessmouse";
+    internal const string KmdfFilterName = "MagicMouseDriver";
+
+    const string AppleServiceKey = @"SYSTEM\CurrentControlSet\Services\AppleWirelessMouse";
+    const string KmdfServiceKey = @"SYSTEM\CurrentControlSet\Services\MagicMouseDriver";
     const string BtHidEnumBase = @"SYSTEM\CurrentControlSet\Enum\BTHENUM";
 
     // Bluetooth HID UUID (classic BT HID profile)
@@ -33,72 +36,98 @@ internal static class DriverHealthChecker
     // VID&000205ac = Apple USB-IF VID (0x05AC), VID&0001004c = Apple BLE company ID (0x004C).
     static readonly string[] AppleVidSegments = ["_VID&000205ac_", "_VID&0001004c_"];
 
-    // PIDs covered by the patched AppleWirelessMouse.inf (lower-case, 4 hex digits).
-    // If Apple ships a new model, its PID won't be here — we surface that as UnknownAppleMouse.
-    static readonly string[] KnownPids = ["030d", "0310", "0269", "0323"];
+    // PIDs this tray knows how to show status for (lower-case, 4 hex digits).
+    internal static readonly string[] KnownPids = ["030d", "0310", "0269", "0323"];
 
-    // Apple BT-HID devices matched by the same VID/UUID scan but that do NOT use the
-    // applewirelessmouse scroll filter (trackpads + keyboards). Excluded from BOTH the
-    // UnknownAppleMouse and the NotBound verdicts — otherwise the tray shows a false warning.
-    // PIDs are numeric facts only (hid-ids.h, GPL) — no kernel code/comments copied.
+    // Older mice stay on applewirelessmouse. Do not treat MagicMouseDriver as expected here.
+    internal static readonly string[] AppleFilterPids = ["030d", "0310", "0269"];
+
+    // Magic Mouse 2024 — sole MagicMouseDriver in live state.
+    internal static readonly string[] KmdfFilterPids = ["0323"];
+
+    // Apple BT-HID devices that do not use a mouse scroll filter (trackpads + keyboards).
     static readonly string[] NonScrollApplePids =
     [
         "030e", "0265", "0324",                                       // trackpads (v1, v2, v3)
-        "0239", "023a", "023b", "024f", "0250", "0267", "026c",       // existing keyboard rows (latent fix)
+        "0239", "023a", "023b", "024f", "0250", "0267", "026c",       // existing keyboard rows
         "029c", "029a", "029f", "0320", "0321", "0322",               // Magic Keyboards 2021/2024
-        "0255", "0256", "0257",                                       // Apple Wireless Keyboard 2011 (true)
+        "0255", "0256", "0257",                                       // Apple Wireless Keyboard 2011
     ];
+
+    internal static bool IsV3Pid(string pid) =>
+        Array.Exists(KmdfFilterPids, p => p == pid.ToLowerInvariant());
+
+    // True when this LowerFilters entry is an acceptable bind for the PID.
+    // 0323: MagicMouseDriver (live) or applewirelessmouse (legacy — do not nag).
+    // 030D/0269/0310: applewirelessmouse only.
+    internal static bool FilterMatchesPid(string filter, string pid)
+    {
+        if (string.IsNullOrEmpty(filter)) return false;
+        pid = pid.ToLowerInvariant();
+        if (IsV3Pid(pid))
+        {
+            return filter.Equals(KmdfFilterName, StringComparison.OrdinalIgnoreCase)
+                || filter.Equals(AppleFilterName, StringComparison.OrdinalIgnoreCase);
+        }
+        return filter.Equals(AppleFilterName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool FiltersIncludeMatch(string[]? filters, string pid)
+    {
+        if (filters is null || filters.Length == 0) return false;
+        return Array.Exists(filters, f => FilterMatchesPid(f, pid));
+    }
+
+    // First recognized filter name on this PID, or null. Prefer MagicMouseDriver on 0323.
+    internal static string? PreferredBoundFilter(string[]? filters, string pid)
+    {
+        if (filters is null) return null;
+        pid = pid.ToLowerInvariant();
+        if (IsV3Pid(pid))
+        {
+            var kmdf = Array.Find(filters, f => f.Equals(KmdfFilterName, StringComparison.OrdinalIgnoreCase));
+            if (kmdf is not null) return KmdfFilterName;
+            var apple = Array.Find(filters, f => f.Equals(AppleFilterName, StringComparison.OrdinalIgnoreCase));
+            if (apple is not null) return AppleFilterName;
+            return null;
+        }
+        var awm = Array.Find(filters, f => f.Equals(AppleFilterName, StringComparison.OrdinalIgnoreCase));
+        return awm is not null ? AppleFilterName : null;
+    }
+
+    static bool ServiceKeyExists(string keyPath)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(keyPath, writable: false);
+        return key != null;
+    }
+
+    static bool AnyFilterServicePresent() =>
+        ServiceKeyExists(KmdfServiceKey) || ServiceKeyExists(AppleServiceKey);
 
     internal static DriverStatus GetStatus()
     {
         try
         {
-            using var svcKey = Registry.LocalMachine.OpenSubKey(ServiceKey, writable: false);
-            if (svcKey == null)
-            {
-                Logger.Log("DRIVER_CHECK status=NotInstalled (service key missing)");
-                return DriverStatus.NotInstalled;
-            }
-
             using var btEnumKey = Registry.LocalMachine.OpenSubKey(BtHidEnumBase, writable: false);
             if (btEnumKey == null)
             {
-                Logger.Log("DRIVER_CHECK status=Ok (service present, BTHENUM absent)");
+                Logger.Log("DRIVER_CHECK status=Ok (BTHENUM absent)");
                 return DriverStatus.Ok;
             }
 
             bool anyAppleMouse = false;
             bool anyUnknownPid = false;
             bool anyNotBound = false;
+            bool anyUnboundWithoutService = false;
 
             foreach (var subkeyName in btEnumKey.GetSubKeyNames())
             {
-                if (!subkeyName.StartsWith(HidUuidPrefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                bool isApple = false;
-                foreach (var seg in AppleVidSegments)
-                    if (subkeyName.Contains(seg, StringComparison.OrdinalIgnoreCase))
-                    { isApple = true; break; }
-                if (!isApple) continue;
-
-                // Extract 4-hex-digit PID from "_PID&XXXX" at end of key name
-                int pidIdx = subkeyName.LastIndexOf("_PID&", StringComparison.OrdinalIgnoreCase);
-                if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) continue;
-                var pid = subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
-
-                // Non-scroll Apple device (trackpad/keyboard): no scroll filter expected.
-                // Skip so it triggers neither UnknownAppleMouse nor NotBound.
-                if (Array.Exists(NonScrollApplePids, p => p == pid))
-                {
-                    Logger.Log($"DRIVER_CHECK skip_non_scroll_apple pid=0x{pid.ToUpper()}");
-                    continue;
-                }
+                if (!TryParseAppleHidKey(subkeyName, out var pid)) continue;
 
                 using var deviceKey = btEnumKey.OpenSubKey(subkeyName, writable: false);
                 if (deviceKey == null) continue;
                 var instances = deviceKey.GetSubKeyNames();
-                if (instances.Length == 0) continue; // key exists but no device paired
+                if (instances.Length == 0) continue;
 
                 anyAppleMouse = true;
                 bool pidKnown = Array.Exists(KnownPids, p => p == pid);
@@ -107,8 +136,8 @@ internal static class DriverHealthChecker
                 {
                     using var instance = deviceKey.OpenSubKey(instanceName, writable: false);
                     var filters = instance?.GetValue("LowerFilters") as string[];
-                    bool isBound = filters != null && Array.Exists(filters,
-                        f => f.Equals("applewirelessmouse", StringComparison.OrdinalIgnoreCase));
+                    bool isBound = FiltersIncludeMatch(filters, pid);
+                    var boundName = PreferredBoundFilter(filters, pid);
 
                     if (!pidKnown)
                     {
@@ -117,101 +146,145 @@ internal static class DriverHealthChecker
                     }
                     else if (isBound)
                     {
-                        Logger.Log($"DRIVER_CHECK pid=0x{pid.ToUpper()} LowerFilters=bound");
+                        Logger.Log($"DRIVER_CHECK pid=0x{pid.ToUpper()} LowerFilters={boundName}");
                     }
                     else
                     {
                         Logger.Log($"DRIVER_CHECK pid=0x{pid.ToUpper()} LowerFilters=missing");
                         anyNotBound = true;
+                        if (!AnyFilterServicePresent())
+                            anyUnboundWithoutService = true;
                     }
                 }
             }
 
             if (!anyAppleMouse)
             {
-                Logger.Log("DRIVER_CHECK status=Ok (service present, no Apple BT HID device paired)");
+                Logger.Log("DRIVER_CHECK status=Ok (no Apple BT HID mouse paired)");
                 return DriverStatus.Ok;
             }
 
-            // Worst-state wins across all paired devices:
-            // UnknownAppleMouse > NotBound > Ok
             if (anyUnknownPid)
             {
-                Logger.Log("DRIVER_CHECK status=UnknownAppleMouse (PID not in INF)");
+                Logger.Log("DRIVER_CHECK status=UnknownAppleMouse (PID not in known list)");
                 return DriverStatus.UnknownAppleMouse;
             }
 
             if (anyNotBound)
             {
-                Logger.Log("DRIVER_CHECK status=NotBound (service present, known PID, LowerFilters missing)");
+                if (anyUnboundWithoutService && !AnyFilterServicePresent())
+                {
+                    Logger.Log("DRIVER_CHECK status=NotInstalled (no filter service, known PID unbound)");
+                    return DriverStatus.NotInstalled;
+                }
+                Logger.Log("DRIVER_CHECK status=NotBound (known PID, expected filter missing)");
                 return DriverStatus.NotBound;
             }
 
-            Logger.Log("DRIVER_CHECK status=Ok (service + LowerFilters bound)");
+            Logger.Log("DRIVER_CHECK status=Ok (expected filter bound)");
             return DriverStatus.Ok;
         }
         catch (Exception ex)
         {
             Logger.Log($"DRIVER_CHECK_FAILED err={ex.Message}");
-            return DriverStatus.Error; // fail open — don't nag user on transient registry errors, but surface as error state
+            return DriverStatus.Error;
         }
     }
 
-    // Per-PID variant of GetStatus(), scoped to one device (e.g. the v3 Magic Mouse, PID 0323)
-    // instead of worst-state-wins across every paired Apple mouse. Needed because the v3 driver
-    // badge must reflect THAT device's binding, not whatever other mouse happens to be unbound.
-    // Reuses the same BTHENUM/LowerFilters mechanism as GetStatus() — verified against
-    // v1-binary-patch/installer/Install-MagicMousePatch.ps1, which registers the SAME
-    // "applewirelessmouse" service/LowerFilters entry for the v3 mouse as for v1/v2.
+    // Per-PID variant — 0323 status must not inherit a 030D problem (and vice versa).
     internal static DriverStatus GetStatusForPid(string pid)
     {
         pid = pid.ToLowerInvariant();
         try
         {
-            using var svcKey = Registry.LocalMachine.OpenSubKey(ServiceKey, writable: false);
-            if (svcKey == null) return DriverStatus.NotInstalled;
-
             using var btEnumKey = Registry.LocalMachine.OpenSubKey(BtHidEnumBase, writable: false);
-            if (btEnumKey == null) return DriverStatus.Ok; // service present, nothing paired
+            if (btEnumKey == null) return DriverStatus.Ok;
 
             foreach (var subkeyName in btEnumKey.GetSubKeyNames())
             {
-                if (!subkeyName.StartsWith(HidUuidPrefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                bool isApple = false;
-                foreach (var seg in AppleVidSegments)
-                    if (subkeyName.Contains(seg, StringComparison.OrdinalIgnoreCase))
-                    { isApple = true; break; }
-                if (!isApple) continue;
-
-                int pidIdx = subkeyName.LastIndexOf("_PID&", StringComparison.OrdinalIgnoreCase);
-                if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) continue;
-                var keyPid = subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
+                if (!TryParseAppleHidKey(subkeyName, out var keyPid)) continue;
                 if (keyPid != pid) continue;
 
                 using var deviceKey = btEnumKey.OpenSubKey(subkeyName, writable: false);
                 if (deviceKey == null) continue;
                 var instances = deviceKey.GetSubKeyNames();
-                if (instances.Length == 0) continue; // key exists but not currently paired
+                if (instances.Length == 0) continue;
 
                 foreach (var instanceName in instances)
                 {
                     using var instance = deviceKey.OpenSubKey(instanceName, writable: false);
                     var filters = instance?.GetValue("LowerFilters") as string[];
-                    bool isBound = filters != null && Array.Exists(filters,
-                        f => f.Equals("applewirelessmouse", StringComparison.OrdinalIgnoreCase));
-                    Logger.Log($"DRIVER_CHECK_PID pid=0x{pid.ToUpper()} bound={isBound}");
-                    return isBound ? DriverStatus.Ok : DriverStatus.NotBound;
+                    bool isBound = FiltersIncludeMatch(filters, pid);
+                    Logger.Log($"DRIVER_CHECK_PID pid=0x{pid.ToUpper()} bound={isBound} filter={PreferredBoundFilter(filters, pid) ?? "none"}");
+                    if (isBound) return DriverStatus.Ok;
+                    return AnyFilterServicePresent() ? DriverStatus.NotBound : DriverStatus.NotInstalled;
                 }
             }
 
-            return DriverStatus.Ok; // PID not currently paired — nothing to warn about
+            return DriverStatus.Ok; // PID not currently paired
         }
         catch (Exception ex)
         {
             Logger.Log($"DRIVER_CHECK_PID_FAILED pid={pid} err={ex.Message}");
             return DriverStatus.Error;
         }
+    }
+
+    internal static string? GetBoundFilterForPid(string pid)
+    {
+        pid = pid.ToLowerInvariant();
+        try
+        {
+            using var btEnumKey = Registry.LocalMachine.OpenSubKey(BtHidEnumBase, writable: false);
+            if (btEnumKey == null) return null;
+
+            foreach (var subkeyName in btEnumKey.GetSubKeyNames())
+            {
+                if (!TryParseAppleHidKey(subkeyName, out var keyPid)) continue;
+                if (keyPid != pid) continue;
+
+                using var deviceKey = btEnumKey.OpenSubKey(subkeyName, writable: false);
+                if (deviceKey == null) continue;
+
+                foreach (var instanceName in deviceKey.GetSubKeyNames())
+                {
+                    using var instance = deviceKey.OpenSubKey(instanceName, writable: false);
+                    var filters = instance?.GetValue("LowerFilters") as string[];
+                    var name = PreferredBoundFilter(filters, pid);
+                    if (name is not null) return name;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"DRIVER_FILTER_PID_FAILED pid={pid} err={ex.Message}");
+        }
+        return null;
+    }
+
+    // Returns true and the 4-hex PID when this BTHENUM subkey is an Apple HID mouse/trackpad/keyboard.
+    // Non-scroll Apple devices return false so they never affect mouse driver status.
+    static bool TryParseAppleHidKey(string subkeyName, out string pid)
+    {
+        pid = "";
+        if (!subkeyName.StartsWith(HidUuidPrefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        bool isApple = false;
+        foreach (var seg in AppleVidSegments)
+            if (subkeyName.Contains(seg, StringComparison.OrdinalIgnoreCase))
+            { isApple = true; break; }
+        if (!isApple) return false;
+
+        int pidIdx = subkeyName.LastIndexOf("_PID&", StringComparison.OrdinalIgnoreCase);
+        if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) return false;
+        pid = subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
+
+        if (Array.Exists(NonScrollApplePids, p => p == pid))
+        {
+            Logger.Log($"DRIVER_CHECK skip_non_scroll_apple pid=0x{pid.ToUpper()}");
+            return false;
+        }
+        return true;
     }
 }

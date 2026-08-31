@@ -8,8 +8,9 @@ namespace MagicMouseTray;
 // BatteryChanged is raised from a thread-pool thread — callers must marshal
 // to the UI thread before touching WPF/NotifyIcon objects (done in TrayApp).
 //
-// v3 Magic Mouse in Mode B returns pct=-2 (unreadable) — not recorded into
-// DrainRateTracker; V3RecycleManager owns v3 drain tracking.
+// A v3 Magic Mouse that cannot expose a battery report returns pct=-2
+// (unreadable) and is not recorded into DrainRateTracker. The tray never
+// flips LowerFilters to force a reading — that belongs in driver/, not here.
 internal sealed class AdaptivePoller : IDisposable
 {
     // Fired once per discovered device per poll cycle.
@@ -146,8 +147,7 @@ internal sealed class AdaptivePoller : IDisposable
                     }
                 }
 
-                // Interval driven by the lowest readable device (non-v3 path — v3 cadence
-                // is owned by V3RecycleManager). Use DrainRateTracker for non-v3 devices.
+                // Interval driven by the lowest readable device.
                 var lowestIsV3 = devices.FirstOrDefault(d => d.DeviceName == lowestDevice)
                                          ?.Kind == DeviceKind.MagicMouseV3;
                 interval = DrainRateTracker.GetNextInterval(

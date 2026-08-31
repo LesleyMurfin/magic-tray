@@ -1,8 +1,8 @@
 // DrainRateTracker.cs — Per-device battery drain rate estimation.
 //
 // Records (timestamp, pct) pairs per device and computes %/hour drain rate from
-// observed history. Both AdaptivePoller and V3RecycleManager call Record() after
-// each successful read, then GetNextInterval() to schedule the next poll.
+// observed history. AdaptivePoller calls Record() after each successful read,
+// then GetNextInterval() to schedule the next poll.
 //
 // Interval logic:
 //   pct >= 20%  → 24h (battery lasts days — daily check is sufficient)
@@ -22,7 +22,7 @@ internal static class DrainRateTracker
 {
     const int MaxReadings = 5;
 
-    // Floor intervals by device type — v3 has scroll-glitch cost per recycle
+    // Floor intervals by device type. v3 reads are ordinary HID polls (no filter flip).
     internal static readonly TimeSpan FloorV3      = TimeSpan.FromMinutes(5);
     internal static readonly TimeSpan FloorNonV3   = TimeSpan.FromMinutes(30);
     internal static readonly TimeSpan CeilingNormal = TimeSpan.FromHours(24);
