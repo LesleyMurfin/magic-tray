@@ -8,8 +8,9 @@ using System.Text.RegularExpressions;
 namespace MagicMouseTray;
 
 // Pulls a user-selected package and installs it.
-// KMDF is downloaded from LesleyMurfin/magic-mouse-v3-windows-fix — never from
-// magic-tray/driver/. No leftover mm-dev / install-driver dual-filter scripts.
+// 0323: zip LesleyMurfin/magic-mouse-v3-windows-fix and run THAT repo's
+// sign+install script. Never vendor Driver.c / INF / .sys / install scripts
+// into magic-tray. No leftover mm-dev / bind-filter generation.
 internal static class DriverInstaller
 {
     internal const string ZipUrlFormat =
@@ -45,7 +46,7 @@ internal static class DriverInstaller
 
         return pkg.Kind switch
         {
-            InstallKind.KmdfPull => await PullKmdfAndBindAsync(pkg, devicePid, ct),
+            InstallKind.KmdfPull => await PullRepoAndRunTheirInstallerAsync(pkg, devicePid, ct),
             InstallKind.InfPnputil => await PullInfAndPnputilAsync(pkg, devicePid, ct),
             InstallKind.KeyboardSdpPatch => RunKeyboardSdpPatch(devicePid),
             _ => throw new InvalidOperationException($"Unknown install kind {pkg.Kind}."),
@@ -69,27 +70,77 @@ internal static class DriverInstaller
         return extractDir;
     }
 
-    static async Task<string> PullKmdfAndBindAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
+    static async Task<string> PullRepoAndRunTheirInstallerAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
     {
         if (!devicePid.Equals("0323", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("KMDF MagicMouseDriver is 0323-only. Will not retarget 030D.");
 
         var extractDir = await DownloadZipAsync(pkg, ct);
-        var packageDir = FindPackageDir(extractDir, pkg.PathInRepo)
-            ?? throw new InvalidOperationException($"Pulled {pkg.Owner}/{pkg.Repo} but '{pkg.PathInRepo}' was not in the zip.");
+        var script = FindUpstreamInstaller(extractDir, pkg.PathInRepo)
+            ?? throw new InvalidOperationException(
+                $"Pulled {pkg.Owner}/{pkg.Repo} but found no sign+install script. " +
+                "Expected that repo's Install-MagicMousePatch.ps1 (or a later v2-kmdf-driver installer). " +
+                "magic-tray will not vendor or generate install scripts.");
 
-        var inf = Directory.EnumerateFiles(packageDir, "*.inf", SearchOption.AllDirectories).FirstOrDefault();
-        if (inf is null)
-            throw new InvalidOperationException(
-                $"No INF in {pkg.Owner}/{pkg.Repo}/{pkg.PathInRepo}. KMDF ships from that repo — magic-tray will not vendor Driver.c / INF / .sys. Publish MagicMouseDriver.inf there.");
+        if (DriverPackageCatalog.IsLocalVendorPath(script))
+            throw new InvalidOperationException("Refusing local magic-tray/driver script.");
 
-        if (DriverPackageCatalog.IsLocalVendorPath(inf))
-            throw new InvalidOperationException("Refusing local magic-tray/driver INF.");
+        Logger.Log($"DRIVER_UPSTREAM_INSTALL script={script} pid={devicePid}");
+        RunElevated(
+            "powershell.exe",
+            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
+            workingDirectory: Path.GetDirectoryName(script),
+            windowStyle: ProcessWindowStyle.Normal);
+        return script;
+    }
 
-        Logger.Log($"DRIVER_INSTALL inf={inf} pid={devicePid}");
-        RunElevated("pnputil.exe", $"/add-driver \"{inf}\" /install");
-        RunElevatedBindFilter(devicePid, DriverHealthChecker.KmdfFilterName);
-        return inf;
+    // That repo's installer — never a script written by magic-tray.
+    // Prefer PathInRepo when it names a file; else v2-kmdf-driver *Install*.ps1;
+    // else the published easy script Install-MagicMousePatch.ps1.
+    internal static string? FindUpstreamInstaller(string extractRoot, string pathInRepo)
+    {
+        if (!Directory.Exists(extractRoot))
+            return null;
+
+        if (!string.IsNullOrEmpty(pathInRepo))
+        {
+            var rel = pathInRepo.Replace('/', Path.DirectorySeparatorChar);
+            foreach (var file in Directory.EnumerateFiles(extractRoot, "*", SearchOption.AllDirectories))
+            {
+                if (file.EndsWith(rel, StringComparison.OrdinalIgnoreCase)
+                    && file.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase))
+                    return file;
+            }
+
+            var dir = FindPackageDir(extractRoot, pathInRepo);
+            if (dir != null)
+            {
+                var inDir = FirstInstallScriptUnder(dir);
+                if (inDir != null) return inDir;
+            }
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(extractRoot, "v2-kmdf-driver", SearchOption.AllDirectories))
+        {
+            var found = FirstInstallScriptUnder(dir);
+            if (found != null) return found;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(extractRoot, "Install-MagicMousePatch.ps1", SearchOption.AllDirectories))
+            return file;
+
+        return null;
+    }
+
+    static string? FirstInstallScriptUnder(string dir)
+    {
+        foreach (var file in Directory.EnumerateFiles(dir, "*Install*.ps1", SearchOption.AllDirectories))
+        {
+            if (Path.GetFileName(file).Contains("Uninstall", StringComparison.OrdinalIgnoreCase))
+                continue;
+            return file;
+        }
+        return null;
     }
 
     static async Task<string> PullInfAndPnputilAsync(DriverPackage pkg, string devicePid, CancellationToken ct)
@@ -172,16 +223,12 @@ internal static class DriverInstaller
         return null;
     }
 
-    static void RunElevatedBindFilter(string pid, string filterName)
-    {
-        var script = Path.Combine(CacheRoot, "bind-filter.ps1");
-        Directory.CreateDirectory(CacheRoot);
-        File.WriteAllText(script, BindFilterScript);
-        RunElevated("powershell.exe",
-            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -DevicePid \"{pid}\" -FilterName \"{filterName}\"");
-    }
-
-    static void RunElevated(string fileName, string arguments, TimeSpan? timeout = null)
+    static void RunElevated(
+        string fileName,
+        string arguments,
+        TimeSpan? timeout = null,
+        string? workingDirectory = null,
+        ProcessWindowStyle windowStyle = ProcessWindowStyle.Hidden)
     {
         var psi = new ProcessStartInfo
         {
@@ -189,8 +236,10 @@ internal static class DriverInstaller
             Arguments = arguments,
             UseShellExecute = true,
             Verb = "runas",
-            WindowStyle = ProcessWindowStyle.Hidden,
+            WindowStyle = windowStyle,
         };
+        if (!string.IsNullOrEmpty(workingDirectory))
+            psi.WorkingDirectory = workingDirectory;
         using var p = Process.Start(psi);
         if (p is null)
             throw new InvalidOperationException("Could not start elevated process (UAC cancelled?).");
@@ -202,25 +251,4 @@ internal static class DriverInstaller
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited {p.ExitCode}.");
     }
-
-    // Sole LowerFilters on the selected PID. 0323-only callers pass MagicMouseDriver.
-    const string BindFilterScript = """
-        param([Parameter(Mandatory=$true)][string]$DevicePid, [Parameter(Mandatory=$true)][string]$FilterName)
-        $ErrorActionPreference = 'Stop'
-        $pidToken = "PID&$DevicePid"
-        $dev = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
-            $_.InstanceId -match 'BTHENUM' -and $_.InstanceId -match [regex]::Escape($pidToken) -and $_.Class -eq 'HIDClass'
-        } | Select-Object -First 1
-        if (-not $dev) { Write-Error "No paired HID device for PID $DevicePid — will not bind."; exit 2 }
-        $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)"
-        if (-not (Test-Path $reg)) { throw "Device registry path missing: $reg" }
-        Set-ItemProperty -Path $reg -Name LowerFilters -Value @($FilterName) -Type MultiString
-        try {
-            Disable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction Stop
-            Start-Sleep -Seconds 2
-            Enable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction Stop
-        } catch {
-            Write-Host "Device restart failed; reboot to finish bind."
-        }
-        """;
 }

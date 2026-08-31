@@ -7,7 +7,7 @@ Product: free Magic Utilities alternative. Easy tray + SELECT that installs. KMD
 Hard rules:
 
 - Do not vendor `Driver.c` / INF / vcxproj / `.sys` into `magic-tray/driver/`
-- 0323 Best **pulls** `v2-kmdf-driver` from that repo and binds sole `MagicMouseDriver` (0323 only)
+- 0323 Best **pulls** that repo and runs **that repo’s** sign+install script (0323 only). Do not vendor those scripts here.
 - 030D / 0269 / 0310: tealtadpole public INF — do not retarget with KMDF
 - Keyboard: PATH-C SDP patch only — not Keymagic2, not keyboard KMDF
 - No Magic Utilities binaries, no leftover mm-dev dual-filter scripts, no chrischip HVCI-off

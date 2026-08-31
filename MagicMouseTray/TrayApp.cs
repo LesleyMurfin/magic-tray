@@ -498,7 +498,9 @@ internal sealed class TrayApp : IDisposable
             $"Pull from {pkg.Owner}/{pkg.Repo}@{pkg.GitRef}  ({pkg.PathInRepo})\n" +
             $"{pkg.RepoUrl}\n\n" +
             extra +
-            "Needs administrator approval. KMDF is pulled from magic-mouse-v3-windows-fix (not copied into this repo). No leftover mm-dev scripts, no Magic Utilities binaries.",
+            (pkg.Kind == InstallKind.KmdfPull
+                ? "Needs administrator approval. This pulls magic-mouse-v3-windows-fix and runs THAT repo's sign+install script (not a script from magic-tray). No leftover mm-dev scripts, no Magic Utilities binaries."
+                : "Needs administrator approval. No leftover mm-dev scripts, no Magic Utilities binaries.");
             "Install driver",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);

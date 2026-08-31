@@ -7,13 +7,13 @@ namespace MagicMouseTray.Tests;
 public class DriverPackageCatalogTests
 {
     [Fact]
-    public void Best_0323_PullsKmdfFromMagicMouseV3WindowsFix_NotVendoredHere()
+    public void Best_0323_PullsKmdfHomeAndRunsTheirInstaller_NotVendoredHere()
     {
         var best = DriverPackageCatalog.BestForPid("0323");
         Assert.Equal(DriverPackageId.Best, best.Id);
         Assert.Equal("LesleyMurfin", best.Owner);
         Assert.Equal("magic-mouse-v3-windows-fix", best.Repo);
-        Assert.Equal("v2-kmdf-driver", best.PathInRepo);
+        Assert.Equal("v1-binary-patch/installer/Install-MagicMousePatch.ps1", best.PathInRepo);
         Assert.Equal(InstallKind.KmdfPull, best.Kind);
         Assert.True(best.Published);
         Assert.False(DriverPackageCatalog.IsForbiddenSource(best));
@@ -22,6 +22,7 @@ public class DriverPackageCatalogTests
             "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/refs/heads/main.zip",
             DriverInstaller.ZipUrl(best));
         Assert.DoesNotContain("magic-tray", best.Repo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("bind-filter", best.PathInRepo, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -61,6 +62,7 @@ public class DriverPackageCatalogTests
             Assert.True(c.Published);
             Assert.Equal("magic-mouse-v3-windows-fix", c.Repo);
             Assert.Equal(InstallKind.KmdfPull, c.Kind);
+            Assert.Equal("v1-binary-patch/installer/Install-MagicMousePatch.ps1", c.PathInRepo);
             Assert.NotEqual("chrischip", c.Owner, StringComparer.OrdinalIgnoreCase);
             Assert.NotEqual("sbagirici", c.Owner, StringComparer.OrdinalIgnoreCase);
         });
@@ -74,7 +76,7 @@ public class DriverPackageCatalogTests
             DriverPackageId.Best, "tray", "LesleyMurfin", "magic-tray", "main", "driver",
             InstallKind.InfPnputil, ["0323"], true, null)));
         Assert.True(DriverPackageCatalog.IsLocalVendorPath(@"C:\src\magic-tray\driver\MagicMouseDriver.inf"));
-        Assert.False(DriverPackageCatalog.IsLocalVendorPath("v2-kmdf-driver"));
+        Assert.False(DriverPackageCatalog.IsLocalVendorPath("v1-binary-patch/installer/Install-MagicMousePatch.ps1"));
     }
 
     [Fact]
@@ -96,17 +98,80 @@ public class DriverPackageCatalogTests
     }
 
     [Fact]
-    public void FindPackageDir_MatchesKmdfAndTealSubfolders()
+    public void FindPackageDir_MatchesTealSubfolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "mm-tray-pkg-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var kmdf = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver");
             var teal = Path.Combine(root, "MagicMouse2DriversWin11x64-master", "AppleWirelessMouse");
-            Directory.CreateDirectory(kmdf);
             Directory.CreateDirectory(teal);
-            Assert.Equal(kmdf, DriverInstaller.FindPackageDir(root, "v2-kmdf-driver"));
             Assert.Equal(teal, DriverInstaller.FindPackageDir(root, "AppleWirelessMouse"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindUpstreamInstaller_UsesPathInRepoWhenPresent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mm-tray-up-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var installerDir = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v1-binary-patch", "installer");
+            Directory.CreateDirectory(installerDir);
+            var published = Path.Combine(installerDir, "Install-MagicMousePatch.ps1");
+            File.WriteAllText(published, "# upstream easy sign+install");
+            Directory.CreateDirectory(Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver"));
+
+            var found = DriverInstaller.FindUpstreamInstaller(
+                root, "v1-binary-patch/installer/Install-MagicMousePatch.ps1");
+            Assert.Equal(published, found);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindUpstreamInstaller_PrefersV2WhenPathMissing_ThenPublishedEasyScript()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mm-tray-up2-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var v2 = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver");
+            var installerDir = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v1-binary-patch", "installer");
+            Directory.CreateDirectory(v2);
+            Directory.CreateDirectory(installerDir);
+            File.WriteAllText(Path.Combine(installerDir, "Install-MagicMousePatch.ps1"), "# v1");
+            File.WriteAllText(Path.Combine(v2, "Install-MagicMouseDriver.ps1"), "# future v2");
+
+            var v2Hit = DriverInstaller.FindUpstreamInstaller(root, "does-not-exist.ps1");
+            Assert.Equal(Path.Combine(v2, "Install-MagicMouseDriver.ps1"), v2Hit);
+
+            Directory.Delete(v2, recursive: true);
+            var v1Hit = DriverInstaller.FindUpstreamInstaller(root, "");
+            Assert.Equal(Path.Combine(installerDir, "Install-MagicMousePatch.ps1"), v1Hit);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindUpstreamInstaller_Missing_ReturnsNull_DoesNotInventBindScript()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mm-tray-empty-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver"));
+            Assert.Null(DriverInstaller.FindUpstreamInstaller(root, "v2-kmdf-driver"));
         }
         finally
         {

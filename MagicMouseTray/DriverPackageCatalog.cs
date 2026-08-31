@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Packages the tray may SELECT. KMDF is pulled from
-// LesleyMurfin/magic-mouse-v3-windows-fix — never copied into magic-tray/driver/.
+// Packages the tray may SELECT. 0323 pulls LesleyMurfin/magic-mouse-v3-windows-fix
+// and runs that repo's installer — never copied into magic-tray/driver/.
 internal enum DriverPackageId
 {
     Best,
@@ -13,7 +13,7 @@ internal enum DriverPackageId
 
 internal enum InstallKind
 {
-    KmdfPull,             // zip magic-mouse-v3-windows-fix / v2-kmdf-driver + pnputil + 0323 bind
+    KmdfPull,             // zip magic-mouse-v3-windows-fix and run THAT repo's sign+install
     InfPnputil,           // tealtadpole Boot Camp INF (030D / 0310 / 0269)
     KeyboardSdpPatch,     // scripts/kbd-patch-cachedservices.ps1 — no kernel
 }
@@ -40,7 +40,8 @@ internal static class DriverPackageCatalog
     internal const string KmdfOwner = "LesleyMurfin";
     internal const string KmdfRepo = "magic-mouse-v3-windows-fix";
     internal const string KmdfRef = "main";
-    internal const string KmdfPath = "v2-kmdf-driver";
+    // Published easy sign+install in that repo. Do not copy this script here.
+    internal const string KmdfPath = "v1-binary-patch/installer/Install-MagicMousePatch.ps1";
     internal const string KmdfRepoUrl = "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix";
 
     internal const string TealOwner = "tealtadpole";
