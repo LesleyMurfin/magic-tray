@@ -279,10 +279,11 @@ internal static class DriverHealthChecker
         int pidIdx = subkeyName.LastIndexOf("_PID&", StringComparison.OrdinalIgnoreCase);
         if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) return false;
         pid = subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
+        var parsedPid = pid;
 
-        if (Array.Exists(NonScrollApplePids, p => p == pid))
+        if (Array.Exists(NonScrollApplePids, p => p == parsedPid))
         {
-            Logger.Log($"DRIVER_CHECK skip_non_scroll_apple pid=0x{pid.ToUpper()}");
+            Logger.Log($"DRIVER_CHECK skip_non_scroll_apple pid=0x{parsedPid.ToUpper()}");
             return false;
         }
         return true;
