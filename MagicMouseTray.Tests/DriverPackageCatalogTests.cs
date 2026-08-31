@@ -148,7 +148,8 @@ public class DriverPackageCatalogTests
 
             Assert.Equal(kmdf, DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver/Install-KMDF.cmd"));
             Assert.Equal(kmdf, DriverInstaller.FindKmdfOneClick(root, "v2-kmdf-driver"));
-            Assert.Null(DriverInstaller.FindKmdfOneClick(
+            // PATH-A path is ignored; if Install-KMDF.cmd exists, that is what we run.
+            Assert.Equal(kmdf, DriverInstaller.FindKmdfOneClick(
                 root, "v1-binary-patch/installer/Install-MagicMousePatch.ps1"));
         }
         finally
