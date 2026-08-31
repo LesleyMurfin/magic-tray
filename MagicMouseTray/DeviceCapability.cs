@@ -2,7 +2,7 @@
 namespace MagicMouseTray;
 
 // Per-device status row for the tray menu. Driver SELECT lives on the device
-// row and pulls from LesleyMurfin/magic-mouse-v3-windows-fix — not from driver/.
+// row and pulls a public GitHub / Boot Camp package — not from driver/.
 internal static class DeviceCapability
 {
     internal readonly record struct Row(

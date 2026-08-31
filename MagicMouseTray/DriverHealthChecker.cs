@@ -13,17 +13,16 @@ internal enum DriverStatus
 }
 
 // Read-only health check for the menu badge. Driver SELECT is a separate,
-// explicit pull from LesleyMurfin/magic-mouse-v3-windows-fix — never from
-// magic-tray/driver/.
+// user-confirmed pull of a public GitHub / Apple Boot Camp package — never
+// from magic-tray/driver/, never from LesleyMurfin driver repos.
 //
-// Live split (do not fight this):
-//   PID 0323 (Magic Mouse 2024) — sole LowerFilters=MagicMouseDriver.
-//   PID 030D / 0269 / 0310      — applewirelessmouse. Do not retarget 030D
-//                                 unless that device is present and selected.
+// Live split (do not fight this until the user picks a package):
+//   PID 0323 — may still show MagicMouseDriver (May 20 custom). Best pull is
+//              sbagirici WHQL AppleWirelessMouse.sys bound to 0323.
+//   PID 030D / 0269 / 0310 — applewirelessmouse (tealtadpole Boot Camp INF).
 //
-// A 0323 still showing applewirelessmouse is treated as bound so we do not nag
-// the user to "fix" a working legacy bind. Changing the bind happens only
-// when the user picks a package in Driver SELECT.
+// A 0323 still showing applewirelessmouse is treated as bound so we do not nag.
+// Changing the bind happens only when the user picks a package.
 internal static class DriverHealthChecker
 {
     internal const string AppleFilterName = "applewirelessmouse";

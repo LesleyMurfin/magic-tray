@@ -487,15 +487,15 @@ internal sealed class TrayApp : IDisposable
             return;
         }
 
-        var alreadyKmdf = string.Equals(boundFilter, DriverHealthChecker.KmdfFilterName, StringComparison.OrdinalIgnoreCase);
+        var extra = string.Equals(boundFilter, DriverHealthChecker.KmdfFilterName, StringComparison.OrdinalIgnoreCase)
+            ? $"Currently bound to {boundFilter}. This installs the selected public package (no silent rebind).\n\n"
+            : "";
         var confirm = MessageBox.Show(
             $"Install {pkg.MenuLabel} for {deviceName} (PID {pid})?\n\n" +
             $"Pull from {pkg.Owner}/{pkg.Repo}@{pkg.GitRef}  ({pkg.PathInRepo})\n" +
-            $"{DriverPackageCatalog.KmdfRepoUrl}\n\n" +
-            (alreadyKmdf
-                ? $"Currently bound to {boundFilter}. This pulls that GitHub package again (no silent rebind).\n\n"
-                : "") +
-            "This needs administrator approval (pnputil). The tray will not use leftover dual-filter scripts or magic-tray/driver/.",
+            $"{pkg.RepoUrl}\n\n" +
+            extra +
+            "Needs administrator approval. The tray will not vendor KMDF, will not pull LesleyMurfin driver repos, and will not use leftover mm-dev scripts.",
             "Install driver",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
@@ -503,8 +503,8 @@ internal sealed class TrayApp : IDisposable
 
         try
         {
-            var inf = await DriverInstaller.PullAndInstallAsync(pkg, pid);
-            MessageBox.Show($"Installed from {inf}", "Magic Tray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var installed = await DriverInstaller.PullAndInstallAsync(pkg, pid);
+            MessageBox.Show($"Installed from {installed}", "Magic Tray", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {

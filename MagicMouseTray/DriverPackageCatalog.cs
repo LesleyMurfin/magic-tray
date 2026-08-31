@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Packages the tray may SELECT. Install bits are pulled from GitHub — never
-// from magic-tray/driver/. Names match LesleyMurfin/magic-mouse-v3-windows-fix.
+// Public GitHub / Apple Boot Camp packages the tray may SELECT.
+// Never LesleyMurfin/*, never Magic Utilities binaries, never magic-tray/driver/.
 internal enum DriverPackageId
 {
     Best,
-    V1,
-    V2,
-    V3,
-    Kmdf,
+    AppleWirelessMouse,
+    AppleKeyboardMagic2,
+}
+
+internal enum InstallKind
+{
+    InfPnputil,           // zip has INF + CAT + SYS (tealtadpole / Rain9333 dump)
+    OfficialSysBind,      // zip has WHQL AppleWirelessMouse.sys; bind selected PID
+    BrigadierKeyboard,    // fetch Boot Camp ESD via brigadier; Keymagic2.inf
 }
 
 internal sealed record DriverPackage(
@@ -19,87 +24,106 @@ internal sealed record DriverPackage(
     string Repo,
     string GitRef,
     string PathInRepo,
+    InstallKind Kind,
     string[] Pids,
     bool Published,
-    string? MissingReason);
+    string? MissingReason)
+{
+    internal string RepoUrl => $"https://github.com/{Owner}/{Repo}";
+}
 
 internal static class DriverPackageCatalog
 {
-    internal const string KmdfOwner = "LesleyMurfin";
-    internal const string KmdfRepo = "magic-mouse-v3-windows-fix";
-    internal const string KmdfRef = "main";
-    internal const string KmdfRepoUrl = "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix";
+    // Verified 2026-08-31 against Lesley's mapping + GitHub contents.
+    // tealtadpole and Rain9333 are the same Boot Camp dump (identical INF/CAT/SYS SHAs).
+    // INF DriverVer 08/08/2019,6.1.7700.0 lists 030D / 0310 / 0269 only — not 0323.
+    // Rain9333 is not strictly better (same bits). Her tray cites tealtadpole for Win11.
+    internal const string TealOwner = "tealtadpole";
+    internal const string TealRepo = "MagicMouse2DriversWin11x64";
+    internal const string TealRef = "master";
 
-    // Verified 2026-08-31: only this LesleyMurfin repo owns Magic Mouse KMDF / v3 packages.
-    // v1-binary-patch and v2-kmdf-driver are successive 0323 packages, not 030D/0269 mice.
-    static readonly DriverPackage MouseV1 = new(
-        DriverPackageId.V1, "v1",
-        KmdfOwner, KmdfRepo, KmdfRef, "v1-binary-patch",
-        ["0323"], Published: true, MissingReason: null);
+    // Same AppleWirelessMouse.sys blob as tealtadpole/Rain9333 (WHQL). No INF; binds 0323.
+    internal const string SbagiriciOwner = "sbagirici";
+    internal const string SbagiriciRepo = "apple-magic-mouse-scroll-fix-windows";
+    internal const string SbagiriciRef = "master";
 
-    static readonly DriverPackage MouseV2 = new(
-        DriverPackageId.V2, "v2",
-        KmdfOwner, KmdfRepo, KmdfRef, "v2-kmdf-driver",
-        ["0323"], Published: true, MissingReason: null);
+    internal const string BrigadierOwner = "timsutton";
+    internal const string BrigadierRepo = "brigadier";
+    internal const string BrigadierRef = "main";
+    internal const string BrigadierModel = "MacBookAir9,1";
 
-    static readonly DriverPackage MouseV3 = new(
-        DriverPackageId.V3, "v3",
-        KmdfOwner, KmdfRepo, KmdfRef, "v2-kmdf-driver",
-        ["0323"], Published: true, MissingReason: null);
-
-    static readonly DriverPackage MouseKmdf = new(
-        DriverPackageId.Kmdf, "KMDF",
-        KmdfOwner, KmdfRepo, KmdfRef, "v2-kmdf-driver",
-        ["0323"], Published: true, MissingReason: null);
-
-    static readonly DriverPackage MouseBest = new(
+    static readonly DriverPackage Mouse0323 = new(
         DriverPackageId.Best, "Best for this mouse",
-        KmdfOwner, KmdfRepo, KmdfRef, "v2-kmdf-driver",
+        SbagiriciOwner, SbagiriciRepo, SbagiriciRef, "driver",
+        InstallKind.OfficialSysBind,
         ["0323"], Published: true, MissingReason: null);
 
-    static readonly DriverPackage HardwareV1Missing = new(
-        DriverPackageId.V1, "v1",
-        KmdfOwner, "", KmdfRef, "",
-        ["030d", "0310"], Published: false,
-        "No LesleyMurfin GitHub repo for Magic Mouse v1 (030D). magic-mouse-v3-windows-fix is 0323-only.");
+    static readonly DriverPackage Mouse0323Named = Mouse0323 with
+    {
+        Id = DriverPackageId.AppleWirelessMouse,
+        MenuLabel = "AppleWirelessMouse (WHQL)",
+    };
 
-    static readonly DriverPackage HardwareV2Missing = new(
-        DriverPackageId.V2, "v2",
-        KmdfOwner, "", KmdfRef, "",
-        ["0269"], Published: false,
-        "No LesleyMurfin GitHub repo for Magic Mouse v2 (0269). magic-mouse-v3-windows-fix is 0323-only.");
+    static readonly DriverPackage MouseStock = new(
+        DriverPackageId.Best, "Best for this mouse",
+        TealOwner, TealRepo, TealRef, "AppleWirelessMouse",
+        InstallKind.InfPnputil,
+        ["030d", "0310", "0269"], Published: true, MissingReason: null);
 
-    static readonly DriverPackage KeyboardMissing = new(
+    static readonly DriverPackage MouseStockNamed = MouseStock with
+    {
+        Id = DriverPackageId.AppleWirelessMouse,
+        MenuLabel = "AppleWirelessMouse (Boot Camp INF)",
+    };
+
+    static readonly DriverPackage KeyboardBest = new(
         DriverPackageId.Best, "Best for this keyboard",
-        KmdfOwner, "", KmdfRef, "",
-        [], Published: false,
-        "No LesleyMurfin GitHub repo for keyboard drivers (apple-kb-monitor and apple-peripherals were not found).");
+        BrigadierOwner, BrigadierRepo, BrigadierRef, "AppleKeyboardMagic2",
+        InstallKind.BrigadierKeyboard,
+        [], Published: true, MissingReason: null);
+
+    static readonly DriverPackage KeyboardNamed = KeyboardBest with
+    {
+        Id = DriverPackageId.AppleKeyboardMagic2,
+        MenuLabel = "Keymagic2 (Boot Camp)",
+    };
 
     internal static DriverPackage BestForPid(string pid)
     {
         pid = pid.ToLowerInvariant();
-        if (pid == "0323") return MouseBest;
-        if (pid is "030d" or "0310") return HardwareV1Missing;
-        if (pid == "0269") return HardwareV2Missing;
-        return KeyboardMissing with { Pids = [pid] };
+        if (pid == "0323") return Mouse0323;
+        if (pid is "030d" or "0310" or "0269") return MouseStock;
+        return KeyboardBest with { Pids = [pid] };
     }
 
     internal static IReadOnlyList<DriverPackage> ChoicesFor(DeviceKind kind, string pid)
     {
         pid = pid.ToLowerInvariant();
         if (kind == DeviceKind.MagicMouseV3 || pid == "0323")
-            return [MouseBest, MouseKmdf, MouseV3, MouseV2, MouseV1];
-        if (kind == DeviceKind.MagicMouseV1 || pid is "030d" or "0310")
-            return [HardwareV1Missing];
-        if (kind == DeviceKind.MagicMouseV2 || pid == "0269")
-            return [HardwareV2Missing];
+            return [Mouse0323, Mouse0323Named];
+        if (kind == DeviceKind.MagicMouseV1 || kind == DeviceKind.MagicMouseV2
+            || pid is "030d" or "0310" or "0269")
+            return [MouseStock, MouseStockNamed];
         if (kind == DeviceKind.MagicKeyboard)
-            return [KeyboardMissing];
+            return [KeyboardBest, KeyboardNamed];
         return [];
     }
 
-    internal static bool IsLocalVendorPath(string path) =>
-        path.Replace('\\', '/').Contains("/driver/", StringComparison.OrdinalIgnoreCase)
-        && (path.Contains("MagicMouseDriver", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith("Driver.c", StringComparison.OrdinalIgnoreCase));
+    internal static bool IsForbiddenSource(DriverPackage pkg) =>
+        IsForbiddenOwnerRepo(pkg.Owner, pkg.Repo);
+
+    internal static bool IsForbiddenOwnerRepo(string owner, string repo)
+    {
+        if (owner.Equals("LesleyMurfin", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return repo.Contains("magic-tray", StringComparison.OrdinalIgnoreCase)
+            || repo.Contains("magic-mouse-v3-windows-fix", StringComparison.OrdinalIgnoreCase)
+            || repo.Contains("apple-kb-monitor", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsLocalVendorPath(string path)
+    {
+        var n = path.Replace('\\', '/');
+        return n.Contains("magic-tray/driver", StringComparison.OrdinalIgnoreCase);
+    }
 }

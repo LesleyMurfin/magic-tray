@@ -1,70 +1,60 @@
 # Magic Tray
 
-Windows tray app that shows Apple Magic Mouse (and keyboard) battery on Windows 10/11. No subscription.
+Free Windows tray app for Apple Magic Mouse and Magic Keyboard on Windows 10/11. **No subscription.**
 
-The tray is a **user-facing client**: status, battery when the device already exposes it, start with Windows, quit, and a **driver SELECT**. On select (or Best for the detected device) it **pulls** the package from the GitHub repo that owns that driver and installs it. It does **not** vendor KMDF source, INF, or `.sys`.
-
-**KMDF Magic Mouse home:** https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix
+This is a **free alternative** to [Magic Utilities](https://magicutilities.net/) — battery %, alerts, Start with Windows, and a driver SELECT that installs public packages. It is **not** a paid clone of Magic Utilities’ proprietary Microsoft-signed drivers.
 
 ![Tray icon showing 83% battery](docs/screenshot-tray.png)
 
 ## The Problem
 
-Apple Magic Mouse on Windows 11 has no native battery indicator. Magic Mouse Utilities — the only working commercial solution — requires a paid subscription that breaks scroll entirely when the trial expires.
+Apple Magic Mouse and Magic Keyboard on Windows have no native battery indicator. Magic Utilities works, but it is a paid subscription — and the trial can break scroll when it expires.
 
 ## Features
 
-- Battery % in the tray icon (color-coded: green → yellow → orange → red as battery drains)
+- Battery % in the tray icon (color-coded as the battery drains)
 - Tooltip and right-click menu show each device and its battery
-- Adaptive polling: checks every 24h above 20%; tightens when the battery is low
-- Low-battery toast at your threshold (10 / 15 / 20 / 25%), plus a 1% persistent warning
-- Start with Windows (a per-user registry entry — no installer)
-- Driver SELECT per device: Best / KMDF / v3 / v2 / v1 — pull from GitHub, then elevated `pnputil`
-- Single `.exe`, no leftover `C:\mm-dev-queue` / `MM-Dev-Cycle` flip UX
+- Low-battery toast at your threshold (10 / 15 / 20 / 25%)
+- Start with Windows (per-user registry — no installer)
+- **Driver SELECT** per device: pulls the best public GitHub / Apple Boot Camp package and installs it (administrator approval). No silent rebind.
+- Single `.exe`
 
 ## Supported Mice
 
-| Model | Bluetooth PID | Status |
-|-------|--------------|--------|
-| Magic Mouse 2024 (USB-C) | 0x0323 | ✅ Confirmed — driver packages in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) |
-| Magic Mouse v1 (AA battery) | 0x030D | Battery read if present. No LesleyMurfin driver repo (do not retarget unless this device is present and you pick a package) |
-| Magic Mouse v2 | 0x0269 | ⚠ Included, not tested. No LesleyMurfin driver repo |
+| Model | Bluetooth PID | Best package (pulled, not vendored) |
+|-------|--------------|-------------------------------------|
+| Magic Mouse 2024 (USB-C) | 0x0323 | [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows) — WHQL `AppleWirelessMouse.sys` + 0323 LowerFilters |
+| Magic Mouse v1 (AA) | 0x030D | [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) — Boot Camp INF (030D / 0310 / 0269) |
+| Magic Mouse v2 | 0x0269 | Same tealtadpole INF |
+
+Rain9333/MagicMouse2DriversWin10x64 is the parent dump (identical INF/CAT/SYS). It is not strictly better, so the picker uses the Win11 fork her tray already cites.
 
 ## Supported Keyboards
 
-| Model | Bluetooth PID | Status |
-|-------|--------------|--------|
-| Apple Wireless Keyboard (2011, A1314) ANSI/ISO/JIS | 0x0239 / 0x023A / 0x023B | Battery when a Feature report is already exposed. No LesleyMurfin keyboard-driver repo (`apple-kb-monitor` / `apple-peripherals` not found) |
-| Magic Keyboard (A1644) / ISO | 0x024F / 0x0250 | ⚠ Included, not tested |
-| Magic Keyboard with Touch ID (A2449) / ISO | 0x0267 / 0x026C | ⚠ Included, not tested |
+| Model | Bluetooth PID | Best package |
+|-------|--------------|--------------|
+| Apple Wireless Keyboard (2011) | 0x0239 / 0x023A / 0x023B | Boot Camp `AppleKeyboardMagic2` / `Keymagic2.inf` via [timsutton/brigadier](https://github.com/timsutton/brigadier) |
+| Magic Keyboard / Touch ID | 0x024F / 0x0250 / 0x0267 / 0x026C / … | Same Keymagic2 extract |
 
 ## Install
 
 1. Download `MagicMouseTray.exe` from [Releases](../../releases)
 2. Run it — no installer
-3. A tray icon appears. Right-click for status, Start with Windows, driver SELECT, and Quit.
+3. Right-click: status, Start with Windows, **Driver**, Quit
 
 **Requires**: Windows 10 1809+ (build 17763) or Windows 11, x64
 
-Use the release build. Do not replace a working install from a leftover copy under `C:\temp`.
+## Driver SELECT
 
-## Driver SELECT (pull, do not vendor)
+On **Driver → Best** (or the named package) the tray downloads that repo and installs. It does **not** vendor KMDF, does **not** pull `LesleyMurfin/*` driver repos, does **not** use Magic Utilities binaries, and does **not** default to chrischip (self-signed catalog, HVCI off).
 
-KMDF and the v1/v2 0323 packages live in **https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix**, not in this repo.
+| Device | Pull | Why it won |
+|--------|------|------------|
+| 0323 | sbagirici `driver/applewirelessmouse.sys` | Official WHQL `.sys`; binds 0323; Win11 24H2; her v3 README cites this as the baseline |
+| 030D / 0310 / 0269 | tealtadpole `AppleWirelessMouse/*.inf` | Stock Apple INF lists those PIDs; same bits as Rain9333; her tray cites the Win11 fork |
+| Keyboard | brigadier → `Keymagic2.inf` | Official Apple Boot Camp keyboard driver from Apple’s CDN |
 
-| Menu choice | Pulled from |
-|-------------|-------------|
-| Best | `v2-kmdf-driver/` (KMDF) for PID 0323 |
-| KMDF | `v2-kmdf-driver/` |
-| v3 | `v2-kmdf-driver/` (Magic Mouse 2024 / 0323) |
-| v2 | `v2-kmdf-driver/` |
-| v1 | `v1-binary-patch/` |
-
-The tray downloads that repo’s `main` zip, looks for an INF under the package path, and runs elevated `pnputil /add-driver`. It does **not** run leftover `install-driver.ps1` / `mm-dev.ps1`, does **not** flip `LowerFilters` via `MM-Dev-Cycle`, and does **not** install from `magic-tray/driver/`.
-
-If the pulled path has no INF, install fails with that message — the package is not published yet. The tray never silently rebinds; install runs only after the user picks a package and confirms.
-
-030D unpaired: no 030D install unless that mouse is present and you select a package. There is no LesleyMurfin 030D driver repo.
+Install runs only after you confirm. If 0323 is still on a custom `MagicMouseDriver`, Best replaces that bind with `applewirelessmouse` for the selected PID only.
 
 ## Right-click menu
 
@@ -73,15 +63,13 @@ If the pulled path has no INF, install fails with that message — the package i
 | Device rows | Name, battery %, bound filter, **Driver** picker |
 | Low battery alert | 10 / 15 / 20 / 25% per device |
 | Start with Windows | Toggle auto-start on login |
-| Show Logitech devices | Optional HID++ battery for directly connected Logitech mice |
 | Refresh battery | Read now |
-| Test battery alert | Fire a sample toast |
 | Open logs | `%APPDATA%\MagicMouseTray\debug.log` |
 | Quit | Exit |
 
 ## How battery reading works
 
-The tray reads Apple HID reports with Win32 P/Invoke (`HidD_GetInputReport` / `HidD_GetFeature`). It never flips the device stack to take a reading. If a device is present but the report is not exposed, the menu shows **Battery unavailable**.
+The tray reads Apple HID reports with Win32 P/Invoke. It never flips the device stack to take a reading. If a device is present but the report is not exposed, the menu shows **Battery unavailable**.
 
 ## Building from source
 
@@ -92,23 +80,16 @@ dotnet publish -c Release
 # Output: bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\MagicMouseTray.exe
 ```
 
-KMDF is built and published in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), not here.
-
 ## SmartScreen warning
 
-When you first run `MagicMouseTray.exe`, Windows may show "We can't verify who created this file." This is normal for unsigned open-source software — click **Run**.
-
-If you downloaded the file and it shows the full SmartScreen block ("Windows protected your PC"), click **More info → Run anyway**. Alternatively, right-click the file → Properties → check **Unblock** → OK.
-
-**For developers building from source on WSL**: Windows treats the WSL filesystem as a network path, which always triggers this dialog. Copy the built exe to a local Windows folder (for example `%USERPROFILE%\Downloads`) before running.
+When you first run `MagicMouseTray.exe`, Windows may show "We can't verify who created this file." Click **Run**. For a full SmartScreen block: **More info → Run anyway**, or Properties → **Unblock**.
 
 ## Diagnostics
 
 Log file: `%APPDATA%\MagicMouseTray\debug.log`
 
-Key log lines:
 - `MOUSE_BATTERY_OK` — successful read
-- `DRIVER_PULL` / `DRIVER_INSTALL` — GitHub pull + pnputil
+- `DRIVER_PULL` / `DRIVER_INSTALL` / `DRIVER_BIND` — GitHub pull + install
 - `DRIVER_CHECK status=...` — read-only filter detection
 - `TOAST_SENT` — notification fired
 

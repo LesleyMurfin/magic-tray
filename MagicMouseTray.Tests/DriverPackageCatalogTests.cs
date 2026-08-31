@@ -7,66 +7,83 @@ namespace MagicMouseTray.Tests;
 public class DriverPackageCatalogTests
 {
     [Fact]
-    public void KmdfAndBest_For0323_PullFromMagicMouseV3WindowsFix_NotMagicTray()
+    public void Best_0323_IsSbagirici_NotLesleyMurfin()
     {
         var best = DriverPackageCatalog.BestForPid("0323");
         Assert.Equal(DriverPackageId.Best, best.Id);
-        Assert.Equal("LesleyMurfin", best.Owner);
-        Assert.Equal("magic-mouse-v3-windows-fix", best.Repo);
-        Assert.Equal("v2-kmdf-driver", best.PathInRepo);
-        Assert.Equal("https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix", DriverPackageCatalog.KmdfRepoUrl);
+        Assert.Equal("sbagirici", best.Owner);
+        Assert.Equal("apple-magic-mouse-scroll-fix-windows", best.Repo);
+        Assert.Equal("driver", best.PathInRepo);
+        Assert.Equal(InstallKind.OfficialSysBind, best.Kind);
+        Assert.True(best.Published);
+        Assert.False(DriverPackageCatalog.IsForbiddenSource(best));
+        Assert.DoesNotContain("LesleyMurfin", best.Owner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("magic-tray", best.Repo, StringComparison.OrdinalIgnoreCase);
-        Assert.False(DriverPackageCatalog.IsLocalVendorPath(best.PathInRepo));
+        Assert.DoesNotContain("magic-mouse-v3-windows-fix", best.Repo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("030d")]
+    [InlineData("0310")]
+    [InlineData("0269")]
+    public void Best_030D_0310_0269_IsTealtadpole(string pid)
+    {
+        var best = DriverPackageCatalog.BestForPid(pid);
+        Assert.Equal("tealtadpole", best.Owner);
+        Assert.Equal("MagicMouse2DriversWin11x64", best.Repo);
+        Assert.Equal("AppleWirelessMouse", best.PathInRepo);
+        Assert.Equal(InstallKind.InfPnputil, best.Kind);
+        Assert.True(best.Published);
+        Assert.Equal("https://github.com/tealtadpole/MagicMouse2DriversWin11x64/archive/refs/heads/master.zip",
+            DriverInstaller.ZipUrl(best));
     }
 
     [Fact]
-    public void Choices_0323_AreBestKmdfV3V2V1_FromSameRepo()
+    public void Best_Keyboard_IsBrigadierKeymagic2()
     {
-        var choices = DriverPackageCatalog.ChoicesFor(DeviceKind.MagicMouseV3, "0323");
-        Assert.Equal(new[] { DriverPackageId.Best, DriverPackageId.Kmdf, DriverPackageId.V3, DriverPackageId.V2, DriverPackageId.V1 },
-            choices.Select(c => c.Id));
+        var choices = DriverPackageCatalog.ChoicesFor(DeviceKind.MagicKeyboard, "024f");
+        Assert.Equal(2, choices.Count);
         Assert.All(choices, c =>
         {
-            Assert.Equal("magic-mouse-v3-windows-fix", c.Repo);
+            Assert.Equal("timsutton", c.Owner);
+            Assert.Equal("brigadier", c.Repo);
+            Assert.Equal(InstallKind.BrigadierKeyboard, c.Kind);
             Assert.True(c.Published);
         });
-        Assert.Equal("v1-binary-patch", choices.Single(c => c.Id == DriverPackageId.V1).PathInRepo);
-        Assert.Equal("v2-kmdf-driver", choices.Single(c => c.Id == DriverPackageId.Kmdf).PathInRepo);
+        Assert.Equal("AppleKeyboardMagic2", choices[0].PathInRepo);
+        Assert.Equal("MacBookAir9,1", DriverPackageCatalog.BrigadierModel);
     }
 
     [Fact]
-    public void Hardware030D_HasNoLesleyMurfinRepo()
+    public void Choices_0323_ArePublished_AndNotChrischip()
     {
-        var best = DriverPackageCatalog.BestForPid("030d");
-        Assert.False(best.Published);
-        Assert.Contains("0323-only", best.MissingReason);
+        var choices = DriverPackageCatalog.ChoicesFor(DeviceKind.MagicMouseV3, "0323");
+        Assert.All(choices, c =>
+        {
+            Assert.True(c.Published);
+            Assert.Equal("sbagirici", c.Owner);
+            Assert.NotEqual("chrischip", c.Owner, StringComparer.OrdinalIgnoreCase);
+            Assert.False(DriverPackageCatalog.IsForbiddenSource(c));
+        });
     }
 
     [Fact]
-    public void Keyboard_HasNoLesleyMurfinRepo()
+    public void Catalog_NeverPointsAtLesleyMurfin()
     {
-        var choices = DriverPackageCatalog.ChoicesFor(DeviceKind.MagicKeyboard, "0239");
-        Assert.Single(choices);
-        Assert.False(choices[0].Published);
-        Assert.Contains("apple-kb-monitor", choices[0].MissingReason);
+        foreach (var pid in new[] { "0323", "030d", "0269", "0310" })
+            Assert.False(DriverPackageCatalog.IsForbiddenSource(DriverPackageCatalog.BestForPid(pid)));
+        foreach (var c in DriverPackageCatalog.ChoicesFor(DeviceKind.MagicKeyboard, "0239"))
+            Assert.False(DriverPackageCatalog.IsForbiddenSource(c));
     }
 
     [Fact]
-    public void ZipUrl_PointsAtGitHubArchive_NotLocalDriver()
+    public void Forbidden_LesleyMurfinAndLocalVendor()
     {
-        var pkg = DriverPackageCatalog.BestForPid("0323");
-        var url = DriverInstaller.ZipUrl(pkg);
-        Assert.Equal("https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/refs/heads/main.zip", url);
-        Assert.DoesNotContain("magic-tray", url);
-    }
-
-    [Fact]
-    public void IsLocalVendorPath_RejectsMagicTrayDriverTree()
-    {
+        Assert.True(DriverPackageCatalog.IsForbiddenOwnerRepo("LesleyMurfin", "magic-mouse-v3-windows-fix"));
+        Assert.True(DriverPackageCatalog.IsForbiddenOwnerRepo("anyone", "magic-tray"));
         Assert.True(DriverPackageCatalog.IsLocalVendorPath(@"C:\src\magic-tray\driver\MagicMouseDriver.inf"));
-        Assert.False(DriverPackageCatalog.IsLocalVendorPath("v2-kmdf-driver"));
-        Assert.False(DriverPackageCatalog.IsLocalVendorPath(
-            @"C:\Users\x\AppData\Local\MagicMouseTray\driver-cache\magic-mouse-v3-windows-fix-main\v2-kmdf-driver\MagicMouseDriver.inf"));
+        Assert.False(DriverPackageCatalog.IsLocalVendorPath("AppleWirelessMouse"));
+        Assert.False(DriverPackageCatalog.IsLocalVendorPath("driver"));
     }
 
     [Fact]
@@ -79,12 +96,15 @@ public class DriverPackageCatalogTests
     }
 
     [Fact]
-    public void PullAndInstall_Unpublished_ThrowsBeforeNetwork()
+    public void PullAndInstall_LesleyMurfin_ThrowsBeforeNetwork()
     {
-        var missing = DriverPackageCatalog.BestForPid("030d");
+        var banned = new DriverPackage(
+            DriverPackageId.Best, "banned",
+            "LesleyMurfin", "magic-mouse-v3-windows-fix", "main", "v2-kmdf-driver",
+            InstallKind.InfPnputil, ["0323"], Published: true, MissingReason: null);
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            DriverInstaller.PullAndInstallAsync(missing, "030d").GetAwaiter().GetResult());
-        Assert.Contains("0323-only", ex.Message);
+            DriverInstaller.PullAndInstallAsync(banned, "0323").GetAwaiter().GetResult());
+        Assert.Contains("LesleyMurfin", ex.Message);
     }
 
     [Fact]
@@ -93,10 +113,10 @@ public class DriverPackageCatalogTests
         var root = Path.Combine(Path.GetTempPath(), "mm-tray-pkg-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var pkg = Path.Combine(root, "magic-mouse-v3-windows-fix-main", "v2-kmdf-driver");
+            var pkg = Path.Combine(root, "MagicMouse2DriversWin11x64-master", "AppleWirelessMouse");
             Directory.CreateDirectory(pkg);
-            Assert.Equal(pkg, DriverInstaller.FindPackageDir(root, "v2-kmdf-driver"));
-            Assert.Null(DriverInstaller.FindPackageDir(root, "v1-binary-patch"));
+            Assert.Equal(pkg, DriverInstaller.FindPackageDir(root, "AppleWirelessMouse"));
+            Assert.Null(DriverInstaller.FindPackageDir(root, "v2-kmdf-driver"));
         }
         finally
         {
