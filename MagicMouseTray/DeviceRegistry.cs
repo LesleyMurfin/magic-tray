@@ -10,27 +10,56 @@ internal static class DeviceRegistry
     /// Matching priority: mouse VID/PID checked first, then keyboard VID/PID.
     /// </summary>
     public static IReadOnlyList<IBatteryDevice> Discover(bool enableThirdParty = false)
+        => DiscoverFromPaths(HidNative.EnumerateHidPaths(), enableThirdParty);
+
+    // Test hook — same classify rules as Discover, no live HID scan.
+    internal static IReadOnlyList<IBatteryDevice> DiscoverFromPaths(
+        IEnumerable<string> paths, bool enableThirdParty = false)
     {
         var results = new List<IBatteryDevice>();
-
-        foreach (var path in HidNative.EnumerateHidPaths())
+        foreach (var path in paths)
         {
             var device = TryClassify(path, enableThirdParty);
             if (device is not null)
                 results.Add(device);
         }
-
         return results;
+    }
+
+    // iPhone Hands-Free / HFP exposes a WMI battery (live 60%) that is not the mouse.
+    internal static bool IsHandsFreeOrIphonePath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        return path.Contains("bthhfenum", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("hands-free", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("handsfree", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("bthhf", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("iphone", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Live 0323 battery is COL02 Input 0x90. COL01 is pointer (no wheel 0x0038).
+    internal static bool Is0323BatteryCollectionPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        if (ExtractPid(path) != "0323") return false;
+        return path.Contains("col02", StringComparison.OrdinalIgnoreCase);
     }
 
     static IBatteryDevice? TryClassify(string path, bool enableThirdParty)
     {
+        if (IsHandsFreeOrIphonePath(path))
+            return null;
+
         // Magic Mouse — check all variants
         foreach (var entry in MouseBatteryDevice.KnownMice)
         {
             if (path.Contains(entry.VidPattern, StringComparison.OrdinalIgnoreCase) &&
                 path.Contains(entry.PidPattern, StringComparison.OrdinalIgnoreCase))
+            {
+                if (entry.Kind == DeviceKind.MagicMouseV3 && !Is0323BatteryCollectionPath(path))
+                    return null;
                 return new MouseBatteryDevice(path, entry.DisplayName, entry.Kind);
+            }
         }
 
         // B2 (experimental, flag-gated): directly-connected Logitech HID++ devices ONLY.

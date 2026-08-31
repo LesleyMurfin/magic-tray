@@ -67,9 +67,8 @@ internal static class DeviceCapability
                            UrlForUnknownOnly(driver));
 
             case DeviceKind.MagicMouseV3:
-                // Live 0323 bind is MagicMouseDriver. Battery is a normal HID read —
-                // the tray does not flip LowerFilters to take a reading.
-                return new("HID battery report",
+                // Live 0323: Input RID 0x90 on COL02 (buf[2]=pct). Not Feature 0x47, not WMI.
+                return new("HID Input 0x90",
                            $"{battery} · {driverText}",
                            ActionForUnknownOnly(driver),
                            UrlForUnknownOnly(driver));

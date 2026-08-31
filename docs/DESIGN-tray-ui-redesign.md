@@ -12,6 +12,7 @@ Hard rules:
 - Keyboard: PATH-C SDP patch only — not Keymagic2, not keyboard KMDF
 - No Magic Utilities binaries, no leftover mm-dev dual-filter scripts, no chrischip HVCI-off
 - No silent rebind
+- 0323 battery is HID Input RID 0x90 on COL02 (`buf[2]`). Never Feature 0x47. Never iPhone Hands-Free WMI.
 
 ## Menu
 

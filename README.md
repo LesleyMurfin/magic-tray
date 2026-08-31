@@ -28,6 +28,8 @@ Apple Magic Mouse and Magic Keyboard on Windows have no native battery indicator
 
 KMDF is **0323-only**. The tray will not retarget 030D with MagicMouseDriver.
 
+0323 battery is **HID Input RID 0x90 on COL02** (`buf[2]`). Feature 0x47 is not used (live GetFeature err 87/1). iPhone Hands-Free WMI is not the mouse.
+
 ## Supported Keyboards
 
 Keyboard Best is the **PATH-C BTHPORT SDP cache patch** (`scripts/kbd-patch-cachedservices.ps1`) — zero kernel. Not Keymagic2, not brigadier, not keyboard KMDF.

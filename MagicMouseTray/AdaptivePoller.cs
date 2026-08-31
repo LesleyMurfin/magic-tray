@@ -8,9 +8,8 @@ namespace MagicMouseTray;
 // BatteryChanged is raised from a thread-pool thread — callers must marshal
 // to the UI thread before touching WPF/NotifyIcon objects (done in TrayApp).
 //
-// A v3 Magic Mouse that cannot expose a battery report returns pct=-2
-// (unreadable) and is not recorded into DrainRateTracker. The tray never
-// flips LowerFilters to force a reading — that belongs in driver/, not here.
+// A v3 Magic Mouse that cannot expose Input 0x90 on COL02 returns pct=-2.
+// Never Feature 0x47, never WMI Hands-Free. The tray never flips LowerFilters.
 internal sealed class AdaptivePoller : IDisposable
 {
     // Fired once per discovered device per poll cycle.

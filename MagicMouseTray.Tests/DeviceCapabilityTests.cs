@@ -51,6 +51,7 @@ public class DeviceCapabilityTests
     public void V3_BoundKmdf_ShowsFilterName_NoAction()
     {
         var row = DeviceCapability.Describe(DeviceKind.MagicMouseV3, 88, DriverStatus.Ok, "MagicMouseDriver");
+        Assert.Equal("HID Input 0x90", row.ReadMethod);
         Assert.Contains("MagicMouseDriver", row.Status);
         Assert.Contains("88%", row.Status);
         Assert.Null(row.ActionLabel);

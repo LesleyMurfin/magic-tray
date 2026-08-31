@@ -1,9 +1,9 @@
 // IBatteryDevice implementation for Apple Magic Mouse (all generations).
 //
 // Battery read strategy (read-only HID — the tray never binds or flips filters):
-//   Split path (COL02): UsagePage=0xFF00/Usage=0x0014, Input Report 0x90, buf[2]=pct.
-//   Unified path: Feature Battery Strength (Generic Device Controls). Returns -2 when
-//   the device is present but the report is not exposed. 0323 Best pulls KMDF, not driver/.
+//   0323 / v3: HID Input RID 0x90 on COL02, buf[2]=pct. Never Feature 0x47
+//   (live 2026-08-31: GetFeature 0x47 is err 87/1). Never WMI / Hands-Free.
+//   v1/v2: Feature Battery Strength (Generic Device Controls) when present.
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -32,7 +32,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     const ushort USG_VENDOR_BATTERY    = 0x0014;
     const ushort UP_GENDEV_BATTERY     = 0x0006;
     const ushort USG_GENDEV_BATTSTRENG = 0x0020;
-    const byte   BatteryReportId       = 0x90;
+    internal const byte BatteryReportId = 0x90;
 
     readonly string _path;
 
@@ -50,6 +50,12 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
 
     public int GetBatteryPercent()
     {
+        if (DeviceRegistry.IsHandsFreeOrIphonePath(_path))
+        {
+            Logger.Log($"MOUSE_REJECT_HANDSFREE device={DeviceName} path={_path}");
+            return -1;
+        }
+
         using var handle = HidNative.CreateFile(
             _path,
             0,  // zero access — avoids err=5 on mouhid-owned interfaces
@@ -65,6 +71,64 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             return -1;
         }
 
+        if (Kind == DeviceKind.MagicMouseV3 || Pid.Equals("0323", StringComparison.OrdinalIgnoreCase))
+            return ReadV3Rid90(handle);
+
+        return ReadV1V2Feature(handle);
+    }
+
+    // Live 0323: mm-hid-probe got 47% from Input 0x90 buf[2] on COL02.
+    // Feature 0x47 is err 87/1 — do not use it, do not fall back to WMI.
+    int ReadV3Rid90(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
+        if (!HidNative.HidD_GetPreparsedData(handle, out var preparsed)) return -1;
+        int inLen = 64;
+        try
+        {
+            var caps = new HidNative.HIDP_CAPS();
+            if (HidNative.HidP_GetCaps(preparsed, ref caps) != HidNative.HIDP_STATUS_SUCCESS)
+                return -1;
+            inLen = Math.Max(caps.InputReportByteLength, 64);
+        }
+        finally
+        {
+            HidNative.HidD_FreePreparsedData(preparsed);
+        }
+
+        var buf = new byte[inLen];
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Array.Clear(buf, 0, buf.Length);
+            buf[0] = BatteryReportId;
+            if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
+            {
+                var pct = ParseRid90Percent(buf);
+                if (pct is >= 0)
+                {
+                    Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
+                    return pct.Value;
+                }
+                Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
+                return -2;
+            }
+            if (attempt < 2) Thread.Sleep(50);
+        }
+
+        Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
+        return -2;
+    }
+
+    internal static int? ParseRid90Percent(byte[] buf)
+    {
+        if (buf is null || buf.Length < 3) return null;
+        if (buf[0] != BatteryReportId) return null;
+        int pct = buf[2];
+        if (pct is < 0 or > 100) return null;
+        return pct;
+    }
+
+    int ReadV1V2Feature(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
         if (!HidNative.HidD_GetPreparsedData(handle, out var preparsed)) return -1;
 
         bool splitVendor = false;
@@ -108,17 +172,20 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
 
         if (splitVendor)
         {
-            var buf = new byte[3];
+            var buf = new byte[Math.Max(3, 64)];
             for (int attempt = 0; attempt < 3; attempt++)
             {
+                Array.Clear(buf, 0, buf.Length);
                 buf[0] = BatteryReportId;
                 if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
                 {
-                    if (buf[0] != BatteryReportId) return -1;
-                    int pct = buf[2];
-                    if (pct is < 0 or > 100) return -1;
-                    Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (split)");
-                    return pct;
+                    var pct = ParseRid90Percent(buf);
+                    if (pct is >= 0)
+                    {
+                        Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (split)");
+                        return pct.Value;
+                    }
+                    return -1;
                 }
                 if (attempt < 2) Thread.Sleep(50);
             }
