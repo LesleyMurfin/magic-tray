@@ -33,6 +33,7 @@ Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/m
 - [Diagnostics](#diagnostics)
 - [Releases](#releases)
 - [License](#license)
+- [llms.txt](llms.txt) (for agents)
 
 ---
 
