@@ -1,9 +1,0 @@
-﻿[19:50:52][OK] ===== mm-state-flip Mode=AppleFilter =====
-[19:50:53][INFO] Device: BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0323\9&73B8B28&0&D0C050CC8C4D_C00000000  Status=OK
-[19:50:53][INFO] Current LowerFilters: applewirelessmouse (count=1)
-[19:50:53][INFO] Current COL02 status: present
-[19:50:53][INFO] LowerFilters already in target state - only need disable+enable to apply
-[19:50:53][INFO] Disabling device: BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0323\9&73B8B28&0&D0C050CC8C4D_C00000000
-[19:50:56][INFO] Enabling device: BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0323\9&73B8B28&0&D0C050CC8C4D_C00000000
-[19:51:01][OK] After flip: LowerFilters=applewirelessmouse COL02=missing
-[19:51:01][OK] Flip successful.

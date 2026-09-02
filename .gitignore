@@ -1,3 +1,8 @@
+# Internal research / agent state — not part of the public tray app
+.ai/
+.orca/
+.riley-session
+
 bin/
 obj/
 *.user

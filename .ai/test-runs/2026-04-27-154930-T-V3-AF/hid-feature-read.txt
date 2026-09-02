@@ -1,9 +1,0 @@
-﻿=== Apple HID Feature reads @ 2026-04-28 10:29:24 ===
-Apple HID interfaces found: 2
-
-Path: \\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323#a&31e5d054&c&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}
-  OPEN_FAILED: 0x5
-
-Path: \\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&030d#a&137e1bf2&2&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}
-  OPEN_FAILED: 0x5
-

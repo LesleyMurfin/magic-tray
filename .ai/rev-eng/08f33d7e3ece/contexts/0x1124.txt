@@ -1,4 +1,0 @@
-# Disassembly context for constant: 0x1124
-# binary: /mnt/c/Windows/System32/drivers/applewirelessmouse.sys:     file format pei-x86-64
-# generated: 2026-04-27T17:34:28Z
-

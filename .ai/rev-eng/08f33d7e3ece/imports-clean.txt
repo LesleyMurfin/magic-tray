@@ -1,2 +1,0 @@
-	DLL Name: ntoskrnl.exe
-	DLL Name: WDFLDR.SYS

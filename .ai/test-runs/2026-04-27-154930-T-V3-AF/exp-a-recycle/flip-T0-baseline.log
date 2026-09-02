@@ -1,5 +1,0 @@
-﻿[19:50:30][OK] ===== mm-state-flip Mode=VerifyOnly =====
-[19:50:31][INFO] Device: BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0323\9&73B8B28&0&D0C050CC8C4D_C00000000  Status=OK
-[19:50:31][INFO] Current LowerFilters: applewirelessmouse (count=1)
-[19:50:31][INFO] Current COL02 status: present
-[19:50:31][OK] Inferred mode: AppleFilter

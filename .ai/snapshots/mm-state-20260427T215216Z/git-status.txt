@@ -1,6 +1,0 @@
-?? .ai/learning/
-?? .ai/snapshots/mm-state-20260427T215216Z/
-?? .ai/telemetry/
-?? .ai/test-runs/.current-T-V3-AF
-?? .ai/test-runs/2026-04-27-154930-T-V3-AF/
-?? .claude/

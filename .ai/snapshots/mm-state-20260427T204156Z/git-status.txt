@@ -1,8 +1,0 @@
- M scripts/mm-phase1-cleanup.ps1
-?? .ai/learning/
-?? .ai/snapshots/
-?? .ai/telemetry/
-?? .ai/test-runs/
-?? .claude/
-?? scripts/mm-pause-windows-update.ps1
-?? scripts/mm-phase01-run.ps1
