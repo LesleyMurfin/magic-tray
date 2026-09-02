@@ -12,6 +12,26 @@ Released 2 September 2026.
 
 ![Magic Tray 1.1.0 menu — keyboard, Magic Mouse 2024 (KMDF), Magic Mouse v1](docs/screenshot-menu.png)
 
+## Contents
+
+- [Magic Tray vs Magic Utilities](#magic-tray-vs-magic-utilities)
+- [Install](#install)
+- [Features](#features)
+- [Tray menu (1.1.0)](#tray-menu-110)
+- [Supported mice](#supported-mice)
+- [Supported keyboards](#supported-keyboards)
+- [Supported trackpads](#supported-trackpads)
+- [Scroll](#scroll)
+  - [Magic Mouse v1 / v2](#magic-mouse-v1--v2-030d-0269)
+  - [Magic Mouse 2024](#magic-mouse-2024-0323)
+  - [Test Mode](#test-mode-0323-kmdf-and-patched-apple)
+- [Keyboard battery](#keyboard-battery)
+- [Building from source](#building-from-source)
+- [Diagnostics](#diagnostics)
+- [Releases](#releases)
+- [License](#license)
+
+
 ## Magic Tray vs Magic Utilities
 
 | | Magic Tray (free, MIT) | Magic Utilities (paid) |
