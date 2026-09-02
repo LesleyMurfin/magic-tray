@@ -40,6 +40,6 @@ One row per (PID, transport, Magic Tray version).
 
 | Model | PID | Transport | Tray | Windows | Battery | Driver | SDP | Tester | Date | Notes |
 |-------|-----|-----------|------|---------|---------|--------|-----|--------|------|-------|
-| Magic Mouse 2024 (USB-C) | `0323` | Bluetooth | 1.1.0 | Windows 11 | ok (30%) | KMDF | n/a | LesleyMurfin | 2026-09-02 | Live tray |
+| Magic Mouse 2024 (USB-C, v3) | `0323` | Bluetooth | 1.1.0 | Windows 11 | ok (30%) | KMDF | n/a | LesleyMurfin | 2026-09-02 | Live tray |
 | Magic Mouse v1 | `030D` | Bluetooth | 1.1.0 | Windows 11 | ok (100%) | Boot Camp | n/a | LesleyMurfin | 2026-09-01 | Live tray; unified Feature 0x47 after poll |
 | Apple Wireless Keyboard (2011) | `0239` | Bluetooth | 1.1.0 | Windows 11 | ok (16%) | n/a | patched | LesleyMurfin | 2026-09-02 | Live tray |
