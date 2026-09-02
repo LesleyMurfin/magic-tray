@@ -18,9 +18,8 @@
 //   This is an active synchronous read on col02; DeviceRegistry.Discover() hands us the col02
 //   interface path and creates a fresh instance per poll, so no caching/monitor thread is needed.
 //   When the patch is absent (e.g. erased by a re-pair) the Feature cap is missing and we return
-//   -2 ("present but blocked"). The tray surfaces a how-to link to the patch instructions
-//   (DeviceCapability.KbPatchAnchor); auto-patch is NOT wired (the patch needs admin and there
-//   is no installed scheduled task for it, unlike MM-Dev-Cycle for the mouse flip).
+//   -2 ("present but blocked"). The tray shows that as status only — it does not run the
+//   admin SDP-cache script.
 
 using System.Runtime.InteropServices;
 
@@ -32,33 +31,51 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
 
     internal static readonly VidPidEntry[] KnownKeyboards =
     [
+        // DESIGN: USB HID is VID_05AC&PID_xxxx for every PID already listed (BT/BLE rows
+        // stay 000205AC PID&xxxx / 0001004C PID&xxxx). Do not invent BLE 0001004C PIDs.
         // 2011 revision (A1314) — PID source: Linux kernel hid-apple.c
         new("000205AC", "PID&0239", "Apple Wireless Keyboard (2011)"),
+        new("VID_05AC",  "PID_0239", "Apple Wireless Keyboard (2011)"), // USB
         new("000205AC", "PID&023A", "Apple Wireless Keyboard (2011) ISO"),
+        new("VID_05AC",  "PID_023A", "Apple Wireless Keyboard (2011) ISO"), // USB
         new("000205AC", "PID&023B", "Apple Wireless Keyboard (2011) JIS"),
+        new("VID_05AC",  "PID_023B", "Apple Wireless Keyboard (2011) JIS"), // USB
         // Magic Keyboard (A1644, 2015+)
         new("000205AC", "PID&024F", "Magic Keyboard"),
+        new("VID_05AC",  "PID_024F", "Magic Keyboard"), // USB
         new("000205AC", "PID&0250", "Magic Keyboard ISO"),
+        new("VID_05AC",  "PID_0250", "Magic Keyboard ISO"), // USB
         // Magic Keyboard with Touch ID (A2449, 2021+)
         new("000205AC", "PID&0267", "Magic Keyboard with Touch ID"),
+        new("VID_05AC",  "PID_0267", "Magic Keyboard with Touch ID"), // USB
         new("000205AC", "PID&026C", "Magic Keyboard with Touch ID ISO"),
+        new("VID_05AC",  "PID_026C", "Magic Keyboard with Touch ID ISO"), // USB
         // PIDs below: numeric facts only from hid-ids.h (GPL) — no kernel code/comments copied.
         // Magic Keyboard 2021/2024 (BLE company-id 0x004C or BT-classic 0x05AC)
         new("0001004C", "PID&029C", "Magic Keyboard (2021)"),
         new("000205AC", "PID&029C", "Magic Keyboard (2021)"),
+        new("VID_05AC",  "PID_029C", "Magic Keyboard (2021)"), // USB
         new("0001004C", "PID&029A", "Magic Keyboard with Touch ID (2021)"),
         new("000205AC", "PID&029A", "Magic Keyboard with Touch ID (2021)"),
+        new("VID_05AC",  "PID_029A", "Magic Keyboard with Touch ID (2021)"), // USB
         new("0001004C", "PID&029F", "Magic Keyboard with Numeric Keypad (2021)"),
         new("000205AC", "PID&029F", "Magic Keyboard with Numeric Keypad (2021)"),
+        new("VID_05AC",  "PID_029F", "Magic Keyboard with Numeric Keypad (2021)"), // USB
         new("0001004C", "PID&0320", "Magic Keyboard (2024)"),
         new("000205AC", "PID&0320", "Magic Keyboard (2024)"),
+        new("VID_05AC",  "PID_0320", "Magic Keyboard (2024)"), // USB
         new("0001004C", "PID&0321", "Magic Keyboard with Touch ID (2024)"),
         new("000205AC", "PID&0321", "Magic Keyboard with Touch ID (2024)"),
+        new("VID_05AC",  "PID_0321", "Magic Keyboard with Touch ID (2024)"), // USB
         new("0001004C", "PID&0322", "Magic Keyboard with Numeric Keypad (2024)"),
         new("000205AC", "PID&0322", "Magic Keyboard with Numeric Keypad (2024)"),
+        new("VID_05AC",  "PID_0322", "Magic Keyboard with Numeric Keypad (2024)"), // USB
         new("000205AC", "PID&0255", "Apple Wireless Keyboard (2011 ANSI)"),
+        new("VID_05AC",  "PID_0255", "Apple Wireless Keyboard (2011 ANSI)"), // USB
         new("000205AC", "PID&0256", "Apple Wireless Keyboard (2011 ISO)"),
+        new("VID_05AC",  "PID_0256", "Apple Wireless Keyboard (2011 ISO)"), // USB
         new("000205AC", "PID&0257", "Apple Wireless Keyboard (2011 JIS)"),
+        new("VID_05AC",  "PID_0257", "Apple Wireless Keyboard (2011 JIS)"), // USB
     ];
 
     // Battery Strength on Generic Device Controls page — readable as a Feature after the patch.

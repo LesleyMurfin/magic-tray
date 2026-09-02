@@ -1,6 +1,7 @@
 name: release
 
-# Build, test, publish, optionally sign, and attach the single-file exe on a v* tag.
+# Build, test, publish, optionally Authenticode-sign, and attach the exe plus
+# the keyboard battery patch on a v* tag.
 on:
   push:
     tags:
@@ -12,6 +13,9 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+      SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,39 +30,31 @@ jobs:
       - name: Build
         run: dotnet build MagicMouseTray/MagicMouseTray.csproj -c Release --no-restore
 
-      # Unit tests target net8.0-windows and require the windows-latest runner (cannot run on Linux).
+      # Unit tests target net8.0-windows and require the windows-latest runner.
       - name: Test
         run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release
 
       - name: Publish (single-file, self-contained win-x64)
         run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
-      # Optional Authenticode signing — only runs if the cert secrets are present.
+      - name: Stage keyboard battery patch
+        shell: pwsh
+        run: |
+          Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
+          Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
+          if (-not (Test-Path publish/MagicMouseTray.exe)) { throw 'publish/MagicMouseTray.exe missing' }
+          if (-not (Test-Path publish/kbd-patch-cachedservices.ps1)) { throw 'kbd-patch-cachedservices.ps1 missing' }
+          if (-not (Test-Path publish/Install-KeyboardBattery.cmd)) { throw 'Install-KeyboardBattery.cmd missing' }
+
+      # Optional Authenticode signing — runs only when the PFX secrets exist.
       - name: Sign (optional)
         if: ${{ env.SIGN_PFX_BASE64 != '' }}
-        env:
-          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
-          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
         shell: pwsh
         run: |
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
           ./scripts/sign-app.ps1 -Exe publish/MagicMouseTray.exe -PfxPath "$env:RUNNER_TEMP\cert.pfx" -PfxPassword $env:SIGN_PFX_PASSWORD
 
-      # TODO(human): configure SignPath org/project/token in a protected GitHub environment.
-      # This is a scaffold for M3 signing. It is currently guarded to prevent CI failures.
-      - name: Submit signing request to SignPath
-        if: false
-        uses: SignPath/github-action-submit-signing-request@v1
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: 'magic-mouse-tray'
-          signing-policy-slug: 'release'
-          github-artifact-name: 'publish'
-          wait-for-completion: true
-          output-artifact-directory: 'publish-signed'
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" --generate-notes
+        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" --generate-notes

@@ -12,15 +12,19 @@ public partial class App
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        // Single-instance guard: a second launch would create a competing V3RecycleManager
-        // racing on C:\mm-dev-queue\request.txt. Local\ scope is correct for a per-user tray app.
+        // Single-instance guard. Local\ scope is correct for a per-user tray app.
         _instanceMutex = new Mutex(initiallyOwned: true, @"Local\MagicMouseTray.SingleInstance", out _ownsMutex);
         if (!_ownsMutex)
         {
             _instanceMutex.Dispose();   // not owned — release handle, do NOT ReleaseMutex
             _instanceMutex = null;
+            System.Windows.MessageBox.Show(
+                "Magic Tray is already running",
+                "Magic Tray",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             Shutdown();
-            return;                      // second instance exits silently
+            return;
         }
 
         Logger.LogAppStart();
