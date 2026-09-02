@@ -44,7 +44,7 @@ Disconnect after a last good reading well above 1% is not death.
 
 ## Enabled on this PC
 
-Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s Bluetooth / HID / USB nodes on **this PC**. The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged — check the box again to bring it back.
+Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s Bluetooth / HID / USB nodes on **this PC** using the same VID/PID catalog as battery discovery. The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged — check the box again to bring it back. A new model is enabled for this control by adding it to `KnownMice` / `KnownKeyboards`.
 
 Cancelling UAC leaves it enabled. If no matching device is found, the tray reports failure and leaves the box checked.
 
