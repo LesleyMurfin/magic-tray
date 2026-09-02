@@ -244,7 +244,42 @@
           </div>
         </div>
       </div>
-      <p>KMDF is the filter that keeps the two rooms apart. Full diagrams: <a href="v3.html#mode">Why v3 is hard</a>.</p>
+      <p>KMDF is the filter that keeps the two rooms apart. The sandwich picture is <a href="v3.html#stack">sbagirici’s</a>.</p>
+      <div class="diagram sba-pair">
+        <div class="sba">
+          <h3 class="sba-title">sbagirici · v1 / v2</h3>
+          <div class="layer"><strong>Application</strong></div>
+          <div class="layer"><strong>Windows HID stack</strong></div>
+          <div class="filter-wrap">
+            <div class="filter">
+              <strong>applewirelessmouse.sys</strong>
+              <em>← LowerFilter · multi-touch → scroll</em>
+            </div>
+          </div>
+          <div class="layer"><strong>Bluetooth HID</strong></div>
+          <div class="layer"><strong>Bluetooth stack</strong></div>
+          <div class="layer"><strong>Magic Mouse</strong> v1 / v2</div>
+        </div>
+        <div class="sba">
+          <h3 class="sba-title">Same sandwich · v3</h3>
+          <div class="layer"><strong>Application</strong></div>
+          <div class="layer"><strong>Windows HID stack</strong></div>
+          <div class="filter-wrap">
+            <div class="filter">
+              <strong>KMDF filter</strong>
+              <em>← same slot · two rooms stay apart</em>
+            </div>
+          </div>
+          <div class="layer"><strong>Bluetooth HID</strong></div>
+          <div class="layer"><strong>Bluetooth stack</strong></div>
+          <div class="layer"><strong>Magic Mouse 2024</strong> 0323</div>
+        </div>
+      </div>
+      <aside class="credit-box">
+        <h3>Star the person who drew this</h3>
+        <p><a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici/apple-magic-mouse-scroll-fix-windows</a> — Architecture section. Please <strong>star their repo</strong>. Use their installer for v1/v2; use KMDF for 2024 / v3.</p>
+        <p class="cta"><a class="primary" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a></p>
+      </aside>
       <table>
         <thead><tr><th>Choice</th><th>Scroll</th><th>Battery</th><th>Test Mode</th></tr></thead>
         <tbody>
@@ -325,6 +360,8 @@
     <div class="bar">
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
       <p>
+        <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici</a>
+        ·
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
         <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>

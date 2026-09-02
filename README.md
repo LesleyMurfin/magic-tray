@@ -296,6 +296,14 @@ CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX
 
 ---
 
+## Credits
+
+The LowerFilter sandwich (app → Windows HID → **filter** → Bluetooth → mouse) is from [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows). That Architecture diagram is why the v1/v2 scroll path is understandable. **Please star their repo.** We redraw it on [v3.html](https://lesleymurfin.github.io/magic-tray/v3.html#stack). Their installer is for v1/v2 with Apple’s signed `applewirelessmouse.sys`. Magic Mouse 2024 (`0323`) still uses KMDF from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix).
+
+v1/v2 Boot Camp INF packaging: [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64).
+
+---
+
 ## License
 
 [MIT](LICENSE) · Copyright (c) 2026 Lesley Murfin.
