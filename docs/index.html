@@ -21,43 +21,170 @@
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
-  <header>
-    <p class="kicker">Magic Tray 1.1.0 · MIT · Windows 10/11</p>
-    <nav>
-      <a href="./" aria-current="page">Home</a>
-      <a href="drivers.html">Which driver</a>
-      <a href="v3.html">Why v3 is hard</a>
-      <a href="devices.html">Devices</a>
-      <a href="funding.html">Stars &amp; signing</a>
-      <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
-    </nav>
-    <h1>Magic Mouse battery and scroll on Windows. No subscription.</h1>
-    <p class="lead">Free tray app for Apple <strong>Magic Mouse</strong> (v1, v2, and <strong>Magic Mouse 2024 / v3</strong>, PID 0323), <strong>Magic Keyboard</strong>, and <strong>Magic Trackpad</strong>. Each PID is a different Windows problem. We document that, then install only the path that PID can use.</p>
-    <p class="cta">
-      <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
-      <a class="ghost" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-      <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
-    </p>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="./">Magic Tray <small>1.1.0</small></a>
+      <nav aria-label="Site">
+        <a href="./" aria-current="page">Home</a>
+        <a href="drivers.html">Which driver</a>
+        <a href="v3.html">Why v3 is hard</a>
+        <a href="devices.html">Devices</a>
+        <a href="funding.html">Stars &amp; signing</a>
+        <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+      </nav>
+    </div>
   </header>
-  <main>
-    <p><img class="shot" src="screenshot-menu.png" width="576" height="503" alt="Magic Tray 1.1.0: keyboard, Magic Mouse 2024 v3 KMDF, Magic Mouse v1"></p>
-    <div class="grid grid-3">
-      <div class="card">
-        <h3><a href="drivers.html">Which driver</a></h3>
-        <p>v3 → KMDF. v1/v2 → Boot Camp. Keyboard → SDP. Trackpad → battery only.</p>
+
+  <section class="hero-wrap">
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="kicker">MIT · Windows 10/11 · not Magic Utilities</p>
+        <h1>Magic Mouse battery and scroll on Windows. No subscription.</h1>
+        <p class="lead">Free tray for Apple <strong>Magic Mouse</strong> (v1, v2, and <strong>Magic Mouse 2024 / v3</strong>, PID <code>0323</code>), <strong>Magic Keyboard</strong>, and <strong>Magic Trackpad</strong>. Each PID is a different Windows problem. We document that, then install only the path that PID can use.</p>
       </div>
-      <div class="card">
-        <h3><a href="v3.html">Why v3 ≠ v2</a></h3>
-        <p>0323 missing from Boot Camp. HID Mode A/B. Linked research.</p>
-      </div>
-      <div class="card">
-        <h3><a href="funding.html">Stars &amp; signing</a></h3>
-        <p>Star both repos. Goal: EV cert + attestation so KMDF drops Test Mode. No scroll-killing trial.</p>
+      <div class="hero-media">
+        <img class="shot" src="screenshot-menu.png" width="576" height="503" alt="Magic Tray 1.1.0 menu: keyboard, Magic Mouse 2024 v3 KMDF, Magic Mouse v1">
+        <p class="cta">
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
+          <a class="ghost" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+          <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+        </p>
       </div>
     </div>
-  </main>
-  <footer>
-    <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · <a href="TESTED.md">Hardware reports</a> · <a href="llms.txt">llms.txt</a></p>
+  </section>
+
+  <div class="shell">
+    <article id="content" class="primary">
+      <h2>What it actually does</h2>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3><a href="drivers.html">Which driver</a></h3>
+          <p>v3 → KMDF. v1/v2 → Boot Camp. Keyboard → SDP. Trackpad → battery only. Hardware Ids are the authority.</p>
+        </div>
+        <div class="card">
+          <h3><a href="v3.html">Why v3 ≠ v2</a></h3>
+          <p><code>0323</code> is missing from Boot Camp. HID Mode A/B. Linked research in the kernel repo, not a guessed INF.</p>
+        </div>
+        <div class="card">
+          <h3><a href="funding.html">Stars &amp; signing</a></h3>
+          <p>Star both repos. Goal: EV cert + attestation so KMDF drops Test Mode. No scroll-killing trial.</p>
+        </div>
+      </div>
+
+      <h2>Flip the device, then confirm the PID</h2>
+      <p>The charging port (or AA door) is a hint. Device Manager Hardware Ids win. Full walkthrough: <a href="drivers.html#identify">How to tell Magic device versions apart</a>.</p>
+      <div class="ident-grid cols-4">
+        <article class="ident-card">
+          <div class="ident-visual">
+            <div class="bottom-view mouse aa" aria-hidden="true">
+              <span class="tag">Bottom</span>
+              <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
+            </div>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">030D · AA</p>
+            <h3>Mouse v1</h3>
+            <p>Battery door, no port. Boot Camp INF.</p>
+            <a href="drivers.html#v1v2">v1 / v2 path</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <div class="bottom-view mouse lightning" aria-hidden="true">
+              <span class="tag">Bottom</span>
+              <span class="port lightning"></span>
+            </div>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0269 · Lightning</p>
+            <h3>Mouse v2</h3>
+            <p>Lightning on the bottom. Same Boot Camp INF as v1.</p>
+            <a href="drivers.html#v1v2">v1 / v2 path</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <div class="bottom-view mouse usbc" aria-hidden="true">
+              <span class="tag">Bottom</span>
+              <span class="port usbc"></span>
+            </div>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0323 · USB-C</p>
+            <h3>Mouse 2024 / v3</h3>
+            <p>USB-C oval. Not in Boot Camp. KMDF.</p>
+            <a href="drivers.html#v3">v3 KMDF path</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <div class="bottom-view mouse aa" aria-hidden="true">
+              <span class="tag">Bottom</span>
+              <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
+            </div>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0310 · AA</p>
+            <h3>Wireless Mouse</h3>
+            <p>AA door, no port. Treated like v1.</p>
+            <a href="drivers.html#v1v2">v1 / v2 path</a>
+          </div>
+        </article>
+      </div>
+
+      <p>Trackpads (<code>030E</code> / <code>0265</code> / <code>0324</code>) and keyboards (2011 AA, Lightning, 2024 USB-C) are in the same catalog. Touch ID and numeric keypad are extra PIDs, not extra drivers. Matrix: <a href="devices.html">Devices</a>.</p>
+    </article>
+
+    <aside class="rail">
+      <div class="rail-card">
+        <h2>Get the tray</h2>
+        <p>Magic Tray 1.1.0. User-initiated driver install. No subscription.</p>
+        <p class="cta">
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
+          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 kernel site</a>
+        </p>
+      </div>
+      <div class="rail-card">
+        <h2>PID cheat sheet</h2>
+        <dl class="pid-sheet">
+          <dt>030D</dt><dd>Mouse v1 · AA</dd>
+          <dt>0269</dt><dd>Mouse v2 · Lightning</dd>
+          <dt>0323</dt><dd>Mouse 2024 · USB-C</dd>
+          <dt>0310</dt><dd>Wireless Mouse · AA</dd>
+          <dt>030E</dt><dd>Trackpad 1 · AA</dd>
+          <dt>0265</dt><dd>Trackpad 2 · Lightning</dd>
+          <dt>0324</dt><dd>Trackpad 2024 · USB-C</dd>
+        </dl>
+      </div>
+      <div class="rail-card">
+        <h2>On this site</h2>
+        <nav class="jump">
+          <a href="drivers.html#identify">Tell versions apart</a>
+          <a href="drivers.html">Which driver</a>
+          <a href="v3.html">Why v3 is hard</a>
+          <a href="funding.html">Stars &amp; signing</a>
+          <a href="TESTED.md">Hardware reports</a>
+        </nav>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="site-footer">
+    <div class="bar">
+      <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <p>
+        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+        ·
+        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+        ·
+        <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 kernel site</a>
+        ·
+        <a href="TESTED.md">Hardware reports</a>
+        ·
+        <a href="llms.txt">llms.txt</a>
+      </p>
+    </div>
   </footer>
 </body>
 </html>

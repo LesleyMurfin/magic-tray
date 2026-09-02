@@ -15,72 +15,121 @@
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
-  <header>
-    <p class="kicker"><a href="./">Magic Tray</a></p>
-    <nav>
-      <a href="./">Home</a>
-      <a href="drivers.html">Which driver</a>
-      <a href="v3.html">Why v3 is hard</a>
-      <a href="devices.html">Devices</a>
-      <a href="funding.html" aria-current="page">Stars &amp; signing</a>
-    </nav>
-    <h1>If this saved you a subscription, star both repos</h1>
-    <p class="lead">Stars are the free signal that these projects are used. The paid gap is a public code-signing cert so the <strong>Magic Mouse v3 (2024)</strong> KMDF driver can load with Secure Boot on — not a Magic Utilities-style trial that kills scroll.</p>
-    <p class="cta">
-      <a class="primary" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-      <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
-    </p>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="./">Magic Tray <small>1.1.0</small></a>
+      <nav aria-label="Site">
+        <a href="./">Home</a>
+        <a href="drivers.html">Which driver</a>
+        <a href="v3.html">Why v3 is hard</a>
+        <a href="devices.html">Devices</a>
+        <a href="funding.html" aria-current="page">Stars &amp; signing</a>
+        <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+      </nav>
+    </div>
   </header>
-  <main>
-    <h2>The goal</h2>
-    <p><strong>EV code-signing certificate + Microsoft Hardware Dev Center attestation</strong> for <code>MagicMouseDriver</code> in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>. Then Magic Tray’s KMDF install no longer needs Test Mode. The tray stays MIT. The signed <code>.sys</code> is published for everyone — no license check in the filter.</p>
-    <ul class="plain">
-      <li><strong>GitHub Sponsors</strong> profile is submitted and <strong>pending GitHub staff approval</strong>. The Sponsor button will work when they publish it. Goal: EV cert + Microsoft attestation for the v3 KMDF.</li>
-      <li>Until then: <a href="https://github.com/LesleyMurfin/magic-tray">star Magic Tray</a> and <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">star the v3 driver</a>.</li>
-      <li>Optional extra: Stripe Payment Link (not required for Sponsors). See <a href="STRIPE-SETUP.md">STRIPE-SETUP.md</a>. No cards in the app.</li>
-      <li>We will <strong>not</strong> unbind scroll if money stops.</li>
-    </ul>
 
-    <h2>What “signed publicly” means</h2>
-    <h3>The app (MagicMouseTray.exe)</h3>
-    <ol class="steps">
-      <li>Buy an <strong>OV or EV Authenticode</strong> cert from a public CA (DigiCert, Sectigo, SSL.com) in a verified name — not a self-signed PFX.</li>
-      <li>EV is the one SmartScreen usually trusts on first download; OV still works but reputation builds with volume. EV is typically a USB token or HSM.</li>
-      <li>Put the cert in GitHub secrets <code>SIGN_PFX_BASE64</code> / <code>SIGN_PFX_PASSWORD</code>. <code>scripts/sign-app.ps1</code> already runs on <code>v*</code> tags. Those secrets are empty, so v1.1.0 shipped unsigned.</li>
-      <li>Timestamp every build. Self-signed Authenticode does <em>not</em> clear “Windows protected your PC.”</li>
-    </ol>
-    <h3>The v3 kernel driver (the Test Mode tax)</h3>
-    <table>
-      <thead><tr><th>Level</th><th>User sees</th><th>Requires</th></tr></thead>
-      <tbody>
-        <tr><td>Today: test signing</td><td>Test Mode + Memory Integrity off</td><td>Free</td></tr>
-        <tr><td>Attestation</td><td>Loads on normal Windows 10/11</td><td>EV cert + Partner Center / Hardware Dev Center; Microsoft signs the KMDF package</td></tr>
-        <tr><td>WHQL / HLK</td><td>Logo, MU-class Secure Boot story</td><td>Attestation plus lab tests</td></tr>
-      </tbody>
-    </table>
+  <div class="shell">
+    <article id="content" class="primary">
+      <header class="page-intro">
+        <p class="kicker"><a href="./">Magic Tray</a> · signing</p>
+        <h1>If this saved you a subscription, star both repos</h1>
+        <p class="lead">Stars are the free signal that these projects are used. The paid gap is a public code-signing cert so the <strong>Magic Mouse v3 (2024)</strong> KMDF driver can load with Secure Boot on — not a Magic Utilities-style trial that kills scroll.</p>
+      </header>
 
-    <h2>Stars vs Stripe vs subscription</h2>
-    <table>
-      <thead><tr><th></th><th>Funds</th><th>We do this?</th></tr></thead>
-      <tbody>
-        <tr><td>Star both repos</td><td>Discoverability</td><td>Yes — please</td></tr>
-        <tr><td>GitHub Sponsors → EV + attestation</td><td>One signed KMDF for everyone</td><td>Pending GitHub approval</td></tr>
-        <tr><td>Stripe Payment Link</td><td>Same goal, off GitHub</td><td>Optional; Dashboard steps in STRIPE-SETUP.md</td></tr>
-        <tr><td>Subscription that expires the filter</td><td>WHQL like MU</td><td><strong>No</strong></td></tr>
-      </tbody>
-    </table>
+      <h2 id="goal">The goal</h2>
+      <p><strong>EV code-signing certificate + Microsoft Hardware Dev Center attestation</strong> for <code>MagicMouseDriver</code> in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>. Then Magic Tray’s KMDF install no longer needs Test Mode. The tray stays MIT. The signed <code>.sys</code> is published for everyone — no license check in the filter.</p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>GitHub Sponsors</h3>
+          <p>Profile is submitted and <strong>pending GitHub staff approval</strong>. The Sponsor button will work when they publish it. Goal: EV cert + Microsoft attestation for the v3 KMDF.</p>
+        </div>
+        <div class="card">
+          <h3>Until then</h3>
+          <p><a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a> and <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">star the v3 driver</a>. Optional Stripe Payment Link is not required for Sponsors — <a href="STRIPE-SETUP.md">STRIPE-SETUP.md</a>. No cards in the app.</p>
+        </div>
+      </div>
+      <p class="note">We will <strong>not</strong> unbind scroll if money stops.</p>
 
-    <h2>Why Microsoft does not ship an OSS Apple mouse driver</h2>
-    <ul class="plain">
-      <li>There is no in-box <code>hid-magicmouse</code> on Windows. Boot Camp was Apple’s dump; 0323 never landed.</li>
-      <li>Linux can merge hid-magicmouse in-tree. Windows kernel mode needs a paid EV token and Partner Center. Community <code>.sys</code> files stay Test Mode toys.</li>
-      <li>HVCI / Secure Boot are default on new Windows 11 PCs. The 2010s “ignore the INF warning” path is gone.</li>
-      <li>Microsoft will not WHQL a device Apple does not submit. OSS cannot sign as Apple. Attestation is the developer path they did add — still EV + a legal entity.</li>
-    </ul>
-    <p>Research: <a href="v3.html">Why v3 is hard</a>. Practical install: <a href="drivers.html">Which driver</a>.</p>
-  </main>
-  <footer>
-    <p><a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a> · <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a> · MIT</p>
+      <h2 id="app">What “signed publicly” means</h2>
+      <h3>The app (MagicMouseTray.exe)</h3>
+      <ol class="steps">
+        <li>Buy an <strong>OV or EV Authenticode</strong> cert from a public CA (DigiCert, Sectigo, SSL.com) in a verified name — not a self-signed PFX.</li>
+        <li>EV is the one SmartScreen usually trusts on first download; OV still works but reputation builds with volume. EV is typically a USB token or HSM.</li>
+        <li>Put the cert in GitHub secrets <code>SIGN_PFX_BASE64</code> / <code>SIGN_PFX_PASSWORD</code>. <code>scripts/sign-app.ps1</code> already runs on <code>v*</code> tags. Those secrets are empty, so v1.1.0 shipped unsigned.</li>
+        <li>Timestamp every build. Self-signed Authenticode does <em>not</em> clear “Windows protected your PC.”</li>
+      </ol>
+
+      <h3 id="kmdf">The v3 kernel driver (the Test Mode tax)</h3>
+      <table>
+        <thead><tr><th>Level</th><th>User sees</th><th>Requires</th></tr></thead>
+        <tbody>
+          <tr><td>Today: test signing</td><td>Test Mode + Memory Integrity off</td><td>Free</td></tr>
+          <tr><td>Attestation</td><td>Loads on normal Windows 10/11</td><td>EV cert + Partner Center / Hardware Dev Center; Microsoft signs the KMDF package</td></tr>
+          <tr><td>WHQL / HLK</td><td>Logo, MU-class Secure Boot story</td><td>Attestation plus lab tests</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="compare">Stars vs Stripe vs subscription</h2>
+      <table>
+        <thead><tr><th></th><th>Funds</th><th>We do this?</th></tr></thead>
+        <tbody>
+          <tr><td>Star both repos</td><td>Discoverability</td><td>Yes — please</td></tr>
+          <tr><td>GitHub Sponsors → EV + attestation</td><td>One signed KMDF for everyone</td><td>Pending GitHub approval</td></tr>
+          <tr><td>Stripe Payment Link</td><td>Same goal, off GitHub</td><td>Optional; Dashboard steps in STRIPE-SETUP.md</td></tr>
+          <tr><td>Subscription that expires the filter</td><td>WHQL like MU</td><td><strong>No</strong></td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="msft">Why Microsoft does not ship an OSS Apple mouse driver</h2>
+      <ul class="plain">
+        <li>There is no in-box <code>hid-magicmouse</code> on Windows. Boot Camp was Apple’s dump; 0323 never landed.</li>
+        <li>Linux can merge hid-magicmouse in-tree. Windows kernel mode needs a paid EV token and Partner Center. Community <code>.sys</code> files stay Test Mode toys.</li>
+        <li>HVCI / Secure Boot are default on new Windows 11 PCs. The 2010s “ignore the INF warning” path is gone.</li>
+        <li>Microsoft will not WHQL a device Apple does not submit. OSS cannot sign as Apple. Attestation is the developer path they did add — still EV + a legal entity.</li>
+      </ul>
+      <p>Research: <a href="v3.html">Why v3 is hard</a>. Practical install: <a href="drivers.html">Which driver</a>.</p>
+    </article>
+
+    <aside class="rail">
+      <div class="rail-card">
+        <h2>Actions</h2>
+        <p>Stars are free and useful. The v3 filter stays MIT either way.</p>
+        <p class="cta">
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+          <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 kernel site</a>
+        </p>
+      </div>
+      <div class="rail-card">
+        <h2>On this page</h2>
+        <nav class="jump">
+          <a href="#goal">The goal</a>
+          <a href="#app">App signing</a>
+          <a href="#kmdf">KMDF / Test Mode</a>
+          <a href="#compare">Stars vs subscription</a>
+          <a href="#msft">Why Microsoft does not</a>
+        </nav>
+      </div>
+      <div class="rail-card">
+        <h2>Promise</h2>
+        <p>No license check in the filter. We will not unbind scroll if money stops.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="site-footer">
+    <div class="bar">
+      <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <p>
+        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+        ·
+        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+        ·
+        <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a>
+      </p>
+    </div>
   </footer>
 </body>
 </html>
