@@ -4,8 +4,8 @@ using System.IO;
 
 namespace MagicMouseTray;
 
-// Enabled on this PC V2: stop/start the existing Windows device for this PID.
-// No new driver. No unpair. No KMDF / PathA / Stock scripts.
+// Enabled on this PC: stop/start the existing Windows device for this PID
+// so a Mac can take the Bluetooth link. No unpair. No driver installers.
 internal static class DeviceEnable
 {
     internal static readonly string[] ForbiddenNames =
@@ -28,7 +28,8 @@ internal static class DeviceEnable
         if (low.Contains("pid_" + pid, StringComparison.Ordinal) ||
             low.Contains("pid&" + pid, StringComparison.Ordinal))
         {
-            if (low.Contains("bthenum", StringComparison.Ordinal) &&
+            if ((low.Contains("bthenum", StringComparison.Ordinal) ||
+                 low.Contains("bthle", StringComparison.Ordinal)) &&
                 !low.Contains("_vid&000205ac_", StringComparison.Ordinal) &&
                 !low.Contains("_vid&0001004c_", StringComparison.Ordinal) &&
                 !low.Contains("vid_05ac", StringComparison.Ordinal))
@@ -42,6 +43,8 @@ internal static class DeviceEnable
     {
         pid = pid.ToLowerInvariant();
         var verb = enable ? "enable-device" : "disable-device";
+        // "$id" is required: HID/BTHENUM instance IDs contain '&'. Unquoted,
+        // PowerShell treats '&' as the call operator and pnputil never runs.
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
@@ -76,12 +79,26 @@ function Add-Matching([string]$enumerator) {
     $root.Dispose()
 }
 
-Add-Matching 'BTHENUM'
-Add-Matching 'HID'
-Add-Matching 'USB'
-foreach ($id in $ids) {
-    & pnputil.exe /__VERB__ $id | Out-Host
+$order = if ($verb -eq 'disable-device') {
+    @('HID', 'USB', 'BTHLE', 'BTHLEDEVICE', 'BTHENUM')
+} else {
+    @('BTHENUM', 'BTHLEDEVICE', 'BTHLE', 'USB', 'HID')
 }
+foreach ($e in $order) { Add-Matching $e }
+
+if ($ids.Count -eq 0) {
+    Write-Host "DEVICE_ENABLE no instances pid=$targetPid"
+    exit 1
+}
+
+$failed = 0
+foreach ($id in $ids) {
+    Write-Host "DEVICE_ENABLE $verb $id"
+    & pnputil.exe "/$verb" "$id"
+    if ($LASTEXITCODE -ne 0) { $failed++ }
+}
+if ($failed -ne 0) { exit 1 }
+exit 0
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
@@ -96,7 +113,7 @@ foreach ($id in $ids) {
 
     internal static void Apply(string pid, bool enable)
     {
-        if (string.IsNullOrEmpty(pid) || pid.Length > 4)
+        if (string.IsNullOrEmpty(pid) || pid.Length != 4)
             throw new InvalidOperationException("DeviceEnable needs a 4-hex PID.");
         pid = pid.ToLowerInvariant();
         var temp = Path.Combine(Path.GetTempPath(), $"mm-enable-{pid}.ps1");
