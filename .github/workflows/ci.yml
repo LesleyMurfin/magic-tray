@@ -41,11 +41,14 @@ jobs:
     - name: Publish
       run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
-    - name: Stage keyboard battery patch
+    - name: Stage keyboard patch and diagnostic scripts
       shell: pwsh
       run: |
         Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
         Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
+        Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
+        Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
+        Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
 
     - name: Verify release artifacts
       run: pwsh -File scripts/verify-release.ps1 -PublishDir publish

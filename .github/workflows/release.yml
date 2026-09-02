@@ -1,7 +1,7 @@
 name: release
 
-# Build, test, publish, optionally Authenticode-sign, and attach the exe plus
-# the keyboard battery patch on a v* tag.
+# Build, test, publish, optionally Authenticode-sign, and attach the exe, keyboard
+# battery patch, and Diagnostics menu scripts on a v* tag.
 on:
   push:
     tags:
@@ -37,14 +37,24 @@ jobs:
       - name: Publish (single-file, self-contained win-x64)
         run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
-      - name: Stage keyboard battery patch
+      - name: Stage keyboard patch and diagnostic scripts
         shell: pwsh
         run: |
           Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
           Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
-          if (-not (Test-Path publish/MagicMouseTray.exe)) { throw 'publish/MagicMouseTray.exe missing' }
-          if (-not (Test-Path publish/kbd-patch-cachedservices.ps1)) { throw 'kbd-patch-cachedservices.ps1 missing' }
-          if (-not (Test-Path publish/Install-KeyboardBattery.cmd)) { throw 'Install-KeyboardBattery.cmd missing' }
+          Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
+          Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
+          Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
+          foreach ($f in @(
+            'publish/MagicMouseTray.exe',
+            'publish/kbd-patch-cachedservices.ps1',
+            'publish/Install-KeyboardBattery.cmd',
+            'publish/capture-state.ps1',
+            'publish/diagnose-driver.ps1',
+            'publish/mm-bt-stack-snapshot.ps1'
+          )) {
+            if (-not (Test-Path $f)) { throw "$f missing" }
+          }
 
       # Optional Authenticode signing — runs only when the PFX secrets exist.
       - name: Sign (optional)
@@ -60,4 +70,4 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/SHA256SUMS" --generate-notes
+        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --generate-notes
