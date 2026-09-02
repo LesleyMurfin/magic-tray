@@ -11,7 +11,7 @@
 ## Docs
 
 - [Landing page](https://lesleymurfin.github.io/magic-tray/): Short answer + download + star both repos
-- [Which driver](https://lesleymurfin.github.io/magic-tray/drivers.html): PID → KMDF / Boot Camp / SDP / none
+- [Which driver](https://lesleymurfin.github.io/magic-tray/drivers.html): PID → KMDF / Boot Camp / SDP / none. [#identify](https://lesleymurfin.github.io/magic-tray/drivers.html#identify) — Hardware Ids first, then AA door / Lightning / USB-C.
 - [Why v3 is hard](https://lesleymurfin.github.io/magic-tray/v3.html): 0323 vs v2, Mode A/B, research links
 - [Devices](https://lesleymurfin.github.io/magic-tray/devices.html): Why not one driver; why not MU
 - [Stars and signing](https://lesleymurfin.github.io/magic-tray/funding.html): Star both repos; EV + attestation goal; no scroll-killing subscription
