@@ -1,8 +1,9 @@
-# Stripe Payment Link (off GitHub Sponsors)
+# Stripe Payment Link (optional, off GitHub Sponsors)
 
-GitHub Sponsors is **not** used. Cards never go through the tray app.
+GitHub Sponsors is submitted and waiting on staff. You do not need a separate Stripe Payment Link for Sponsors to go live.
 
-An agent cannot finish Stripe identity/bank verification. You do this once in the browser.
+Use this file only if you also want a <code>buy.stripe.com</code> link. Cards never go through the tray app.
+
 
 1. Open [https://dashboard.stripe.com/register](https://dashboard.stripe.com/register) (real `stripe.com` only). Enable 2FA.
 2. Complete identity (you or Revive Business Solutions) and a payout account.
