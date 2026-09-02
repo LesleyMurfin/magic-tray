@@ -26,3 +26,26 @@ jobs:
 
     - name: Test
       run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-build -c Release --verbosity normal
+
+  verify-publish:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Publish
+      run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
+
+    - name: Stage keyboard battery patch
+      shell: pwsh
+      run: |
+        Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
+        Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
+
+    - name: Verify release artifacts
+      run: pwsh -File scripts/verify-release.ps1 -PublishDir publish

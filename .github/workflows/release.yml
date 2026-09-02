@@ -54,7 +54,10 @@ jobs:
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
           ./scripts/sign-app.ps1 -Exe publish/MagicMouseTray.exe -PfxPath "$env:RUNNER_TEMP\cert.pfx" -PfxPassword $env:SIGN_PFX_PASSWORD
 
+      - name: Verify release artifacts
+        run: pwsh -File scripts/verify-release.ps1 -PublishDir publish -Tag "${{ github.ref_name }}"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" --generate-notes
+        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/SHA256SUMS" --generate-notes
