@@ -78,6 +78,7 @@ Right-click the tray icon.
 Footer shows **Magic Tray 1.1.0**.
 
 ## Supported mice
+Live hardware reports (who tested what): [docs/TESTED.md](docs/TESTED.md).
 
 | Model | Bluetooth PID | USB HID | Scroll driver | Battery |
 |---|---|---|---|---|
@@ -108,6 +109,8 @@ Battery rows only: percent, enable, threshold, and time alerts. **No** KMDF / Bo
 | Magic Trackpad (v1) | `0x030E` | `VID_05AC` `PID_030E` | AA — 48h toast + death modal |
 | Magic Trackpad 2 | `0x0265` | `VID_05AC` `PID_0265` | Lightning — 24h night-before + plug-now |
 | Magic Trackpad 2024 (USB-C) | `0x0324` | `VID_05AC` `PID_0324` | USB-C — 24h night-before + plug-now |
+
+Hardware reports, including devices not tested here: [docs/TESTED.md](docs/TESTED.md).
 
 ## Scroll
 

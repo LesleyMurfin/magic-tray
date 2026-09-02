@@ -23,9 +23,13 @@ Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-
 
 Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not triplicate them.
 
+## Hardware reports
+
+If Magic Tray works (or fails) on a mouse, keyboard, or trackpad you own, add a row to [docs/TESTED.md](docs/TESTED.md) and open a PR. Include PID, Bluetooth vs USB, tray version, battery (`ok` / `no reading`), and driver badge. Sign the commit (`git commit -s`).
+
 ## Bug reports
 
-Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx`).
+Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx` or `VID_05AC&PID_xxxx`).
 
 ## License
 
