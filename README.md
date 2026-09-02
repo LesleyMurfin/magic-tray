@@ -1,10 +1,16 @@
-# Magic Tray
+# Magic Tray 1.1.0
 
 Free Windows tray app for Apple Magic Mouse, Magic Keyboard, and Magic Trackpad on Windows 10/11. **No subscription.**
 
-This is a **free alternative** to [Magic Utilities](https://magicutilities.net/) — battery %, time alerts, Start with Windows, and a driver install you confirm. It is **not** a paid clone of Magic Utilities' proprietary drivers, gesture suite, trackpad suite, or media-key remapping. See [docs/DESIGN-mu-free-parity.md](docs/DESIGN-mu-free-parity.md).
+This is a **free alternative** to [Magic Utilities](https://magicutilities.net/) — battery %, time alerts, Start with Windows, and a driver install you confirm. It is **not** a paid clone of Magic Utilities' proprietary drivers, gesture suite, trackpad suite, or media-key remapping.
 
 **MIT licensed. No trial. Scroll never turns off because a license expired.**
+
+Released 2 September 2026.
+
+![Magic Tray in the Windows 11 tray](docs/screenshot-tray.png)
+
+![Magic Tray 1.1.0 menu — keyboard, Magic Mouse 2024 (KMDF), Magic Mouse v1](docs/screenshot-menu.png)
 
 ## Magic Tray vs Magic Utilities
 
@@ -13,7 +19,7 @@ This is a **free alternative** to [Magic Utilities](https://magicutilities.net/)
 | Mouse battery in the tray | Yes (Bluetooth + USB HID when Windows exposes it) | Yes |
 | Keyboard battery | Yes, after a one-time SDP patch you run (USB HID when Windows exposes it) | Yes |
 | Trackpad battery | Yes (Bluetooth + USB HID). No scroll/gesture driver. | Yes, plus a paid trackpad suite |
-| Time-based battery alerts | Yes. Percent floor 10 → 5 → 1 (default 10). No evening reminder. AA: 48h toast + death modal. Rechargeable: 24h night-before toast + connected 0–1% plug-now. See [docs/ALERTS.md](docs/ALERTS.md). | Customizable percent alerts |
+| Time-based battery alerts | Yes. Percent floor 10 → 5 → 1 (default 10). AA: 48h toast + death modal. Rechargeable: 24h night-before toast + connected 0–1% plug-now. See [docs/ALERTS.md](docs/ALERTS.md). | Customizable percent alerts |
 | Scroll driver install | Yes, user-initiated, **mice only** | Yes, proprietary (mouse + trackpad) |
 | Driver signature | v1/v2: catalog-signed Boot Camp INF. **0323 KMDF and Patched Apple are self-signed** (Test Mode + Memory Integrity off). Not WHQL. Stock Windows is Microsoft-signed. | WHQL-signed drivers; works with Secure Boot / Memory Integrity |
 | Secure Boot / HVCI | v1/v2 OK. 0323 KMDF and Patched Apple need Test Mode and Memory Integrity **off**. Stock does not. | Works with Secure Boot |
@@ -40,16 +46,36 @@ Windows may show a SmartScreen warning on the first run (unsigned open-source ex
 
 - Battery percent on the tray icon for Magic mice, keyboards, and trackpads (Bluetooth, and USB HID when Windows exposes it)
 - How battery alerts work (percent floor 10 → 5 → 1, plus time warnings): [docs/ALERTS.md](docs/ALERTS.md)
-- Persistent 0-1% warning (replace AA batteries, or plug in USB-C / Lightning while the device is still connected)
+- Persistent 0–1% warning (replace AA batteries, or plug in USB-C / Lightning while the device is still connected)
 - Start with Windows
 - User-initiated scroll-driver install for **mice** (v1/v2 tealtadpole Boot Camp INF; 0323: KMDF, Patched Apple, or Stock Windows). Trackpads do not get driver radios.
 - User-initiated keyboard SDP patch
 - Tray Bluetooth menu opens Windows Bluetooth Settings (pair a device, toggle the radio, rename)
+- Optional Logitech battery rows (off by default)
 - Single self-contained `MagicMouseTray.exe`
 
-The **Battery Reads** status item appears only when a Magic Mouse 2024 is connected **and** the bound driver is the patched KMDF package. Hidden otherwise.
+The **Battery reads** status item appears only when a Magic Mouse 2024 is connected **and** the bound driver is the patched KMDF package. Hidden otherwise.
 
 Magic Tray does not install a driver until you confirm. No silent rebind. No Magic Utilities binaries.
+
+## Tray menu (1.1.0)
+
+Right-click the tray icon.
+
+| Item | What it does |
+|------|-------------|
+| *N* devices | Header. Each paired Magic device expands to battery %, driver badge, enable, and a per-device alert. |
+| Bluetooth | Opens Windows Bluetooth Settings |
+| Low battery threshold | 10% / 5% / 1% (default 10%) |
+| Start with Windows | Toggle auto-start on login |
+| Show Logitech devices [Off] | Experimental Logitech battery rows. Off by default. |
+| Battery reads | Status only. Visible when a 2024 mouse is on the patched KMDF driver. |
+| Refresh Now | Force an immediate battery read |
+| Diagnostics | Logs, test notification, capture scripts |
+| Help/Documentation | How alerts work, this repository, report a bug |
+| Quit | Exit the app |
+
+Footer shows **Magic Tray 1.1.0**.
 
 ## Supported mice
 
@@ -58,7 +84,6 @@ Magic Tray does not install a driver until you confirm. No silent rebind. No Mag
 | Magic Mouse 2024 (USB-C) | `0x0323` | `VID_05AC` `PID_0323` | KMDF (recommended), Patched Apple, or Stock Windows from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | HID Input report `0x90` on COL02 (`buf[2]`) |
 | Magic Mouse v1 | `0x030D` | `VID_05AC` `PID_030D` | [tealtadpole Boot Camp INF](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | HID Input `0x90` (AA) |
 | Magic Mouse v2 | `0x0269` | `VID_05AC` `PID_0269` | Same tealtadpole INF | HID Input `0x90` (Lightning) |
-| Apple Wireless Mouse | `0x0310` | `VID_05AC` `PID_0310` | Same tealtadpole INF | HID Input `0x90` (AA) |
 
 0323 battery is **only** Input `0x90` on COL02. Magic Tray does not use Feature report `0x47` for the 2024 mouse, and does not treat iPhone Hands-Free / WMI as mouse battery. USB battery is whatever HID collection Windows already exposes — not Magic Utilities' "recharge and continue" driver.
 
@@ -88,7 +113,7 @@ Battery rows only: percent, enable, threshold, and time alerts. **No** KMDF / Bo
 
 Scroll needs an Apple mouse filter driver **installed and bound** to that mouse. The tray offers the install after you confirm.
 
-### Magic Mouse v1 / v2 (`030D`, `0269`, `0310`)
+### Magic Mouse v1 / v2 (`030D`, `0269`)
 
 Install the Boot Camp INF from [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) (Apple Wireless Mouse folder; INF: [`AppleWirelessMouse.inf`](https://raw.githubusercontent.com/tealtadpole/MagicMouse2DriversWin11x64/master/AppleWirelessMouse/AppleWirelessMouse.inf)).
 
@@ -108,7 +133,7 @@ If `Install-KMDF.cmd` is missing on `main`, the tray reports it and **stops**. I
 
 **Patched Apple driver.** User-initiated only. Runs `v1-binary-patch/installer/Install-MagicMousePatch.ps1` from the same zip. If that script is missing, the tray **stops** — it will not fall back to KMDF. Scroll and battery are mutually exclusive on this path.
 
-**Stock Windows.** User-initiated unbind to `HidBth` (no KMDF bind, no Apple filter). Runs `v1-binary-patch/installer/Uninstall-MagicMousePatch.ps1` if that script is on the zip. It will not treat a PathA Scroll/Battery flip (`FLIP:NoFilter`) as Stock. Test Mode is not required.
+**Stock Windows.** User-initiated unbind to `HidBth` (no KMDF bind, no Apple filter). Runs `v1-binary-patch/installer/Uninstall-MagicMousePatch.ps1` if that script is on the zip. Test Mode is not required.
 
 After install, remove and re-pair the mouse if scroll still does not work.
 
@@ -204,8 +229,10 @@ CI builds on a `v*` tag (`.github/workflows/release.yml`): restore, test, publis
 - `kbd-patch-cachedservices.ps1`
 - `Install-KeyboardBattery.cmd`
 
-`FileVersion` / `AssemblyVersion` are `1.1.0.0` (exe Properties → Details). The exe ApplicationIcon is `MagicMouseTray/magic-mouse.ico`.
+`FileVersion` / `AssemblyVersion` are `1.1.0.0` (exe Properties → Details).
 
 ## License
 
 [MIT](LICENSE)
+
+Copyright (c) 2026 Lesley Murfin.
