@@ -4,7 +4,7 @@
 
 Magic Tray is a Windows tray app for **Apple Magic Mouse** (v1, v2, and **Magic Mouse 2024 / Magic Mouse v3**, PID `0323`), **Magic Keyboard**, and **Magic Trackpad**. It shows battery percent in the tray and can install a scroll driver you confirm. It is a free alternative to [Magic Utilities](https://magicutilities.net/) — not a clone of MU’s proprietary drivers, gestures, trackpad suite, or key remaps.
 
-Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0)
+Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0) · [Site](https://lesleymurfin.github.io/magic-tray/)
 
 ![Windows 11 system tray with Magic Tray](docs/screenshot-tray.png)
 
