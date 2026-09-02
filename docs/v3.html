@@ -93,17 +93,46 @@
       <p class="caption" style="color:var(--faint);font-size:0.82rem;margin-top:-0.6rem;">Same idea as the Mode A / Mode B diagram in the kernel repo — without HID class names.</p>
 
       <h2 id="stack">Where the fix sits</h2>
-      <p>Windows does not turn a finger swipe into a wheel by itself on this mouse. A small driver sits <em>under</em> Windows and <em>above</em> Bluetooth and does that translation. On v1/v2 that driver is Apple’s Boot Camp filter. On v3 we use KMDF from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</p>
-      <div class="diagram" style="max-width:28rem">
-        <ol class="stack">
-          <li>You — Chrome, Explorer, anything that scrolls</li>
-          <li>Windows</li>
-          <li class="hl"><strong>Filter driver</strong> — finger swipe becomes a wheel. Stops Windows from merging the two rooms.</li>
-          <li>Bluetooth</li>
-          <li>Magic Mouse</li>
-        </ol>
-        <p class="caption">Layout from <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici’s v1/v2 scroll fix</a> — the diagram that made the LowerFilter click. v3 is the same sandwich; the filling is KMDF, not Apple’s INF.</p>
+      <p>Windows does not turn a finger swipe into a wheel by itself on this mouse. A small driver sits <em>under</em> Windows and <em>above</em> Bluetooth. That picture is not ours.</p>
+      <div class="diagram sba-pair" role="img" aria-label="sbagirici LowerFilter stack for v1 v2, same stack with KMDF for v3">
+        <div class="sba">
+          <h3 class="sba-title">sbagirici · v1 / v2</h3>
+          <div class="layer"><strong>Application</strong> browser, Explorer</div>
+          <div class="layer"><strong>Windows HID stack</strong></div>
+          <div class="filter-wrap">
+            <div class="filter">
+              <strong>applewirelessmouse.sys</strong>
+              <em>← LowerFilter · multi-touch → scroll</em>
+            </div>
+          </div>
+          <div class="layer"><strong>Bluetooth HID driver</strong> hidbth.sys</div>
+          <div class="layer"><strong>Bluetooth stack</strong></div>
+          <div class="layer"><strong>Magic Mouse</strong> v1 / v2 hardware</div>
+        </div>
+        <div class="sba">
+          <h3 class="sba-title">Same sandwich · v3 / 2024</h3>
+          <div class="layer"><strong>Application</strong> browser, Explorer</div>
+          <div class="layer"><strong>Windows HID stack</strong></div>
+          <div class="filter-wrap">
+            <div class="filter">
+              <strong>KMDF filter</strong>
+              <em>← same slot · keeps the two rooms apart</em>
+            </div>
+          </div>
+          <div class="layer"><strong>Bluetooth HID driver</strong> hidbth.sys</div>
+          <div class="layer"><strong>Bluetooth stack</strong></div>
+          <div class="layer"><strong>Magic Mouse 2024</strong> PID 0323</div>
+        </div>
       </div>
+      <aside class="credit-box" id="sbagirici">
+        <h3>This diagram is sbagirici’s</h3>
+        <p><a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici/apple-magic-mouse-scroll-fix-windows</a> is the README that made the LowerFilter click: app → Windows → <strong>filter</strong> → Bluetooth → mouse. We redrew it here so v3 is obvious. If that picture helped you, <strong>star their repo</strong> — they did the v1/v2 work we stood on.</p>
+        <p class="cta">
+          <a class="primary" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a>
+          <a class="ghost" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows#architecture">Their Architecture section</a>
+        </p>
+        <p>Their installer uses Apple’s signed <code>applewirelessmouse.sys</code> for v1/v2. Do not put that on Magic Mouse 2024 (<code>0323</code>). That PID still needs KMDF from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</p>
+      </aside>
       <div class="grid grid-2">
         <div class="card">
           <p class="meta">COL01</p>
@@ -145,6 +174,7 @@
       <div class="rail-card">
         <h2>Star if this helped</h2>
         <nav class="jump">
+          <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a>
           <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
           <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
           <a href="funding.html">EV + attestation goal</a>
@@ -157,6 +187,8 @@
     <div class="bar">
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
       <p>
+        <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici</a>
+        ·
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
         <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
