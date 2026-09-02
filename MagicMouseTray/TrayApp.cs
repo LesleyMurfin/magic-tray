@@ -23,6 +23,11 @@ internal static class TrayMenu
     internal const string HowAlertsWorkLabel = "How alerts work";
     internal const string RepositoryLabel = "Repository";
     internal const string ReportBugLabel = "Report a bug";
+    internal const string RequestFeatureLabel = "Request a feature";
+    internal const string ReportBugConfirm =
+        "Magic Tray will collect version, driver badges, battery readings, and the last log lines (Bluetooth MAC redacted), copy them, and open a GitHub issue draft. You submit it while logged in.\n\nContinue?";
+    internal const string RequestFeatureConfirm =
+        "Magic Tray will open a GitHub feature-request draft with the app version. The text is also on the clipboard. You submit it while logged in.\n\nContinue?";
 
     // Global picker: percent floor, then time alerts. No invented hours.
     internal static string GlobalThresholdLabel(int pct) => $"{pct}%  then time alerts";
@@ -432,8 +437,11 @@ internal sealed class TrayApp : IDisposable
         repoItem.Click += (_, _) => OpenHelpUrl(TrayMenu.RepoUrl);
         help.DropDownItems.Add(repoItem);
         var bugItem = new ToolStripMenuItem(TrayMenu.ReportBugLabel);
-        bugItem.Click += (_, _) => OpenHelpUrl(TrayMenu.IssuesUrl);
+        bugItem.Click += (_, _) => OpenGitHubDraft(feature: false);
         help.DropDownItems.Add(bugItem);
+        var featItem = new ToolStripMenuItem(TrayMenu.RequestFeatureLabel);
+        featItem.Click += (_, _) => OpenGitHubDraft(feature: true);
+        help.DropDownItems.Add(featItem);
         menu.Items.Add(help);
 
         menu.Items.Add(new ToolStripSeparator());
@@ -562,6 +570,46 @@ internal sealed class TrayApp : IDisposable
             {
                 Logger.Log($"OPEN_HELP_LOCAL_FAIL path={localFallback} err={ex2.Message}");
             }
+        }
+    }
+
+    void OpenGitHubDraft(bool feature)
+    {
+        var caption = feature ? TrayMenu.RequestFeatureLabel : TrayMenu.ReportBugLabel;
+        var confirm = feature ? TrayMenu.RequestFeatureConfirm : TrayMenu.ReportBugConfirm;
+        if (MessageBox.Show(confirm, caption, MessageBoxButtons.OKCancel, MessageBoxIcon.Information)
+            != DialogResult.OK)
+            return;
+
+        try
+        {
+            var version = BugReport.AppVersion();
+            var os = BugReport.OsDescription();
+            string md;
+            string title;
+            string url;
+            if (feature)
+            {
+                md = BugReport.FormatFeatureMarkdown(version, os);
+                title = BugReport.FeatureTitle(version);
+                url = BugReport.IssueUrl(title, md, "enhancement");
+            }
+            else
+            {
+                var rows = BugReport.Collect(_health, _deviceBatteries);
+                var log = BugReport.ReadLogTail(Logger.LogPath, BugReport.LogTailLines);
+                md = BugReport.FormatMarkdown(version, os, _config.Driver0323, rows, log);
+                title = BugReport.IssueTitle(rows, version);
+                url = BugReport.IssueUrl(title, md, "bug");
+            }
+            Clipboard.SetText(md);
+            OpenHelpUrl(url);
+            Logger.Log(feature ? "FEATURE_DRAFT opened" : "BUG_REPORT opened");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"GITHUB_DRAFT_FAIL feature={feature} err={ex.Message}");
+            OpenHelpUrl(TrayMenu.IssuesUrl);
         }
     }
 

@@ -361,6 +361,7 @@ public class TrayMenuTests
         Assert.Equal("How alerts work", TrayMenu.HowAlertsWorkLabel);
         Assert.Equal("Repository", TrayMenu.RepositoryLabel);
         Assert.Equal("Report a bug", TrayMenu.ReportBugLabel);
+        Assert.Equal("Request a feature", TrayMenu.RequestFeatureLabel);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray", TrayMenu.RepoUrl);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray/issues", TrayMenu.IssuesUrl);
         Assert.Equal(
