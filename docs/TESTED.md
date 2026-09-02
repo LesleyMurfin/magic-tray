@@ -1,64 +1,45 @@
 # Hardware reports
 
-Community results for Magic Tray on real devices. **In the catalog** (README) is not the same as **tested here**.
+This file is **who tested what**. It is not the device catalog.
 
-Open a PR that adds or updates **one row**. Do not edit README status columns in the same PR unless you also tested.
+The catalog Magic Tray actually loads is in the app, and CI fails if it drifts:
 
-## How to add a row
+| What | Where |
+|------|--------|
+| Mice and trackpads | [`MouseBatteryDevice.KnownMice`](../MagicMouseTray/MouseBatteryDevice.cs) |
+| Keyboards | [`KeyboardBatteryDevice.KnownKeyboards`](../MagicMouseTray/KeyboardBatteryDevice.cs) |
+| CI: every mouse PID has a USB row | [`EveryKnownMousePid_HasUsbVid05acRow`](../MagicMouseTray.Tests/MouseBatteryDeviceTests.cs) |
+| CI: every keyboard PID has a USB row | [`EveryKeyboardPid_HasUsbVid05acRow`](../MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs) |
+| CI: every display name resolves | [`KindForNameTests`](../MagicMouseTray.Tests/KindForNameTests.cs) |
 
-1. Magic Tray version (tray footer, or exe Properties → Details).
-2. Device Manager → the HID device → Details → **Hardware Ids** (`PID_xxxx` or `PID&xxxx`).
-3. Bluetooth, USB, or both.
-4. After **Refresh Now**: battery percent, or `No reading`.
-5. Mice: driver badge (`KMDF` / `Boot Camp` / `Stock` / `Patched Apple` / `Not bound`).
-6. Keyboards: SDP patch applied or not.
+If your device is **not in those tables**, do not add it here. [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md) with the Hardware Id PID so it can be added to `KnownMice` / `KnownKeyboards` (and CI) first.
 
-Optional: `%APPDATA%\MagicMouseTray\debug.log` (`OK battery=…`) and Windows build (`winver`).
+If it **is** in the catalog and you ran Magic Tray on it, add a report row below.
+
+## How to add a report
+
+1. Confirm the PID exists in `KnownMice` or `KnownKeyboards`. Missing → [issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
+2. Tray version (footer, or exe Properties → Details).
+3. Device Manager → HID device → Details → **Hardware Ids**.
+4. Bluetooth, USB, or both.
+5. After **Refresh Now**: percent, or `No reading`.
+6. Mice: driver badge (`KMDF` / `Boot Camp` / `Stock` / `Patched Apple` / `Not bound`).
+7. Keyboards: SDP `patched` or `unpatched`.
+
+Open a PR that adds **one row**. Sign the commit (`git commit -s`).
 
 | Column | Values |
 |--------|--------|
-| Battery | `ok` (percent shown) / `no reading` / `untested` |
-| Driver | badge text, or `n/a` for keyboards and trackpads |
+| Battery | `ok` / `no reading` |
+| Driver | badge text, or `n/a` |
 | SDP | `patched` / `unpatched` / `n/a` |
 
-One row per (PID, transport, Magic Tray version). Duplicate PIDs with a different Windows build or tray version are fine.
+One row per (PID, transport, Magic Tray version).
 
 ## Reports
 
 | Model | PID | Transport | Tray | Windows | Battery | Driver | SDP | Tester | Date | Notes |
 |-------|-----|-----------|------|---------|---------|--------|-----|--------|------|-------|
-| Magic Mouse 2024 (USB-C) | `0323` | Bluetooth | 1.1.0 | Windows 11 | ok (30%) | KMDF | n/a | LesleyMurfin | 2026-09-02 | Live tray screenshot |
-| Magic Mouse v1 | `030D` | Bluetooth | 1.1.0 | Windows 11 | no reading | Boot Camp | n/a | LesleyMurfin | 2026-09-02 | Device row present; battery not read |
-| Apple Wireless Keyboard (2011) | `0239` | Bluetooth | 1.1.0 | Windows 11 | ok (16%) | n/a | patched | LesleyMurfin | 2026-09-02 | Live tray screenshot |
-
-## Not yet reported
-
-These PIDs are in the app. No hardware report in this file yet.
-
-### Mice
-
-| Model | PID |
-|-------|-----|
-| Magic Mouse v2 | `0269` |
-| Apple Wireless Mouse | `0310` |
-| Magic Mouse 2024 (USB) | `0323` |
-| Magic Mouse v1 (USB) | `030D` |
-
-### Keyboards
-
-| Model | PID |
-|-------|-----|
-| Apple Wireless Keyboard (2011) ISO / JIS | `023A` / `023B` |
-| Apple Wireless Keyboard (2011 ANSI/ISO/JIS rev) | `0255` / `0256` / `0257` |
-| Magic Keyboard / ISO | `024F` / `0250` |
-| Magic Keyboard with Touch ID / ISO | `0267` / `026C` |
-| Magic Keyboard (2021) / Touch ID / Numeric Keypad | `029C` / `029A` / `029F` |
-| Magic Keyboard (2024, USB-C) / Touch ID / Numeric Keypad | `0320` / `0321` / `0322` |
-
-### Trackpads (battery only — no scroll driver)
-
-| Model | PID |
-|-------|-----|
-| Magic Trackpad (v1) | `030E` |
-| Magic Trackpad 2 | `0265` |
-| Magic Trackpad 2024 (USB-C) | `0324` |
+| Magic Mouse 2024 (USB-C) | `0323` | Bluetooth | 1.1.0 | Windows 11 | ok (30%) | KMDF | n/a | LesleyMurfin | 2026-09-02 | Live tray |
+| Magic Mouse v1 | `030D` | Bluetooth | 1.1.0 | Windows 11 | no reading | Boot Camp | n/a | LesleyMurfin | 2026-09-02 | Row present; battery not read |
+| Apple Wireless Keyboard (2011) | `0239` | Bluetooth | 1.1.0 | Windows 11 | ok (16%) | n/a | patched | LesleyMurfin | 2026-09-02 | Live tray |

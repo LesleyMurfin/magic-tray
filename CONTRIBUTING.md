@@ -25,7 +25,11 @@ Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not tri
 
 ## Hardware reports
 
-If Magic Tray works (or fails) on a mouse, keyboard, or trackpad you own, add a row to [docs/TESTED.md](docs/TESTED.md) and open a PR. Include PID, Bluetooth vs USB, tray version, battery (`ok` / `no reading`), and driver badge. Sign the commit (`git commit -s`).
+The device list the app and CI use is `MouseBatteryDevice.KnownMice` and `KeyboardBatteryDevice.KnownKeyboards`.
+
+- **PID already in those tables:** add a row to [docs/TESTED.md](docs/TESTED.md) and open a PR (`git commit -s`).
+- **PID not in those tables:** [open a missing-device issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md). Do not PR `TESTED.md` for an unknown PID.
+
 
 ## Bug reports
 

@@ -78,7 +78,8 @@ Right-click the tray icon.
 Footer shows **Magic Tray 1.1.0**.
 
 ## Supported mice
-Live hardware reports (who tested what): [docs/TESTED.md](docs/TESTED.md).
+
+Catalog in the app: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMousePid_HasUsbVid05acRow`](MagicMouseTray.Tests/MouseBatteryDeviceTests.cs)). Hardware reports: [docs/TESTED.md](docs/TESTED.md). PID not listed? [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
 | Model | Bluetooth PID | USB HID | Scroll driver | Battery |
 |---|---|---|---|---|
@@ -90,7 +91,8 @@ Live hardware reports (who tested what): [docs/TESTED.md](docs/TESTED.md).
 
 ## Supported keyboards
 
-Keyboard battery on Bluetooth needs the one-time SDP-cache patch (see [Keyboard battery](#keyboard-battery)). USB HID battery is read when Windows exposes `VID_05AC` + the same PID.
+Catalog: [`KnownKeyboards`](MagicMouseTray/KeyboardBatteryDevice.cs) (CI: [`EveryKeyboardPid_HasUsbVid05acRow`](MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs)). Keyboard battery on Bluetooth needs the one-time SDP-cache patch (see [Keyboard battery](#keyboard-battery)). USB HID battery is read when Windows exposes `VID_05AC` + the same PID.
+
 
 | Model | Bluetooth PID | USB HID | Status |
 |---|---|---|---|
@@ -110,7 +112,7 @@ Battery rows only: percent, enable, threshold, and time alerts. **No** KMDF / Bo
 | Magic Trackpad 2 | `0x0265` | `VID_05AC` `PID_0265` | Lightning — 24h night-before + plug-now |
 | Magic Trackpad 2024 (USB-C) | `0x0324` | `VID_05AC` `PID_0324` | USB-C — 24h night-before + plug-now |
 
-Hardware reports, including devices not tested here: [docs/TESTED.md](docs/TESTED.md).
+Hardware reports: [docs/TESTED.md](docs/TESTED.md). Missing PID: [open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
 ## Scroll
 
