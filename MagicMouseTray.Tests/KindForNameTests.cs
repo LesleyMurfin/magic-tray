@@ -24,14 +24,14 @@ public class KindForNameTests
     [Fact]
     public void AllDistinctDisplayNames_Resolve()
     {
-        // 6 distinct mouse/trackpad names (BT+USB pairs share a name) + 16 keyboard = 22.
+        // 7 distinct mouse/trackpad names (BT+USB pairs share a name) + 16 keyboard = 23.
         // Update the count when a device is added; the sibling tests above cover per-entry resolution.
         var names = MouseBatteryDevice.KnownMice.Select(m => m.DisplayName)
             .Concat(KeyboardBatteryDevice.KnownKeyboards.Select(k => k.DisplayName))
             .Distinct(System.StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        Assert.Equal(22, names.Count);
+        Assert.Equal(23, names.Count);
         Assert.All(names, n => Assert.NotNull(DeviceCapability.KindForName(n)));
     }
 
