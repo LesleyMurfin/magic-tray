@@ -1,27 +1,19 @@
 // SPDX-License-Identifier: MIT
 namespace MagicMouseTray;
 
-// Derives the per-device read-path + remediation row for the capability matrix.
-// Pure function of (Kind, last battery sentinel, driver status) — no I/O.
-// Read paths are deterministic per DeviceKind; the last reading distinguishes
-// "working" (>=0) from "present but blocked" (-2) from "not readable/absent" (-1).
-//
-// CAVEAT (RULE #1): DriverStatus from DriverHealthChecker.GetStatus() is a single
-// GLOBAL worst-state-wins value (DriverHealthChecker.cs:114-126), not per-device.
-// With multiple Apple mice paired, one device's worst state colors every mouse row.
-// Acceptable as a heuristic. The scroll filter governs SCROLL, not the v1/v2 split
-// battery read, so a non-Ok driver does NOT mean the v1/v2 battery is unreadable —
-// the action below is a scroll-fix, not a battery-fix.
+// Per-device status row. Driver SELECT pulls 0323 KMDF from
+// magic-mouse-v3-windows-fix — not from magic-tray/driver/.
 internal static class DeviceCapability
 {
     internal readonly record struct Row(
-        string ReadMethod,    // e.g. "Split-vendor 0x90 (Mode A)"
-        string Status,        // e.g. "Battery OK", "Mode B — battery N/A", "Needs SDP-cache patch"
-        string? ActionLabel,  // null = no action; else a clickable menu-item label
-        string? ActionUrl);   // doc/remediation URL for ActionLabel (null = in-app action)
+        string ReadMethod,    // short, human label for how battery is read
+        string Status,        // e.g. "Connected · MagicMouseDriver"
+        string? ActionLabel,  // null = no action (install/repair never offered)
+        string? ActionUrl);   // app-update URL only; driver package URLs live in DriverPackageCatalog
 
-    // Map a device display name back to its Kind without changing the event signature.
-    // NOTE: BT and USB entries for the same model share one display name -> 22 distinct names.
+    // App releases (UnknownAppleMouse). Not a driver package — those are DriverPackageCatalog.
+    const string ReleasesUrl = "https://github.com/LesleyMurfin/magic-tray/releases";
+
     internal static DeviceKind? KindForName(string name)
     {
         foreach (var m in MouseBatteryDevice.KnownMice)
@@ -33,98 +25,72 @@ internal static class DeviceCapability
         return null;
     }
 
-    // Scroll-driver remediation copy for the matrix dropdown. The URLs are kept identical
-    // to TrayApp.BuildMenu (:116-127) so the matrix and the top-level driver warning point
-    // at the SAME remediation target. Labels intentionally DIFFER from BuildMenu: the
-    // top-level item is "⚠ "-prefixed (e.g. "⚠ Install Apple Driver (scroll fix)") and uses
-    // a capital "Driver"; nested in the matrix the ⚠ glyph is dropped. Do NOT assert label
-    // equality between the two — only URL equality (see MagicMouseTray.Tests).
-    static (string Label, string Url) ScrollFix(DriverStatus d) => d switch
+    internal static string BatteryLabel(int lastPct) => lastPct switch
     {
-        DriverStatus.UnknownAppleMouse =>
-            ("Unknown mouse model — check for app update",
-             "https://github.com/ReviveBusiness/magic-mouse-tray/releases"),
-        DriverStatus.NotBound =>
-            ("Driver not bound — scroll fix needed",
-             "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-        DriverStatus.Error =>
-            ("Driver reported an error — check Device Manager",
-             "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working"),
-        _ => // NotInstalled (and any other fallthrough)
-            ("Install Apple driver (scroll fix)",
-             "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0"),
+        >= 0 => $"{lastPct}%",
+        -2 => "Battery unavailable",
+        -3 => "Battery unavailable",
+        _ => "No reading",
     };
 
-    const string KbPatchAnchor   = "https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-battery-patch";
-    const string ScrollFixAnchor = "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working";
+    internal static string DriverLabel(DriverStatus driver, string? boundFilter)
+    {
+        if (!string.IsNullOrEmpty(boundFilter))
+            return boundFilter;
+        return driver switch
+        {
+            DriverStatus.Ok => "Connected",
+            DriverStatus.NotBound => "Scroll driver not bound",
+            DriverStatus.NotInstalled => "Scroll driver not detected",
+            DriverStatus.UnknownAppleMouse => "Unknown Apple mouse",
+            DriverStatus.Error => "Driver status unavailable",
+            DriverStatus.StockKmdf => DriverPackageCatalog.StockHidServiceName,
+            DriverStatus.PatchedKmdf => DriverPackageCatalog.PatchedKmdfServiceName,
+            _ => "Unknown",
+        };
+    }
 
     internal static Row Describe(DeviceKind kind, int lastPct, DriverStatus driver)
+        => Describe(kind, lastPct, driver, boundFilter: null);
+
+    internal static Row Describe(DeviceKind kind, int lastPct, DriverStatus driver, string? boundFilter)
     {
+        var battery = BatteryLabel(lastPct);
+        var driverText = DriverLabel(driver, boundFilter);
+
         switch (kind)
         {
             case DeviceKind.MagicMouseV1:
             case DeviceKind.MagicMouseV2:
-                // Split-vendor 0x90 read works in Mode A regardless of the scroll filter.
-                // Battery Status reflects the reading; any driver action is a SCROLL fix.
-                if (driver != DriverStatus.Ok)
-                {
-                    var (lbl, url) = ScrollFix(driver);
-                    return new("Split-vendor 0x90 (Mode A)",
-                               lastPct >= 0 ? "Battery OK — scroll driver needs attention"
-                                            : "No reading; scroll driver needs attention",
-                               lbl, url);
-                }
-                return new("Split-vendor 0x90 (Mode A)",
-                           lastPct >= 0 ? "Battery OK" : "No reading", null, null);
+                return new("HID battery report",
+                           $"{battery} · {driverText}",
+                           ActionForUnknownOnly(driver),
+                           UrlForUnknownOnly(driver));
 
             case DeviceKind.MagicMouseV3:
-                // v3 IS coupled to the filter: PATH-B recycle does FLIP:NoFilter -> read ->
-                // FLIP:AppleFilter, which needs applewirelessmouse present for Mode B restore.
-                // `driver` here is expected to be the PID-SCOPED status for this specific v3
-                // device (DriverHealthChecker.GetStatusForPid), not the global worst-state-wins
-                // value — the caller (TrayApp) is responsible for that distinction. Badge label
-                // is derived from the same "bound == Patched" fact the v1-binary-patch installer
-                // writes (LowerFilters=applewirelessmouse); there is no third driver to detect
-                // yet (v2-kmdf-driver has no shipped installer as of this writing).
-                var badge = driver switch
-                {
-                    DriverStatus.Ok => "Patched",
-                    DriverStatus.NotBound or DriverStatus.NotInstalled => "Stock/KMDF",
-                    _ => "Unknown",
-                };
-                if (lastPct >= 0)
-                    return new("Split-vendor 0x90 via PATH-B recycle",
-                               $"Driver: {badge} — battery read OK (reverts to Mode B between reads)", null, null);
-                if (lastPct == -2)
-                {
-                    // Mode B: battery N/A until the next idle-gated recycle.
-                    if (driver != DriverStatus.Ok)
-                    {
-                        var (lbl, url) = ScrollFix(driver);
-                        return new("Unified Feature 0x47 (blocked by Apple driver)",
-                                   $"Driver: {badge} — recycle needs the Apple scroll driver", lbl, url);
-                    }
-                    return new("Unified Feature 0x47 (blocked by Apple driver)",
-                               $"Driver: {badge} — battery N/A until next read",
-                               "Read Battery Now", null); // in-app: V3RecycleManager.ForceReadNowAsync
-                }
-                return new("Split-vendor 0x90 via PATH-B recycle",
-                           $"Driver: {badge} — no reading, check driver/pairing", "Scroll/driver help", ScrollFixAnchor);
+                // Live 0323: Input RID 0x90 on COL02 (buf[2]=pct). Not Feature 0x47, not WMI.
+                return new("HID Input 0x90",
+                           $"{battery} · {driverText}",
+                           ActionForUnknownOnly(driver),
+                           UrlForUnknownOnly(driver));
 
             case DeviceKind.MagicKeyboard:
-                // ACTIVE-READ target: -2 means "present but Feature 0x47 cap absent"
-                // (unpatched or patch erased by re-pair) — KeyboardBatteryDevice.cs:122-127,138-139.
                 if (lastPct >= 0)
-                    return new("Feature 0x47 (after SDP-cache patch)", "OK", null, null);
+                    return new("HID battery report", battery, null, null);
                 if (lastPct == -2)
-                    return new("Feature 0x47 (Input-only until SDP-cache patch)",
-                               "Needs SDP-cache patch",
-                               "How to enable keyboard battery", KbPatchAnchor);
-                return new("Feature 0x47 (after SDP-cache patch)",
-                           "No reading (open/driver failure)", null, null);
+                    return new("HID battery report", "Keyboard battery unavailable", null, null);
+                return new("HID battery report", "No reading", null, null);
 
             default:
-                return new("Unknown", "Unsupported device", null, null);
+                return new("HID battery report",
+                           lastPct >= 0 ? battery : "No reading",
+                           null, null);
         }
     }
+
+    static string? ActionForUnknownOnly(DriverStatus driver) =>
+        driver == DriverStatus.UnknownAppleMouse ? "Check for app update" : null;
+
+    static string? UrlForUnknownOnly(DriverStatus driver) =>
+        driver == DriverStatus.UnknownAppleMouse ? ReleasesUrl : null;
 }

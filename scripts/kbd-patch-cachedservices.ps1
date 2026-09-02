@@ -5,19 +5,33 @@
 # stored in the BTHPORT cache, and increments 4 SDP length fields.
 #
 # Run elevated. Modifies HKLM. Backs up original blobs first.
+# Requires -Mac (12 hex digits). No default MAC. Backups go to
+# %APPDATA%\MagicMouseTray, or %TEMP%\MagicMouseTray if APPDATA is unset.
 
 [CmdletBinding()]
 param(
-    [string]$Mac = 'e806884b0741',
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Mac,
+
     [switch]$DryRun
 )
 
 # Stop on any error — backup must succeed before registry write proceeds (QA-SS-1)
 $ErrorActionPreference = 'Stop'
 
-# Ensure queue dir exists for backup files
-if (-not (Test-Path 'C:\mm-dev-queue')) {
-    New-Item -ItemType Directory -Force -Path 'C:\mm-dev-queue' | Out-Null
+$Mac = ($Mac -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
+if ($Mac.Length -ne 12) {
+    throw "-Mac must be 12 hex digits (colons optional). Example: -Mac aabbccddeeff"
+}
+
+$backupDir = if ($env:APPDATA) {
+    Join-Path $env:APPDATA 'MagicMouseTray'
+} else {
+    Join-Path $env:TEMP 'MagicMouseTray'
+}
+if (-not (Test-Path $backupDir)) {
+    New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 }
 
 $base = "HKLM:\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\$Mac"
@@ -128,14 +142,14 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
         if (-not $hasRid) { Write-Host "[$subkey\$($prop.Name)] no RID 0x47 - skip"; continue }
 
         # Backup
-        $backup = "C:\mm-dev-queue\backup-$subkey-$($prop.Name)-$(Get-Date -Format yyyyMMdd-HHmmss).bin"
+        $backup = Join-Path $backupDir "backup-$subkey-$($prop.Name)-$(Get-Date -Format yyyyMMdd-HHmmss).bin"
         [IO.File]::WriteAllBytes($backup, $val)
         Write-Host "[$subkey\$($prop.Name)] backed up -> $backup"
 
         $patched = Patch-Blob -Blob $val -Source "$subkey\$($prop.Name)"
 
         if ($DryRun) {
-            $patchedFile = "C:\mm-dev-queue\patched-$subkey-$($prop.Name).bin"
+            $patchedFile = Join-Path $backupDir "patched-$subkey-$($prop.Name).bin"
             [IO.File]::WriteAllBytes($patchedFile, $patched)
             Write-Host "[DRY-RUN] patched bytes saved -> $patchedFile (registry NOT modified)"
         } else {

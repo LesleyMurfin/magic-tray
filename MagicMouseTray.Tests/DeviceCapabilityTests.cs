@@ -6,27 +6,9 @@ namespace MagicMouseTray.Tests;
 
 public class DeviceCapabilityTests
 {
-    static readonly DriverStatus[] AllDriverStates =
-    {
-        DriverStatus.Ok, DriverStatus.NotInstalled,
-        DriverStatus.NotBound, DriverStatus.UnknownAppleMouse,
-        DriverStatus.Error,
-    };
+    static readonly DriverStatus[] AllDriverStates = Enum.GetValues<DriverStatus>();
 
-    static readonly int[] AllSentinels = { 75, 0, -2, -1 }; // >=0, edge 0, blocked, absent
-
-    // The remediation URLs the matrix is expected to point at, per DriverStatus. These are the
-    // SAME URLs used by TrayApp.BuildMenu. We assert URL-equality only — labels intentionally
-    // differ (BuildMenu prefixes "⚠ " and uses capital "Driver"); do NOT assert label equality.
-    // Must mirror DeviceCapability.ScrollFix / TrayApp.BuildMenu arm for arm, Error included —
-    // Error routes to the scroll-fix anchor, NOT to the Apple driver release like NotInstalled.
-    static string ScrollFixUrl(DriverStatus d) => d switch
-    {
-        DriverStatus.UnknownAppleMouse => "https://github.com/ReviveBusiness/magic-mouse-tray/releases",
-        DriverStatus.NotBound          => "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working",
-        DriverStatus.Error             => "https://github.com/ReviveBusiness/magic-mouse-tray#scroll-not-working",
-        _                              => "https://github.com/tealtadpole/MagicMouse2DriversWin11x64/releases/tag/v3.0",
-    };
+    static readonly int[] AllSentinels = { 75, 0, -2, -1 };
 
     [Fact]
     public void Describe_CoversEveryCombination_WithoutThrowing()
@@ -38,7 +20,6 @@ public class DeviceCapabilityTests
                     var row = DeviceCapability.Describe(kind, pct, drv);
                     Assert.False(string.IsNullOrWhiteSpace(row.ReadMethod));
                     Assert.False(string.IsNullOrWhiteSpace(row.Status));
-                    // An action with a label may or may not carry a URL (null URL = in-app action).
                     if (row.ActionUrl is not null)
                         Assert.NotNull(row.ActionLabel);
                 }
@@ -47,75 +28,87 @@ public class DeviceCapabilityTests
     [Theory]
     [InlineData(DeviceKind.MagicMouseV1)]
     [InlineData(DeviceKind.MagicMouseV2)]
-    public void V1V2_BatteryStatus_DrivenByLastPct_NeverBlockedWhenReadable(DeviceKind kind)
+    [InlineData(DeviceKind.MagicMouseV3)]
+    public void Mice_NeverOfferDriverInstallOrRepair(DeviceKind kind)
     {
-        // A readable battery (>=0) must never be reported as blocked/unreadable, regardless of driver.
         foreach (var drv in AllDriverStates)
         {
-            var ok = DeviceCapability.Describe(kind, 50, drv);
-            Assert.StartsWith("Battery OK", ok.Status);
-
-            // When the driver is non-Ok, the action is a SCROLL fix whose URL matches BuildMenu's.
-            if (drv != DriverStatus.Ok)
-            {
-                Assert.NotNull(ok.ActionUrl);
-                Assert.Equal(ScrollFixUrl(drv), ok.ActionUrl);
-            }
-            else
-            {
-                Assert.Null(ok.ActionUrl);
-            }
+            var row = DeviceCapability.Describe(kind, 50, drv, boundFilter: "MagicMouseDriver");
+            Assert.DoesNotContain("Install", row.ActionLabel ?? "", StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("scroll fix", row.ActionLabel ?? "", StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Read Battery Now", row.ActionLabel ?? "", StringComparison.OrdinalIgnoreCase);
+            if (row.ActionUrl is not null)
+                Assert.Contains("LesleyMurfin/magic-tray/releases", row.ActionUrl);
         }
     }
 
     [Fact]
-    public void V3_ModeB_OffersInAppReadAction_WithNullUrl()
+    public void V3_BoundKmdf_ShowsFilterName_NoAction()
     {
-        var row = DeviceCapability.Describe(DeviceKind.MagicMouseV3, -2, DriverStatus.Ok);
-        Assert.Equal("Read Battery Now", row.ActionLabel);
-        Assert.Null(row.ActionUrl); // in-app action, not a link
-    }
-
-    [Fact]
-    public void V3_ReadOk_HasNoAction()
-    {
-        var row = DeviceCapability.Describe(DeviceKind.MagicMouseV3, 88, DriverStatus.Ok);
+        var row = DeviceCapability.Describe(DeviceKind.MagicMouseV3, 88, DriverStatus.Ok, "MagicMouseDriver");
+        Assert.Equal("HID Input 0x90", row.ReadMethod);
+        Assert.Contains("MagicMouseDriver", row.Status);
+        Assert.Contains("88%", row.Status);
         Assert.Null(row.ActionLabel);
         Assert.Null(row.ActionUrl);
     }
 
     [Fact]
-    public void Keyboard_Unpatched_LinksToPatchDoc()
+    public void V3_Unreadable_HasNoFlipAction()
     {
-        var row = DeviceCapability.Describe(DeviceKind.MagicKeyboard, -2, DriverStatus.Ok);
-        Assert.Equal("Needs SDP-cache patch", row.Status);
-        Assert.Equal("https://github.com/ReviveBusiness/magic-mouse-tray#keyboard-battery-patch", row.ActionUrl);
+        var row = DeviceCapability.Describe(DeviceKind.MagicMouseV3, -2, DriverStatus.Ok, "MagicMouseDriver");
+        Assert.Equal("Battery unavailable", DeviceCapability.BatteryLabel(-2));
+        Assert.Null(row.ActionLabel);
+        Assert.Null(row.ActionUrl);
     }
 
     [Fact]
-    public void Keyboard_Patched_IsOk_NoAction()
+    public void Keyboard_Unreadable_IsStatusOnly()
+    {
+        var row = DeviceCapability.Describe(DeviceKind.MagicKeyboard, -2, DriverStatus.Ok);
+        Assert.Equal("Keyboard battery unavailable", row.Status);
+        Assert.Null(row.ActionLabel);
+        Assert.Null(row.ActionUrl);
+    }
+
+    [Fact]
+    public void Keyboard_Readable_IsOk_NoAction()
     {
         var row = DeviceCapability.Describe(DeviceKind.MagicKeyboard, 60, DriverStatus.Ok);
-        Assert.Equal("OK", row.Status);
+        Assert.Equal("60%", row.Status);
         Assert.Null(row.ActionLabel);
     }
 
     [Fact]
-    public void Mouse_NonOkDriver_ActionUrl_MatchesBuildMenuUrls()
+    public void Keyboard_NotFound_IsMinusOne_NotBlocked()
     {
-        // URL parity with the top-level driver warning, asserted for v1/v2 Mode-A reads.
-        foreach (var drv in new[] { DriverStatus.NotInstalled, DriverStatus.NotBound, DriverStatus.UnknownAppleMouse })
-        {
-            var row = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, drv);
-            Assert.Equal(ScrollFixUrl(drv), row.ActionUrl);
-        }
+        var missing = DeviceCapability.Describe(DeviceKind.MagicKeyboard, -1, DriverStatus.Ok);
+        var blocked = DeviceCapability.Describe(DeviceKind.MagicKeyboard, -2, DriverStatus.Ok);
+        Assert.Equal("No reading", missing.Status);
+        Assert.Equal("Keyboard battery unavailable", blocked.Status);
+        Assert.NotEqual(missing.Status, blocked.Status);
+        Assert.Null(missing.ActionLabel);
     }
 
     [Fact]
-    public void Error_HasDistinctMessage()
+    public void UnknownAppleMouse_OnlyOffersAppUpdate()
     {
-        var errorRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.Error);
-        var notInstalledRow = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.NotInstalled);
-        Assert.NotEqual(notInstalledRow.ActionLabel, errorRow.ActionLabel);
+        var row = DeviceCapability.Describe(DeviceKind.MagicMouseV1, -1, DriverStatus.UnknownAppleMouse);
+        Assert.Equal("Check for app update", row.ActionLabel);
+        Assert.Equal("https://github.com/LesleyMurfin/magic-tray/releases", row.ActionUrl);
+    }
+
+    [Fact]
+    public void DriverLabel_UsesBoundFilterWhenPresent()
+    {
+        Assert.Equal("MagicMouseDriver", DeviceCapability.DriverLabel(DriverStatus.Ok, "MagicMouseDriver"));
+        Assert.Equal("applewirelessmouse", DeviceCapability.DriverLabel(DriverStatus.Ok, "applewirelessmouse"));
+        Assert.Equal("Scroll driver not bound", DeviceCapability.DriverLabel(DriverStatus.NotBound, null));
+        Assert.Equal(DriverPackageCatalog.StockHidServiceName,
+            DeviceCapability.DriverLabel(DriverStatus.StockKmdf, null));
+        Assert.Equal(DriverPackageCatalog.PatchedKmdfServiceName,
+            DeviceCapability.DriverLabel(DriverStatus.PatchedKmdf, null));
+        Assert.Equal("MagicMouseDriver",
+            DeviceCapability.DriverLabel(DriverStatus.PatchedKmdf, "MagicMouseDriver"));
     }
 }

@@ -1,20 +1,18 @@
 // DrainRateTracker.cs — Per-device battery drain rate estimation.
 //
 // Records (timestamp, pct) pairs per device and computes %/hour drain rate from
-// observed history. Both AdaptivePoller and V3RecycleManager call Record() after
-// each successful read, then GetNextInterval() to schedule the next poll.
+// observed history. AdaptivePoller calls Record() after each successful read,
+// then GetNextInterval() to schedule the next poll.
 //
-// Interval logic:
-//   pct >= 20%  → 24h (battery lasts days — daily check is sufficient)
-//   pct <  20%  → rate-based if ≥2 readings exist:
-//                   hoursToThreshold / 3  (3 checks before hitting threshold)
-//                 fallback formula if no rate data:
-//                   3h × 2^((pct − 20) / 10)
-//                   at 20%=3h, 10%=1.5h, 5%=~64m, 2%=~50m
+// Interval logic (threshold is the configured attention floor, default 10%):
+//   pct >= threshold  → 24h (battery lasts days — daily check is sufficient)
+//   pct <  threshold  → rate-based if ≥2 readings exist:
+//                         hoursToThreshold / 3  (3 checks before hitting threshold)
+//                       fallback formula if no rate data:
+//                         3h × 2^((pct − threshold) / 10)
 //   pct <  0    → minInterval (device not found — recheck soon)
 //
-// Empirical baseline: Magic Mouse v3 drains ~0.33%/hour under normal use
-// (2% over 6h observed 2026-05-07). At that rate 20%→threshold(15%)=~15h.
+// Rate is observed only. Do not invent a %/h when samples are missing.
 
 namespace MagicMouseTray;
 
@@ -22,7 +20,7 @@ internal static class DrainRateTracker
 {
     const int MaxReadings = 5;
 
-    // Floor intervals by device type — v3 has scroll-glitch cost per recycle
+    // Floor intervals by device type. v3 reads are ordinary HID polls (no filter flip).
     internal static readonly TimeSpan FloorV3      = TimeSpan.FromMinutes(5);
     internal static readonly TimeSpan FloorNonV3   = TimeSpan.FromMinutes(30);
     internal static readonly TimeSpan CeilingNormal = TimeSpan.FromHours(24);
@@ -34,14 +32,17 @@ internal static class DrainRateTracker
     static readonly object _lock = new();
 
     // Record a successful battery reading for a device.
-    internal static void Record(string device, int pct)
+    internal static void Record(string device, int pct) =>
+        Record(device, pct, DateTime.UtcNow);
+
+    internal static void Record(string device, int pct, DateTime utc)
     {
         if (pct < 0 || string.IsNullOrEmpty(device)) return;
         lock (_lock)
         {
             if (!_history.TryGetValue(device, out var q))
                 _history[device] = q = new Queue<Reading>(MaxReadings);
-            q.Enqueue(new Reading(DateTime.UtcNow, pct));
+            q.Enqueue(new Reading(utc, pct));
             while (q.Count > MaxReadings) q.Dequeue();
         }
     }
@@ -68,6 +69,9 @@ internal static class DrainRateTracker
         if (rate <= 0.001) return -1;
         return (pct - threshold) / rate;
     }
+
+    internal static double GetHoursToEmpty(string device, int pct) =>
+        GetHoursToThreshold(device, pct, threshold: 0);
 
     // Next check interval. isV3=true applies the higher floor (scroll-glitch cost).
     internal static TimeSpan GetNextInterval(string device, int pct, int threshold, bool isV3)

@@ -128,7 +128,7 @@ internal sealed class V3RecycleManager : IDisposable
         // Pre-check 1: BT stack health — BTHENUM parent must be DN_STARTED before we flip.
         // If BTHENUM is not started, the wedge is pre-existing; flipping would fail and
         // leave the device in an unknown state.
-        bool btHealthy = await Task.Run(HidNative.IsV3BtStackHealthy, ct);
+        bool btHealthy = await Task.Run(() => HidNative.EnumerateHidPaths().Any(IsV3Path), ct);
         Logger.Log($"V3RECYCLE pre-check BTHENUM healthy={btHealthy}");
         if (!btHealthy)
         {
@@ -290,7 +290,7 @@ internal sealed class V3RecycleManager : IDisposable
         var deadline = Environment.TickCount64 + timeoutMs;
         do
         {
-            if (HidNative.IsV3Col02Ready()) return true;
+            if (IsV3InModeA()) return true;
             Thread.Sleep(100);
         } while (Environment.TickCount64 < deadline);
         return false;
@@ -311,7 +311,7 @@ internal sealed class V3RecycleManager : IDisposable
     }
 
     // True if any HID path is a v3 Magic Mouse in Mode A (col02 collection present in path).
-    static bool IsV3InModeA() =>
+    internal static bool IsV3InModeA() =>
         HidNative.EnumerateHidPaths().Any(p =>
             IsV3Path(p) &&
             p.Contains("col02", StringComparison.OrdinalIgnoreCase));
@@ -323,7 +323,7 @@ internal sealed class V3RecycleManager : IDisposable
     // mouhid.sys DN_STARTED (Mouse class device) is a false positive in Mode A: mouhid
     // stays bound to col01 and DN_STARTED remains True even when the device is in Mode A.
     // Empirical: real WaitForModeB latency ~563ms (confirmed 2026-05-07).
-    static bool IsV3InModeB()
+    internal static bool IsV3InModeB()
     {
         var v3Paths = HidNative.EnumerateHidPaths()
             .Where(IsV3Path)
@@ -335,8 +335,8 @@ internal sealed class V3RecycleManager : IDisposable
         if (v3Paths.Any(p => p.Contains("&col0", StringComparison.OrdinalIgnoreCase)))
             return false;
 
-        // Confirm applewirelessmouse.sys is in the active kernel stack
-        return HidNative.IsApplewirelessmouseInStack();
+        // Unified v3 HID paths (no &col0x) means Mode B.
+        return true;
     }
 
     // True if the HID device path belongs to a Magic Mouse v3 (BT or USB).

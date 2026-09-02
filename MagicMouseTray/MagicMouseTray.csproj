@@ -15,11 +15,22 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Allows building on non-Windows (e.g. restoring packages) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <ApplicationIcon>magic-mouse.ico</ApplicationIcon>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>Magic Tray</Product>
+    <Title>Magic Tray</Title>
+    <AssemblyTitle>Magic Tray</AssemblyTitle>
+    <Company>Lesley Murfin</Company>
+    <Description>Free Magic Utilities alternative for Windows: Apple Magic Mouse and Magic Keyboard battery in the tray, plus user-initiated scroll-driver and keyboard battery install. MIT, no subscription.</Description>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="MagicMouseTray.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\scripts\capture-state.ps1" Link="scripts\capture-state.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\diagnose-driver.ps1" Link="scripts\diagnose-driver.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\scripts\mm-bt-stack-snapshot.ps1" Link="scripts\mm-bt-stack-snapshot.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -10,31 +10,26 @@ namespace MagicMouseTray;
 // Requires Windows 10 1809+ (TFM net8.0-windows10.0.17763.0).
 internal static class ToastNotifier
 {
-    const string Aumid = "MagicMouseTray.Battery";
+    const string Aumid = "MagicTray.Battery";
 
     static bool _registered;
     static readonly object _regLock = new();
 
-    internal static void Show(int pct, string deviceName)
+    internal static void Show(string title, string body)
     {
         try
         {
             EnsureAumid();
 
-            string title = "Magic Mouse Battery Low";
-            if (deviceName.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0)
-                title = "Magic Keyboard Battery Low";
-            else if (deviceName.IndexOf("Trackpad", StringComparison.OrdinalIgnoreCase) >= 0)
-                title = "Magic Trackpad Battery Low";
-
-            var escapedName = System.Security.SecurityElement.Escape(deviceName) ?? deviceName;
+            var escapedTitle = System.Security.SecurityElement.Escape(title) ?? title;
+            var escapedBody = System.Security.SecurityElement.Escape(body) ?? body;
 
             var doc = new XmlDocument();
             doc.LoadXml($"""
                 <toast>
                     <visual><binding template="ToastGeneric">
-                        <text>{title}</text>
-                        <text>{escapedName} is at {pct}% — {(pct <= 10 ? "charge now!" : "charge soon")}</text>
+                        <text>{escapedTitle}</text>
+                        <text>{escapedBody}</text>
                     </binding></visual>
                 </toast>
                 """);
@@ -43,7 +38,7 @@ internal static class ToastNotifier
                 .CreateToastNotifier(Aumid)
                 .Show(new ToastNotification(doc));
 
-            Logger.Log($"TOAST_SENT pct={pct} device={deviceName}");
+            Logger.Log($"TOAST_SENT title={title}");
         }
         catch (Exception ex)
         {
@@ -72,7 +67,7 @@ internal static class ToastNotifier
     }
 
     // Writes DisplayName under HKCU\SOFTWARE\Classes\AppUserModelId\<Aumid> so Windows
-    // attributes the toast to "Magic Mouse Battery" rather than an anonymous app.
+    // attributes the toast to "Magic Tray" rather than an anonymous app.
     static void EnsureAumid()
     {
         if (_registered) return;
@@ -83,7 +78,7 @@ internal static class ToastNotifier
             {
                 using var key = Registry.CurrentUser.CreateSubKey(
                     $@"SOFTWARE\Classes\AppUserModelId\{Aumid}");
-                key.SetValue("DisplayName", "Magic Mouse Battery");
+                key.SetValue("DisplayName", "Magic Tray");
             }
             catch { }
             _registered = true;

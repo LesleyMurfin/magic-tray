@@ -4,13 +4,13 @@ using System.Windows.Forms;
 
 namespace MagicMouseTray;
 
-// Persistent always-on-top window shown at 1% battery.
-// Auto-closes when the mouse is plugged in (BT disconnects → pct=-1).
+// Persistent always-on-top window shown at 0-1% battery.
+// TrayApp decides when to close (AA death stays on disconnect; v3 USB-C closes).
 internal sealed class CriticalAlert : Form
 {
-    internal CriticalAlert(int pct, string device)
+    internal CriticalAlert(string body)
     {
-        Text = "Magic Mouse — Battery Critical";
+        Text = "Magic Tray — Battery Critical";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -31,7 +31,7 @@ internal sealed class CriticalAlert : Form
 
         var label = new Label
         {
-            Text = $"{device} battery is at {pct}%.\nPlug in the Lightning cable now.",
+            Text = body,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
             Font = new Font("Segoe UI", 10f),

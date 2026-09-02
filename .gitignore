@@ -39,3 +39,7 @@ style-results.json
 
 # Serena tooling local config
 .serena/
+
+# Agent scratch — not product (#66)
+.orca/
+.ai/

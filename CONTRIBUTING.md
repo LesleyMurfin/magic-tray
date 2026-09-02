@@ -1,28 +1,31 @@
-# Contributing to Magic Mouse Battery Tray
+# Contributing to Magic Tray
 
-## Developer Certificate of Origin (DCO)
+Magic Tray is a free MIT-licensed Windows tray app for Apple Magic Mouse and Magic Keyboard: battery in the tray, user-initiated scroll-driver install, and a keyboard SDP patch. No subscription.
 
-All contributions must be signed off with the DCO. Add a `Signed-off-by` line
-to your commit message:
+## Developer Certificate of Origin
+
+All contributions must be signed off with the DCO. Add a `Signed-off-by` line:
 
 ```
 git commit -s -m "your commit message"
 ```
 
-This certifies that you wrote the code or have the right to contribute it under
-the MIT license. See https://developercertificate.org for the full text.
+This certifies that you wrote the code or have the right to contribute it under the MIT license. Full text: https://developercertificate.org
 
-## Pull Requests
+## Pull requests
 
-1. Fork the repo and create a branch from `main`
-2. Test on Windows 11 with a paired Apple Magic Mouse
-3. Sign your commits (`git commit -s`)
-4. Open a PR describing what changed and why
+1. Fork the repo and branch from `main`.
+2. Test on Windows 10 1809+ or Windows 11 with a paired Apple Magic Mouse or Magic Keyboard.
+3. Sign your commits (`git commit -s`).
+4. Open a PR that says what changed and why.
 
-## Bug Reports
+Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-A (`Install-MagicMousePatch.ps1` / `applewirelessmouse.sys` binary patch) must not be silent and must not be a KMDF fallback; a user-initiated Patched Apple offer is allowed. KMDF install is `v2-kmdf-driver/Install-KMDF.cmd` from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `main` and never falls back to PATH-A.
 
-Include your `%APPDATA%\MagicMouseTray\debug.log` and your Magic Mouse model
-(check Device Manager → Human Interface Devices for the PID).
+Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not triplicate them.
+
+## Bug reports
+
+Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx`).
 
 ## License
 
