@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lesleymurfin.github.io/magic-tray/sitemap.xml
