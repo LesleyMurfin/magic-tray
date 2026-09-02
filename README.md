@@ -19,6 +19,7 @@ Released 2 September 2026.
 - [Features](#features)
 - [Tray menu (1.1.0)](#tray-menu-110)
 - [Supported mice](#supported-mice)
+  - [0323 driver choices](#magic-mouse-2024-0323-driver-choices)
 - [Supported keyboards](#supported-keyboards)
 - [Supported trackpads](#supported-trackpads)
 - [Scroll](#scroll)
@@ -101,11 +102,22 @@ Footer shows **Magic Tray 1.1.0**.
 
 Catalog in the app: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMousePid_HasUsbVid05acRow`](MagicMouseTray.Tests/MouseBatteryDeviceTests.cs)). Hardware reports: [docs/TESTED.md](docs/TESTED.md). PID not listed? [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
-| Model | Bluetooth PID | USB HID | Scroll driver | Battery |
-|---|---|---|---|---|
-| Magic Mouse 2024 (USB-C) | `0x0323` | `VID_05AC` `PID_0323` | KMDF (recommended), Patched Apple, or Stock Windows from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | HID Input report `0x90` on COL02 (`buf[2]`) |
-| Magic Mouse v1 | `0x030D` | `VID_05AC` `PID_030D` | [tealtadpole Boot Camp INF](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | HID Input `0x90` (AA) |
-| Magic Mouse v2 | `0x0269` | `VID_05AC` `PID_0269` | Same tealtadpole INF | HID Input `0x90` (Lightning) |
+| Model | PID | Recommended driver | Scroll | Battery | Tested |
+|---|---|---|---|---|---|
+| Magic Mouse 2024 (USB-C) | `0x0323` | **KMDF** from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | Yes | Yes | [yes — KMDF](docs/TESTED.md) |
+| Magic Mouse v1 | `0x030D` | **Boot Camp** [tealtadpole INF](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
+| Magic Mouse v2 | `0x0269` | Same Boot Camp INF | Yes | Yes | — |
+| Apple Wireless Mouse | `0x0310` | Same Boot Camp INF | Yes | Yes | — |
+
+### Magic Mouse 2024 (`0323`) driver choices
+
+KMDF is the only 2024 path with **both** scroll and battery. Pick one lasting driver; details under [Scroll](#scroll).
+
+| 0323 driver | Scroll | Battery | Test Mode |
+|---|---|---|---|
+| **KMDF (recommended)** | Yes | Yes | Required |
+| Patched Apple | Yes **or** battery — not both | Mutually exclusive | Required |
+| Stock Windows (`HidBth`) | No | Yes if Windows exposes HID | Not required |
 
 0323 battery is **only** Input `0x90` on COL02. Magic Tray does not use Feature report `0x47` for the 2024 mouse, and does not treat iPhone Hands-Free / WMI as mouse battery. USB battery is whatever HID collection Windows already exposes — not Magic Utilities' "recharge and continue" driver.
 
@@ -114,23 +126,23 @@ Catalog in the app: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`E
 Catalog: [`KnownKeyboards`](MagicMouseTray/KeyboardBatteryDevice.cs) (CI: [`EveryKeyboardPid_HasUsbVid05acRow`](MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs)). Keyboard battery on Bluetooth needs the one-time SDP-cache patch (see [Keyboard battery](#keyboard-battery)). USB HID battery is read when Windows exposes `VID_05AC` + the same PID.
 
 
-| Model | Bluetooth PID | USB HID | Status |
-|---|---|---|---|
-| Apple Wireless Keyboard (2011, A1314) ANSI / ISO / JIS | `0x0239` / `0x023A` / `0x023B` (`0x0255` / `0x0256` / `0x0257`) | `VID_05AC` + same PID | Confirmed (`0x0239`) |
-| Magic Keyboard (A1644) / ISO | `0x024F` / `0x0250` | `VID_05AC` + same PID | Included, not hardware-tested here |
-| Magic Keyboard with Touch ID (A2449) / ISO | `0x0267` / `0x026C` | `VID_05AC` + same PID | Included, not hardware-tested here |
-| Magic Keyboard (2021) / Touch ID / Numeric Keypad | `0x029C` / `0x029A` / `0x029F` | `VID_05AC` + same PID | Included, not hardware-tested here |
-| Magic Keyboard (2024, USB-C) / Touch ID / Numeric Keypad | `0x0320` / `0x0321` / `0x0322` | `VID_05AC` + same PID | Included, not hardware-tested here |
+| Model | PID | Driver | Scroll | Battery | Tested |
+|---|---|---|---|---|---|
+| Apple Wireless Keyboard (2011, A1314) ANSI / ISO / JIS | `0x0239` / `0x023A` / `0x023B` (`0x0255` / `0x0256` / `0x0257`) | SDP patch (not a kernel driver) | n/a | Yes after patch | [yes — `0x0239`](docs/TESTED.md) |
+| Magic Keyboard (A1644) / ISO | `0x024F` / `0x0250` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard with Touch ID (A2449) / ISO | `0x0267` / `0x026C` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard (2021) / Touch ID / Numeric Keypad | `0x029C` / `0x029A` / `0x029F` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard (2024, USB-C) / Touch ID / Numeric Keypad | `0x0320` / `0x0321` / `0x0322` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
 
 ## Supported trackpads
 
 Battery rows only: percent, enable, threshold, and time alerts. **No** KMDF / Boot Camp radios. **No** tap-to-click, 3-finger, smooth scroll, or other Magic Utilities trackpad gestures.
 
-| Model | Bluetooth PID | USB HID | Battery |
-|---|---|---|---|
-| Magic Trackpad (v1) | `0x030E` | `VID_05AC` `PID_030E` | AA — 48h toast + death modal |
-| Magic Trackpad 2 | `0x0265` | `VID_05AC` `PID_0265` | Lightning — 24h night-before + plug-now |
-| Magic Trackpad 2024 (USB-C) | `0x0324` | `VID_05AC` `PID_0324` | USB-C — 24h night-before + plug-now |
+| Model | PID | Driver | Scroll | Battery | Tested |
+|---|---|---|---|---|---|
+| Magic Trackpad (v1) | `0x030E` | None | n/a | Yes (AA — 48h toast + death modal) | — |
+| Magic Trackpad 2 | `0x0265` | None | n/a | Yes (Lightning — 24h night-before + plug-now) | — |
+| Magic Trackpad 2024 (USB-C) | `0x0324` | None | n/a | Yes (USB-C — 24h night-before + plug-now) | — |
 
 Hardware reports: [docs/TESTED.md](docs/TESTED.md). Missing PID: [open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
