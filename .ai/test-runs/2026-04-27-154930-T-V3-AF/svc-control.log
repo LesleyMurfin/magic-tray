@@ -1,4 +1,0 @@
-﻿[2026-04-28 12:51:23] STOP_FAILED applewirelessmouse : Service 'Apple Wireless Mouse (applewirelessmouse)' cannot be stopped due to the following error: Cannot stop applewirelessmouse service on computer '.'.
-[2026-04-28 12:52:55] Stop-Service FAILED for applewirelessmouse : Service 'Apple Wireless Mouse (applewirelessmouse)' cannot be stopped due to the following error: Cannot stop applewirelessmouse service on computer '.'. ; trying sc.exe
-[2026-04-28 12:52:55] sc.exe stop output: [SC] ControlService FAILED 1052:||The requested control is not valid for this service.|
-[2026-04-28 12:52:55] after sc.exe: svc=Running drv=Running

@@ -1,7 +1,0 @@
-# Function-entry candidates near BRB type offset (+0x16) accesses
-# Generated 2026-04-27T17:34:28Z
-
-  -> hit at line 2038: 2038:   140002f73:	41 0f b7 45 16       	movzx  eax,WORD PTR [r13+0x16]
-
-  -> hit at line 8617: 8617:   1400098b1:	0f b7 41 16          	movzx  eax,WORD PTR [rcx+0x16]
-
