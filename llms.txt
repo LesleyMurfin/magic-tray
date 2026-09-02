@@ -1,0 +1,39 @@
+# Magic Tray
+
+> Free MIT-licensed Windows 10/11 tray app for Apple Magic Mouse (v1, v2, and Magic Mouse 2024 / Magic Mouse v3 PID 0323), Magic Keyboard, and Magic Trackpad. Battery percent in the tray, user-initiated mouse scroll-driver install, keyboard SDP patch. No subscription. Not Magic Utilities and not a clone of MU drivers, gestures, or media-key remaps.
+
+- Product name in Windows is Magic Tray; published exe is `MagicMouseTray.exe`. Current release is 1.1.0 (2026-09-02).
+- Device catalog is code, not README: `MouseBatteryDevice.KnownMice` and `KeyboardBatteryDevice.KnownKeyboards`. CI walks those lists.
+- 0323 battery is HID Input 0x90 COL02 only. Never Feature 0x47, never WMI / iPhone Hands-Free as mouse battery.
+- KMDF for Magic Mouse v3 is not in this repo. Clone/install from LesleyMurfin/magic-mouse-v3-windows-fix. PATH-A must not be a KMDF fallback.
+- Hardware reports go in docs/TESTED.md. Unknown PID: GitHub issue template `missing-device.md`, not a TESTED.md row.
+
+## Docs
+
+- [README](https://github.com/LesleyMurfin/magic-tray/blob/main/README.md): Install, driver matrix, Test Mode, FAQ, Magic Mouse v3 naming
+- [Battery alerts](https://github.com/LesleyMurfin/magic-tray/blob/main/docs/ALERTS.md): Percent floor 10→5→1 and time alerts
+- [Hardware reports](https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md): Who tested which PID; not the catalog
+- [Contributing](https://github.com/LesleyMurfin/magic-tray/blob/main/CONTRIBUTING.md): DCO; TESTED.md vs missing-device issues
+
+## Catalog (source of truth)
+
+- [KnownMice](https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs): Mice and trackpads (VID/PID, DisplayName, DeviceKind)
+- [KnownKeyboards](https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs): Keyboards (BT classic / BLE / USB)
+- [Missing device issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md): PID not in those tables
+
+## Magic Mouse v3 (2024, PID 0323)
+
+- [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix): KMDF installer and patched Apple path (research + drivers)
+- [HID research](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md): RID 0x90, collections, DSM
+- [Bug analysis](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md): Mode A/B
+- [Mode A/B diagram](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/diagrams/diagram-mode-ab.md)
+
+## Releases
+
+- [Latest GitHub Release](https://github.com/LesleyMurfin/magic-tray/releases/latest): MagicMouseTray.exe, keyboard patch scripts, SHA256SUMS
+- [verify-release.ps1](https://github.com/LesleyMurfin/magic-tray/blob/main/scripts/verify-release.ps1): CI gate before a tag can ship
+
+## Optional
+
+- [MU free-parity design](https://github.com/LesleyMurfin/magic-tray/blob/main/docs/DESIGN-mu-free-parity.md): What is in vs out vs Magic Utilities
+- [License](https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE): MIT, Copyright 2026 Lesley Murfin
