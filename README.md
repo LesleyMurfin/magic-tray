@@ -6,6 +6,8 @@ Magic Tray is a Windows tray app for **Apple Magic Mouse** (v1, v2, and **Magic 
 
 Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0) · [Site](https://lesleymurfin.github.io/magic-tray/)
 
+If this saved you a paid subscription, **star both repos**: [Magic Tray](https://github.com/LesleyMurfin/magic-tray) and the [v3 Windows driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix). Goal: a publicly signed KMDF so Test Mode goes away — [stars & signing](https://lesleymurfin.github.io/magic-tray/funding.html).
+
 ![Windows 11 system tray with Magic Tray](docs/screenshot-tray.png)
 
 ![Magic Tray 1.1.0 menu: Magic Keyboard, Magic Mouse 2024 (v3) KMDF, Magic Mouse v1](docs/screenshot-menu.png)
@@ -33,6 +35,9 @@ Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/m
 - [Diagnostics](#diagnostics)
 - [Releases](#releases)
 - [License](#license)
+- [Which driver](https://lesleymurfin.github.io/magic-tray/drivers.html)
+- [Why v3 is hard](https://lesleymurfin.github.io/magic-tray/v3.html)
+- [Stars & signing](https://lesleymurfin.github.io/magic-tray/funding.html)
 - [llms.txt](llms.txt) (for agents)
 
 ---

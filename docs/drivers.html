@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Which Windows driver? — Magic Tray</title>
+  <meta name="description" content="Match Magic Mouse v1, v2, v3 (2024 PID 0323), Magic Keyboard, or Trackpad to the Windows path Magic Tray uses. KMDF vs Boot Camp vs SDP patch.">
+  <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/drivers.html">
+  <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
+  <meta property="og:title" content="Which Windows driver? — Magic Tray">
+  <meta property="og:description" content="v3 KMDF, v1/v2 Boot Camp, keyboard SDP patch, trackpad battery only.">
+  <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/drivers.html">
+  <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header>
+    <p class="kicker"><a href="./">Magic Tray</a></p>
+    <nav>
+      <a href="./">Home</a>
+      <a href="drivers.html" aria-current="page">Which driver</a>
+      <a href="v3.html">Why v3 is hard</a>
+      <a href="devices.html">Devices</a>
+      <a href="funding.html">Stars &amp; signing</a>
+    </nav>
+    <h1>Which Windows driver do I need?</h1>
+    <p class="lead">There is no single Apple mouse INF that is correct for every Magic device. Pick the PID you have. Magic Tray will not silently rebind.</p>
+  </header>
+  <main>
+    <ul class="pick">
+      <li><a href="#v3">Magic Mouse 2024 / v3 (USB-C)<small>PID 0323 · KMDF · Test Mode until we get attestation</small></a></li>
+      <li><a href="#v1v2">Magic Mouse v1, v2, or Apple Wireless Mouse<small>PID 030D / 0269 / 0310 · Boot Camp · no Test Mode</small></a></li>
+      <li><a href="#keyboard">Magic Keyboard / Apple Wireless Keyboard<small>No .sys · SDP patch · -Mac required</small></a></li>
+      <li><a href="#trackpad">Magic Trackpad<small>No driver from us · battery only</small></a></li>
+    </ul>
+    <p class="note">Device Manager → Hardware Ids. USB-C mouse ≈ 0323. Lightning ≈ 0269. AA door ≈ 030D.</p>
+
+    <h2 id="v3">Magic Mouse 2024 / v3 — 0323</h2>
+    <p><strong>KMDF</strong> from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a> — only path we recommend for scroll <em>and</em> battery (Input 0x90 COL02). Why not v2: <a href="v3.html">research</a>. Why Test Mode: <a href="funding.html">signing</a>.</p>
+    <table>
+      <thead><tr><th>Choice</th><th>Scroll</th><th>Battery</th><th>Test Mode</th></tr></thead>
+      <tbody>
+        <tr><td><strong>KMDF</strong></td><td>Yes</td><td>Yes</td><td>Required today</td></tr>
+        <tr><td>Patched Apple</td><td colspan="2">One or the other, not both</td><td>Required</td></tr>
+        <tr><td>Stock HidBth</td><td>Usually no</td><td>Often yes</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <ol class="steps">
+      <li><code>bcdedit /set testsigning on</code>, Memory integrity off, reboot.</li>
+      <li>Tray: confirm KMDF (<code>Install-KMDF.cmd</code>). No fallback to patched Apple.</li>
+      <li>Still no scroll → unpair / re-pair.</li>
+    </ol>
+
+    <h2 id="v1v2">v1 / v2 / Apple Wireless Mouse</h2>
+    <p><a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole Boot Camp INF</a>. Catalog-signed. Do not install v3 KMDF on these PIDs.</p>
+
+    <h2 id="keyboard">Keyboards</h2>
+    <p>SDP registry patch, not a kernel driver. <code>Install-KeyboardBattery.cmd -Mac …</code> from the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Release</a>. Re-pairing wipes it.</p>
+
+    <h2 id="trackpad">Trackpads</h2>
+    <p>Battery and alerts only. No tap / 3-finger / KMDF.</p>
+  </main>
+  <footer>
+    <p><a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a> · <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a></p>
+  </footer>
+</body>
+</html>

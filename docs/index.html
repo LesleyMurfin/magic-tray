@@ -4,190 +4,57 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Magic Tray — Magic Mouse battery and scroll on Windows</title>
-  <meta name="description" content="Free MIT Windows tray app for Apple Magic Mouse (v1, v2, and Magic Mouse 2024 / v3), Magic Keyboard, and Magic Trackpad. Battery percent, scroll driver, no subscription.">
+  <meta name="description" content="Free MIT Windows tray for Apple Magic Mouse v1/v2/v3 (2024), Keyboard, and Trackpad. Which driver, why v3 is not v2, and how to fund public KMDF signing. Star both repos if it helps.">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Magic Tray — Magic Mouse battery and scroll on Windows">
-  <meta property="og:description" content="Free MIT Windows 10/11 tray app for Magic Mouse v1/v2/v3 (2024), Magic Keyboard, and Magic Trackpad. No subscription.">
+  <meta property="og:description" content="Free MIT. Research-backed v3 vs v2 paths. Star the tray and the v3 driver if they saved you a subscription.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/">
   <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Magic Tray — Magic Mouse battery and scroll on Windows">
-  <meta name="twitter:description" content="Free MIT Windows tray for Apple Magic Mouse v3 (2024), keyboard, and trackpad. Battery %, no subscription.">
-  <meta name="twitter:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <link rel="icon" href="screenshot-tray.png">
-  <style>
-    :root {
-      --bg: #0f0f14;
-      --fg: #f4f4f5;
-      --muted: #a1a1aa;
-      --line: #27272a;
-      --accent: #a78bfa;
-      --btn: #7c3aed;
-      --btn-fg: #fff;
-    }
-    * { box-sizing: border-box; }
-    html { color-scheme: dark; }
-    body {
-      margin: 0;
-      font: 18px/1.55 ui-sans-serif, system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--fg);
-    }
-    a { color: var(--accent); }
-    header, main, footer { max-width: 42rem; margin: 0 auto; padding: 0 1.25rem; }
-    header { padding-top: 2rem; }
-    .kicker { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.04em; text-transform: uppercase; }
-    h1 { font-size: 2.1rem; line-height: 1.2; margin: 0.4rem 0 1rem; }
-    .lead { font-size: 1.15rem; color: var(--muted); }
-    .cta { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1.5rem 0 2rem; }
-    .cta a {
-      display: inline-block;
-      padding: 0.65rem 1.1rem;
-      border-radius: 0.5rem;
-      text-decoration: none;
-      font-weight: 600;
-    }
-    .cta .primary { background: var(--btn); color: var(--btn-fg); }
-    .cta .ghost { border: 1px solid var(--line); color: var(--fg); }
-    img.shot {
-      width: 100%;
-      height: auto;
-      border-radius: 0.75rem;
-      border: 1px solid var(--line);
-    }
-    h2 { margin-top: 2.5rem; font-size: 1.25rem; }
-    ul.plain { padding-left: 1.2rem; color: var(--muted); }
-    ul.plain strong { color: var(--fg); }
-    .grid { display: grid; gap: 1rem; margin: 1rem 0 2rem; }
-    @media (min-width: 640px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 0.75rem;
-      padding: 1rem;
-    }
-    .card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
-    .card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
-    dl.faq dt { font-weight: 650; margin-top: 1.1rem; }
-    dl.faq dd { margin: 0.35rem 0 0; color: var(--muted); }
-    footer {
-      margin: 3rem auto 2rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-  </style>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "SoftwareApplication",
-        "name": "Magic Tray",
-        "applicationCategory": "UtilitiesApplication",
-        "operatingSystem": "Windows 10, Windows 11",
-        "softwareVersion": "1.1.0",
-        "license": "https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE",
-        "url": "https://lesleymurfin.github.io/magic-tray/",
-        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
-        "description": "Free MIT Windows tray app for Apple Magic Mouse (including Magic Mouse 2024 / Magic Mouse v3), Magic Keyboard, and Magic Trackpad. Battery percent and user-initiated scroll. No subscription.",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
-      },
-      {
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Does Magic Mouse 2024 (Magic Mouse v3) work on Windows 11?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. Use Magic Tray 1.1.0 and install the KMDF driver from magic-mouse-v3-windows-fix. That path needs Test Mode and Memory Integrity off. Battery is HID Input 0x90 on COL02."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Is Magic Tray the same as Magic Utilities?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. Magic Tray is free MIT software. No subscription, no Magic Utilities binaries, and no gesture, trackpad, or media-key suite."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Will scroll stop when a trial expires?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. There is no trial."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Do Magic Trackpads get scroll or tap-to-click?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. Battery percent and alerts only."
-            }
-          }
-        ]
-      }
-    ]
-  }
-  </script>
+  <link rel="stylesheet" href="site.css">
 </head>
 <body>
   <header>
     <p class="kicker">Magic Tray 1.1.0 · MIT · Windows 10/11</p>
+    <nav>
+      <a href="./" aria-current="page">Home</a>
+      <a href="drivers.html">Which driver</a>
+      <a href="v3.html">Why v3 is hard</a>
+      <a href="devices.html">Devices</a>
+      <a href="funding.html">Stars &amp; signing</a>
+      <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+    </nav>
     <h1>Magic Mouse battery and scroll on Windows. No subscription.</h1>
-    <p class="lead">Magic Tray is a free tray app for Apple <strong>Magic Mouse</strong> (v1, v2, and <strong>Magic Mouse 2024 / Magic Mouse v3</strong>, PID 0323), <strong>Magic Keyboard</strong>, and <strong>Magic Trackpad</strong>. Battery percent in the tray. Scroll driver you confirm. Not Magic Utilities.</p>
+    <p class="lead">Free tray app for Apple <strong>Magic Mouse</strong> (v1, v2, and <strong>Magic Mouse 2024 / v3</strong>, PID 0323), <strong>Magic Keyboard</strong>, and <strong>Magic Trackpad</strong>. Each PID is a different Windows problem. We document that, then install only the path that PID can use.</p>
     <p class="cta">
       <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
-      <a class="ghost" href="https://github.com/LesleyMurfin/magic-tray#readme">Docs on GitHub</a>
+      <a class="ghost" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+      <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
     </p>
   </header>
   <main>
-    <p><img class="shot" src="screenshot-menu.png" width="576" height="503" alt="Magic Tray 1.1.0 menu on Windows 11: Apple Wireless Keyboard, Magic Mouse 2024 v3 KMDF, Magic Mouse v1"></p>
-
-    <h2>What it covers</h2>
-    <div class="grid">
+    <p><img class="shot" src="screenshot-menu.png" width="576" height="503" alt="Magic Tray 1.1.0: keyboard, Magic Mouse 2024 v3 KMDF, Magic Mouse v1"></p>
+    <div class="grid grid-3">
       <div class="card">
-        <h3>Magic Mouse v1 / v2 / v3</h3>
-        <p>Battery in the tray. v3 (2024 USB-C) uses KMDF for scroll and battery. v1/v2 use Boot Camp.</p>
+        <h3><a href="drivers.html">Which driver</a></h3>
+        <p>v3 → KMDF. v1/v2 → Boot Camp. Keyboard → SDP. Trackpad → battery only.</p>
       </div>
       <div class="card">
-        <h3>Magic Keyboard</h3>
-        <p>Battery after a one-time SDP patch. You must pass the keyboard Bluetooth MAC. No kernel driver.</p>
+        <h3><a href="v3.html">Why v3 ≠ v2</a></h3>
+        <p>0323 missing from Boot Camp. HID Mode A/B. Linked research.</p>
       </div>
       <div class="card">
-        <h3>Magic Trackpad</h3>
-        <p>Battery and alerts only. No tap-to-click, 3-finger, or MU trackpad gestures.</p>
+        <h3><a href="funding.html">Stars &amp; signing</a></h3>
+        <p>Star both repos. Goal: EV cert + attestation so KMDF drops Test Mode. No scroll-killing trial.</p>
       </div>
     </div>
-
-    <h2>Not Magic Utilities</h2>
-    <ul class="plain">
-      <li><strong>Free, MIT.</strong> No trial that disables scroll.</li>
-      <li><strong>No MU binaries</strong> or WHQL MU drivers.</li>
-      <li><strong>No</strong> desktop swipes, media-key remaps, or trackpad suite.</li>
-    </ul>
-    <p>Install steps, Test Mode for Magic Mouse v3, and the driver matrix: <a href="https://github.com/LesleyMurfin/magic-tray#readme">README</a>. v3 HID research: <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</p>
-
-    <h2>FAQ</h2>
-    <dl class="faq">
-      <dt>Does Magic Mouse 2024 (Magic Mouse v3) work on Windows 11?</dt>
-      <dd>Yes. Use Magic Tray 1.1.0 and install the KMDF driver from magic-mouse-v3-windows-fix. That path needs Test Mode and Memory Integrity off. Battery is HID Input 0x90 on COL02.</dd>
-      <dt>Is this Magic Utilities?</dt>
-      <dd>No. Free MIT. No subscription. No MU binaries. No gesture / trackpad / media-key suite.</dd>
-      <dt>Will scroll stop when a trial expires?</dt>
-      <dd>No. There is no trial.</dd>
-      <dt>Do trackpads get scroll or tap-to-click?</dt>
-      <dd>No. Battery and alerts only.</dd>
-    </dl>
   </main>
   <footer>
     <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · <a href="TESTED.md">Hardware reports</a> · <a href="llms.txt">llms.txt</a></p>
