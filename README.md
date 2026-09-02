@@ -79,6 +79,8 @@ Footer shows **Magic Tray 1.1.0**.
 
 ## Supported mice
 
+Catalog in the app: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMousePid_HasUsbVid05acRow`](MagicMouseTray.Tests/MouseBatteryDeviceTests.cs)). Hardware reports: [docs/TESTED.md](docs/TESTED.md). PID not listed? [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
+
 | Model | Bluetooth PID | USB HID | Scroll driver | Battery |
 |---|---|---|---|---|
 | Magic Mouse 2024 (USB-C) | `0x0323` | `VID_05AC` `PID_0323` | KMDF (recommended), Patched Apple, or Stock Windows from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | HID Input report `0x90` on COL02 (`buf[2]`) |
@@ -89,7 +91,8 @@ Footer shows **Magic Tray 1.1.0**.
 
 ## Supported keyboards
 
-Keyboard battery on Bluetooth needs the one-time SDP-cache patch (see [Keyboard battery](#keyboard-battery)). USB HID battery is read when Windows exposes `VID_05AC` + the same PID.
+Catalog: [`KnownKeyboards`](MagicMouseTray/KeyboardBatteryDevice.cs) (CI: [`EveryKeyboardPid_HasUsbVid05acRow`](MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs)). Keyboard battery on Bluetooth needs the one-time SDP-cache patch (see [Keyboard battery](#keyboard-battery)). USB HID battery is read when Windows exposes `VID_05AC` + the same PID.
+
 
 | Model | Bluetooth PID | USB HID | Status |
 |---|---|---|---|
@@ -108,6 +111,8 @@ Battery rows only: percent, enable, threshold, and time alerts. **No** KMDF / Bo
 | Magic Trackpad (v1) | `0x030E` | `VID_05AC` `PID_030E` | AA — 48h toast + death modal |
 | Magic Trackpad 2 | `0x0265` | `VID_05AC` `PID_0265` | Lightning — 24h night-before + plug-now |
 | Magic Trackpad 2024 (USB-C) | `0x0324` | `VID_05AC` `PID_0324` | USB-C — 24h night-before + plug-now |
+
+Hardware reports: [docs/TESTED.md](docs/TESTED.md). Missing PID: [open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
 ## Scroll
 

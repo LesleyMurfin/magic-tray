@@ -23,9 +23,17 @@ Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-
 
 Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not triplicate them.
 
+## Hardware reports
+
+The device list the app and CI use is `MouseBatteryDevice.KnownMice` and `KeyboardBatteryDevice.KnownKeyboards`.
+
+- **PID already in those tables:** add a row to [docs/TESTED.md](docs/TESTED.md) and open a PR (`git commit -s`).
+- **PID not in those tables:** [open a missing-device issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md). Do not PR `TESTED.md` for an unknown PID.
+
+
 ## Bug reports
 
-Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx`).
+Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx` or `VID_05AC&PID_xxxx`).
 
 ## License
 
