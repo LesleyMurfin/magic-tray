@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Magic devices on Windows — why Magic Tray exists</title>
+  <meta name="description" content="How Magic Mouse v1, v2, v3, Magic Keyboard, and Trackpad differ on Windows, and why Magic Tray uses Boot Camp, KMDF, or an SDP patch instead of one driver or a Magic Utilities subscription.">
+  <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/devices.html">
+  <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
+  <meta property="og:title" content="Magic devices on Windows — why Magic Tray exists">
+  <meta property="og:description" content="v1/v2 Boot Camp, v3 KMDF, keyboard SDP, trackpad battery only. Research-backed, not a MU clone.">
+  <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/devices.html">
+  <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header>
+    <p class="kicker"><a href="./">Magic Tray</a></p>
+    <nav>
+      <a href="./">Home</a>
+      <a href="drivers.html">Which driver</a>
+      <a href="v3.html">Why v3 is hard</a>
+      <a href="devices.html" aria-current="page">Devices</a>
+      <a href="funding.html">Stars &amp; signing</a>
+    </nav>
+    <h1>Every Magic device is a different Windows problem</h1>
+    <p class="lead">Apple’s Windows story stopped at Boot Camp. Later PIDs are different HID layouts, power sources, and missing INF lines. We built a tray that tells the truth per PID — not one kernel driver for the whole line, and not a paid clone of Magic Utilities.</p>
+  </header>
+  <main>
+    <h2>Side by side</h2>
+    <table>
+      <thead>
+        <tr><th>Device</th><th>PID</th><th>Power</th><th>Scroll on Windows</th><th>Battery in Magic Tray</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Magic Mouse v1</td><td>030D</td><td>AA</td><td>Boot Camp INF</td><td>HID 0x90 / Feature if exposed</td></tr>
+        <tr><td>Magic Mouse v2</td><td>0269</td><td>Lightning</td><td>Same Boot Camp INF</td><td>HID 0x90 / Feature if exposed</td></tr>
+        <tr><td>Apple Wireless Mouse</td><td>0310</td><td>AA</td><td>Same Boot Camp INF</td><td>Same as v1</td></tr>
+        <tr><td>Magic Mouse 2024 / <strong>v3</strong></td><td>0323</td><td>USB-C</td><td>Not in Boot Camp. KMDF (or patched Apple / stock)</td><td>Input 0x90 COL02 only</td></tr>
+        <tr><td>Keyboards</td><td>0239…0322</td><td>AA or rechargeable</td><td>n/a</td><td>SDP patch to poll Feature battery</td></tr>
+        <tr><td>Trackpad 1 / 2 / 2024</td><td>030E / 0265 / 0324</td><td>AA / Lightning / USB-C</td><td>We do not ship a trackpad driver</td><td>HID when Windows exposes it</td></tr>
+      </tbody>
+    </table>
+    <p>Catalog: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">KnownMice</a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">KnownKeyboards</a>. Reports: <a href="TESTED.md">TESTED.md</a>.</p>
+
+    <h2>Why we went this way</h2>
+    <ul class="plain">
+      <li><strong>v1/v2 already have a signed Boot Camp package.</strong> Replacing it with self-signed KMDF would force Test Mode on people who do not need it.</li>
+      <li><strong>v3 is a new PID and a different collection layout.</strong> Forcing applewirelessmouse onto 0323 is the patched-Apple path: scroll vs battery, still unsigned. KMDF is the rewrite we could own. Research: <a href="v3.html">Why v3 is hard</a>.</li>
+      <li><strong>Keyboards are not missing a mouse filter.</strong> The descriptor is Input-only; Windows cannot poll battery until an SDP registry patch. That is not a <code>.sys</code>.</li>
+      <li><strong>Trackpad gestures are a product.</strong> MU sells that. We ship battery rows only so we do not pretend we cloned it.</li>
+    </ul>
+    <p>In vs out vs MU: <a href="DESIGN-mu-free-parity.md">DESIGN-mu-free-parity.md</a>. If you need WHQL + Secure Boot on a 2024 mouse today, MU is still the commercial signed-driver answer. If you need battery + mouse scroll without a subscription, this is what we could ship honestly — and <a href="funding.html">stars plus an EV cert</a> are how the v3 filter becomes a normal Windows driver.</p>
+  </main>
+  <footer>
+    <p><a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a> · <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a></p>
+  </footer>
+</body>
+</html>
