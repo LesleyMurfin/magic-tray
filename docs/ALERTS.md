@@ -2,7 +2,7 @@
 
 Magic Tray warns you before a Magic Mouse, Magic Keyboard, or Magic Trackpad runs out. There are two kinds of warning: a **percent floor** you pick, and **time alerts** based on how fast that device has actually been draining.
 
-There is no evening reminder. The old 15% / 20% / 25% choices are gone.
+There is no evening reminder. The old 15% / 20% / 25% choices are gone: if an existing `config.ini` still carries `threshold=20` (or `threshold_<pid>=25`), that value is ignored on load and the floor falls back to **10%**.
 
 ## Percent floor (10 → 5 → 1)
 

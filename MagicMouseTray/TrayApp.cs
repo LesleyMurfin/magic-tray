@@ -17,7 +17,7 @@ internal static class TrayMenu
     internal const string ReleasesUrl = "https://github.com/LesleyMurfin/magic-tray/releases";
     internal const string RepoUrl = "https://github.com/LesleyMurfin/magic-tray";
     internal const string IssuesUrl = "https://github.com/LesleyMurfin/magic-tray/issues";
-    internal const string AlertsDocUrl = "https://github.com/LesleyMurfin/magic-tray/blob/ship/magic-tray-ready/docs/ALERTS.md";
+    internal const string AlertsDocUrl = "https://github.com/LesleyMurfin/magic-tray/blob/main/docs/ALERTS.md";
     internal const string EnabledOnThisPc = "Enabled on this PC";
     internal const string HelpMenuLabel = "Help/Documentation";
     internal const string HowAlertsWorkLabel = "How alerts work";
