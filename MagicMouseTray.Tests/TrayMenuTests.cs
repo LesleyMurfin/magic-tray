@@ -364,7 +364,7 @@ public class TrayMenuTests
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray", TrayMenu.RepoUrl);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray/issues", TrayMenu.IssuesUrl);
         Assert.Equal(
-            "https://github.com/LesleyMurfin/magic-tray/blob/ship/magic-tray-ready/docs/ALERTS.md",
+            "https://github.com/LesleyMurfin/magic-tray/blob/main/docs/ALERTS.md",
             TrayMenu.AlertsDocUrl);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray/releases", TrayMenu.ReleasesUrl);
     }
