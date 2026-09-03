@@ -290,7 +290,7 @@ Log file: `%APPDATA%\MagicMouseTray\debug.log`
 
 ## Releases
 
-CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX_*`), then attach `MagicMouseTray.exe`, `kbd-patch-cachedservices.ps1`, `Install-KeyboardBattery.cmd`, and `SHA256SUMS`. `scripts/verify-release.ps1` must pass before the GitHub Release is created.
+CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX_*`), then attach `MagicMouseTray.exe`, `kbd-patch-cachedservices.ps1`, `Install-KeyboardBattery.cmd`, `capture-state.ps1`, `diagnose-driver.ps1`, `mm-bt-stack-snapshot.ps1`, and `SHA256SUMS`. `scripts/verify-release.ps1` must pass before the GitHub Release is created.
 
 `FileVersion` / `AssemblyVersion` are `1.1.0.0`.
 
