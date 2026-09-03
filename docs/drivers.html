@@ -34,40 +34,47 @@
     <article id="content" class="primary">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · drivers</p>
-        <h1>Which Windows driver do I need?</h1>
-        <p class="lead">There is no single Apple mouse INF that is correct for every Magic device. Identify the PID you have. Magic Tray will not silently rebind.</p>
+        <h1>Which extra software do you need?</h1>
+        <ul class="facts">
+          <li>Windows does not treat every Apple mouse the same.</li>
+          <li>First find out which device you have.</li>
+          <li>Then install only that one. The tray will not guess.</li>
+        </ul>
       </header>
 
       <ul class="pick">
-        <li><a href="#identify">How to tell which Magic device you have<small>Hardware Ids first, then AA door / Lightning / USB-C</small></a></li>
-        <li><a href="#v3">Magic Mouse 2024 / v3 (USB-C)<small>PID 0323 · KMDF · Test Mode until we get attestation</small></a></li>
+        <li><a href="#identify">How to tell which device you have<small>Hardware Ids first, then the port on the bottom</small></a></li>
+        <li><a href="#v3">Magic Mouse 2024 / v3 (USB-C)<small>PID 0323 · KMDF · Test Mode until Microsoft signs it</small></a></li>
         <li><a href="#v1v2">Magic Mouse v1, v2, or Apple Wireless Mouse<small>PID 030D / 0269 / 0310 · Boot Camp · no Test Mode</small></a></li>
-        <li><a href="#keyboard">Magic Keyboard / Apple Wireless Keyboard<small>No .sys · SDP patch · -Mac required</small></a></li>
+        <li><a href="#keyboard">Magic Keyboard<small>No .sys · SDP patch · needs -Mac</small></a></li>
         <li><a href="#trackpad">Magic Trackpad<small>No driver from us · battery only</small></a></li>
       </ul>
 
       <section id="identify">
         <h2>How to tell which Magic device you have</h2>
-        <p>The physical port is a hint. <strong>Hardware Ids are the authority.</strong> Two mice can look similar; <code>PID_0323</code> and <code>PID_0269</code> are not the same Windows device.</p>
+        <ul class="facts">
+          <li>Two mice can look the same. The charger on the bottom is only a hint.</li>
+          <li>Windows has the real name. It looks like <code>PID_0323</code>.</li>
+        </ul>
 
         <div class="how">
-          <h3>1. Read Hardware Ids in Device Manager</h3>
+          <h3>1. Ask Windows the real name</h3>
           <ol>
-            <li>Open <strong>Device Manager</strong>.</li>
-            <li>Find the HID or Bluetooth Apple device (Mice and other pointing devices, Keyboards, or Bluetooth).</li>
-            <li>Properties → <strong>Details</strong> → Hardware Ids.</li>
-            <li>Look for <code>PID_0323</code> or <code>PID&amp;0323</code> (same pattern for <code>030D</code>, <code>0269</code>, <code>0310</code>, and the rest). USB HID is <code>VID_05AC&amp;PID_xxxx</code>. Bluetooth rows use <code>PID&amp;xxxx</code>.</li>
+            <li>Right-click the Start button. Click <strong>Device Manager</strong>.</li>
+            <li>Open <strong>Mice and other pointing devices</strong> (or Keyboards).</li>
+            <li>Double-click the Apple device.</li>
+            <li>Open the <strong>Details</strong> tab. Pick <strong>Hardware Ids</strong> in the list.</li>
+            <li>Find the four characters after <code>PID_</code> or <code>PID&amp;</code>. That is the name.</li>
           </ol>
-          <p class="note">If the PID is not in <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">KnownMice</a> or <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">KnownKeyboards</a>, do not guess a driver. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">File a missing-device issue</a>.</p>
+          <p class="note">If that name is not on this page, do not guess. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">Tell us the name</a>.</p>
         </div>
 
         <div class="how">
-          <h3>2. Then look at the bottom of the device</h3>
-          <p>Flip it. The charging port — or the AA door if there is no port — matches the generation:</p>
+          <h3>2. Then look with your eyes</h3>
           <ul class="plain">
-            <li><strong>AA door, no port</strong> — Mouse v1 (<code>030D</code>), Apple Wireless Mouse (<code>0310</code>), Trackpad 1 (<code>030E</code>), 2011 keyboard.</li>
-            <li><strong>Lightning on the bottom</strong> — Mouse v2 (<code>0269</code>), Trackpad 2 (<code>0265</code>), Lightning keyboards.</li>
-            <li><strong>USB-C oval</strong> — Mouse 2024 (<code>0323</code>), Trackpad 2024 (<code>0324</code>), 2024 keyboards.</li>
+            <li><strong>Door for AA batteries</strong> — old mouse, old trackpad, or old keyboard.</li>
+            <li><strong>Lightning hole</strong> (skinny, like an old iPhone charger) — Magic Mouse 2, Trackpad 2, Lightning keyboard.</li>
+            <li><strong>USB-C hole</strong> (small oval, like a new phone) — 2024 mouse, trackpad, or keyboard.</li>
           </ul>
         </div>
 
@@ -178,55 +185,101 @@
         </div>
 
         <h3>Keyboards</h3>
+        <ul class="facts">
+          <li>A Magic Keyboard is long and flat, with keys. It does not look like a mouse.</li>
+          <li>Look at the <strong>back edge</strong> (the side facing away from you) or flip it over.</li>
+          <li>If yours has extra number keys on the right, or a Touch ID button, it is still the same kind of keyboard.</li>
+        </ul>
         <div class="ident-grid cols-3">
           <article class="ident-card">
-            <div class="ident-visual">
-              <div class="bottom-view keyboard aa" aria-hidden="true">
-                <span class="tag">Bottom</span>
-                <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
+            <div class="ident-visual kb-visual">
+              <div class="kb" aria-hidden="true">
+                <div class="kb-face">
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r space"><i></i></div>
+                </div>
+                <div class="kb-find">
+                  <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
+                  <p><strong>Flip it over</strong> Door for two AA batteries. No charging hole.</p>
+                </div>
               </div>
             </div>
             <div class="ident-body">
-              <p class="pid-line">0239 / 023A / 023B · 2011 · AA</p>
-              <h3>Apple Wireless Keyboard A1314</h3>
-              <p>AA door. Also <code>0255</code> / <code>0256</code> / <code>0257</code> (ANSI/ISO/JIS).</p>
-              <a href="#keyboard">SDP path</a>
+              <p class="pid-line">Old · AA batteries</p>
+              <h3>Apple Wireless Keyboard</h3>
+              <ul class="facts">
+                <li>White or silver. Takes AA batteries.</li>
+                <li>Windows name includes <code>0239</code> (or <code>023A</code>, <code>023B</code>, <code>0255</code>…).</li>
+              </ul>
+              <a href="#keyboard">How we read battery</a>
             </div>
           </article>
           <article class="ident-card">
-            <div class="ident-visual">
-              <div class="bottom-view keyboard lightning" aria-hidden="true">
-                <span class="tag">Bottom</span>
-                <span class="port lightning"></span>
+            <div class="ident-visual kb-visual">
+              <div class="kb" aria-hidden="true">
+                <div class="kb-face">
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r space"><i></i></div>
+                </div>
+                <div class="kb-find">
+                  <span class="port lightning"></span>
+                  <p><strong>Back edge</strong> Skinny Lightning hole — same shape as an old iPhone charger.</p>
+                </div>
               </div>
             </div>
             <div class="ident-body">
-              <p class="pid-line">024F · Lightning</p>
-              <h3>Magic Keyboard A1644</h3>
-              <p>Lightning. Related PIDs <code>0250</code>, <code>0267</code>, <code>026C</code>, <code>029C</code>, <code>029A</code>, <code>029F</code>.</p>
-              <a href="#keyboard">SDP path</a>
+              <p class="pid-line">Lightning charger</p>
+              <h3>Magic Keyboard (Lightning)</h3>
+              <ul class="facts">
+                <li>Rechargeable. Lightning on the back edge, not USB-C.</li>
+                <li>Windows name often includes <code>024F</code>.</li>
+              </ul>
+              <a href="#keyboard">How we read battery</a>
             </div>
           </article>
           <article class="ident-card">
-            <div class="ident-visual">
-              <div class="bottom-view keyboard usbc" aria-hidden="true">
-                <span class="tag">Bottom</span>
-                <span class="port usbc"></span>
+            <div class="ident-visual kb-visual">
+              <div class="kb" aria-hidden="true">
+                <div class="kb-face">
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r"></div>
+                  <div class="kb-r space"><i></i></div>
+                </div>
+                <div class="kb-find">
+                  <span class="port usbc"></span>
+                  <p><strong>Back edge</strong> Small oval USB-C hole — like most new phones.</p>
+                </div>
               </div>
             </div>
             <div class="ident-body">
-              <p class="pid-line">0320 / 0321 / 0322 · 2024 · USB-C</p>
-              <h3>Magic Keyboard 2024</h3>
-              <p>USB-C. <code>0321</code> Touch ID, <code>0322</code> numeric keypad — extra PIDs, same SDP path.</p>
-              <a href="#keyboard">SDP path</a>
+              <p class="pid-line">2024 · USB-C</p>
+              <h3>Magic Keyboard (USB-C)</h3>
+              <ul class="facts">
+                <li>Newest. USB-C on the back edge.</li>
+                <li>Windows name includes <code>0320</code>, <code>0321</code> (Touch ID), or <code>0322</code> (number pad).</li>
+              </ul>
+              <a href="#keyboard">How we read battery</a>
             </div>
           </article>
         </div>
-        <p class="note">Touch ID (<code>0267</code>, <code>026C</code>, <code>029A</code>, <code>0321</code>) and numeric keypad (<code>029F</code>, <code>0322</code>) are extra PIDs, not extra drivers. Same keyboard SDP patch.</p>
       </section>
 
-      <h2 id="v3">Magic Mouse 2024 / v3 — 0323</h2>
-      <p><strong>KMDF</strong> from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a> — only path we recommend for scroll <em>and</em> battery. Why the 2024 mouse is not v2: <a href="v3.html">diagrams</a>. Why Test Mode: <a href="funding.html">signing</a>.</p>
+      <h2 id="v3">Magic Mouse 2024 (USB-C)</h2>
+      <ul class="facts">
+        <li>This is the new mouse with USB-C on the bottom.</li>
+        <li>Windows name: <code>0323</code>.</li>
+        <li>Apple never gave Windows a driver for it. Finger-scroll often dies.</li>
+        <li>We install an extra piece called KMDF from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">this driver project</a>.</li>
+        <li>Pictures: <a href="v3.html">why the 2024 mouse is different</a>.</li>
+      </ul>
       <div class="diagram pair">
         <div class="panel ok">
           <h3>Working</h3>
@@ -244,7 +297,10 @@
           </div>
         </div>
       </div>
-      <p>KMDF is the filter that keeps the two rooms apart. The sandwich picture is <a href="v3.html#stack">sbagirici’s</a>.</p>
+      <ul class="facts">
+        <li>The extra piece sits in the middle of that sandwich so scroll and battery can both work.</li>
+        <li>The sandwich picture is from <a href="v3.html#stack">sbagirici</a>, who explained this for older mice.</li>
+      </ul>
       <div class="diagram sba-pair">
         <div class="sba">
           <h3 class="sba-title">sbagirici · v1 / v2</h3>
@@ -276,8 +332,12 @@
         </div>
       </div>
       <aside class="credit-box">
-        <h3>Star the person who drew this</h3>
-        <p><a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici/apple-magic-mouse-scroll-fix-windows</a> — Architecture section. Please <strong>star their repo</strong>. Use their installer for v1/v2; use KMDF for 2024 / v3.</p>
+        <h3>Who drew the sandwich?</h3>
+        <ul class="facts">
+          <li><a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici</a> drew it for Magic Mouse v1 and v2.</li>
+          <li>Please star their project if the picture helped.</li>
+          <li>Do not use their installer on the 2024 USB-C mouse.</li>
+        </ul>
         <p class="cta"><a class="primary" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a></p>
       </aside>
       <table>
@@ -294,10 +354,15 @@
         <li>Still no scroll → unpair / re-pair.</li>
       </ol>
 
-      <h2 id="v1v2">v1 / v2 / Apple Wireless Mouse</h2>
-      <p><a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole Boot Camp INF</a>. Catalog-signed. Do not install v3 KMDF on these PIDs.</p>
+      <h2 id="v1v2">Older Magic Mouse (v1 or v2)</h2>
+      <ul class="facts">
+        <li>v1 has a battery door. v2 has Lightning on the bottom.</li>
+        <li>Apple already wrote a Windows driver for these. It is in Boot Camp.</li>
+        <li>We use the copy from <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole</a>.</li>
+        <li>No Test Mode. Do not put the 2024 driver on these mice.</li>
+      </ul>
       <table>
-        <thead><tr><th>Device</th><th>PID</th><th>Power</th><th>Path</th></tr></thead>
+        <thead><tr><th>What you have</th><th>Windows name</th><th>Look for</th><th>Install</th></tr></thead>
         <tbody>
           <tr><td>Magic Mouse v1</td><td><code>030D</code></td><td>AA door</td><td>Boot Camp</td></tr>
           <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Lightning</td><td>Boot Camp</td></tr>
@@ -305,8 +370,13 @@
         </tbody>
       </table>
 
-      <h2 id="keyboard">Keyboards</h2>
-      <p>SDP registry patch, not a kernel driver. <code>Install-KeyboardBattery.cmd -Mac …</code> from the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Release</a>. Re-pairing wipes it.</p>
+      <h2 id="keyboard">Keyboards — battery only</h2>
+      <ul class="facts">
+        <li>Your keyboard already types. We do not install a keyboard driver.</li>
+        <li>Windows just will not tell us the battery % until we flip a small setting.</li>
+        <li>That setting lives in a script in the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Release</a>: <code>Install-KeyboardBattery.cmd</code>.</li>
+        <li>If you unpair the keyboard, run the script again.</li>
+      </ul>
       <table>
         <thead><tr><th>Generation</th><th>PIDs</th><th>Power</th></tr></thead>
         <tbody>
@@ -316,8 +386,12 @@
         </tbody>
       </table>
 
-      <h2 id="trackpad">Trackpads</h2>
-      <p>Battery and alerts only. No tap / 3-finger / KMDF. PIDs: <code>030E</code> (AA), <code>0265</code> (Lightning), <code>0324</code> (USB-C).</p>
+      <h2 id="trackpad">Trackpads — battery only</h2>
+      <ul class="facts">
+        <li>We show battery % in the tray.</li>
+        <li>We do not add tap, 3-finger swipe, or a trackpad driver. That is a different product.</li>
+        <li>AA door, Lightning, or USB-C on the bottom tells you which generation it is.</li>
+      </ul>
     </article>
 
     <aside class="rail">

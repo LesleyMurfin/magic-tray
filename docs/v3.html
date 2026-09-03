@@ -34,12 +34,20 @@
     <article id="content" class="primary">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · research</p>
-        <h1>Why Magic Mouse v3 is not Magic Mouse v2</h1>
-        <p class="lead">Magic Mouse 2024 (v3, USB-C, PID <strong>0323</strong>) is a different Windows device from Magic Mouse v2 (Lightning, PID <strong>0269</strong>). The v2 Boot Camp INF cannot name 0323. v3’s HID collections can also collapse after Bluetooth idle. “Install the Apple mouse driver” is the wrong instruction.</p>
+        <h1>Why the 2024 Magic Mouse is not Magic Mouse 2</h1>
+        <ul class="facts">
+          <li>The new Magic Mouse charges with USB-C. Windows calls it <code>0323</code>.</li>
+          <li>Magic Mouse 2 charges with Lightning. Windows calls it <code>0269</code>.</li>
+          <li>They look similar. Windows does not treat them as the same device.</li>
+          <li>Apple never shipped a Windows driver for the USB-C one. “Install the Apple mouse driver” is the wrong advice.</li>
+        </ul>
       </header>
 
-      <h2 id="sources">Primary sources</h2>
-      <p>Kernel research lives in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a> (stripped from the public tray repo). Site: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">lesleymurfin.github.io/magic-mouse-v3-windows-fix</a>.</p>
+      <h2 id="sources">If you want the long version</h2>
+      <ul class="facts">
+        <li>The kernel work lives in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</li>
+        <li>Site: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 driver site</a>.</li>
+      </ul>
       <div class="grid grid-3">
         <div class="card">
           <h3><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md">Bug analysis</a></h3>
@@ -54,25 +62,37 @@
           <p>COL01 + COL02 healthy vs collapsed stack.</p>
         </div>
       </div>
-      <p>Linux has in-tree <code>hid-magicmouse</code> (including USB-C v3). Windows does not. Apple’s redistributed Boot Camp mouse INF predates 0323.</p>
+      <ul class="facts">
+        <li>Linux already knows this mouse. Windows does not.</li>
+        <li>The old Apple Boot Camp mouse driver lists v1 and v2. It does not list 2024.</li>
+      </ul>
 
-      <h2 id="v2">v2: Apple already wrote a driver</h2>
-      <p>v1 (<code>030D</code>) and v2 (<code>0269</code>) match <code>AppleWirelessMouse.inf</code> from <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole</a>. Catalog-signed. Test Mode not required. Magic Tray opens that INF; it does not invent a new v1/v2 kernel driver.</p>
+      <h2 id="v2">Older mice already have a driver</h2>
+      <ul class="facts">
+        <li>v1 (battery door) and v2 (Lightning) match Apple’s Boot Camp file.</li>
+        <li>We use the copy from <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole</a>.</li>
+        <li>That file is already signed. You do not need Test Mode.</li>
+      </ul>
       <div class="diagram paths" id="paths">
         <div class="panel ok">
           <h3>Magic Mouse v1 / v2</h3>
-          <p>Lightning or AA. Apple listed these PIDs in Boot Camp.</p>
-          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>Boot Camp INF</span><span class="sep">→</span><span>scroll works</span></p>
+          <p>Battery door or Lightning. Apple already listed these.</p>
+          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>Apple’s old driver</span><span class="sep">→</span><span>scroll works</span></p>
         </div>
         <div class="panel bad">
-          <h3>Magic Mouse 2024 / v3</h3>
-          <p>USB-C. PID <code>0323</code> is not in that INF. Windows uses generic Bluetooth HID.</p>
-          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>no Apple driver</span><span class="sep">→</span><span>cursor yes, scroll dies</span></p>
+          <h3>Magic Mouse 2024</h3>
+          <p>USB-C. Apple never listed this one.</p>
+          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>no Apple driver</span><span class="sep">→</span><span>pointer yes, scroll dies</span></p>
         </div>
       </div>
 
-      <h2 id="mode">v3: two rooms, then Windows knocks the wall down</h2>
-      <p>A healthy 2024 mouse talks to Windows as <strong>two rooms</strong>. After Bluetooth idle, Windows can merge them. Cursor stays. Scroll is gone. Reboot does not put the wall back. That is Mode B.</p>
+      <h2 id="mode">The 2024 mouse: two rooms</h2>
+      <ul class="facts">
+        <li>Think of the mouse as two rooms.</li>
+        <li>Room 1 is the pointer and finger-scroll.</li>
+        <li>Room 2 is the battery percent.</li>
+        <li>After the mouse sleeps, Windows can knock the wall down. The pointer still moves. Scroll is gone. Restarting Windows does not rebuild the wall.</li>
+      </ul>
       <div class="diagram pair" role="img" aria-label="Working two-room mouse versus broken one-room mouse">
         <div class="panel ok">
           <h3>Working — two rooms</h3>
@@ -92,8 +112,12 @@
       </div>
       <p class="caption" style="color:var(--faint);font-size:0.82rem;margin-top:-0.6rem;">Same idea as the Mode A / Mode B diagram in the kernel repo — without HID class names.</p>
 
-      <h2 id="stack">Where the fix sits</h2>
-      <p>Windows does not turn a finger swipe into a wheel by itself on this mouse. A small driver sits <em>under</em> Windows and <em>above</em> Bluetooth. That picture is not ours.</p>
+      <h2 id="stack">Where the extra piece sits</h2>
+      <ul class="facts">
+        <li>Windows will not turn a finger swipe into a scroll wheel by itself on this mouse.</li>
+        <li>Someone has to add a small program under Windows and above Bluetooth.</li>
+        <li>That picture is from sbagirici, not us.</li>
+      </ul>
       <div class="diagram sba-pair" role="img" aria-label="sbagirici LowerFilter stack for v1 v2, same stack with KMDF for v3">
         <div class="sba">
           <h3 class="sba-title">sbagirici · v1 / v2</h3>
@@ -125,13 +149,16 @@
         </div>
       </div>
       <aside class="credit-box" id="sbagirici">
-        <h3>This diagram is sbagirici’s</h3>
-        <p><a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici/apple-magic-mouse-scroll-fix-windows</a> is the README that made the LowerFilter click: app → Windows → <strong>filter</strong> → Bluetooth → mouse. We redrew it here so v3 is obvious. If that picture helped you, <strong>star their repo</strong> — they did the v1/v2 work we stood on.</p>
+        <h3>This sandwich is sbagirici’s</h3>
+        <ul class="facts">
+          <li>They drew it in <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">apple-magic-mouse-scroll-fix-windows</a>.</li>
+          <li>Please <strong>star their project</strong> if the picture made this click.</li>
+          <li>Their installer is for v1/v2. The 2024 USB-C mouse still needs our KMDF driver.</li>
+        </ul>
         <p class="cta">
           <a class="primary" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a>
           <a class="ghost" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows#architecture">Their Architecture section</a>
         </p>
-        <p>Their installer uses Apple’s signed <code>applewirelessmouse.sys</code> for v1/v2. Do not put that on Magic Mouse 2024 (<code>0323</code>). That PID still needs KMDF from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</p>
       </aside>
       <div class="grid grid-2">
         <div class="card">
@@ -147,8 +174,12 @@
       </div>
       <p class="note">Patched Apple can pin scroll and drop battery. Stock can keep battery and drop scroll. KMDF is the path aimed at both. It is still self-signed — <a href="funding.html">that is the funding goal</a>.</p>
 
-      <h2 id="tray">Why a tray, not only a driver</h2>
-      <p>A filter does not show 30% in the corner or refuse to patch the wrong keyboard MAC. v3 battery is userspace HID. Keyboard battery is an SDP registry patch. Trackpads are percent only. One <code>.sys</code> cannot cover that matrix — <a href="devices.html">Devices</a>.</p>
+      <h2 id="tray">Why there is a tray program too</h2>
+      <ul class="facts">
+        <li>A driver does not show “28%” next to the clock.</li>
+        <li>A driver does not know your keyboard’s Bluetooth address.</li>
+        <li>Mice, keyboards, and trackpads are different jobs. One file cannot do all of them. See <a href="devices.html">Devices</a>.</li>
+      </ul>
     </article>
 
     <aside class="rail">
