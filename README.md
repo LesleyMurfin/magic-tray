@@ -88,7 +88,7 @@ Scroll on this mouse needs our own **KMDF** driver, and that driver is not Micro
 
 **KMDF is still experimental and you cannot install it from the tray yet.** The driver lives in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), and the piece Magic Tray needs in order to install it has not reached that repository’s `main` branch — it is still an open pull request ([#5](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/5)). Until it lands, choosing **KMDF** in the tray tells you it is unavailable and stops. It will not quietly install something else instead.
 
-So: **battery today, scroll when the driver lands.** Watch [#89](https://github.com/LesleyMurfin/magic-tray/issues/89) if you want to know when that is.
+So: **battery today, scroll when the driver lands.** Two different things have to happen. The tray can only offer KMDF once the installer entrypoint reaches the driver repo’s `main` branch — that is [magic-mouse-v3-windows-fix#5](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/5), and it is what to watch for scroll becoming available at all. Getting rid of Test Mode needs the driver properly signed, which is a separate job tracked in [#89](https://github.com/LesleyMurfin/magic-tray/issues/89).
 
 **The three driver choices for this mouse**
 
