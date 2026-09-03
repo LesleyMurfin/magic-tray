@@ -35,8 +35,8 @@ foreach ($d in $bthenum) {
     # Pull device parameters (LowerFilters, Service overrides) via registry
     # InstanceId format: BTHENUM\Dev_<mac>\<...>  or BTHENUM\{guid}_VID...PID...\<...>
     # The Driver Reg key is HKLM\SYSTEM\CCS\Enum\BTHENUM\<dev>\<inst>
-    $enumPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.InstanceId.Replace('\','\'))"
-    if (Test-Path $enumPath) {
+    $enumPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.InstanceId)"
+    if (Test-Path -LiteralPath $enumPath) {
         try {
             $k = Get-Item -LiteralPath $enumPath
             $rec.HardwareID = ($k.GetValue('HardwareID', @()) -join ' | ')
@@ -44,7 +44,7 @@ foreach ($d in $bthenum) {
             $rec.ClassGUID = $k.GetValue('ClassGUID', '')
             # Get Device Parameters\* (where LowerFilters live)
             $dparam = Join-Path $enumPath 'Device Parameters'
-            if (Test-Path $dparam) {
+            if (Test-Path -LiteralPath $dparam) {
                 $dpk = Get-Item -LiteralPath $dparam
                 $names = $dpk.GetValueNames()
                 $params = @{}
@@ -63,7 +63,7 @@ foreach ($d in $bthenum) {
             # Driver class node - LowerFilters can be class-level too
             if ($k.GetValue('Driver', '')) {
                 $cls = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\$($k.GetValue('Driver', ''))"
-                if (Test-Path $cls) {
+                if (Test-Path -LiteralPath $cls) {
                     $clsk = Get-Item -LiteralPath $cls
                     $cnames = $clsk.GetValueNames()
                     $cparams = @{}
@@ -125,8 +125,22 @@ if (Test-Path $driverPath) {
 }
 
 # applewirelessmouse INF lookup (which PIDs does it match?)
-$infs = Get-WindowsDriver -Online -ErrorAction SilentlyContinue |
-    Where-Object { $_.OriginalFileName -like '*applewirelessmouse*' -or $_.Driver -like '*applewirelessmouse*' }
+# Get-WindowsDriver -Online requires elevation. Record the elevation state and
+# any failure so an empty AppleFilterINF is never mistaken for "no Apple INF".
+$isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+$infs = @()
+$infError = $null
+if (-not $isElevated) {
+    $infError = 'Not elevated: Get-WindowsDriver -Online requires Administrator.'
+} else {
+    try {
+        $infs = @(Get-WindowsDriver -Online -ErrorAction Stop |
+            Where-Object { $_.OriginalFileName -like '*applewirelessmouse*' -or $_.Driver -like '*applewirelessmouse*' })
+    } catch {
+        $infError = $_.ToString()
+    }
+}
 
 $snapshot = [ordered]@{
     Captured = $ts
@@ -135,6 +149,8 @@ $snapshot = [ordered]@{
     BatteryReadings = $batteryReadings
     AppleFilterService = $svcInfo
     AppleFilterINF = ($infs | Select-Object Driver, OriginalFileName, Inbox, ClassName, ProviderName, Date, Version, BootCritical)
+    AppleFilterINFElevated = $isElevated
+    AppleFilterINFError = $infError
 }
 
 $jsonOut = Join-Path $OutDir 'bt-stack-snapshot.json'
@@ -150,6 +166,7 @@ $lines += "  Exists: $($svcInfo.Exists)  Status: $($svcInfo.Status)  StartType: 
 $lines += "  DriverFileExists: $($svcInfo.DriverFileExists)  Size: $($svcInfo.DriverFileSize)  Modified: $($svcInfo.DriverFileModified)"
 $lines += ""
 $lines += "applewirelessmouse INF entries:"
+if ($infError) { $lines += "  (unavailable: $infError)" }
 foreach ($i in $infs) {
     $lines += "  $($i.Driver) | $($i.OriginalFileName) | Inbox=$($i.Inbox)"
 }

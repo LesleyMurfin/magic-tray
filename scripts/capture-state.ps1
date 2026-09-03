@@ -9,10 +9,13 @@
 # Saved to current directory unless -OutputDir is specified.
 # Run elevated (some queries need admin for sc.exe and registry reads).
 
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Label = "",
     [switch]$Compare,
+    [Parameter(Position = 0)]
     [string]$FileA = "",
+    [Parameter(Position = 1)]
     [string]$FileB = "",
     [string]$OutputDir = "."
 )
@@ -22,8 +25,6 @@ Set-StrictMode -Version 2
 # ---- Compare mode ----
 if ($Compare) {
     if (-not $FileA -or -not $FileB) {
-        # Try positional args if Compare was used with positional params
-        $args2 = $args
         Write-Host "Usage: capture-state.ps1 -Compare <fileA.json> <fileB.json>" -ForegroundColor Yellow
         exit 1
     }
@@ -37,9 +38,10 @@ if ($Compare) {
             throw "Invalid snapshot: $Path is empty."
         }
         $required = @(
+            'label', 'timestamp',
             'col01Present', 'col02Present', 'filterInStack',
             'lowerFiltersEnumKey', 'lowerFiltersDriverKey',
-            'serviceState', 'hidDeviceCount'
+            'serviceState', 'hidDeviceCount', 'startupRepairLog'
         )
         foreach ($name in $required) {
             if ($null -eq $Obj.PSObject.Properties[$name]) {

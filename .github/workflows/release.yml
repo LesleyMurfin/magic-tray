@@ -64,10 +64,12 @@ jobs:
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
           ./scripts/sign-app.ps1 -Exe publish/MagicMouseTray.exe -PfxPath "$env:RUNNER_TEMP\cert.pfx" -PfxPassword $env:SIGN_PFX_PASSWORD
 
+      # GITHUB_REF_NAME is a default Actions env var: read it instead of
+      # interpolating github.ref_name into the command line.
       - name: Verify release artifacts
-        run: pwsh -File scripts/verify-release.ps1 -PublishDir publish -Tag "${{ github.ref_name }}"
+        run: pwsh -File scripts/verify-release.ps1 -PublishDir publish -Tag "$env:GITHUB_REF_NAME"
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --generate-notes
+        run: gh release create "$env:GITHUB_REF_NAME" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --generate-notes

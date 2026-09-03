@@ -33,6 +33,21 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # Guards the MSB3030 class of break: a Content Include left pointing at a
+    # file that no longer exists fails the build for every PR, not just its own.
+    - name: Check csproj Content paths exist on disk
+      shell: pwsh
+      run: |
+        $proj = 'MagicMouseTray/MagicMouseTray.csproj'
+        $root = Split-Path -Parent $proj
+        $missing = @(
+          Select-Xml -Path $proj -XPath '//Content/@Include' |
+            ForEach-Object { $_.Node.Value } |
+            Where-Object { -not (Test-Path -LiteralPath (Join-Path $root ($_ -replace '\\', '/'))) }
+        )
+        if ($missing) { throw "csproj Content Include paths missing on disk: $($missing -join ', ')" }
+        Write-Host "All csproj Content Include paths exist."
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:

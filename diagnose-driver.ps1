@@ -7,7 +7,11 @@
 
 $driverName = "applewirelessmouse"
 $sysFile    = "C:\Windows\System32\drivers\$driverName.sys"
-$logFile    = "$env:USERPROFILE\Desktop\apple-mouse-diag.txt"
+$logDir     = [Environment]::GetFolderPath('Desktop')
+if ([string]::IsNullOrWhiteSpace($logDir) -or -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+    $logDir = [System.IO.Path]::GetTempPath()
+}
+$logFile    = Join-Path $logDir 'apple-mouse-diag.txt'
 
 function Write-Log {
     param([string]$text)
@@ -53,6 +57,11 @@ function Get-TrustedSysinternalsExe {
         if (-not (Test-AdministratorOwnedFile $path)) { continue }
         $sig = Get-AuthenticodeSignature -LiteralPath $path
         if ($sig.Status -ne 'Valid') { continue }
+        # A valid chain alone proves nothing: require a Microsoft/Sysinternals
+        # publisher before we execute the binary.
+        $signer = $sig.SignerCertificate
+        if (-not $signer) { continue }
+        if ($signer.Subject -notmatch 'O=(Microsoft Corporation|Sysinternals)') { continue }
         return $path
     }
     return $null
@@ -95,14 +104,15 @@ $autorunsPath = Get-TrustedSysinternalsExe 'autorunsc.exe'
 if ($autorunsPath) {
     Write-Log "Using: $autorunsPath"
     # -nobanner suppresses header noise; pipe to Select-String handles Unicode
-    & $autorunsPath -accepteula -nobanner -a d 2>&1 |
+    # One enumeration is slow; run it once and reuse the captured output.
+    $autorunsOutput = @(& $autorunsPath -accepteula -nobanner -a d 2>&1)
+    $autorunsOutput |
         Select-String -Pattern "apple" -CaseSensitive:$false |
         ForEach-Object { Write-Log "  $_" }
 
     Write-Log ""
     Write-Log "--- Full driver list (all entries) ---"
-    & $autorunsPath -accepteula -nobanner -a d 2>&1 |
-        ForEach-Object { Write-Log "  $_" }
+    $autorunsOutput | ForEach-Object { Write-Log "  $_" }
 } else {
     Write-Log "autorunsc.exe not found in common paths. Skipping."
     Write-Log "Download from: https://learn.microsoft.com/sysinternals/downloads/autoruns"
