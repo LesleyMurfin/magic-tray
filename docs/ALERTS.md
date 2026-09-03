@@ -42,11 +42,14 @@ Disconnect after a last good reading well above 1% is not death.
 - At **0–1%** while connected: a plug-now window.
 - If it **disconnects**, that window **closes**. Disconnect is not treated as death — you can charge it.
 
-## Skip alerts for one device
+## Enabled on this PC
 
-Each device row has **Enabled on this PC** (on by default). Uncheck it to skip battery polling and alerts for that device on this computer. The row stays so you can turn it back on. Bluetooth pairing does not change.
+Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s Bluetooth / HID / USB nodes on **this PC** using the same VID/PID catalog as battery discovery. The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged — check the box again to bring it back. A new model is enabled for this control by adding it to `KnownMice` / `KnownKeyboards`.
 
-Use this when the same mouse is mostly used on a Mac and you do not want this PC toasting about it.
+Cancelling UAC leaves it enabled. If no matching device is found, the tray reports failure and leaves the box checked.
+
+Rows are per model, not per paired device. If you have **two of the same model** paired to this PC — two Magic Mouse v1, say — they share one row, and unchecking it disables **both**. The log records the `ContainerID` of every device instance that was touched, so `DEVICE_ENABLE containers=…` in the log tells you exactly which physical devices changed.
+
 
 ## Report a bug
 
