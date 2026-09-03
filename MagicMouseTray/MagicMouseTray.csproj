@@ -16,9 +16,9 @@
     <!-- Allows building on non-Windows (e.g. restoring packages) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>magic-mouse.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.1.1</Version>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
+    <FileVersion>1.1.1.0</FileVersion>
     <Product>Magic Tray</Product>
     <Title>Magic Tray</Title>
     <AssemblyTitle>Magic Tray</AssemblyTitle>
