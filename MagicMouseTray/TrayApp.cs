@@ -545,7 +545,9 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
-    void OpenHelpUrl(string url, string? localFallback = null)
+    // true only when a browser (or the local fallback) actually launched, so
+    // callers can run their own fallback instead of assuming success.
+    bool OpenHelpUrl(string url, string? localFallback = null)
     {
         try
         {
@@ -553,22 +555,25 @@ internal sealed class TrayApp : IDisposable
             {
                 UseShellExecute = true
             });
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Log($"OPEN_HELP_FAIL url={url} err={ex.Message}");
             if (string.IsNullOrEmpty(localFallback))
-                return;
+                return false;
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(localFallback)
                 {
                     UseShellExecute = true
                 });
+                return true;
             }
             catch (Exception ex2)
             {
                 Logger.Log($"OPEN_HELP_LOCAL_FAIL path={localFallback} err={ex2.Message}");
+                return false;
             }
         }
     }
@@ -603,7 +608,12 @@ internal sealed class TrayApp : IDisposable
                 url = BugReport.IssueUrl(title, md, "bug");
             }
             Clipboard.SetText(md);
-            OpenHelpUrl(url);
+            if (!OpenHelpUrl(url))
+            {
+                Logger.Log($"GITHUB_DRAFT_FAIL feature={feature} err=draft_launch_failed");
+                OpenHelpUrl(TrayMenu.IssuesUrl);
+                return;
+            }
             Logger.Log(feature ? "FEATURE_DRAFT opened" : "BUG_REPORT opened");
         }
         catch (Exception ex)

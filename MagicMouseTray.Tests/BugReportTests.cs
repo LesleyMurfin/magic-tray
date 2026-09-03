@@ -130,4 +130,59 @@ public class BugReportTests
             catch { }
         }
     }
+
+    [Fact]
+    public void Redact_ScrubsProfilePathAndLocalNames()
+    {
+        // Synthetic name: the profile-path rule must not need the live account.
+        var path = BugReport.Redact(
+            @"OPEN_DIAG path=C:\Users\mm-test-user\AppData\Local\MagicMouseTray\debug.log");
+        Assert.Contains(@"C:\Users\<user>\AppData\Local\MagicMouseTray\debug.log", path);
+        Assert.DoesNotContain("mm-test-user", path, StringComparison.OrdinalIgnoreCase);
+
+        var user = Environment.UserName;
+        var host = Environment.MachineName;
+        var env = BugReport.Redact($"DIAG user={user} host={host}");
+        if (user.Length >= 3)
+            Assert.DoesNotContain(user, env, StringComparison.OrdinalIgnoreCase);
+        if (host.Length >= 3)
+            Assert.DoesNotContain(host, env, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IssueUrl_EncodingHeavyBody_StaysUnderMaxWithNote()
+    {
+        // Every newline costs three encoded chars, so the cap must be measured
+        // on the encoded text and must reserve room for the truncation note.
+        var body = string.Concat(Enumerable.Repeat("line — one\n", 4000));
+        var url = BugReport.IssueUrl("bug: test", body);
+        Assert.True(url.Length <= BugReport.MaxUrlChars, $"url was {url.Length} chars");
+        Assert.Contains(Uri.EscapeDataString("truncated"), url);
+        Assert.DoesNotContain("\n", url);
+        Assert.DoesNotContain(" ", url);
+    }
+
+    [Fact]
+    public void ReadLogTail_LargeLog_ReturnsExactTail()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-bug-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "debug.log");
+        try
+        {
+            using (var writer = new StreamWriter(path))
+                for (var i = 0; i < 5_000; i++)
+                    writer.WriteLine($"line {i}");
+            var lines = BugReport.ReadLogTail(path, BugReport.LogTailLines)
+                .Split(Environment.NewLine);
+            Assert.Equal(BugReport.LogTailLines, lines.Length);
+            Assert.Equal($"line {5_000 - BugReport.LogTailLines}", lines[0]);
+            Assert.Equal("line 4999", lines[^1]);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); }
+            catch { }
+        }
+    }
 }

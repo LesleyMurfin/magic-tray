@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -30,6 +31,9 @@ internal static class BugReport
 
     internal static string OsDescription() => RuntimeInformation.OSDescription;
 
+    // Scrubs everything that identifies the machine or its owner: Bluetooth
+    // addresses, Windows profile paths, and the local account/host names. The
+    // result is pasted into a PUBLIC GitHub issue, so this is load-bearing.
     internal static string Redact(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -37,7 +41,51 @@ internal static class BugReport
         text = Regex.Replace(text, @"\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", "<mac>");
         text = Regex.Replace(text, @"\bDev_[0-9A-Fa-f]{12}\b", "Dev_<mac>", RegexOptions.IgnoreCase);
         text = Regex.Replace(text, @"(?<![0-9A-Fa-f])[0-9A-Fa-f]{12}(?![0-9A-Fa-f])", "<mac>");
+        // Logged log/temp/script paths all carry C:\Users\<name>\AppData\...
+        text = Regex.Replace(text, @"(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)", "<user>",
+            RegexOptions.IgnoreCase);
+        foreach (var (pattern, placeholder) in LocalIdentifiers)
+            text = pattern.Replace(text, placeholder);
         return text;
+    }
+
+    // Account and host names have no shape to match, so match the literals.
+    static readonly (Regex Pattern, string Placeholder)[] LocalIdentifiers = BuildLocalIdentifiers();
+
+    static (Regex, string)[] BuildLocalIdentifiers()
+    {
+        var raw = new List<(string Value, string Placeholder)>(3);
+        Add(SafeEnv(() => Environment.UserName), "<user>");
+        Add(SafeEnv(() => Environment.MachineName), "<host>");
+        Add(SafeEnv(() => Environment.UserDomainName), "<host>");
+        // Longest first, so "lesley-pc" is not half-eaten by "lesley".
+        return raw.OrderByDescending(v => v.Value.Length)
+            .Select(v => (new Regex(Regex.Escape(v.Value),
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), v.Placeholder))
+            .ToArray();
+
+        void Add(string? value, string placeholder)
+        {
+            // Under 3 chars a literal replace would shred unrelated log text.
+            if (string.IsNullOrWhiteSpace(value) || value.Length < 3)
+                return;
+            foreach (var existing in raw)
+                if (string.Equals(existing.Value, value, StringComparison.OrdinalIgnoreCase))
+                    return;
+            raw.Add((value, placeholder));
+        }
+    }
+
+    static string? SafeEnv(Func<string> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal static string ReadLogTail(string path, int lines)
@@ -46,11 +94,22 @@ internal static class BugReport
             return "";
         try
         {
-            var all = File.ReadAllLines(path);
-            if (all.Length == 0)
+            // debug.log rolls at MaxBytes and the tray calls this on the UI
+            // thread, so stream it and hold only the last `lines` entries.
+            // FileShare.ReadWrite: Logger may be appending while we read.
+            var tail = new Queue<string>(lines);
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            while (reader.ReadLine() is { } line)
+            {
+                if (tail.Count == lines)
+                    tail.Dequeue();
+                tail.Enqueue(line);
+            }
+            if (tail.Count == 0)
                 return "";
-            var start = Math.Max(0, all.Length - lines);
-            return Redact(string.Join(Environment.NewLine, all[start..]));
+            return Redact(string.Join(Environment.NewLine, tail));
         }
         catch
         {
@@ -175,7 +234,7 @@ internal static class BugReport
         sb.AppendLine();
         sb.AppendLine($"- Magic Tray: {version}");
         sb.AppendLine($"- Windows: {os}");
-        return sb.ToString();
+        return Redact(sb.ToString());
     }
 
     internal static string TroubleshootHint(IReadOnlyList<BugReportDevice>? devices)
@@ -196,6 +255,9 @@ internal static class BugReport
         return "";
     }
 
+    // Bounded, fully percent-encoded ?labels=&title=&body= draft URL. Browsers
+    // and GitHub reject very long URLs, so the body is clipped to MaxUrlChars
+    // measured on the ENCODED text (the full report is on the clipboard).
     internal static string IssueUrl(string title, string body, string label = "bug")
     {
         var prefix = $"{NewIssueBase}?labels={Uri.EscapeDataString(label)}&title={Uri.EscapeDataString(title)}&body=";
@@ -203,11 +265,14 @@ internal static class BugReport
         if (prefix.Length + encoded.Length <= MaxUrlChars)
             return prefix + encoded;
 
-        var clipped = body ?? "";
-        while (clipped.Length > 80 && prefix.Length + Uri.EscapeDataString(clipped).Length > MaxUrlChars)
-            clipped = clipped[..Math.Max(80, clipped.Length * 3 / 4)];
         const string note = "\n\n(truncated — full report is on the clipboard)";
-        return prefix + Uri.EscapeDataString(clipped + note);
+        var encodedNote = Uri.EscapeDataString(note);
+        // Reserve the note: clipping only the body would push past the cap.
+        var budget = Math.Max(0, MaxUrlChars - prefix.Length - encodedNote.Length);
+        var clipped = body ?? "";
+        while (clipped.Length > 0 && Uri.EscapeDataString(clipped).Length > budget)
+            clipped = clipped[..(clipped.Length * 3 / 4)];
+        return prefix + Uri.EscapeDataString(clipped) + encodedNote;
     }
 
     static DeviceDriverHealth? FindHealth(IReadOnlyList<DeviceDriverHealth>? health, string pid)
