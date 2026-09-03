@@ -147,17 +147,17 @@ Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMo
 
 | Model | PID | Recommended driver | Scroll | Battery | Tested |
 |---|---|---|---|---|---|
-| Magic Mouse 2024 (USB-C, **Magic Mouse v3**) | `0x0323` | **KMDF** from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | Yes, with [Test Mode](#test-mode-self-signed-0323-drivers) | Yes | [yes — KMDF](docs/TESTED.md) |
-| Magic Mouse v1 | `0x030D` | **Boot Camp** [tealtadpole INF](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
-| Magic Mouse v2 | `0x0269` | Same Boot Camp INF | Yes | Yes | — |
-| Apple Wireless Mouse | `0x0310` | Same Boot Camp INF | Yes | Yes | — |
+| Magic Mouse 2024 (USB-C, **Magic Mouse v3**) | `0x0323` | [**KMDF**](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) | Yes, with [Test Mode](#test-mode-self-signed-0323-drivers) | Yes | [yes — KMDF](docs/TESTED.md) |
+| Magic Mouse v1 | `0x030D` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
+| Magic Mouse v2 | `0x0269` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
+| Apple Wireless Mouse | `0x0310` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
 
 ### Magic Mouse 2024 (`0323`) — what to pick
 
 | Choice in the tray | Wheel | Battery | Test Mode | Who it is for |
 |---|---|---|---|---|
-| **KMDF** | Yes | Yes | Required | Almost everyone. Recommended, but [not installable from the tray yet](#just-want-a-2024-magic-mouse-driver). |
-| Patched Apple | Yes, but only in its scroll mode | Yes, but only in its battery mode | Required | Old experiment. Wheel and battery are mutually exclusive — one or the other, never both. Do not pick this. |
+| [**KMDF**](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) | Yes | Yes | Required | Almost everyone. Recommended, but [not installable from the tray yet](#just-want-a-2024-magic-mouse-driver). |
+| [Patched Apple](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v1-binary-patch) | Yes, but only in its scroll mode | Yes, but only in its battery mode | Required | Old experiment. Wheel and battery are mutually exclusive — one or the other, never both. Do not pick this. |
 | Stock Windows | No | Often yes | Not needed | Pointer only. Hands the mouse back to Windows and removes our driver. |
 
 ---
@@ -168,11 +168,11 @@ Catalog: [`KnownKeyboards`](MagicMouseTray/KeyboardBatteryDevice.cs) (CI: [`Ever
 
 | Model | PID | Driver | Scroll | Battery | Tested |
 |---|---|---|---|---|---|
-| Apple Wireless Keyboard (2011, A1314) ANSI / ISO / JIS | `0x0239` / `0x023A` / `0x023B` (`0x0255` / `0x0256` / `0x0257`) | SDP patch (not a kernel driver) | n/a | Yes after patch | [yes — `0x0239`](docs/TESTED.md) |
-| Magic Keyboard (A1644) / ISO | `0x024F` / `0x0250` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
-| Magic Keyboard with Touch ID (A2449) / ISO | `0x0267` / `0x026C` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
-| Magic Keyboard (2021) / Touch ID / Numeric Keypad | `0x029C` / `0x029A` / `0x029F` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
-| Magic Keyboard (2024, USB-C) / Touch ID / Numeric Keypad | `0x0320` / `0x0321` / `0x0322` | SDP patch | n/a | Yes after patch | Not hardware-tested here |
+| Apple Wireless Keyboard (2011, A1314) ANSI / ISO / JIS | `0x0239` / `0x023A` / `0x023B` (`0x0255` / `0x0256` / `0x0257`) | [SDP patch](scripts/kbd-patch-cachedservices.ps1) (not a kernel driver) | n/a | Yes after patch | [yes — `0x0239`](docs/TESTED.md) |
+| Magic Keyboard (A1644) / ISO | `0x024F` / `0x0250` | [SDP patch](scripts/kbd-patch-cachedservices.ps1) | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard with Touch ID (A2449) / ISO | `0x0267` / `0x026C` | [SDP patch](scripts/kbd-patch-cachedservices.ps1) | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard (2021) / Touch ID / Numeric Keypad | `0x029C` / `0x029A` / `0x029F` | [SDP patch](scripts/kbd-patch-cachedservices.ps1) | n/a | Yes after patch | Not hardware-tested here |
+| Magic Keyboard (2024, USB-C) / Touch ID / Numeric Keypad | `0x0320` / `0x0321` / `0x0322` | [SDP patch](scripts/kbd-patch-cachedservices.ps1) | n/a | Yes after patch | Not hardware-tested here |
 
 ---
 
