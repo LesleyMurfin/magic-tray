@@ -27,7 +27,7 @@ If this saved you a paid subscription, **star both repos**: [Magic Tray](https:/
 - [Scroll](#scroll)
   - [Magic Mouse v1 / v2](#magic-mouse-v1--v2-030d-0269)
   - [Magic Mouse 2024 / v3](#magic-mouse-2024--v3-0323)
-  - [Test Mode](#test-mode-0323-kmdf)
+  - [Test Mode](#test-mode-self-signed-0323-drivers)
 - [Why Magic Mouse v3 scroll breaks on Windows](#why-magic-mouse-v3-scroll-breaks-on-windows)
 - [Keyboard battery](#keyboard-battery)
 - [FAQ](#faq)
@@ -76,19 +76,31 @@ The same Release attaches the keyboard battery patch (`Install-KeyboardBattery.c
 
 ## Just want a 2024 Magic Mouse driver?
 
-You have the USB-C Magic Mouse. Windows already moves the pointer. **The wheel does nothing** until a driver is bound. That is normal.
+You have the USB-C Magic Mouse (sold as **Magic Mouse 2024**, also called **v3**). Windows moves the pointer, but **the wheel does nothing**. That is normal — Windows ships no scroll driver for this mouse.
 
-Do this:
+**What works right now**
 
-1. Download **Magic Tray** from [Releases](../../releases) and run it. Battery % shows even before scroll works.
-2. Turn on [Test Mode](#test-mode-0323-kmdf) (one reboot). Windows will not load our 2024 driver without it — it is not Microsoft-signed.
-3. In the tray, open the 2024 mouse → **KMDF**. Confirm UAC.
-4. If the wheel is still dead, remove the mouse in Bluetooth settings and pair it again.
+Download **Magic Tray** from [Releases](https://github.com/LesleyMurfin/magic-tray/releases/latest) and run it. Battery percent appears as soon as the mouse is paired — no driver, no reboot, no admin. If the wheel is still dead, that is expected: the wheel needs a driver.
 
-That is the whole path. Scroll and battery together. Do **not** install “Patched Apple” unless you know you want that experiment.
+**What the wheel needs, honestly**
 
-Older Magic Mouse (lightning / AA): skip this. Use **Boot Camp** in the tray. No Test Mode.
+Scroll on this mouse needs our own **KMDF** driver, and that driver is not Microsoft-signed (not WHQL). Windows will only load it if you put the PC into **Test Mode** and turn **Memory integrity** off — a real security trade-off, plus a permanent desktop watermark. Getting it properly signed so none of that is needed is tracked in [#89](https://github.com/LesleyMurfin/magic-tray/issues/89).
 
+**KMDF is still experimental and you cannot install it from the tray yet.** The driver lives in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), and the piece Magic Tray needs in order to install it has not reached that repository’s `main` branch — it is still an open pull request ([#5](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/5)). Until it lands, choosing **KMDF** in the tray tells you it is unavailable and stops. It will not quietly install something else instead.
+
+So: **battery today, scroll when the driver lands.** Watch [#89](https://github.com/LesleyMurfin/magic-tray/issues/89) if you want to know when that is.
+
+**The three driver choices for this mouse**
+
+- **KMDF** — the recommended one. Scroll **and** battery together. Self-signed, so it needs [Test Mode](#test-mode-self-signed-0323-drivers). Not installable from the tray yet, as above.
+- **Patched Apple** — an old experiment, kept only for the record. Scroll **or** battery, never both at the same time. Also self-signed, so also needs Test Mode. **Do not pick this** unless you specifically want the experiment.
+- **Stock Windows** — Windows’ own Bluetooth mouse driver. Pointer only: no scroll. Battery percent usually still reads. No Test Mode, and it removes our driver.
+
+Side-by-side: [what to pick](#magic-mouse-2024-0323--what-to-pick).
+
+**Older Magic Mouse** (Lightning or AA batteries): none of the above applies to you. Pick **Boot Camp** in the tray. It is signed by Apple, so there is no Test Mode and no watermark.
+
+---
 
 ## Features
 
@@ -135,7 +147,7 @@ Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMo
 
 | Model | PID | Recommended driver | Scroll | Battery | Tested |
 |---|---|---|---|---|---|
-| Magic Mouse 2024 (USB-C, **Magic Mouse v3**) | `0x0323` | **KMDF** from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | Yes | Yes | [yes — KMDF](docs/TESTED.md) |
+| Magic Mouse 2024 (USB-C, **Magic Mouse v3**) | `0x0323` | **KMDF** from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) | Yes, with [Test Mode](#test-mode-self-signed-0323-drivers) | Yes | [yes — KMDF](docs/TESTED.md) |
 | Magic Mouse v1 | `0x030D` | **Boot Camp** [tealtadpole INF](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
 | Magic Mouse v2 | `0x0269` | Same Boot Camp INF | Yes | Yes | — |
 | Apple Wireless Mouse | `0x0310` | Same Boot Camp INF | Yes | Yes | — |
@@ -144,10 +156,11 @@ Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMo
 
 | Choice in the tray | Wheel | Battery | Test Mode | Who it is for |
 |---|---|---|---|---|
-| **KMDF** | Yes | Yes | Yes | Almost everyone |
-| Stock Windows | No | Often yes | No | Pointer only; uninstalls our driver |
-| Patched Apple | Wheel **or** battery, never both | | Yes | Old experiment. Do not pick this. |
+| **KMDF** | Yes | Yes | Required | Almost everyone. Recommended, but [not installable from the tray yet](#just-want-a-2024-magic-mouse-driver). |
+| Patched Apple | Yes, but only in its scroll mode | Yes, but only in its battery mode | Required | Old experiment. Wheel and battery are mutually exclusive — one or the other, never both. Do not pick this. |
+| Stock Windows | No | Often yes | Not needed | Pointer only. Hands the mouse back to Windows and removes our driver. |
 
+---
 
 ## Supported keyboards
 
@@ -187,34 +200,46 @@ Install the Boot Camp INF from [tealtadpole/MagicMouse2DriversWin11x64](https://
 
 ### Magic Mouse 2024 / v3 (`0323`)
 
-The tealtadpole INF does not cover PID `0323`. Magic Tray clones [LesleyMurfin/magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `main`.
+The tealtadpole Boot Camp INF does **not** cover PID `0323`. Scroll on this mouse needs the separate **KMDF** driver from [LesleyMurfin/magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), which is self-signed and therefore needs [Test Mode](#test-mode-self-signed-0323-drivers).
 
-The usual Boot Camp INF does **not** cover this mouse. Pick **KMDF** in the tray.
+**Availability.** The tray’s KMDF install step does not work yet. The installer entrypoint it looks for is still an open pull request on the driver repo ([#5](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/5)) and is not on that repo’s `main` branch. Pick **KMDF** today and the tray reports exactly that, then stops — it never installs a different driver instead, and it never rebinds your mouse silently.
 
-Magic Tray downloads the installer from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) and runs it after UAC. If that installer is not on the driver’s `main` branch yet ([PR #5](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/pull/5)), the tray **tells you and stops**. It will not silently install a different driver.
+When that entrypoint does land, the tray will take a snapshot of the driver repo’s `main` branch and run the installer after you confirm UAC. That snapshot is the current branch tip rather than a pinned, checksum-verified release, which is a further reason KMDF is labelled experimental. Signing the driver properly — which would also retire Test Mode — is tracked in [#89](https://github.com/LesleyMurfin/magic-tray/issues/89).
 
-**Stock Windows** in the tray puts the mouse back on the built-in Bluetooth HID driver. Pointer stays. Wheel goes away. No Test Mode.
+**Stock Windows** hands the mouse back to Windows’ own Bluetooth HID driver. The pointer keeps working, the wheel does not, and no Test Mode is needed. Battery percent usually still reads, but Magic Tray’s dedicated **Battery reads** path needs KMDF.
 
-**Patched Apple** is a leftover binary patch of Apple’s old filter. Wheel and battery fight each other. The tray will not switch you to KMDF if that patcher is missing, and will not switch you to the patcher if KMDF is missing.
+**Patched Apple** is a leftover binary patch of Apple’s old filter driver. It is self-signed too, so it needs the same Test Mode setup as KMDF, and on it scroll and battery are mutually exclusive — you get one or the other, never both. The tray never swaps between these choices on its own: if the driver you picked is missing, it says so and stops.
 
-If the wheel still does nothing after KMDF: Bluetooth → remove the mouse → pair again. Windows sometimes keeps the old binding.
+If the wheel still does nothing after a KMDF install succeeds: Bluetooth settings → remove the mouse → pair it again. Windows sometimes keeps the old binding.
 
-### Test Mode (0323 KMDF)
+### Test Mode (self-signed 0323 drivers)
 
-Our 2024 driver is **self-signed**, not WHQL. Windows will not load it until Test Mode is on and Memory Integrity is off. The desktop watermark “Test Mode” is expected. Magic Utilities’ paid drivers are WHQL and skip this; we cannot.
+Both 0323 driver choices — **KMDF** and **Patched Apple** — are **self-signed**, not WHQL. Windows will not load either of them until Test Mode is on and Memory integrity is off. The “Test Mode” desktop watermark is expected. Magic Utilities’ paid drivers are WHQL and skip all of this; ours cannot yet ([#89](https://github.com/LesleyMurfin/magic-tray/issues/89)).
 
 You do **not** need the F7 “Disable driver signature enforcement” boot.
 
-Do this **before** you click KMDF:
+**Read this before you change anything.** These are real, machine-wide trade-offs:
 
-1. Elevated Command Prompt: `bcdedit /set testsigning on`
-2. Windows Security → Device security → Core isolation → **Memory integrity** = Off
-3. Reboot (desktop watermark “Test Mode” is expected)
-4. Run the installer or confirm the tray Driver radio
+- **Secure Boot blocks Test Mode.** With Secure Boot on, `bcdedit /set testsigning on` is refused. Turning Secure Boot off in firmware is the only way round it, and some games with anti-cheat and some dual-boot setups stop working afterwards.
+- **BitLocker.** Changing boot settings can trigger a BitLocker recovery prompt on the next start. Suspend BitLocker first (Control Panel → **BitLocker Drive Encryption** → Suspend protection) and have your recovery key to hand.
+- **Memory integrity off lowers your security** for as long as it stays off, not just while you install.
 
-To leave Test Mode: `bcdedit /set testsigning off`, then reboot. Turning it off while a self-signed 0323 driver is still bound will stop scroll.
+Do this **before** you pick **KMDF** or **Patched Apple**:
 
-v1/v2 Boot Camp installs skip this section.
+1. Suspend BitLocker and note your recovery key.
+2. Elevated Command Prompt: `bcdedit /set testsigning on`
+3. Windows Security → Device security → Core isolation → **Memory integrity** = Off
+4. Reboot. The “Test Mode” desktop watermark is expected.
+5. Now pick the driver in the tray and confirm UAC.
+
+**Putting the PC back to normal.** First switch the mouse to **Stock Windows** (or otherwise remove the self-signed driver) — turning Test Mode off while a self-signed 0323 driver is still bound just kills scroll, because Windows refuses to load it. Then:
+
+1. Elevated Command Prompt: `bcdedit /set testsigning off`
+2. Windows Security → Device security → Core isolation → **Memory integrity** = **On**
+3. Re-enable Secure Boot in firmware if you turned it off.
+4. Reboot so all of that takes effect, then resume BitLocker protection if it is still suspended.
+
+v1/v2 Boot Camp installs skip this section entirely: that INF is catalog-signed by Apple and needs no Test Mode.
 
 ---
 
@@ -224,12 +249,12 @@ The 2024 Magic Mouse (v3, USB-C, PID `0323`) is not in Apple’s old Boot Camp I
 
 **Research and the KMDF fix live in a separate repo** (this tray repo does not vendor kernel sources):
 
-- [LesleyMurfin/magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) — KMDF installer + patched Apple path
+- [LesleyMurfin/magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) — the KMDF driver and the patched Apple path
 - [HID research (RID 0x90, collections, DSM)](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md)
 - [Bug analysis (Mode A/B)](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md)
 - [Mode A/B diagram](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/diagrams/diagram-mode-ab.md)
 
-Magic Tray’s recommended path is KMDF from that repo: scroll **and** battery (Input `0x90` on COL02).
+Magic Tray’s recommended path is KMDF from that repo: scroll **and** battery (Input `0x90` on COL02), once its installer entrypoint reaches `main`.
 
 ---
 
@@ -262,7 +287,7 @@ Re-pairing the keyboard erases the patch. Until it is applied, the tray shows th
 ## FAQ
 
 **Does Magic Mouse 2024 (Magic Mouse v3) work on Windows 11?**  
-Yes. Use Magic Tray 1.1.0 and install the KMDF driver from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix). That path needs Test Mode and Memory Integrity off. Battery is HID Input `0x90` on COL02.
+Battery, yes — Magic Tray 1.1.0 shows the percent with no driver at all. Scroll needs the **KMDF** driver from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), which is self-signed and so needs [Test Mode](#test-mode-self-signed-0323-drivers) with Memory integrity off — and its tray install step is [not available yet](#just-want-a-2024-magic-mouse-driver). Battery is HID Input `0x90` on COL02.
 
 **Is this Magic Utilities?**  
 No. Free MIT. No subscription. No MU binaries. No gesture / trackpad / media-key suite.
