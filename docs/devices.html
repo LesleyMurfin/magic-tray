@@ -34,14 +34,18 @@
     <article id="content" class="primary">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · catalog</p>
-        <h1>Every Magic device is a different Windows problem</h1>
-        <p class="lead">Apple’s Windows story stopped at Boot Camp. Later PIDs are different HID layouts, power sources, and missing INF lines. We built a tray that tells the truth per PID — not one kernel driver for the whole line, and not a paid clone of Magic Utilities.</p>
+        <h1>Each Apple device needs its own answer</h1>
+        <ul class="facts">
+          <li>A mouse, a keyboard, and a trackpad are not the same thing to Windows.</li>
+          <li>Even two Magic Mice can be different if one is old and one is 2024.</li>
+          <li>We do not pretend one driver fixes everything. We do not copy Magic Utilities.</li>
+        </ul>
       </header>
 
       <h2>Side by side</h2>
       <table>
         <thead>
-          <tr><th>Device</th><th>PID</th><th>Power</th><th>Scroll on Windows</th><th>Battery in Magic Tray</th></tr>
+          <tr><th>Device</th><th>Windows name</th><th>Power</th><th>Scroll</th><th>Battery in the tray</th></tr>
         </thead>
         <tbody>
           <tr><td>Magic Mouse v1</td><td><code>030D</code></td><td>AA</td><td>Boot Camp INF</td><td>HID 0x90 / Feature if exposed</td></tr>
@@ -52,7 +56,11 @@
           <tr><td>Trackpad 1 / 2 / 2024</td><td><code>030E</code> / <code>0265</code> / <code>0324</code></td><td>AA / Lightning / USB-C</td><td>We do not ship a trackpad driver</td><td>HID when Windows exposes it</td></tr>
         </tbody>
       </table>
-      <p>Not sure which one you are holding? <a href="drivers.html#identify">Tell versions apart</a>. Catalog in code: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">KnownMice</a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">KnownKeyboards</a>. Reports: <a href="TESTED.md">TESTED.md</a>.</p>
+      <ul class="facts">
+        <li>Not sure which one you have? <a href="drivers.html#identify">Look at the bottom</a>.</li>
+        <li>The list we actually ship is in code: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">mice</a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">keyboards</a>.</li>
+        <li>Who tested what: <a href="TESTED.md">TESTED.md</a>.</li>
+      </ul>
 
       <h2>Mice</h2>
       <div class="ident-grid cols-4">
@@ -106,26 +114,14 @@
         </div>
       </div>
 
-      <h2>Why we went this way</h2>
-      <div class="grid grid-2">
-        <div class="card">
-          <h3>v1/v2 already have a signed package</h3>
-          <p>Replacing Boot Camp with self-signed KMDF would force Test Mode on people who do not need it.</p>
-        </div>
-        <div class="card">
-          <h3>v3 is a new PID and a different collection layout</h3>
-          <p>Forcing applewirelessmouse onto <code>0323</code> is the patched-Apple path: scroll vs battery, still unsigned. KMDF is the rewrite we could own. <a href="v3.html">Why v3 is hard</a>.</p>
-        </div>
-        <div class="card">
-          <h3>Keyboards are not missing a mouse filter</h3>
-          <p>The descriptor is Input-only; Windows cannot poll battery until an SDP registry patch. That is not a <code>.sys</code>.</p>
-        </div>
-        <div class="card">
-          <h3>Trackpad gestures are a product</h3>
-          <p>MU sells that. We ship battery rows only so we do not pretend we cloned it.</p>
-        </div>
-      </div>
-      <p>In vs out vs MU: <a href="DESIGN-mu-free-parity.md">DESIGN-mu-free-parity.md</a>. If you need WHQL + Secure Boot on a 2024 mouse today, MU is still the commercial signed-driver answer. If you need battery + mouse scroll without a subscription, this is what we could ship honestly — and <a href="funding.html">stars plus an EV cert</a> are how the v3 filter becomes a normal Windows driver.</p>
+      <h2>Why it is split this way</h2>
+      <ul class="facts">
+        <li>Old mice already have a signed Apple driver. Replacing it would make people turn on Test Mode for no reason.</li>
+        <li>The 2024 mouse is a new Windows name. The old Apple file does not list it.</li>
+        <li>Keyboards already type. We only flip a setting so battery % shows up.</li>
+        <li>Trackpad gestures are a whole product. We only show battery.</li>
+        <li>If you need a paid, Microsoft-signed 2024 mouse driver today, Magic Utilities still sells that. We will not kill scroll if you stop paying, because we do not charge for scroll.</li>
+      </ul>
     </article>
 
     <aside class="rail">

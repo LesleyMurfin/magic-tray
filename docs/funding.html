@@ -34,12 +34,20 @@
     <article id="content" class="primary">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · signing</p>
-        <h1>If this saved you a subscription, star both repos</h1>
-        <p class="lead">Stars are the free signal that these projects are used. The paid gap is a public code-signing cert so the <strong>Magic Mouse v3 (2024)</strong> KMDF driver can load with Secure Boot on — not a Magic Utilities-style trial that kills scroll.</p>
+        <h1>If this helped, star the projects</h1>
+        <ul class="facts">
+          <li>A star on GitHub is free and tells other people the project is used.</li>
+          <li>The 2024 mouse driver is not signed by Microsoft yet, so Windows makes you turn on Test Mode.</li>
+          <li>Money would buy a real signing certificate so Test Mode can go away — for everyone, not as a monthly fee.</li>
+        </ul>
       </header>
 
-      <h2 id="goal">The goal</h2>
-      <p><strong>EV code-signing certificate + Microsoft Hardware Dev Center attestation</strong> for <code>MagicMouseDriver</code> in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>. Then Magic Tray’s KMDF install no longer needs Test Mode. The tray stays MIT. The signed <code>.sys</code> is published for everyone — no license check in the filter.</p>
+      <h2 id="goal">What we want</h2>
+      <ul class="facts">
+        <li>A proper code-signing certificate, then Microsoft to sign the 2024 mouse driver.</li>
+        <li>After that, the extra scroll piece loads on a normal Windows 11 PC.</li>
+        <li>The tray stays free. The driver stays free. Scroll does not turn off if money stops.</li>
+      </ul>
       <div class="grid grid-2">
         <div class="card">
           <h3>GitHub Sponsors</h3>
@@ -82,12 +90,12 @@
         </tbody>
       </table>
 
-      <h2 id="msft">Why Microsoft does not ship an OSS Apple mouse driver</h2>
-      <ul class="plain">
-        <li>There is no in-box <code>hid-magicmouse</code> on Windows. Boot Camp was Apple’s dump; 0323 never landed.</li>
-        <li>Linux can merge hid-magicmouse in-tree. Windows kernel mode needs a paid EV token and Partner Center. Community <code>.sys</code> files stay Test Mode toys.</li>
-        <li>HVCI / Secure Boot are default on new Windows 11 PCs. The 2010s “ignore the INF warning” path is gone.</li>
-        <li>Microsoft will not WHQL a device Apple does not submit. OSS cannot sign as Apple. Attestation is the developer path they did add — still EV + a legal entity.</li>
+      <h2 id="msft">Why Windows does not just include this</h2>
+      <ul class="facts">
+        <li>Windows has no built-in Magic Mouse driver like Linux does.</li>
+        <li>Apple’s old Boot Camp file never listed the 2024 mouse.</li>
+        <li>A community driver cannot pretend to be Apple. Microsoft will not logo it for free.</li>
+        <li>New PCs turn on extra security by default, so unsigned drivers are blocked.</li>
       </ul>
       <p>Research: <a href="v3.html">Why v3 is hard</a>. Practical install: <a href="drivers.html">Which driver</a>.</p>
     </article>
