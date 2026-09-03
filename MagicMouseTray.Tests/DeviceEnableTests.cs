@@ -91,6 +91,30 @@ public class DeviceEnableTests
     }
 
     [Fact]
+    public void Script_ReadsAndLogsContainerIdPerInstance()
+    {
+        foreach (var enable in new[] { false, true })
+        {
+            var script = DeviceEnable.BuildScript("030d", enable);
+            // ContainerID is read off each matched instance key...
+            Assert.Contains("GetValue('ContainerID')", script, StringComparison.Ordinal);
+            // ...recorded per instance id...
+            Assert.Contains("$containers[$full] = $container", script, StringComparison.Ordinal);
+            // ...and logged with the instance the verb is applied to.
+            Assert.Contains(
+                "Write-Host \"DEVICE_ENABLE $verb $id container=$($containers[$id])\"",
+                script,
+                StringComparison.Ordinal);
+            // Distinct containers are logged so support sees every physical
+            // device a per-PID row touched.
+            Assert.Contains(
+                "Write-Host \"DEVICE_ENABLE containers=$($distinct -join ',')\"",
+                script,
+                StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void DisableScript_SortsBthenumLast()
     {
         var script = DeviceEnable.BuildScript("030d", enable: false);

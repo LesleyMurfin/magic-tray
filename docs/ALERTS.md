@@ -48,6 +48,8 @@ Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm,
 
 Cancelling UAC leaves it enabled. If no matching device is found, the tray reports failure and leaves the box checked.
 
+Rows are per model, not per paired device. If you have **two of the same model** paired to this PC — two Magic Mouse v1, say — they share one row, and unchecking it disables **both**. The log records the `ContainerID` of every device instance that was touched, so `DEVICE_ENABLE containers=…` in the log tells you exactly which physical devices changed.
+
 
 ## Report a bug
 

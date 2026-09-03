@@ -76,6 +76,7 @@ $pidA = 'PID_' + $targetPid
 $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
+$containers = @{}
 
 function Test-Vid([string]$n) {
     $low = $n.ToLowerInvariant()
@@ -95,7 +96,16 @@ function Add-Matching([string]$enumerator) {
         $dev = $root.OpenSubKey($sub)
         if (-not $dev) { continue }
         foreach ($inst in $dev.GetSubKeyNames()) {
-            [void]$ids.Add($enumerator + '\' + $sub + '\' + $inst)
+            $full = $enumerator + '\' + $sub + '\' + $inst
+            $container = ''
+            $instKey = $dev.OpenSubKey($inst)
+            if ($instKey) {
+                $container = [string]$instKey.GetValue('ContainerID')
+                $instKey.Dispose()
+            }
+            if ([string]::IsNullOrEmpty($container)) { $container = 'unknown' }
+            $containers[$full] = $container
+            [void]$ids.Add($full)
         }
         $dev.Dispose()
     }
@@ -124,9 +134,14 @@ if ($ids.Count -eq 0) {
     exit 1
 }
 
+# One ContainerID per physical device. Rows are per-PID, so two of the same
+# model on one PC appear here together and are toggled together.
+$distinct = @($containers.Values | Sort-Object -Unique)
+Write-Host "DEVICE_ENABLE containers=$($distinct -join ',')"
+
 $failed = 0
 foreach ($id in $ids) {
-    Write-Host "DEVICE_ENABLE $verb $id"
+    Write-Host "DEVICE_ENABLE $verb $id container=$($containers[$id])"
     & pnputil.exe "/$verb" "$id"
     if ($LASTEXITCODE -ne 0) { $failed++ }
 }
@@ -172,6 +187,7 @@ exit 0
             try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
             throw new InvalidOperationException("pnputil enable/disable timed out.");
         }
+        Logger.Log($"DEVICE_ENABLE pid={pid} exit={p.ExitCode}");
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"pnputil exited {p.ExitCode}.");
     }
