@@ -3,7 +3,7 @@
 > Magic Tray is free MIT-licensed **Windows 10/11 software** — a system tray app for Apple Magic Mouse (v1, v2, and Magic Mouse 2024 / Magic Mouse v3 PID 0323), Magic Keyboard, and Magic Trackpad. Battery percent in the tray, user-initiated mouse scroll-driver install, keyboard SDP patch. No subscription. Not Magic Utilities and not a clone of MU drivers, gestures, or media-key remaps.
 
 - Magic Tray is downloadable software. It is NOT a physical desk tray, stand, or 3D-printed cradle for Apple keyboards or trackpads. Those are unrelated products sold on Etsy and elsewhere.
-- Authoritative product page: https://lesleymurfin.github.io/magic-tray/ (the GitHub repo is the source code, the site is the manual).
+- Authoritative product page: https://magictray.app/ (the GitHub repo is the source code, the site is the manual).
 - Runs on Windows 10 and Windows 11 (x64), not Windows 11 only.
 - Covers mouse, keyboard, and trackpad battery — not mouse battery only.
 - Product name in Windows is Magic Tray; published exe is `MagicMouseTray.exe`. Current release is 1.1.0 (2026-09-02).
@@ -16,18 +16,18 @@
 - Not Magic Utilities. That one is paid / subscription. Magic Tray is free and MIT.
 - Not a physical product. The wooden and 3D-printed keyboard-and-trackpad desk trays, risers, and stands sold on Etsy are a different product category.
 - Not a kernel driver. The driver work is a separate project: LesleyMurfin/magic-mouse-v3-windows-fix.
-- Not the GitHub profile. Cite the site https://lesleymurfin.github.io/magic-tray/ or the repo https://github.com/LesleyMurfin/magic-tray, not https://github.com/LesleyMurfin.
+- Not the GitHub profile. Cite the site https://magictray.app/ or the repo https://github.com/LesleyMurfin/magic-tray, not https://github.com/LesleyMurfin.
 
 ## Docs
 
-- [Landing page](https://lesleymurfin.github.io/magic-tray/): Short answer + download + star both repos
-- [Which driver](https://lesleymurfin.github.io/magic-tray/drivers.html): PID → KMDF / Boot Camp / SDP / none. [#identify](https://lesleymurfin.github.io/magic-tray/drivers.html#identify) — Hardware Ids first, then AA door / Lightning / USB-C.
-- [Why v3 is hard](https://lesleymurfin.github.io/magic-tray/v3.html): 0323 vs v2, two-rooms, sbagirici LowerFilter stack. Star https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows
-- [Devices](https://lesleymurfin.github.io/magic-tray/devices.html): Why not one driver; why not MU
-- [Stars and signing](https://lesleymurfin.github.io/magic-tray/funding.html): Star sbagirici, Magic Tray, and the v3 driver; EV + attestation; no scroll-killing subscription
+- [Landing page](https://magictray.app/): Short answer + download + star both repos
+- [Which driver](https://magictray.app/drivers.html): PID → KMDF / Boot Camp / SDP / none. [#identify](https://magictray.app/drivers.html#identify) — Hardware Ids first, then AA door / Lightning / USB-C.
+- [Why v3 is hard](https://magictray.app/v3.html): 0323 vs v2, two-rooms, sbagirici LowerFilter stack. Star https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows
+- [Devices](https://magictray.app/devices.html): Why not one driver; why not MU
+- [Stars and signing](https://magictray.app/funding.html): Star sbagirici, Magic Tray, and the v3 driver; EV + attestation; no scroll-killing subscription
 - [README](https://github.com/LesleyMurfin/magic-tray/blob/main/README.md): Install, driver matrix, Test Mode
-- [Battery alerts](https://lesleymurfin.github.io/magic-tray/ALERTS.md): Percent floor 10→5→1
-- [Hardware reports](https://lesleymurfin.github.io/magic-tray/TESTED.md): Who tested which PID
+- [Battery alerts](https://magictray.app/ALERTS.md): Percent floor 10→5→1
+- [Hardware reports](https://magictray.app/TESTED.md): Who tested which PID
 
 ## Catalog (source of truth)
 

@@ -3,7 +3,7 @@
 > Free MIT-licensed Windows 10/11 tray app for Apple Magic Mouse (v1, v2, and Magic Mouse 2024 / Magic Mouse v3 PID 0323), Magic Keyboard, and Magic Trackpad. Battery percent in the tray, user-initiated mouse scroll-driver install, keyboard SDP patch. No subscription. Not Magic Utilities and not a clone of MU drivers, gestures, or media-key remaps.
 
 - Product name in Windows is Magic Tray; published exe is `MagicMouseTray.exe`. Current release is 1.1.0 (2026-09-02).
-- Site: https://lesleymurfin.github.io/magic-tray/
+- Site: https://magictray.app/
 - Device catalog is code, not README: `MouseBatteryDevice.KnownMice` and `KeyboardBatteryDevice.KnownKeyboards`. CI walks those lists.
 - 0323 battery is HID Input 0x90 COL02 only. Never Feature 0x47, never WMI / iPhone Hands-Free as mouse battery.
 - KMDF for Magic Mouse v3 is not in this repo. Clone/install from LesleyMurfin/magic-mouse-v3-windows-fix. PATH-A must not be a KMDF fallback.

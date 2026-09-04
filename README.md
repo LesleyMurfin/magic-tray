@@ -2,15 +2,15 @@
 
 **Free Windows 10/11 app for Apple Magic Mouse, Magic Keyboard, and Magic Trackpad.** Battery percent in the system tray, plus the scroll driver your Magic Mouse actually needs. MIT licensed. No subscription. No trial that kills scroll.
 
-**Documentation and driver guide: [the Magic Tray website](https://lesleymurfin.github.io/magic-tray/)** — [which driver do I need](https://lesleymurfin.github.io/magic-tray/drivers.html), [how to tell your Magic device apart](https://lesleymurfin.github.io/magic-tray/drivers.html#identify), [why Magic Mouse 2024 is different](https://lesleymurfin.github.io/magic-tray/v3.html).
+**Documentation and driver guide: [the Magic Tray website](https://magictray.app/)** — [which driver do I need](https://magictray.app/drivers.html), [how to tell your Magic device apart](https://magictray.app/drivers.html#identify), [why Magic Mouse 2024 is different](https://magictray.app/v3.html).
 
 Magic Tray is software you install on Windows. It is not a desk tray, stand, or cradle for Apple keyboards.
 
 Magic Tray is a Windows tray app for **Apple Magic Mouse** (v1, v2, and **Magic Mouse 2024 / Magic Mouse v3**, PID `0323`), **Magic Keyboard**, and **Magic Trackpad**. It shows battery percent in the tray and can install a scroll driver you confirm. It is a free alternative to [Magic Utilities](https://magicutilities.net/) — not a clone of MU’s proprietary drivers, gestures, trackpad suite, or key remaps.
 
-Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0) · [Website](https://lesleymurfin.github.io/magic-tray/)
+Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0) · [Website](https://magictray.app/)
 
-If this saved you a paid subscription, **star both repos**: [Magic Tray](https://github.com/LesleyMurfin/magic-tray) and the [v3 Windows driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix). Goal: a publicly signed KMDF so Test Mode goes away — [stars & signing](https://lesleymurfin.github.io/magic-tray/funding.html).
+If this saved you a paid subscription, **star both repos**: [Magic Tray](https://github.com/LesleyMurfin/magic-tray) and the [v3 Windows driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix). Goal: a publicly signed KMDF so Test Mode goes away — [stars & signing](https://magictray.app/funding.html).
 
 ![Windows 11 system tray with Magic Tray](docs/screenshot-tray.png)
 
@@ -39,9 +39,9 @@ If this saved you a paid subscription, **star both repos**: [Magic Tray](https:/
 - [Diagnostics](#diagnostics)
 - [Releases](#releases)
 - [License](#license)
-- [Which driver](https://lesleymurfin.github.io/magic-tray/drivers.html)
-- [Why v3 is hard](https://lesleymurfin.github.io/magic-tray/v3.html)
-- [Stars & signing](https://lesleymurfin.github.io/magic-tray/funding.html)
+- [Which driver](https://magictray.app/drivers.html)
+- [Why v3 is hard](https://magictray.app/v3.html)
+- [Stars & signing](https://magictray.app/funding.html)
 - [llms.txt](llms.txt) (for agents)
 
 ---
@@ -343,7 +343,7 @@ CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX
 
 ## Credits
 
-The LowerFilter sandwich (app → Windows HID → **filter** → Bluetooth → mouse) is from [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows). That Architecture diagram is why the v1/v2 scroll path is understandable. **Please star their repo.** We redraw it on [v3.html](https://lesleymurfin.github.io/magic-tray/v3.html#stack). Their installer is for v1/v2 with Apple’s signed `applewirelessmouse.sys`. Magic Mouse 2024 (`0323`) still uses KMDF from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix).
+The LowerFilter sandwich (app → Windows HID → **filter** → Bluetooth → mouse) is from [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows). That Architecture diagram is why the v1/v2 scroll path is understandable. **Please star their repo.** We redraw it on [v3.html](https://magictray.app/v3.html#stack). Their installer is for v1/v2 with Apple’s signed `applewirelessmouse.sys`. Magic Mouse 2024 (`0323`) still uses KMDF from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix).
 
 v1/v2 Boot Camp INF packaging: [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64).
 
