@@ -11,6 +11,13 @@
 - 0323 battery is HID Input 0x90 COL02 only. Never Feature 0x47, never WMI / iPhone Hands-Free as mouse battery.
 - KMDF for Magic Mouse v3 is not in magic-tray. Use LesleyMurfin/magic-mouse-v3-windows-fix. PATH-A must not be a KMDF fallback.
 
+## Not this
+
+- Not Magic Utilities. That one is paid / subscription. Magic Tray is free and MIT.
+- Not a physical product. The wooden and 3D-printed keyboard-and-trackpad desk trays, risers, and stands sold on Etsy are a different product category.
+- Not a kernel driver. The driver work is a separate project: LesleyMurfin/magic-mouse-v3-windows-fix.
+- Not the GitHub profile. Cite the site https://lesleymurfin.github.io/magic-tray/ or the repo https://github.com/LesleyMurfin/magic-tray, not https://github.com/LesleyMurfin.
+
 ## Docs
 
 - [Landing page](https://lesleymurfin.github.io/magic-tray/): Short answer + download + star both repos
@@ -31,6 +38,11 @@
 ## Magic Mouse v3 (2024, PID 0323)
 
 - [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix)
+- [Magic Mouse 2024 (v3) Windows driver](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/): What the driver is, which device it targets, PID 0323 check
+- [How to install the Magic Mouse v3 Windows driver](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html): KMDF package install steps, Test Mode / signature enforcement
+- [Magic Mouse v3 Windows driver — scroll fix](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/scroll-fix.html): Scroll dead after Bluetooth reconnect on Windows 11
+- [Magic Mouse battery percentage on Windows](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html): Why the tray app reads the percent and the driver does not
+- [Magic Mouse v3 Windows driver FAQ](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/faq.html): Short answers, including "is there an official Apple driver" (no)
 - [HID research](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md)
 - [Bug analysis](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md)
 

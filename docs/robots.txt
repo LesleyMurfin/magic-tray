@@ -3,4 +3,99 @@ Allow: /
 Disallow: /DESIGN-
 Disallow: /STRIPE-SETUP.md
 
+User-agent: GPTBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Claude-User
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Applebot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Bingbot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: CCBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: meta-externalagent
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: DuckDuckBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: YandexBot
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
+User-agent: Bytespider
+Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
+
 Sitemap: https://lesleymurfin.github.io/magic-tray/sitemap.xml

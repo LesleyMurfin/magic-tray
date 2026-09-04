@@ -24,6 +24,13 @@ alternative meaning. Three separate problems:
 - `docs/robots.txt` — internal `DESIGN-*.md` and `STRIPE-SETUP.md` are no longer crawlable. They
   contradict shipped behaviour and were competing with the real docs.
 - `README.md` — the website is linked in the first three lines with descriptive anchor text.
+- `docs/robots.txt` — explicit `Allow: /` stanzas for 19 AI and answer-engine crawlers (GPTBot,
+  ClaudeBot, PerplexityBot, Applebot, CCBot, and the rest). Each stanza repeats the two `Disallow:`
+  lines, because a matched user-agent group replaces the wildcard group instead of adding to it.
+- Every page — a `WebPage` plus `BreadcrumbList`, and an `ItemList` of PID → driver path on
+  `docs/drivers.html`, all referencing the `#app` and `#site` ids declared on the homepage.
+- Outbound links — keyword-bearing anchors from the homepage, `v3.html`, `drivers.html`, and
+  `devices.html` to the Magic Mouse v3 driver site, which is the other half of this entity.
 
 ## What only the repo owner can do
 
