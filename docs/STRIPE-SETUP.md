@@ -13,4 +13,4 @@ Use this file only if you also want a <code>buy.stripe.com</code> link. Cards ne
 5. Copy `https://buy.stripe.com/…`.
 6. Tell an agent: replace `.github/FUNDING.yml` `custom:` with that URL, and put the same href on `docs/funding.html` as the primary CTA.
 
-Until step 5 exists, FUNDING.yml points at https://lesleymurfin.github.io/magic-tray/funding.html (stars + goal). Do not commit Stripe secret keys.
+Until step 5 exists, FUNDING.yml points at https://magictray.app/funding.html (stars + goal). Do not commit Stripe secret keys.
