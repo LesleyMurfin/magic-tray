@@ -7,20 +7,28 @@ using System.Text.RegularExpressions;
 
 namespace MagicMouseTray;
 
+/// <summary>
+/// One row of the report device table: display name, PID, bound driver, battery text.
+/// </summary>
 internal readonly record struct BugReportDevice(
     string Name,
     string Pid,
     string Driver,
     string Battery);
 
-// Builds a MAC-redacted diagnostic snapshot and a GitHub issue draft URL.
-// Does not call the GitHub API — the user submits the draft while logged in.
+/// <summary>
+/// Builds a MAC-redacted diagnostic snapshot and a GitHub issue draft URL.
+/// Does not call the GitHub API — the user submits the draft while logged in.
+/// </summary>
 internal static class BugReport
 {
     internal const int LogTailLines = 40;
     internal const int MaxUrlChars = 7000;
     internal const string NewIssueBase = "https://github.com/LesleyMurfin/magic-tray/issues/new";
 
+    /// <summary>
+    /// Informational assembly version, falling back to the numeric version, then "unknown".
+    /// </summary>
     internal static string AppVersion()
     {
         var asm = Assembly.GetExecutingAssembly();
@@ -29,11 +37,14 @@ internal static class BugReport
             ?? "unknown";
     }
 
+    /// <summary>Windows build string as reported by the runtime.</summary>
     internal static string OsDescription() => RuntimeInformation.OSDescription;
 
-    // Scrubs everything that identifies the machine or its owner: Bluetooth
-    // addresses, Windows profile paths, and the local account/host names. The
-    // result is pasted into a PUBLIC GitHub issue, so this is load-bearing.
+    /// <summary>
+    /// Scrubs everything that identifies the machine or its owner: Bluetooth
+    /// addresses, Windows profile paths, and the local account/host names. The
+    /// result is pasted into a PUBLIC GitHub issue, so this is load-bearing.
+    /// </summary>
     internal static string Redact(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -49,9 +60,15 @@ internal static class BugReport
         return text;
     }
 
-    // Account and host names have no shape to match, so match the literals.
+    /// <summary>
+    /// Literal account and host name patterns — those values have no shape to match.
+    /// </summary>
     static readonly (Regex Pattern, string Placeholder)[] LocalIdentifiers = BuildLocalIdentifiers();
 
+    /// <summary>
+    /// Collects the local account and host names into replace patterns, skipping
+    /// blanks and case-insensitive duplicates.
+    /// </summary>
     static (Regex, string)[] BuildLocalIdentifiers()
     {
         var raw = new List<(string Value, string Placeholder)>(3);
@@ -60,14 +77,12 @@ internal static class BugReport
         Add(SafeEnv(() => Environment.UserDomainName), "<host>");
         // Longest first, so "lesley-pc" is not half-eaten by "lesley".
         return raw.OrderByDescending(v => v.Value.Length)
-            .Select(v => (new Regex(Regex.Escape(v.Value),
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), v.Placeholder))
+            .Select(v => (LocalIdentifierRegex(v.Value), v.Placeholder))
             .ToArray();
 
         void Add(string? value, string placeholder)
         {
-            // Under 3 chars a literal replace would shred unrelated log text.
-            if (string.IsNullOrWhiteSpace(value) || value.Length < 3)
+            if (string.IsNullOrWhiteSpace(value))
                 return;
             foreach (var existing in raw)
                 if (string.Equals(existing.Value, value, StringComparison.OrdinalIgnoreCase))
@@ -76,6 +91,21 @@ internal static class BugReport
         }
     }
 
+    /// <summary>
+    /// Pattern redacting one local identifier. Values of 3+ chars replace as a
+    /// substring; one- and two-character values such as "JD" or "PC" match only a
+    /// whole delimited token, so "JSON" and "PCIe" stay intact.
+    /// </summary>
+    internal static Regex LocalIdentifierRegex(string value)
+    {
+        var escaped = Regex.Escape(value);
+        var options = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+        if (value.Length >= 3)
+            return new Regex(escaped, options);
+        return new Regex($@"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])", options);
+    }
+
+    /// <summary>Reads an environment value, returning null when the lookup throws.</summary>
     static string? SafeEnv(Func<string> read)
     {
         try
@@ -88,6 +118,11 @@ internal static class BugReport
         }
     }
 
+    /// <summary>
+    /// Returns the last <paramref name="lines"/> lines of <paramref name="path"/>,
+    /// redacted. Streams the file so a rolled 1 MB debug.log is never fully
+    /// allocated, and returns "" for a missing or unreadable log.
+    /// </summary>
     internal static string ReadLogTail(string path, int lines)
     {
         if (lines <= 0 || string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -117,6 +152,9 @@ internal static class BugReport
         }
     }
 
+    /// <summary>
+    /// Merges driver health and battery readings into one report row per PID.
+    /// </summary>
     internal static List<BugReportDevice> Collect(
         IReadOnlyList<DeviceDriverHealth> health,
         IReadOnlyDictionary<string, (int Pct, DeviceKind Kind, string Pid)> batteries)
@@ -154,6 +192,9 @@ internal static class BugReport
         return rows;
     }
 
+    /// <summary>
+    /// Renders the redacted bug-report body: environment, device table, and log tail.
+    /// </summary>
     internal static string FormatMarkdown(
         string version,
         string os,
@@ -200,6 +241,9 @@ internal static class BugReport
         return Redact(sb.ToString());
     }
 
+    /// <summary>
+    /// Issue title naming the first device whose driver state is not healthy.
+    /// </summary>
     internal static string IssueTitle(IReadOnlyList<BugReportDevice> devices, string version)
     {
         if (devices != null)
@@ -217,8 +261,12 @@ internal static class BugReport
         return $"bug: Magic Tray {version}";
     }
 
+    /// <summary>Issue title for a feature request.</summary>
     internal static string FeatureTitle(string version) => $"feat: Magic Tray {version}";
 
+    /// <summary>
+    /// Renders the feature-request body: prompts plus version, with no diagnostics.
+    /// </summary>
     internal static string FormatFeatureMarkdown(string version, string os)
     {
         var sb = new StringBuilder();
@@ -237,6 +285,9 @@ internal static class BugReport
         return Redact(sb.ToString());
     }
 
+    /// <summary>
+    /// First self-help hint matching the collected devices, or "" when none applies.
+    /// </summary>
     internal static string TroubleshootHint(IReadOnlyList<BugReportDevice>? devices)
     {
         if (devices == null)
@@ -255,9 +306,12 @@ internal static class BugReport
         return "";
     }
 
-    // Bounded, fully percent-encoded ?labels=&title=&body= draft URL. Browsers
-    // and GitHub reject very long URLs, so the body is clipped to MaxUrlChars
-    // measured on the ENCODED text (the full report is on the clipboard).
+    /// <summary>
+    /// Bounded, fully percent-encoded ?labels=&amp;title=&amp;body= draft URL. Browsers
+    /// and GitHub reject very long URLs, so the body is clipped to
+    /// <see cref="MaxUrlChars"/> measured on the ENCODED text (the full report is
+    /// on the clipboard).
+    /// </summary>
     internal static string IssueUrl(string title, string body, string label = "bug")
     {
         var prefix = $"{NewIssueBase}?labels={Uri.EscapeDataString(label)}&title={Uri.EscapeDataString(title)}&body=";
@@ -275,6 +329,7 @@ internal static class BugReport
         return prefix + Uri.EscapeDataString(clipped) + encodedNote;
     }
 
+    /// <summary>Health entry for a PID, or null when the checker did not report it.</summary>
     static DeviceDriverHealth? FindHealth(IReadOnlyList<DeviceDriverHealth>? health, string pid)
     {
         if (health == null)
@@ -287,5 +342,6 @@ internal static class BugReport
         return null;
     }
 
+    /// <summary>Battery cell text: a percentage, or "no reading" for sentinels.</summary>
     static string BatteryText(int pct) => pct < 0 ? "no reading" : $"{pct}%";
 }

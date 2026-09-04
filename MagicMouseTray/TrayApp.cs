@@ -299,6 +299,10 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
+    /// <summary>
+    /// Builds the tray context menu, including the Help section entries that open the
+    /// pre-filled bug and feature drafts. Rebuilt state is refreshed on Opening.
+    /// </summary>
     ContextMenuStrip BuildMenu(
         out ToolStripMenuItem startupItem,
         out ToolStripMenuItem batteryReadsItem,
@@ -526,6 +530,10 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
+    /// <summary>
+    /// Opens the folder holding debug.log so a reporter can attach it by hand;
+    /// failures are logged, never surfaced as a dialog.
+    /// </summary>
     void OpenDiagnosticsFolder()
     {
         try
@@ -545,8 +553,12 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
-    // true only when a browser (or the local fallback) actually launched, so
-    // callers can run their own fallback instead of assuming success.
+    /// <summary>
+    /// Opens <paramref name="url"/> in the default browser, then
+    /// <paramref name="localFallback"/> if that throws. Returns true only when a
+    /// browser (or the local fallback) actually launched, so callers can run their
+    /// own fallback instead of assuming success.
+    /// </summary>
     bool OpenHelpUrl(string url, string? localFallback = null)
     {
         try
@@ -578,6 +590,12 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
+    /// <summary>
+    /// Confirms with the user, builds the redacted bug or feature Markdown, copies it
+    /// to the clipboard, and opens the pre-filled GitHub draft. On launch failure it
+    /// logs GITHUB_DRAFT_FAIL and opens the plain issues page instead.
+    /// </summary>
+    /// <param name="feature">true for a feature request, false for a bug report.</param>
     void OpenGitHubDraft(bool feature)
     {
         var caption = feature ? TrayMenu.RequestFeatureLabel : TrayMenu.ReportBugLabel;

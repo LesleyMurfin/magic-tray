@@ -4,8 +4,16 @@ using Xunit;
 
 namespace MagicMouseTray.Tests;
 
+/// <summary>
+/// Covers the diagnostic snapshot that ships to a PUBLIC GitHub issue: privacy
+/// redaction, Markdown shape, title selection, log tailing, and draft URL bounds.
+/// </summary>
 public class BugReportTests
 {
+    /// <summary>
+    /// Bluetooth MAC addresses and Dev_ ids are scrubbed while the 4-digit PID,
+    /// which carries no identity and is needed to triage, survives.
+    /// </summary>
     [Fact]
     public void Redact_ReplacesMacAndDevId_KeepsPid()
     {
@@ -18,6 +26,10 @@ public class BugReportTests
         Assert.Contains("Dev_<mac>", redacted);
     }
 
+    /// <summary>
+    /// The bug body carries version, driver choice, and the device table, and never
+    /// leaks the BTHENUM device instance path.
+    /// </summary>
     [Fact]
     public void FormatMarkdown_HasEnvironmentAndDevices_NoDeviceId()
     {
@@ -34,6 +46,10 @@ public class BugReportTests
         Assert.DoesNotContain("BTHENUM", md);
     }
 
+    /// <summary>
+    /// A PID reported by both the battery poller and the health checker yields one
+    /// merged row, with the device name redacted.
+    /// </summary>
     [Fact]
     public void Collect_MergesBatteryAndHealth_WithoutDeviceId()
     {
@@ -53,6 +69,10 @@ public class BugReportTests
         Assert.DoesNotContain("AABB", rows[0].Name, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The title names the first unhealthy device, so a triager sees the fault and
+    /// not a healthy sibling device.
+    /// </summary>
     [Fact]
     public void IssueTitle_UsesFirstNonOkDriver()
     {
@@ -64,6 +84,7 @@ public class BugReportTests
         Assert.Equal("bug: PID 0323 StockKmdf (Magic Tray 1.1.0)", BugReport.IssueTitle(devices, "1.1.0"));
     }
 
+    /// <summary>A 0323 on stock Windows is told it needs KMDF to get the wheel working.</summary>
     [Fact]
     public void TroubleshootHint_Stock0323_PointsAtKmdf()
     {
@@ -71,6 +92,10 @@ public class BugReportTests
         Assert.Contains("KMDF", BugReport.TroubleshootHint(devices));
     }
 
+    /// <summary>
+    /// A feature request carries the idea prompts and version but no diagnostics -
+    /// no log tail is attached to a request that has no fault to diagnose.
+    /// </summary>
     [Fact]
     public void FormatFeatureMarkdown_HasIdeaAndVersion_NoLog()
     {
@@ -81,6 +106,7 @@ public class BugReportTests
         Assert.Equal("feat: Magic Tray 1.1.0", BugReport.FeatureTitle("1.1.0"));
     }
 
+    /// <summary>A feature draft is labelled enhancement, never bug.</summary>
     [Fact]
     public void IssueUrl_Feature_UsesEnhancementLabel()
     {
@@ -89,6 +115,10 @@ public class BugReportTests
         Assert.DoesNotContain("labels=bug", url);
     }
 
+    /// <summary>
+    /// The draft URL targets the new-issue endpoint with a bug label and a
+    /// percent-encoded body, so GitHub pre-fills the form rather than mangling it.
+    /// </summary>
     [Fact]
     public void IssueUrl_PrefillsBugLabelAndBody()
     {
@@ -101,6 +131,10 @@ public class BugReportTests
         Assert.Contains(Uri.EscapeDataString("hello body"), url);
     }
 
+    /// <summary>
+    /// An oversized body is clipped so the URL stays within the length cap browsers
+    /// and GitHub enforce, and the draft says it was truncated.
+    /// </summary>
     [Fact]
     public void IssueUrl_LongBody_StaysUnderMax()
     {
@@ -110,6 +144,10 @@ public class BugReportTests
         Assert.Contains("truncated", url);
     }
 
+    /// <summary>
+    /// Only the requested number of trailing lines is returned, and the tail is
+    /// redacted before it can reach the issue body.
+    /// </summary>
     [Fact]
     public void ReadLogTail_ReturnsLastLines_Redacted()
     {
@@ -131,6 +169,10 @@ public class BugReportTests
         }
     }
 
+    /// <summary>
+    /// Windows profile paths and the live account and host names are scrubbed; these
+    /// identify the reporter and their machine in a public issue.
+    /// </summary>
     [Fact]
     public void Redact_ScrubsProfilePathAndLocalNames()
     {
@@ -143,12 +185,47 @@ public class BugReportTests
         var user = Environment.UserName;
         var host = Environment.MachineName;
         var env = BugReport.Redact($"DIAG user={user} host={host}");
-        if (user.Length >= 3)
+        if (!string.IsNullOrWhiteSpace(user))
             Assert.DoesNotContain(user, env, StringComparison.OrdinalIgnoreCase);
-        if (host.Length >= 3)
+        if (!string.IsNullOrWhiteSpace(host))
             Assert.DoesNotContain(host, env, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// One- and two-character account or host names ("JD", "PC") are redacted as whole
+    /// delimited tokens only, so ordinary log words like "JSON" and "PCIe" survive.
+    /// </summary>
+    [Fact]
+    public void LocalIdentifierRegex_ShortNames_MatchWholeTokenOnly()
+    {
+        var pc = BugReport.LocalIdentifierRegex("PC");
+        Assert.Equal("host=<host>", pc.Replace("host=PC", "<host>"));
+        Assert.Equal("PCIe", pc.Replace("PCIe", "<host>"));
+
+        var jd = BugReport.LocalIdentifierRegex("JD");
+        Assert.Equal("user=<user>", jd.Replace("user=JD", "<user>"));
+        Assert.Equal("JSON", jd.Replace("JSON", "<user>"));
+
+        var one = BugReport.LocalIdentifierRegex("X");
+        Assert.Equal("user=<user>", one.Replace("user=X", "<user>"));
+        Assert.Equal("Xtra", one.Replace("Xtra", "<user>"));
+    }
+
+    /// <summary>
+    /// Names of three chars or more still replace as substrings, so a host embedded in
+    /// a longer token ("lesley-pc") is still scrubbed.
+    /// </summary>
+    [Fact]
+    public void LocalIdentifierRegex_LongNames_StillSubstring()
+    {
+        var re = BugReport.LocalIdentifierRegex("lesley");
+        Assert.Equal("<user>-pc", re.Replace("lesley-pc", "<user>"));
+    }
+
+    /// <summary>
+    /// The cap is enforced on the ENCODED body with room reserved for the truncation
+    /// note, so an escape-heavy report cannot push the URL over the limit.
+    /// </summary>
     [Fact]
     public void IssueUrl_EncodingHeavyBody_StaysUnderMaxWithNote()
     {
@@ -162,6 +239,10 @@ public class BugReportTests
         Assert.DoesNotContain(" ", url);
     }
 
+    /// <summary>
+    /// A rolled 1 MB log returns exactly the last LogTailLines entries, proving the
+    /// reader streams the file instead of materialising all of it.
+    /// </summary>
     [Fact]
     public void ReadLogTail_LargeLog_ReturnsExactTail()
     {
