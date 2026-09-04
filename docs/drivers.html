@@ -3,16 +3,60 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Which Windows driver? — Magic Tray</title>
-  <meta name="description" content="Match Magic Mouse v1, v2, v3 (2024 PID 0323), Magic Keyboard, or Trackpad to the Windows path Magic Tray uses. How to tell versions apart from Hardware Ids and the charging port.">
+  <title>Which Windows driver does my Apple Magic Mouse need? — Magic Tray</title>
+  <meta name="description" content="Find out which Windows 10/11 driver your Apple Magic Mouse, Magic Keyboard, or Magic Trackpad needs. Read the hardware id in Device Manager, then use Boot Camp for Magic Mouse v1 and v2 or KMDF for Magic Mouse 2024 (PID 0323).">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/drivers.html">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
-  <meta property="og:title" content="Which Windows driver? — Magic Tray">
-  <meta property="og:description" content="v3 KMDF, v1/v2 Boot Camp, keyboard SDP patch, trackpad battery only. Hardware Ids first.">
+  <meta property="og:title" content="Which Windows driver does my Magic Mouse need?">
+  <meta property="og:description" content="Hardware id first, then the right driver: Boot Camp for v1/v2, KMDF for Magic Mouse 2024. Keyboard and trackpad are battery only.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/drivers.html">
   <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html",
+        "name": "Which Windows driver does my Apple Magic Mouse need?",
+        "isPartOf": { "@id": "https://lesleymurfin.github.io/magic-tray/#site" },
+        "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
+        "inLanguage": "en"
+      },
+      {
+        "@type": "HowTo",
+        "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html#identify",
+        "name": "How to tell which Apple Magic device you have on Windows",
+        "description": "Two Magic Mice can look identical. Read the hardware id Windows assigns, then confirm with the charging port on the bottom.",
+        "totalTime": "PT2M",
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Open Device Manager",
+            "text": "Right-click the Windows Start button and choose Device Manager."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Find the Apple device",
+            "text": "Expand Mice and other pointing devices, or Keyboards, and double-click the Apple device."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Read the hardware id",
+            "text": "Open the Details tab and choose Hardware Ids. Read the four characters after PID_ or PID&. For example PID_0323 is the 2024 Magic Mouse."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Confirm with the charging port",
+            "text": "A door for AA batteries means an older device. A skinny Lightning hole means the middle generation. A small oval USB-C hole means the 2024 generation."
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to content</a>

@@ -3,16 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Why Magic Mouse v3 is hard on Windows — research</title>
-  <meta name="description" content="Magic Mouse 2024 (v3, PID 0323) is not in Apple Boot Camp. Windows can collapse HID COL01/COL02 (Mode A vs B). KMDF vs patched applewirelessmouse vs stock HidBth.">
+  <title>Why Magic Mouse 2024 (v3) scrolling breaks on Windows — Magic Tray</title>
+  <meta name="description" content="The 2024 USB-C Apple Magic Mouse is hardware id PID 0323 and is missing from Apple's Boot Camp driver, so Windows loses finger scrolling. Explained in plain language, with the KMDF driver that fixes it.">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/v3.html">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
-  <meta property="og:title" content="Why Magic Mouse v3 is hard on Windows">
-  <meta property="og:description" content="PID 0323 never landed in Boot Camp. Mode A/B HID collapse. Primary sources linked.">
+  <meta property="og:title" content="Why Magic Mouse 2024 (v3) scrolling breaks on Windows">
+  <meta property="og:description" content="PID 0323 is missing from Boot Camp. Windows merges the mouse's two HID collections after idle, so the pointer lives and scroll dies.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/v3.html">
   <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": "https://lesleymurfin.github.io/magic-tray/v3.html",
+        "name": "Why Magic Mouse 2024 (v3) scrolling breaks on Windows",
+        "isPartOf": { "@id": "https://lesleymurfin.github.io/magic-tray/#site" },
+        "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
+        "inLanguage": "en"
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://lesleymurfin.github.io/magic-tray/v3.html#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is the 2024 Magic Mouse the same as Magic Mouse 2 on Windows?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Magic Mouse 2 charges with Lightning and Windows knows it as PID 0269. The 2024 Magic Mouse charges with USB-C and Windows knows it as PID 0323. Apple's Boot Camp driver lists 0269 but not 0323, so the same driver cannot be used."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does Magic Mouse scrolling stop working after the mouse sleeps?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Windows can merge the mouse's two HID collections after Bluetooth idle. The pointer keeps working because it is in the surviving collection, but finger scrolling is gone. Rebooting does not restore it; a filter driver keeps the collections separate."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to content</a>

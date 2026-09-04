@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /DESIGN-
+Disallow: /STRIPE-SETUP.md
 
 Sitemap: https://lesleymurfin.github.io/magic-tray/sitemap.xml
