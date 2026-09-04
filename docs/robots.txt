@@ -3,4 +3,4 @@ Allow: /
 Disallow: /DESIGN-
 Disallow: /STRIPE-SETUP.md
 
-Sitemap: https://lesleymurfin.github.io/magic-tray/sitemap.xml
+Sitemap: https://magictray.app/sitemap.xml
