@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Magic Tray — battery and scroll for Apple Magic devices on Windows</title>
-  <meta name="description" content="Free MIT Windows tray. Battery percent for Magic Mouse, Keyboard, and Trackpad. Scroll for Magic Mouse v1/v2/v3. No subscription.">
+  <title>Magic Tray — free Windows app for Apple Magic Mouse, Keyboard &amp; Trackpad battery</title>
+  <meta name="description" content="Magic Tray is a free Windows 10 and 11 app. It shows Apple Magic Mouse, Magic Keyboard, and Magic Trackpad battery percent in the system tray and installs the scroll driver your Magic Mouse model needs. MIT licensed, no subscription. Software you install — not a desk stand.">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
-  <meta property="og:title" content="Magic Tray — battery and scroll on Windows">
-  <meta property="og:description" content="Free MIT tray for Magic Mouse, Keyboard, and Trackpad. No subscription.">
+  <meta property="og:title" content="Magic Tray — free Windows app for Magic Mouse, Keyboard &amp; Trackpad battery">
+  <meta property="og:description" content="Free Windows 10/11 app. Battery percent in the tray for Magic Mouse, Magic Keyboard, and Magic Trackpad, plus the right Magic Mouse scroll driver. MIT, no subscription.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/">
   <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <meta property="og:image:width" content="1200">
@@ -19,6 +19,99 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="screenshot-tray.png">
   <link rel="stylesheet" href="site.css">
+  <meta property="og:image:alt" content="Magic Tray menu on Windows 11 showing Magic Keyboard, Magic Mouse 2024, and Magic Mouse v1 battery percent">
+  <meta name="application-name" content="Magic Tray">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://lesleymurfin.github.io/magic-tray/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://lesleymurfin.github.io/magic-tray/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "installUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": "https://github.com/LesleyMurfin/magic-tray",
+        "license": "https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE",
+        "isAccessibleForFree": true,
+        "screenshot": "https://lesleymurfin.github.io/magic-tray/screenshot-menu.png",
+        "author": { "@type": "Person", "name": "Lesley Murfin" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "Free Windows 10 and 11 system tray app that shows Apple Magic Mouse, Magic Keyboard, and Magic Trackpad battery percent and installs the correct Magic Mouse scroll driver.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads.",
+        "featureList": [
+          "Battery percent for Apple Magic Mouse v1, v2, and Magic Mouse 2024 (v3)",
+          "Battery percent for Apple Magic Keyboard and Magic Trackpad",
+          "Low battery alerts at 10, 5, and 1 percent",
+          "Installs the Boot Camp scroll driver for Magic Mouse v1 and v2",
+          "Installs the KMDF scroll driver for Magic Mouse 2024 (PID 0323)",
+          "Keyboard battery SDP registry patch"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://lesleymurfin.github.io/magic-tray/#site",
+        "url": "https://lesleymurfin.github.io/magic-tray/",
+        "name": "Magic Tray",
+        "inLanguage": "en",
+        "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
+        "publisher": { "@type": "Person", "name": "Lesley Murfin" }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://lesleymurfin.github.io/magic-tray/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is Magic Tray a physical desk tray for an Apple keyboard?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Magic Tray is free Windows software. It runs in the Windows system tray next to the clock. It is not a wooden or 3D-printed desk tray, stand, or cradle."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Magic Tray work on Windows 10?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Magic Tray runs on Windows 10 and Windows 11, 64-bit."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Magic Tray show Magic Keyboard and Magic Trackpad battery, or only the mouse?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "It shows battery percent for Apple Magic Mouse, Magic Keyboard, and Magic Trackpad. Magic Keyboard battery needs a one-time registry patch that ships with the release."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can Magic Tray fix Magic Mouse scrolling on Windows?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Magic Mouse v1 and v2 use Apple's signed Boot Camp driver. Magic Mouse 2024 (USB-C, hardware id PID 0323) is missing from Boot Camp and uses a KMDF driver instead. Magic Tray installs the one your model needs, only when you confirm."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Magic Tray cost money or need a subscription?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Magic Tray is free and MIT licensed. Scrolling never stops working because a payment stopped."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to content</a>
@@ -179,6 +272,7 @@
 
   <footer class="site-footer">
     <div class="bar">
+      <p>Magic Tray is Windows software — not a desk tray or stand for Apple keyboards.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
       <p>
         <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici</a>
