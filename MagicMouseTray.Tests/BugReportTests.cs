@@ -240,6 +240,26 @@ public class BugReportTests
     }
 
     /// <summary>
+    /// A title long enough to fill the cap on its own is clipped too. Trimming only
+    /// the body would return a URL the browser refuses, dropping the user on the
+    /// plain issues list instead of a pre-filled draft.
+    /// </summary>
+    [Fact]
+    public void IssueUrl_LongTitle_StaysUnderMax()
+    {
+        var url = BugReport.IssueUrl(new string('t', 20_000), "hello body");
+        Assert.True(url.Length <= BugReport.MaxUrlChars, $"url was {url.Length} chars");
+        Assert.StartsWith(BugReport.NewIssueBase, url);
+        Assert.Contains("labels=bug", url);
+        Assert.Contains("&body=", url);
+
+        // Encoding-heavy title: every space costs three encoded chars.
+        var spaced = BugReport.IssueUrl(string.Concat(Enumerable.Repeat("bug title ", 2000)), "body");
+        Assert.True(spaced.Length <= BugReport.MaxUrlChars, $"url was {spaced.Length} chars");
+        Assert.DoesNotContain(" ", spaced);
+    }
+
+    /// <summary>
     /// A rolled 1 MB log returns exactly the last LogTailLines entries, proving the
     /// reader streams the file instead of materialising all of it.
     /// </summary>

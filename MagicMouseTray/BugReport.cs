@@ -308,19 +308,30 @@ internal static class BugReport
 
     /// <summary>
     /// Bounded, fully percent-encoded ?labels=&amp;title=&amp;body= draft URL. Browsers
-    /// and GitHub reject very long URLs, so the body is clipped to
+    /// and GitHub reject very long URLs, so both title and body are clipped to
     /// <see cref="MaxUrlChars"/> measured on the ENCODED text (the full report is
     /// on the clipboard).
     /// </summary>
     internal static string IssueUrl(string title, string body, string label = "bug")
     {
-        var prefix = $"{NewIssueBase}?labels={Uri.EscapeDataString(label)}&title={Uri.EscapeDataString(title)}&body=";
+        const string note = "\n\n(truncated — full report is on the clipboard)";
+        const string bodyKey = "&body=";
+        var encodedNote = Uri.EscapeDataString(note);
+        var head = $"{NewIssueBase}?labels={Uri.EscapeDataString(label)}&title=";
+
+        // Clip the title first: an encoded title long enough to fill the cap on
+        // its own leaves nothing for the body to give back, and the returned URL
+        // would be one the browser refuses to open.
+        var titleBudget = Math.Max(0, MaxUrlChars - head.Length - bodyKey.Length - encodedNote.Length);
+        var clippedTitle = title ?? "";
+        while (clippedTitle.Length > 0 && Uri.EscapeDataString(clippedTitle).Length > titleBudget)
+            clippedTitle = clippedTitle[..(clippedTitle.Length * 3 / 4)];
+
+        var prefix = head + Uri.EscapeDataString(clippedTitle) + bodyKey;
         var encoded = Uri.EscapeDataString(body ?? "");
         if (prefix.Length + encoded.Length <= MaxUrlChars)
             return prefix + encoded;
 
-        const string note = "\n\n(truncated — full report is on the clipboard)";
-        var encodedNote = Uri.EscapeDataString(note);
         // Reserve the note: clipping only the body would push past the cap.
         var budget = Math.Max(0, MaxUrlChars - prefix.Length - encodedNote.Length);
         var clipped = body ?? "";
