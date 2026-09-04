@@ -7,6 +7,7 @@
   <meta name="description" content="Find out which Windows 10/11 driver your Apple Magic Mouse, Magic Keyboard, or Magic Trackpad needs. Read the hardware id in Device Manager, then use Boot Camp for Magic Mouse v1 and v2 or KMDF for Magic Mouse 2024 (PID 0323).">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/drivers.html">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
   <meta property="og:title" content="Which Windows driver does my Magic Mouse need?">
   <meta property="og:description" content="Hardware id first, then the right driver: Boot Camp for v1/v2, KMDF for Magic Mouse 2024. Keyboard and trackpad are battery only.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/drivers.html">
@@ -23,7 +24,12 @@
         "name": "Which Windows driver does my Apple Magic Mouse need?",
         "isPartOf": { "@id": "https://lesleymurfin.github.io/magic-tray/#site" },
         "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
-        "inLanguage": "en"
+        "url": "https://lesleymurfin.github.io/magic-tray/drivers.html",
+        "breadcrumb": { "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html#breadcrumb" },
+        "mainEntity": { "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html#driver-list" },
+        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "inLanguage": "en",
+        "dateModified": "2026-09-04"
       },
       {
         "@type": "HowTo",
@@ -51,6 +57,75 @@
             "@type": "HowToStep",
             "name": "Confirm with the charging port",
             "text": "A door for AA batteries means an older device. A skinny Lightning hole means the middle generation. A small oval USB-C hole means the 2024 generation."
+          }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Magic Tray",
+            "item": "https://lesleymurfin.github.io/magic-tray/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Which Windows driver",
+            "item": "https://lesleymurfin.github.io/magic-tray/drivers.html"
+          }
+        ]
+      },
+      {
+        "@type": "ItemList",
+        "@id": "https://lesleymurfin.github.io/magic-tray/drivers.html#driver-list",
+        "name": "Which Windows path each Apple Magic device needs",
+        "itemListOrder": "https://schema.org/ItemListUnordered",
+        "numberOfItems": 7,
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Magic Mouse 2024 / v3 (PID 0323, USB-C) — KMDF filter driver",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#v3"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Magic Mouse v1 (PID 030D, AA batteries) — Boot Camp driver",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#v1v2"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Magic Mouse v2 (PID 0269, Lightning) — Boot Camp driver",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#v1v2"
+          },
+          {
+            "@type": "ListItem",
+            "position": 4,
+            "name": "Apple Wireless Mouse (PID 0310, AA batteries) — Boot Camp driver",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#v1v2"
+          },
+          {
+            "@type": "ListItem",
+            "position": 5,
+            "name": "Magic Trackpad (PID 030E, AA batteries) — battery percentage only",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#trackpad"
+          },
+          {
+            "@type": "ListItem",
+            "position": 6,
+            "name": "Magic Trackpad 2 (PID 0265, Lightning) — battery percentage only",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#trackpad"
+          },
+          {
+            "@type": "ListItem",
+            "position": 7,
+            "name": "Magic Trackpad 2024 (PID 0324, USB-C) — battery percentage only",
+            "url": "https://lesleymurfin.github.io/magic-tray/drivers.html#trackpad"
           }
         ]
       }
@@ -323,6 +398,8 @@
         <li>Apple never gave Windows a driver for it. Finger-scroll often dies.</li>
         <li>We install an extra piece called KMDF from <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">this driver project</a>.</li>
         <li>Pictures: <a href="v3.html">why the 2024 mouse is different</a>.</li>
+        <li>Step by step: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">how to install the Magic Mouse v3 Windows driver</a>.</li>
+        <li>Still stuck? <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/scroll-fix.html">Magic Mouse v3 Windows driver — scroll fix</a>.</li>
       </ul>
       <div class="diagram pair">
         <div class="panel ok">
@@ -468,7 +545,7 @@
         <h2>Install</h2>
         <p class="cta">
           <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
-          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 kernel site</a>
+          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse 2024 (v3) Windows driver</a>
         </p>
       </div>
     </aside>

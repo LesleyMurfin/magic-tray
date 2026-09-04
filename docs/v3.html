@@ -7,6 +7,7 @@
   <meta name="description" content="The 2024 USB-C Apple Magic Mouse is hardware id PID 0323 and is missing from Apple's Boot Camp driver, so Windows loses finger scrolling. Explained in plain language, with the KMDF driver that fixes it.">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/v3.html">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
   <meta property="og:title" content="Why Magic Mouse 2024 (v3) scrolling breaks on Windows">
   <meta property="og:description" content="PID 0323 is missing from Boot Camp. Windows merges the mouse's two HID collections after idle, so the pointer lives and scroll dies.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/v3.html">
@@ -23,7 +24,11 @@
         "name": "Why Magic Mouse 2024 (v3) scrolling breaks on Windows",
         "isPartOf": { "@id": "https://lesleymurfin.github.io/magic-tray/#site" },
         "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
-        "inLanguage": "en"
+        "url": "https://lesleymurfin.github.io/magic-tray/v3.html",
+        "breadcrumb": { "@id": "https://lesleymurfin.github.io/magic-tray/v3.html#breadcrumb" },
+        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "inLanguage": "en",
+        "dateModified": "2026-09-04"
       },
       {
         "@type": "FAQPage",
@@ -44,6 +49,24 @@
               "@type": "Answer",
               "text": "Windows can merge the mouse's two HID collections after Bluetooth idle. The pointer keeps working because it is in the surviving collection, but finger scrolling is gone. Rebooting does not restore it; a filter driver keeps the collections separate."
             }
+          }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://lesleymurfin.github.io/magic-tray/v3.html#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Magic Tray",
+            "item": "https://lesleymurfin.github.io/magic-tray/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Why Magic Mouse 2024 (v3) is hard on Windows",
+            "item": "https://lesleymurfin.github.io/magic-tray/v3.html"
           }
         ]
       }
@@ -83,7 +106,11 @@
       <h2 id="sources">If you want the long version</h2>
       <ul class="facts">
         <li>The kernel work lives in <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</li>
-        <li>Site: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 driver site</a>.</li>
+        <li>Site: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse 2024 (v3) Windows driver</a>.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">How to install the Magic Mouse v3 Windows driver</a> — the KMDF package, step by step.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/scroll-fix.html">Magic Mouse v3 Windows driver — scroll fix</a> — what to do when two-finger scroll stops on Windows 11.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a> — why the tray app reads it, not the driver.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/faq.html">Magic Mouse v3 Windows driver FAQ</a> — short answers to the common questions.</li>
       </ul>
       <div class="grid grid-3">
         <div class="card">
@@ -226,7 +253,7 @@
         <p class="cta">
           <a class="primary" href="drivers.html#v3">Install KMDF path</a>
           <a class="ghost" href="drivers.html#identify">Identify the PID</a>
-          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">v3 kernel site</a>
+          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse v3 Windows driver</a>
         </p>
       </div>
       <div class="rail-card">

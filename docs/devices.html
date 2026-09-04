@@ -7,12 +7,51 @@
   <meta name="description" content="How Magic Mouse v1, v2, v3, Magic Keyboard, and Trackpad differ on Windows, and why Magic Tray uses Boot Camp, KMDF, or an SDP patch instead of one driver or a Magic Utilities subscription.">
   <link rel="canonical" href="https://lesleymurfin.github.io/magic-tray/devices.html">
   <link rel="describedby" href="https://lesleymurfin.github.io/magic-tray/llms.txt">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
   <meta property="og:title" content="Magic devices on Windows — why Magic Tray exists">
   <meta property="og:description" content="v1/v2 Boot Camp, v3 KMDF, keyboard SDP, trackpad battery only. Research-backed, not a MU clone.">
   <meta property="og:url" content="https://lesleymurfin.github.io/magic-tray/devices.html">
   <meta property="og:image" content="https://lesleymurfin.github.io/magic-tray/og.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": "https://lesleymurfin.github.io/magic-tray/devices.html#webpage",
+        "url": "https://lesleymurfin.github.io/magic-tray/devices.html",
+        "name": "Magic devices on Windows — why Magic Tray exists",
+        "description": "How Magic Mouse v1, v2, v3, Magic Keyboard, and Trackpad differ on Windows, and why Magic Tray uses Boot Camp, KMDF, or an SDP patch instead of one driver or a Magic Utilities subscription.",
+        "isPartOf": { "@id": "https://lesleymurfin.github.io/magic-tray/#site" },
+        "about": { "@id": "https://lesleymurfin.github.io/magic-tray/#app" },
+        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "breadcrumb": { "@id": "https://lesleymurfin.github.io/magic-tray/devices.html#breadcrumb" },
+        "inLanguage": "en",
+        "dateModified": "2026-09-04"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://lesleymurfin.github.io/magic-tray/devices.html#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Magic Tray",
+            "item": "https://lesleymurfin.github.io/magic-tray/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Devices",
+            "item": "https://lesleymurfin.github.io/magic-tray/devices.html"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to content</a>
@@ -60,6 +99,7 @@
         <li>Not sure which one you have? <a href="drivers.html#identify">Look at the bottom</a>.</li>
         <li>The list we actually ship is in code: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">mice</a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">keyboards</a>.</li>
         <li>Who tested what: <a href="TESTED.md">TESTED.md</a>.</li>
+        <li>Reading the 0x90 report on the 2024 mouse: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a>.</li>
       </ul>
 
       <h2>Mice</h2>
