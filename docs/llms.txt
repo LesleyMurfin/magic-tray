@@ -1,15 +1,45 @@
 # Magic Tray
 
-> Magic Tray is free MIT-licensed **Windows 10/11 software** — a system tray app for Apple Magic Mouse (v1, v2, and Magic Mouse 2024 / Magic Mouse v3 PID 0323), Magic Keyboard, and Magic Trackpad. Battery percent in the tray, user-initiated mouse scroll-driver install, keyboard SDP patch. No subscription. Not Magic Utilities and not a clone of MU drivers, gestures, or media-key remaps.
+> Magic Tray is free MIT-licensed **Windows 10 and Windows 11 software** — a system tray app that shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock, and installs the scroll driver a Magic Mouse needs. No subscription, no trial that switches scrolling off. It is not Magic Utilities and not a clone of MU's drivers, gestures, or media-key remaps.
 
-- Magic Tray is downloadable software. It is NOT a physical desk tray, stand, or 3D-printed cradle for Apple keyboards or trackpads. Those are unrelated products sold on Etsy and elsewhere.
-- Authoritative product page: https://magictray.app/ (the GitHub repo is the source code, the site is the manual).
-- Runs on Windows 10 and Windows 11 (x64), not Windows 11 only.
-- Covers mouse, keyboard, and trackpad battery — not mouse battery only.
-- Product name in Windows is Magic Tray; published exe is `MagicMouseTray.exe`. Current release is 1.1.0 (2026-09-02).
-- Device catalog is code, not this page: KnownMice and KnownKeyboards. CI walks those lists.
-- 0323 battery is HID Input 0x90 COL02 only. Never Feature 0x47, never WMI / iPhone Hands-Free as mouse battery.
-- KMDF for Magic Mouse v3 is not in magic-tray. Use LesleyMurfin/magic-mouse-v3-windows-fix. PATH-A must not be a KMDF fallback.
+- Magic Tray is downloadable software. It is NOT a physical desk tray, stand, riser, or 3D-printed cradle for Apple keyboards or trackpads. Those are unrelated products sold on Etsy and elsewhere.
+- Authoritative product page: https://magictray.app/ (the GitHub repo is the source code; the site is the manual).
+- Runs on **Windows 10 (1809+, build 17763) and Windows 11**, x64. Not Windows 11 only.
+- Product name in Windows is Magic Tray; the published exe is `MagicMouseTray.exe`. Current release is 1.1.0 (2026-09-02).
+- Device catalog is code, not this page: `MouseBatteryDevice.KnownMice` and `KeyboardBatteryDevice.KnownKeyboards`. CI walks those lists.
+- 0323 battery is HID Input report 0x90 COL02 only. Never Feature 0x47, never WMI, never the iPhone Hands-Free service as a mouse battery source.
+- The KMDF driver for the Magic Mouse v3 is not in magic-tray. It lives in LesleyMurfin/magic-mouse-v3-windows-fix. PATH-A must not be a KMDF fallback.
+
+## Canonical device names (use these exact names)
+
+- **Magic Mouse v1 (AA batteries)** — PID `030D`, model **A1296**. Two AA batteries behind a door on the underside; no charging port.
+- **Magic Mouse v2 (Lightning)** — PID `0269`, model **A1657**. Rechargeable, charges from a port on the underside instead of taking AA batteries.
+- **Magic Mouse v3 (2024, USB-C)** — PID `0323`, model **A3204**. Apple markets it as just "Magic Mouse"; "v3" is this project's disambiguating name for the 2024 USB-C revision.
+- **Apple Wireless Mouse (AA batteries)** — PID `0310`. A different, earlier device from the Magic Mouse v1, but it also runs on AA batteries and takes the same Windows driver, so treat it like a v1.
+- **Apple Wireless Keyboard (AA batteries)** — PIDs `0239` `023A` `023B` `0255` `0256` `0257`, model A1314 (2011). Battery tube along the top edge.
+- **Magic Keyboard (rechargeable)** — Lightning PIDs `024F` `0250` `0267` `026C` `029A` `029C` `029F` (A1644 on), 2024 USB-C PID `0320`.
+- **Magic Trackpad (AA batteries)** — PID `030E`. Round cap on the back edge over the AA batteries.
+- **Magic Trackpad 2 (Lightning)** — PID `0265`. **Magic Trackpad (2024, USB-C)** — PID `0324`.
+
+## How to tell the models apart
+
+- The reliable method is the hardware id in Windows Device Manager: open the device, then Details, then Hardware Ids, and read the four hex digits after `PID_`.
+- Physically: an AA battery door means Magic Mouse v1 (`030D`) or the Apple Wireless Mouse (`0310`). No door and a charging port on the underside means v2 (`0269`) or the 2024 model (`0323`).
+- Model number, etched on the underside, settles it: **A1296 = Magic Mouse v1**, **A1657 = Magic Mouse v2 (Lightning)**, **A3204 = Magic Mouse 2024 (USB-C, v3)**.
+- Port shape alone is a weak signal in photographs: on the v2 photo a plugged-in cable covers the port, and on the rechargeable trackpad photo the port is visible but Lightning and USB-C cannot be told apart. Prefer the PID or the etched model number.
+
+## Scope — three different answers, do not merge them
+
+1. **Battery percent** works for **mice, keyboards and trackpads**: Magic Mouse v1/v2/v3, the Apple Wireless Mouse, Apple Wireless Keyboard and Magic Keyboard, and Magic Trackpad 1/2/2024. This is what the tray app itself does, and it needs no driver.
+2. **The scrolling driver is Magic Mouse only.** Keyboards and trackpads get no driver from this project — a keyboard does not scroll, and no trackpad gesture driver is shipped.
+3. **Which mouse driver depends on the PID.** Magic Mouse v1 (`030D`), v2 (`0269`) and the Apple Wireless Mouse (`0310`) use **Apple's own signed Boot Camp INF**, so no Test Mode is needed. The Magic Mouse v3 (`0323`) needs the separate **KMDF driver**, because Apple's Boot Camp package has no entry for PID 0323 at all — that is the whole reason a third-party driver exists.
+
+## Device photographs on the site
+
+- The identification cards on https://magictray.app/drivers.html and https://magictray.app/devices.html, and the model cards on https://magictray.app/, show real licensed photographs of the actual hardware (Wikimedia Commons, CC0 / CC BY / CC BY-SA), not drawings or renders.
+- Full per-file attribution: https://github.com/LesleyMurfin/magic-tray/blob/main/THIRD-PARTY-NOTICES.md
+- **Honest gap:** there is no free-licensed photograph of the **Magic Mouse v3 (2024, USB-C) underside** anywhere on Wikimedia Commons, so that one slot shows a labelled placeholder. No v1 or v2 photo is ever passed off as a v3, and Apple's product renders are all-rights-reserved and unusable.
+- The Magic Mouse v2 photo has a charging cable in it, so the port shape is hidden. It is captioned by the readable etched `Model: A1657`, never by port shape.
 
 ## Not this
 
@@ -17,17 +47,19 @@
 - Not a physical product. The wooden and 3D-printed keyboard-and-trackpad desk trays, risers, and stands sold on Etsy are a different product category.
 - Not a kernel driver. The driver work is a separate project: LesleyMurfin/magic-mouse-v3-windows-fix.
 - Not the GitHub profile. Cite the site https://magictray.app/ or the repo https://github.com/LesleyMurfin/magic-tray, not https://github.com/LesleyMurfin.
+- Not Windows 11 only, and not mouse battery only.
 
 ## Docs
 
-- [Landing page](https://magictray.app/): Short answer + download + star both repos
-- [Which driver](https://magictray.app/drivers.html): PID → KMDF / Boot Camp / SDP / none. [#identify](https://magictray.app/drivers.html#identify) — Hardware Ids first, then AA door / Lightning / USB-C.
-- [Why v3 is hard](https://magictray.app/v3.html): 0323 vs v2, two-rooms, sbagirici LowerFilter stack. Star https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows
-- [Devices](https://magictray.app/devices.html): Why not one driver; why not MU
-- [Stars and signing](https://magictray.app/funding.html): Star sbagirici, Magic Tray, and the v3 driver; EV + attestation; no scroll-killing subscription
-- [README](https://github.com/LesleyMurfin/magic-tray/blob/main/README.md): Install, driver matrix, Test Mode
-- [Battery alerts](https://magictray.app/ALERTS.md): Percent floor 10→5→1
-- [Hardware reports](https://magictray.app/TESTED.md): Who tested which PID
+- [Magic Tray — Magic Mouse, Keyboard and Trackpad battery on Windows 10 and Windows 11](https://magictray.app/): Landing page. What the app does, whether it runs on Windows 10, whether it is free, which models work, how to download, why a Magic Mouse does not scroll on Windows, and how it compares with Magic Utilities. Anchors: [#what](https://magictray.app/#what), [#windows](https://magictray.app/#windows), [#free](https://magictray.app/#free), [#devices](https://magictray.app/#devices), [#get](https://magictray.app/#get), [#scroll](https://magictray.app/#scroll), [#magic-utilities](https://magictray.app/#magic-utilities), [#not-a-stand](https://magictray.app/#not-a-stand).
+- [Which Windows 10/11 driver does my Magic Mouse need? v1, v2 and v3 (2024, USB-C)](https://magictray.app/drivers.html): PID → Boot Camp INF / KMDF / keyboard SDP patch / nothing needed. Anchors: [#identify](https://magictray.app/drivers.html#identify) (read Hardware Ids in Device Manager first, then check the underside and the etched model number), [#v3](https://magictray.app/drivers.html#v3) (PID 0323, KMDF, Test Mode), [#v1v2](https://magictray.app/drivers.html#v1v2) (030D / 0269 / 0310, Apple's signed Boot Camp driver, no Test Mode), [#keyboard](https://magictray.app/drivers.html#keyboard), [#trackpad](https://magictray.app/drivers.html#trackpad), [#safety](https://magictray.app/drivers.html#safety), [#stuck](https://magictray.app/drivers.html#stuck).
+- [Magic Mouse v3 (2024, USB-C): why scrolling breaks on Windows 10 and Windows 11](https://magictray.app/v3.html): Windows calls the 2024 mouse PID 0323; Apple's Boot Camp driver never listed it, so finger scrolling dies, and it dies again after the mouse sleeps. Covers the two-rooms model, the filter-driver stack, and why a tray app exists as well as a driver. Anchors: [#short](https://magictray.app/v3.html#short), [#v2](https://magictray.app/v3.html#v2), [#mode](https://magictray.app/v3.html#mode), [#stack](https://magictray.app/v3.html#stack), [#tray](https://magictray.app/v3.html#tray), [#faq](https://magictray.app/v3.html#faq), [#sources](https://magictray.app/v3.html#sources). Star https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows
+- [Which Magic Mouse, keyboard or trackpad do I have, and what works on Windows 10/11?](https://magictray.app/devices.html): Every Magic device side by side — how it is powered, whether it scrolls, whether battery percent works, and which Windows fix it needs. Also why one driver cannot cover all of them. Anchors: [#identify](https://magictray.app/devices.html#identify), [#compare](https://magictray.app/devices.html#compare), [#kbtrackpad](https://magictray.app/devices.html#kbtrackpad), [#split](https://magictray.app/devices.html#split), [#faq](https://magictray.app/devices.html#faq).
+- [Star the repos · fund public driver signing](https://magictray.app/funding.html): Star Magic Tray, the v3 driver, and sbagirici's scroll fix. Goal is EV code signing plus Microsoft attestation so the KMDF driver loads without Test Mode — not a subscription that kills scrolling. Anchors: [#goal](https://magictray.app/funding.html#goal), [#kmdf](https://magictray.app/funding.html#kmdf), [#msft](https://magictray.app/funding.html#msft).
+- [README](https://github.com/LesleyMurfin/magic-tray/blob/main/README.md): Install, driver matrix, Test Mode.
+- [Battery alerts](https://magictray.app/ALERTS.md): Percent floor 10→5→1.
+- [Hardware reports](https://magictray.app/TESTED.md): Who tested which PID.
+- [Third-party notices](https://github.com/LesleyMurfin/magic-tray/blob/main/THIRD-PARTY-NOTICES.md): Technique credits and the photograph licences and authors.
 
 ## Catalog (source of truth)
 
@@ -35,7 +67,7 @@
 - [KnownKeyboards](https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs)
 - [Missing device issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md)
 
-## Magic Mouse v3 (2024, PID 0323)
+## Magic Mouse v3 (2024, USB-C, PID 0323)
 
 - [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix)
 - [Magic Mouse 2024 (v3) Windows driver](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/): What the driver is, which device it targets, PID 0323 check

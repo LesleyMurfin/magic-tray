@@ -6,7 +6,7 @@
 
 Magic Tray is software you install on Windows. It is not a desk tray, stand, or cradle for Apple keyboards.
 
-Magic Tray is a Windows tray app for **Apple Magic Mouse** (v1, v2, and **Magic Mouse 2024 / Magic Mouse v3**, PID `0323`), **Magic Keyboard**, and **Magic Trackpad**. It shows battery percent in the tray and can install a scroll driver you confirm. It is a free alternative to [Magic Utilities](https://magicutilities.net/) — not a clone of MU’s proprietary drivers, gestures, trackpad suite, or key remaps.
+Magic Tray is a Windows tray app for **Apple Magic Mouse** — **Magic Mouse v1 (AA batteries)** PID `030D`, **Magic Mouse v2 (Lightning)** PID `0269`, and **Magic Mouse v3 (2024, USB-C)** PID `0323` — plus **Magic Keyboard** and **Magic Trackpad**. It shows battery percent in the tray and can install a scroll driver you confirm. The scroll drivers it points at are **Windows 10 and Windows 11** drivers: Apple's own signed Boot Camp INF for v1 and v2, and the separate KMDF driver for the v3, which Boot Camp never covered. It is a free alternative to [Magic Utilities](https://magicutilities.net/) — not a clone of MU’s proprietary drivers, gestures, trackpad suite, or key remaps.
 
 Released 2 September 2026 · [Download v1.1.0](https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0) · [Website](https://magictray.app/)
 
@@ -25,12 +25,12 @@ If this saved you a paid subscription, **star both repos**: [Magic Tray](https:/
 - [Features](#features)
 - [Tray menu (1.1.0)](#tray-menu-110)
 - [Supported mice](#supported-mice)
-  - [What to pick](#magic-mouse-2024-0323--what-to-pick)
+  - [What to pick](#magic-mouse-v3-2024-usb-c--what-to-pick)
 - [Supported keyboards](#supported-keyboards)
 - [Supported trackpads](#supported-trackpads)
 - [Scroll](#scroll)
-  - [Magic Mouse v1 / v2](#magic-mouse-v1--v2-030d-0269)
-  - [Magic Mouse 2024 / v3](#magic-mouse-2024--v3-0323)
+  - [Magic Mouse v1 and v2](#magic-mouse-v1-aa-batteries-and-v2-lightning-030d-0269)
+  - [Magic Mouse v3 (2024, USB-C)](#magic-mouse-v3-2024-usb-c-0323)
   - [Test Mode](#test-mode-self-signed-0323-drivers)
 - [Why Magic Mouse v3 scroll breaks on Windows](#why-magic-mouse-v3-scroll-breaks-on-windows)
 - [Keyboard battery](#keyboard-battery)
@@ -80,7 +80,7 @@ The same Release attaches the keyboard battery patch (`Install-KeyboardBattery.c
 
 ## Just want a 2024 Magic Mouse driver?
 
-You have the USB-C Magic Mouse (sold as **Magic Mouse 2024**, also called **v3**). Windows moves the pointer, but **the wheel does nothing**. That is normal — Windows ships no scroll driver for this mouse.
+You have the **Magic Mouse v3 (2024, USB-C)** — Apple sells it as just "Magic Mouse", and this project calls it v3 to keep it apart from the older models. Windows moves the pointer, but **the wheel does nothing**. That is normal on both Windows 10 and Windows 11 — neither ships a scroll driver for this mouse.
 
 **What works right now**
 
@@ -100,7 +100,7 @@ So: **battery today, scroll when the driver lands.** Two different things have t
 - **Patched Apple** — an old experiment, kept only for the record. Scroll **or** battery, never both at the same time. Also self-signed, so also needs Test Mode. **Do not pick this** unless you specifically want the experiment.
 - **Stock Windows** — Windows’ own Bluetooth mouse driver. Pointer only: no scroll. Battery percent usually still reads. No Test Mode, and it removes our driver.
 
-Side-by-side: [what to pick](#magic-mouse-2024-0323--what-to-pick).
+Side-by-side: [what to pick](#magic-mouse-v3-2024-usb-c--what-to-pick).
 
 **Older Magic Mouse** (Lightning or AA batteries): none of the above applies to you. Pick **Boot Camp** in the tray. It is signed by Apple, so there is no Test Mode and no watermark.
 
@@ -118,7 +118,7 @@ Side-by-side: [what to pick](#magic-mouse-2024-0323--what-to-pick).
 - Optional Logitech rows (off by default)
 - Single self-contained `MagicMouseTray.exe`
 
-**Battery reads** appears only when a Magic Mouse 2024 / v3 is connected **and** the bound driver is KMDF. Hidden otherwise.
+**Battery reads** appears only when a Magic Mouse v3 (2024, USB-C) is connected **and** the bound driver is KMDF. Hidden otherwise.
 
 Magic Tray does not install a driver until you pick one and confirm UAC. It never swaps drivers behind your back.
 
@@ -147,16 +147,16 @@ Footer: **Magic Tray 1.1.0**.
 
 ## Supported mice
 
-Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMousePid_HasUsbVid05acRow`](MagicMouseTray.Tests/MouseBatteryDeviceTests.cs)). Reports: [docs/TESTED.md](docs/TESTED.md). PID missing? [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
+All three mice below are covered on **Windows 10 (1809+) and Windows 11**. Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMousePid_HasUsbVid05acRow`](MagicMouseTray.Tests/MouseBatteryDeviceTests.cs)). Reports: [docs/TESTED.md](docs/TESTED.md). PID missing? [Open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
 | Model | PID | Recommended driver | Scroll | Battery | Tested |
 |---|---|---|---|---|---|
-| Magic Mouse 2024 (USB-C, **Magic Mouse v3**) | `0x0323` | [**KMDF**](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) | Yes, with [Test Mode](#test-mode-self-signed-0323-drivers) | Yes | [yes — KMDF](docs/TESTED.md) |
-| Magic Mouse v1 | `0x030D` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
-| Magic Mouse v2 | `0x0269` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
-| Apple Wireless Mouse | `0x0310` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
+| Magic Mouse v3 (2024, USB-C) | `0x0323` | [**KMDF**](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) | Yes, with [Test Mode](#test-mode-self-signed-0323-drivers) | Yes | [yes — KMDF](docs/TESTED.md) |
+| Magic Mouse v1 (AA batteries) | `0x030D` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | [row](docs/TESTED.md) |
+| Magic Mouse v2 (Lightning) | `0x0269` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
+| Apple Wireless Mouse (AA batteries) | `0x0310` | [**Boot Camp**](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) | Yes | Yes | — |
 
-### Magic Mouse 2024 (`0323`) — what to pick
+### Magic Mouse v3 (2024, USB-C) — what to pick
 
 | Choice in the tray | Wheel | Battery | Test Mode | Who it is for |
 |---|---|---|---|---|
@@ -186,9 +186,9 @@ Battery only: percent, enable, threshold, time alerts. **No** KMDF / Boot Camp r
 
 | Model | PID | Driver | Scroll | Battery | Tested |
 |---|---|---|---|---|---|
-| Magic Trackpad (v1) | `0x030E` | None | n/a | Yes (AA) | — |
-| Magic Trackpad 2 | `0x0265` | None | n/a | Yes (Lightning) | — |
-| Magic Trackpad 2024 (USB-C) | `0x0324` | None | n/a | Yes (USB-C) | — |
+| Magic Trackpad (AA batteries) | `0x030E` | None | n/a | Yes (AA) | — |
+| Magic Trackpad 2 (Lightning) | `0x0265` | None | n/a | Yes (Lightning) | — |
+| Magic Trackpad (2024, USB-C) | `0x0324` | None | n/a | Yes (USB-C) | — |
 
 Hardware reports: [docs/TESTED.md](docs/TESTED.md). Missing PID: [open an issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md).
 
@@ -196,13 +196,13 @@ Hardware reports: [docs/TESTED.md](docs/TESTED.md). Missing PID: [open an issue]
 
 ## Scroll
 
-Scroll needs an Apple mouse filter driver **installed and bound**. The tray offers the install after you confirm.
+Scroll needs an Apple mouse filter driver **installed and bound** on Windows 10 or Windows 11. The tray offers the install after you confirm. Which driver depends on the PID: v1, v2 and the Apple Wireless Mouse take Apple's signed Boot Camp INF, and only the Magic Mouse v3 (2024, USB-C) needs the KMDF driver.
 
-### Magic Mouse v1 / v2 (`030D`, `0269`)
+### Magic Mouse v1 (AA batteries) and v2 (Lightning) (`030D`, `0269`)
 
 Install the Boot Camp INF from [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64) (Apple Wireless Mouse folder). Right-click the `.inf` → **Install**, or use the tray. Catalog-signed. **Test Mode is not required.**
 
-### Magic Mouse 2024 / v3 (`0323`)
+### Magic Mouse v3 (2024, USB-C) (`0323`)
 
 The tealtadpole Boot Camp INF does **not** cover PID `0323`. Scroll on this mouse needs the separate **KMDF** driver from [LesleyMurfin/magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), which is self-signed and therefore needs [Test Mode](#test-mode-self-signed-0323-drivers).
 
@@ -249,7 +249,7 @@ v1/v2 Boot Camp installs skip this section entirely: that INF is catalog-signed 
 
 ## Why Magic Mouse v3 scroll breaks on Windows
 
-The 2024 Magic Mouse (v3, USB-C, PID `0323`) is not in Apple’s old Boot Camp INF. On Windows the HID stack can collapse collections (often called Mode A vs Mode B): scroll and battery fight over the same device. Stock Windows often has battery and no scroll; a patched Apple filter can restore scroll and drop battery.
+The Magic Mouse v3 (2024, USB-C, PID `0323`) is not in Apple’s old Boot Camp INF. On Windows the HID stack can collapse collections (often called Mode A vs Mode B): scroll and battery fight over the same device. Stock Windows often has battery and no scroll; a patched Apple filter can restore scroll and drop battery.
 
 **Research and the KMDF fix live in a separate repo** (this tray repo does not vendor kernel sources):
 
@@ -290,7 +290,7 @@ Re-pairing the keyboard erases the patch. Until it is applied, the tray shows th
 
 ## FAQ
 
-**Does Magic Mouse 2024 (Magic Mouse v3) work on Windows 11?**  
+**Does the Magic Mouse v3 (2024, USB-C) work on Windows 10 and Windows 11?**  
 Battery, yes — Magic Tray 1.1.0 shows the percent with no driver at all. Scroll needs the **KMDF** driver from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix), which is self-signed and so needs [Test Mode](#test-mode-self-signed-0323-drivers) with Memory integrity off — and its tray install step is [not available yet](#just-want-a-2024-magic-mouse-driver). Battery is HID Input `0x90` on COL02.
 
 **Is this Magic Utilities?**  
