@@ -19,9 +19,9 @@ HTTPS is mandatory and browsers will not fall back to plain HTTP. That is good f
 one consequence during setup: between pointing DNS and GitHub issuing the certificate, the site is
 unreachable rather than merely insecure.
 
-`lesleymurfin.github.io/magic-tray/` was a path on a shared subdomain, which is why `github.com`
-outranked it regardless of markup quality. GitHub Pages redirects the old `github.io` URLs to the
-custom domain, so existing links keep working.
+The previous home was a project path on the shared `github.io` subdomain, which is why
+`github.com` outranked it regardless of markup quality. GitHub Pages redirects those old Pages
+URLs to the custom domain, so existing links keep working.
 
 ### DNS records
 
@@ -81,9 +81,9 @@ Once HTTPS is enforced on GitHub the proxy may be switched back on, with SSL/TLS
 
 ## Search Console
 
-The old `lesleymurfin.github.io/magic-tray/` property does not carry over; a new domain needs a new
-property. GitHub redirects the old URLs, so nothing is lost for visitors, but the search history and
-the verification do not follow.
+The old project-path property on the shared `github.io` subdomain does not carry over; a new
+domain needs a new property. GitHub redirects the old URLs, so nothing is lost for visitors, but
+the search history and the verification do not follow.
 
 1. Add `magictray.app` as a **Domain** property and verify with the DNS TXT record Google provides.
    This is possible now that the domain is ours — on `github.io` it was not, because GitHub Pages
@@ -116,6 +116,38 @@ the verification do not follow.
 
 Validate after any edit:
 <https://search.google.com/test/rich-results?url=https%3A%2F%2Fmagictray.app%2F>
+
+### Device photographs
+
+The identification cards on `docs/drivers.html` and `docs/devices.html`, and the model cards on
+`docs/index.html`, used to be CSS-drawn grey rectangles labelled BOTTOM, which told a reader
+nothing. They are now **real licensed photographs of the actual hardware**, shipped under
+`docs/img/` (nine files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. Sources are
+Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0.
+
+- **Attribution lives in `THIRD-PARTY-NOTICES.md`** — one entry per file with the author, the
+  licence, the licence URL and the Commons source page. Two authors mandate a verbatim credit
+  string; both are recorded there character for character. The pages also render a short credit
+  line under each photo grid. Do not ship a photo without both.
+- Cropping is done at display time with CSS `object-fit` / `object-position`. The stored pixels
+  are unmodified apart from resizing and EXIF stripping, which keeps the CC BY-SA files a
+  collection rather than an adaptation — so the site itself stays MIT.
+- Photographs are also an answer-engine asset: they give the identification pages something to
+  show in image results and in AI answers that quote "how do I tell which Magic Mouse I have".
+  Every `<img>` carries a descriptive `alt` and explicit `width`/`height`, so identification is
+  possible from the alt text alone and the images cost no layout shift (CLS).
+
+**The one outstanding gap: no free photo of the Magic Mouse v3 (2024, USB-C) underside.**
+`Category:Magic Mouse` on Wikimedia Commons was enumerated in full and every file checked;
+searches for A3204, "Magic Mouse USB-C" and "Magic Mouse 2024" returned nothing usable. Apple's
+own renders are all-rights-reserved. That slot therefore shows a labelled placeholder, and a v1
+or v2 photo must never be captioned as a v3 — the page that tells people how to identify their
+mouse cannot afford a wrong picture.
+
+The cheapest fix is to **ask an owner for one**: a single overhead shot of the underside,
+released CC0, from anyone with the 2024 mouse. Worth asking for in the v3 driver repo's issues,
+in the TESTED.md reports thread, and in the Reddit and Hacker News posts listed below. Upload it
+to Wikimedia Commons under CC0 so it is reusable, then drop it in beside the others.
 
 ## Still the biggest lever
 

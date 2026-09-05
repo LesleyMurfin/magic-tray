@@ -503,179 +503,6 @@ img.shot {
 }
 .credit a { color: var(--faint); }
 
-.bottom-view {
-  position: relative;
-  background: linear-gradient(180deg, #2a2a35 0%, #16161d 100%);
-  border: 1px solid var(--line-strong);
-}
-.bottom-view .tag {
-  position: absolute;
-  top: 0.35rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.bottom-view.mouse {
-  width: 5.4rem;
-  height: 8.2rem;
-  border-radius: 2.6rem 2.6rem 2.1rem 2.1rem;
-}
-.bottom-view.trackpad {
-  width: 8.4rem;
-  height: 5.6rem;
-  border-radius: 0.7rem;
-}
-.bottom-view.aa::after,
-.bottom-view.lightning::after,
-.bottom-view.usbc::after {
-  position: absolute;
-  left: 50%;
-  bottom: -1.15rem;
-  transform: translateX(-50%);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-2);
-  white-space: nowrap;
-  font-family: var(--sans);
-}
-.bottom-view.aa::after { content: "AA door"; }
-.bottom-view.lightning::after { content: "Lightning"; }
-.bottom-view.usbc::after { content: "USB-C"; }
-
-.aa-door {
-  position: absolute;
-  left: 50%;
-  top: 54%;
-  transform: translate(-50%, -50%);
-  width: 58%;
-  height: 58%;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.28rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.28rem;
-  padding: 0.35rem;
-}
-.bottom-view.trackpad .aa-door {
-  flex-direction: row;
-  width: 70%;
-  height: 48%;
-  top: 58%;
-}
-.aa-cell {
-  flex: 1;
-  border: 1px dashed #71717a;
-  border-radius: 0.2rem;
-  background: #09090b;
-}
-
-.port {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #09090b;
-  border: 1px solid #a1a1aa;
-}
-.port.lightning {
-  bottom: 12%;
-  width: 2.15rem;
-  height: 0.62rem;
-  border-radius: 0.08rem;
-}
-.port.usbc {
-  bottom: 12%;
-  width: 1.9rem;
-  height: 0.72rem;
-  border-radius: 0.4rem;
-}
-.bottom-view.trackpad .port {
-  bottom: auto;
-  top: 58%;
-  transform: translate(-50%, -50%);
-}
-
-.kb {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-.kb-face {
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-  padding: 0.4rem 0.45rem 0.35rem;
-  aspect-ratio: 3.15 / 1;
-  background: #2c2c36;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.45rem;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
-}
-.kb-r {
-  flex: 1;
-  border-radius: 0.12rem;
-  background: repeating-linear-gradient(
-    90deg,
-    #4e4e5c 0 0.52rem,
-    #2c2c36 0.52rem 0.7rem
-  );
-}
-.kb-r.space {
-  background: #2c2c36;
-  display: flex;
-  justify-content: center;
-  align-items: stretch;
-}
-.kb-r.space i {
-  width: 42%;
-  background: #4e4e5c;
-  border-radius: 0.12rem;
-}
-.kb-find {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.45rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  background: var(--bg);
-  min-height: 2.6rem;
-}
-.kb-find p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.35;
-}
-.kb-find p strong {
-  display: block;
-  color: var(--fg);
-  font-size: 0.84rem;
-}
-.kb-find .aa-door {
-  position: static;
-  transform: none;
-  width: 2.6rem;
-  height: 1.55rem;
-  flex: 0 0 2.6rem;
-  flex-direction: row;
-  top: auto;
-  left: auto;
-}
-.kb-find .port {
-  position: static;
-  transform: none;
-  left: auto;
-  bottom: auto;
-  flex: 0 0 auto;
-}
-
 ul.plain {
   padding-left: 1.15rem;
   color: var(--muted);
@@ -966,4 +793,49 @@ ol.steps li { margin: 0.4rem 0; }
 }
 .credit-box p { color: var(--muted); margin: 0.4rem 0; }
 .credit-box .cta { margin: 0.85rem 0 0.35rem; }
+
+/* Real device photos in ident cards.
+   .photo/.credit already exist above; these only control framing per image,
+   because each donated photo is shot from a different angle. Cropping is done
+   here in CSS on purpose: several source photos are CC BY-SA, and editing the
+   files would create a derivative and pull share-alike onto the whole page. */
+.photo.pos-center img { object-position: 50% 50%; }
+.photo.pos-top img    { object-position: 50% 22%; }
+.photo.pos-bottom img { object-position: 50% 82%; }
+.ident-visual.kb-visual .photo,
+.ident-visual.kb-visual .photo img { height: 100%; }
+
+/* Shown where no correctly-licensed photo of a device exists yet.
+   Better an honest gap than a picture of the wrong mouse. */
+.no-photo {
+  width: 100%;
+  min-height: 9.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(
+    135deg, #16161d, #16161d 7px, #131318 7px, #131318 14px
+  );
+}
+.no-photo .no-photo-label {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+.no-photo p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.no-photo a { color: var(--muted); }
 

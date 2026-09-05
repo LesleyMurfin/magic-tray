@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Magic devices on Windows — why Magic Tray exists</title>
-  <meta name="description" content="How Magic Mouse v1, v2, v3, Magic Keyboard, and Trackpad differ on Windows, and why Magic Tray uses Boot Camp, KMDF, or an SDP patch instead of one driver or a Magic Utilities subscription.">
+  <title>Which Magic Mouse, keyboard or trackpad do I have, and what works on Windows 10/11? — Magic Tray</title>
+  <meta name="description" content="Tell Magic Mouse v1, v2 and v3 (2024, USB-C), Magic Keyboard and Magic Trackpad apart by PID and port, and see what each needs on Windows 10/11.">
   <link rel="canonical" href="https://magictray.app/devices.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:title" content="Magic devices on Windows — why Magic Tray exists">
-  <meta property="og:description" content="v1/v2 Boot Camp, v3 KMDF, keyboard SDP, trackpad battery only. Research-backed, not a MU clone.">
+  <meta property="og:title" content="Which Magic Mouse, keyboard or trackpad do I have, and what works on Windows 10/11?">
+  <meta property="og:description" content="Turn the device over: an AA battery door means Magic Mouse v1, Lightning means v2, USB-C means the 2024 v3. Each one needs a different fix on Windows 10 and Windows 11.">
   <meta property="og:url" content="https://magictray.app/devices.html">
   <meta property="og:image" content="https://magictray.app/og.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -22,14 +22,44 @@
         "@type": "WebPage",
         "@id": "https://magictray.app/devices.html#webpage",
         "url": "https://magictray.app/devices.html",
-        "name": "Magic devices on Windows — why Magic Tray exists",
-        "description": "How Magic Mouse v1, v2, v3, Magic Keyboard, and Trackpad differ on Windows, and why Magic Tray uses Boot Camp, KMDF, or an SDP patch instead of one driver or a Magic Utilities subscription.",
+        "name": "Which Magic Mouse, keyboard or trackpad do I have, and what works on Windows 10/11?",
+        "description": "Tell Magic Mouse v1, v2 and v3 (2024, USB-C), Magic Keyboard and Magic Trackpad apart by PID and charging port, and see what each one needs on Windows 10 and Windows 11.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "publisher": { "@type": "Person", "name": "Lesley Murfin" },
         "breadcrumb": { "@id": "https://magictray.app/devices.html#breadcrumb" },
         "inLanguage": "en",
-        "dateModified": "2026-09-04"
+        "dateModified": "2026-09-05"
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://magictray.app/devices.html#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I tell which Magic Mouse I have without opening Windows settings?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Turn the mouse upside down and look at how it takes power. A door for two AA batteries means Magic Mouse v1 from 2009. A narrow Lightning port means Magic Mouse v2 from 2015. A small oval USB-C port means Apple’s 2024 model, which this site calls Magic Mouse v3."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does the Magic Tray scrolling driver work for Magic Keyboards and Magic Trackpads?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The scrolling Windows driver is for Magic Mouse only. Keyboards already type on Windows 10 and Windows 11, and we do not ship trackpad gestures. For keyboards and trackpads, Magic Tray shows the battery percent and nothing else."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does the Magic Mouse v3 (2024, USB-C) need a different Windows driver from v1 and v2?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A Windows driver only loads for the hardware codes listed inside its setup file. Apple’s Boot Camp driver lists 030D and 0269, so Magic Mouse v1 and v2 scroll with it. It has no entry for 0323, the 2024 USB-C mouse, so that model needs the separate KMDF driver."
+            }
+          }
+        ]
       },
       {
         "@type": "BreadcrumbList",
@@ -73,105 +103,268 @@
     <article id="content" class="primary">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · catalog</p>
-        <h1>Each Apple device needs its own answer</h1>
+        <h1>Why your Magic Mouse, keyboard and trackpad each need a different Windows fix</h1>
         <ul class="facts">
-          <li>A mouse, a keyboard, and a trackpad are not the same thing to Windows.</li>
-          <li>Even two Magic Mice can be different if one is old and one is 2024.</li>
-          <li>We do not pretend one driver fixes everything. We do not copy Magic Utilities.</li>
+          <li>Windows 10 and Windows 11 treat a mouse, a keyboard and a trackpad as three separate products.</li>
+          <li>Two Magic Mice can be different products too. Apple has sold three, and they charge in three different ways.</li>
+          <li>Three separate jobs, so keep them apart: battery percent in the tray works for mice, keyboards and trackpads. The scrolling Windows driver is for Magic Mouse only. Among mice, v1 and v2 use Apple’s Boot Camp file and the v3 (2024, USB-C) needs ours.</li>
+          <li>We don’t claim one driver fixes everything, and Magic Tray is not a copy of Magic Utilities.</li>
         </ul>
       </header>
 
-      <h2>Side by side</h2>
+      <section id="identify">
+        <h2>Which Magic Mouse do I have? Turn it over and look at how it charges</h2>
+        <p class="lead">Pick the mouse up and look underneath. A door for two AA batteries means Magic Mouse v1, from 2009. A narrow Lightning port means Magic Mouse v2, from 2015. A small oval USB-C port means Apple’s 2024 model, which this site calls Magic Mouse v3. That port decides which Windows driver you need.</p>
+        <div class="how">
+          <h3>The three-second check</h3>
+          <ol>
+            <li>Unplug any cable and turn the mouse upside down.</li>
+            <li>Look at the middle of the underside, next to the on/off switch.</li>
+            <li>Match what you see: a battery door, a narrow slot, or a small oval hole.</li>
+          </ol>
+          <p class="note">On a Magic Keyboard or Magic Trackpad, look along the back edge instead of the bottom. Same idea: AA batteries, Lightning, or USB-C.</p>
+        </div>
+        <p>Windows has a second opinion, and it’s the one drivers go by: a four-character hardware code called the PID. It’s how Windows tells one model from another, and it looks like <code>PID_0323</code>. <a href="drivers.html#identify">Check yours in Device Manager</a> if the port leaves you unsure.</p>
+
+        <h3>Magic Mouse and Apple Wireless Mouse, oldest to newest</h3>
+        <div class="ident-grid">
+          <article class="ident-card">
+            <div class="ident-visual">
+              <figure class="photo pos-center">
+                <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
+              </figure>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">030D · 2009 · AA batteries</p>
+              <h3>Magic Mouse v1 (AA batteries)</h3>
+              <p>A door on the bottom holds two AA batteries. There’s no charging port at all. Scrolls with Apple’s signed Boot Camp Windows driver.</p>
+              <a href="drivers.html#v1v2">Boot Camp path for v1 and v2</a>
+            </div>
+          </article>
+          <article class="ident-card">
+            <div class="ident-visual">
+              <figure class="photo pos-center">
+                <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
+              </figure>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">0269 · 2015 · Lightning</p>
+              <h3>Magic Mouse v2 (Lightning)</h3>
+              <p>A narrow Lightning port sits on the bottom, the same plug older iPhones used. Uses the same signed Boot Camp Windows driver as v1.</p>
+              <a href="drivers.html#v1v2">Boot Camp path for v1 and v2</a>
+            </div>
+          </article>
+          <article class="ident-card">
+            <div class="ident-visual">
+              <div class="no-photo">
+                <span class="no-photo-label">No photo yet</span>
+                <p>No freely licensed photo of a 2024 Magic Mouse underside exists, and we won't put an older mouse here and label it this one. Look for the small oval USB-C port, or read <code>A3204</code> on the bottom.</p>
+              </div>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">0323 · 2024 · USB-C</p>
+              <h3>Magic Mouse v3 (2024, USB-C)</h3>
+              <p>A small oval USB-C port on the bottom, like a recent phone. Apple’s Boot Camp file has no entry for <code>0323</code>, so this one needs the KMDF Windows driver for scrolling.</p>
+              <a href="drivers.html#v3">KMDF path for the v3</a>
+            </div>
+          </article>
+          <article class="ident-card">
+            <div class="ident-visual">
+              <div class="no-photo">
+                <span class="no-photo-label">No photo yet</span>
+                <p>A different device from the Magic Mouse: flat on top, with no touch surface. It runs on two AA batteries behind a door, so Windows handles it like a v1.</p>
+              </div>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">0310 · AA batteries</p>
+              <h3>Apple Wireless Mouse (AA batteries)</h3>
+              <p>The older mouse with no touch surface, powered by AA batteries. Windows handles it like Magic Mouse v1, same Boot Camp file.</p>
+              <a href="drivers.html#v1v2">Boot Camp path for v1 and v2</a>
+            </div>
+          </article>
+        </div>
+        <p class="credit">Photos: FASTILY, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a> (v1 underside); Syced, via Wikimedia Commons, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a> (v2 underside). Both files are unedited; the crop you see is done by the page layout. Note that in every freely licensed photo of a v2 underside a cable is plugged in and the plug body hides the port, so the v2 above is identified by its etched model number rather than by the shape of the socket.</p>
+
+        <h3>Still not sure? Read the model number on the underside</h3>
+        <p>Each of these has its model number etched into the plastic on the bottom, in small grey letters. <code>A1296</code> is a Magic Mouse v1, <code>A1657</code> is a Magic Mouse v2, and <code>A3204</code> is the 2024 USB-C model. This is the check Apple's own support pages use, and it still works when a cable is plugged in and covering the port.</p>
+        <div class="ident-grid">
+          <article class="ident-card">
+            <div class="ident-visual">
+              <figure class="photo pos-bottom">
+                <img src="img/magic-mouse-v2-model-number-a1657.jpg" width="886" height="1400" alt="Close-up of the etched text on the bottom of a Magic Mouse v2, reading Model: A1657." loading="lazy" decoding="async">
+              </figure>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">A1657 · Magic Mouse v2</p>
+              <h3>This is what the etched text looks like</h3>
+              <p>Tilt the mouse under a lamp and the small print comes up. The line you want begins with "Model". Here it reads A1657, so this one charges from a port instead of taking AA batteries.</p>
+            </div>
+          </article>
+          <article class="ident-card">
+            <div class="ident-visual">
+              <figure class="photo pos-bottom">
+                <img src="img/magic-mouse-v1-underside-aa-door.jpg" width="1200" height="1600" alt="Underside of a Magic Mouse v1. A wide silver battery door with a release latch covers the whole middle of the bottom. There is no charging port." loading="lazy" decoding="async">
+              </figure>
+            </div>
+            <div class="ident-body">
+              <p class="pid-line">A1296 · Magic Mouse v1</p>
+              <h3>This is the cover you slide off</h3>
+              <p>On a v1 the whole middle of the bottom is a battery cover. Slide the latch and it lifts away. If a cover comes off in your hand, you have a v1, and there is no port to hunt for.</p>
+            </div>
+          </article>
+        </div>
+        <p class="credit">Photos: Syced, via Wikimedia Commons, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a> (model number); FASTILY, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a> (battery cover). The files are unedited; the crop you see is done by the page layout.</p>
+        <p class="note">Apple doesn’t call the 2024 mouse "v3". Apple calls it Magic Mouse, and we add the year and the port so you can tell it from the 2015 one.</p>
+      </section>
+
+      <h2 id="compare">Compare every Magic device: power, scrolling and battery on Windows 10/11</h2>
+      <p class="lead">Every Apple wireless device Magic Tray knows is listed below. The battery column is the tray app. The scrolling column is a Windows driver, and only mice have one. If your model isn’t here, Windows may still pair it, but we haven’t confirmed the battery percent works.</p>
       <table>
         <thead>
-          <tr><th>Device</th><th>Windows name</th><th>Power</th><th>Scroll</th><th>Battery in the tray</th></tr>
+          <tr><th>Device</th><th>Code Windows shows (PID)</th><th>How it takes power</th><th>Finger scrolling on Windows 10/11</th><th>Battery percent in the tray</th></tr>
         </thead>
         <tbody>
-          <tr><td>Magic Mouse v1</td><td><code>030D</code></td><td>AA</td><td>Boot Camp INF</td><td>HID 0x90 / Feature if exposed</td></tr>
-          <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Lightning</td><td>Same Boot Camp INF</td><td>HID 0x90 / Feature if exposed</td></tr>
-          <tr><td>Apple Wireless Mouse</td><td><code>0310</code></td><td>AA</td><td>Same Boot Camp INF</td><td>Same as v1</td></tr>
-          <tr><td>Magic Mouse 2024 / <strong>v3</strong></td><td><code>0323</code></td><td>USB-C</td><td>Not in Boot Camp. KMDF (or patched Apple / stock)</td><td>Input 0x90 COL02 only</td></tr>
-          <tr><td>Keyboards</td><td><code>0239</code>…<code>0322</code></td><td>AA or rechargeable</td><td>n/a</td><td>SDP patch to poll Feature battery</td></tr>
-          <tr><td>Trackpad 1 / 2 / 2024</td><td><code>030E</code> / <code>0265</code> / <code>0324</code></td><td>AA / Lightning / USB-C</td><td>We do not ship a trackpad driver</td><td>HID when Windows exposes it</td></tr>
+          <tr><td>Magic Mouse v1 (AA batteries)</td><td><code>030D</code></td><td>Two AA batteries</td><td>Apple’s signed Boot Camp Windows driver</td><td>Yes, when Windows reports it</td></tr>
+          <tr><td>Magic Mouse v2 (Lightning)</td><td><code>0269</code></td><td>Rechargeable, Lightning port</td><td>Same Boot Camp Windows driver</td><td>Yes, when Windows reports it</td></tr>
+          <tr><td>Apple Wireless Mouse (AA batteries)</td><td><code>0310</code></td><td>Two AA batteries</td><td>Same Boot Camp Windows driver</td><td>Yes, same as v1</td></tr>
+          <tr><td>Magic Mouse v3 (2024, USB-C)</td><td><code>0323</code></td><td>Rechargeable, USB-C port</td><td>Not in Boot Camp. Needs the KMDF Windows driver</td><td>Yes, read from report <code>0x90</code></td></tr>
+          <tr><td>Magic Keyboard (2011 AA, Lightning, 2024 USB-C)</td><td><code>0239</code>…<code>0322</code></td><td>AA batteries or rechargeable</td><td>Keyboards don’t scroll, so no driver from us</td><td>Yes, after you run the keyboard script</td></tr>
+          <tr><td>Magic Trackpad 1 / 2 / 2024</td><td><code>030E</code> / <code>0265</code> / <code>0324</code></td><td>AA / Lightning / USB-C</td><td>We don’t ship a trackpad driver</td><td>Yes, when Windows reports it</td></tr>
         </tbody>
       </table>
       <ul class="facts">
-        <li>Not sure which one you have? <a href="drivers.html#identify">Look at the bottom</a>.</li>
-        <li>The list we actually ship is in code: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">mice</a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">keyboards</a>.</li>
-        <li>Who tested what: <a href="TESTED.md">TESTED.md</a>.</li>
-        <li>Reading the 0x90 report on the 2024 mouse: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a>.</li>
+        <li>Not sure which one you own? Start with <a href="#identify">the three-second check</a>, then <a href="drivers.html#identify">confirm the code in Device Manager</a>.</li>
+        <li>The exact list we ship is in the code: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs">mice</a> and <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs">keyboards</a>.</li>
+        <li>Who tested what, on which model: <a href="TESTED.md">TESTED.md</a>.</li>
+        <li>How the battery percent is read on the 2024 mouse: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a>.</li>
       </ul>
 
-      <h2>Mice</h2>
-      <div class="ident-grid cols-4">
+      <h2 id="kbtrackpad">Which Windows fix does a Magic Keyboard or Magic Trackpad need?</h2>
+      <p class="lead">Neither one needs a driver from us. Your Magic Keyboard already types on Windows 10 and Windows 11, and your Magic Trackpad already moves the pointer. The only thing missing is the battery percent. For the keyboard you run one small script; for the trackpad, Magic Tray reads the level if Windows reports it.</p>
+      <div class="ident-grid">
         <article class="ident-card">
+          <div class="ident-visual kb-visual">
+            <figure class="photo pos-center">
+              <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture." loading="lazy" decoding="async">
+            </figure>
+          </div>
           <div class="ident-body">
-            <p class="pid-line">030D · AA</p>
-            <h3>Magic Mouse v1</h3>
-            <p>Boot Camp INF. Do not install v3 KMDF.</p>
-            <a href="drivers.html#v1v2">Boot Camp</a>
+            <p class="pid-line">0239 … 0322 · AA, Lightning, USB-C</p>
+            <h3>Magic Keyboard</h3>
+            <p>Three generations: 2011 with AA batteries, 2015 onward with Lightning, and the 2024 model with USB-C. Touch ID and the numeric keypad show up as extra codes, not extra drivers. One script asks the keyboard to publish its battery level over Bluetooth, and the tray reads it from there.</p>
+            <a href="drivers.html#keyboard">Keyboard battery steps</a>
           </div>
         </article>
         <article class="ident-card">
-          <div class="ident-body">
-            <p class="pid-line">0269 · Lightning</p>
-            <h3>Magic Mouse v2</h3>
-            <p>Same signed Boot Camp package as v1.</p>
-            <a href="drivers.html#v1v2">Boot Camp</a>
+          <div class="ident-visual">
+            <figure class="photo pos-bottom">
+              <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge." loading="lazy" decoding="async">
+            </figure>
           </div>
-        </article>
-        <article class="ident-card">
           <div class="ident-body">
-            <p class="pid-line">0323 · USB-C</p>
-            <h3>Magic Mouse 2024</h3>
-            <p>Missing from Boot Camp. KMDF for scroll and battery.</p>
-            <a href="drivers.html#v3">KMDF</a>
-          </div>
-        </article>
-        <article class="ident-card">
-          <div class="ident-body">
-            <p class="pid-line">0310 · AA</p>
-            <h3>Wireless Mouse</h3>
-            <p>Treated as v1. Same INF.</p>
-            <a href="drivers.html#v1v2">Boot Camp</a>
+            <p class="pid-line">030E · 0265 · 0324 · AA, Lightning, USB-C</p>
+            <h3>Magic Trackpad</h3>
+            <p>Battery percent only. We don’t ship tap-to-click, three-finger gestures or a trackpad driver, and we’re not going to pretend otherwise. Full trackpad gestures on Windows are what Magic Utilities sells.</p>
+            <a href="drivers.html#trackpad">Trackpad battery steps</a>
           </div>
         </article>
       </div>
+      <p class="credit">Photos: Fletcher, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by/4.0">CC BY 4.0</a> (keyboard); Josh Kehn at English Wikipedia, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a> (trackpad). Both are shown as they were taken. From straight above, a keyboard's back edge is out of frame, so that picture can't tell you its generation, and the port in the trackpad picture is too small to say whether it is Lightning or USB-C. For the exact model, look along the back edge yourself or read the PID in Windows.</p>
 
-      <h2>Trackpads &amp; keyboards</h2>
-      <div class="grid grid-2">
-        <div class="card">
-          <p class="meta">030E · 0265 · 0324</p>
-          <h3>Trackpads</h3>
-          <p>AA / Lightning / USB-C. Battery rows only. No tap, 3-finger, or KMDF from us — that is a product Magic Utilities sells, and we do not pretend we cloned it.</p>
-          <p><a href="drivers.html#trackpad">Trackpad path</a></p>
-        </div>
-        <div class="card">
-          <p class="meta">0239 … 0322</p>
-          <h3>Keyboards</h3>
-          <p>2011 AA vs Lightning vs 2024 USB-C. Touch ID and numeric keypad are extra PIDs on the same SDP path, not extra drivers. Not a mouse filter.</p>
-          <p><a href="drivers.html#keyboard">SDP path</a></p>
-        </div>
+      <h3>Which generation is mine? Look along the back edge</h3>
+      <p>The keyboard and trackpad give the answer away on their long back edge rather than underneath. A fat round tube with a screw cap means AA batteries. A flat edge with a small socket in it means rechargeable, and the trackpad picture above shows what that socket looks like.</p>
+      <div class="ident-grid">
+        <article class="ident-card">
+          <div class="ident-visual kb-visual">
+            <figure class="photo pos-top">
+              <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="An Apple Wireless Keyboard from 2011. A cylindrical battery tube runs along the top edge." loading="lazy" decoding="async">
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0239 · 2011 · AA batteries</p>
+            <h3>Keyboard with a battery tube</h3>
+            <p>The 2011 Apple Wireless Keyboard. The raised cylinder along the back edge is the battery tube, and it holds the AA cells. No charging port anywhere.</p>
+            <a href="drivers.html#keyboard">Keyboard battery steps</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <figure class="photo pos-center">
+              <img src="img/magic-keyboard-2011-aa-battery-tube.jpg" width="1600" height="595" alt="The end of an Apple Wireless Keyboard. A round slotted cap unscrews to reach the AA batteries." loading="lazy" decoding="async">
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0239 · the end of the tube</p>
+            <h3>The cap you unscrew</h3>
+            <p>A coin fits the slot in the cap, and the batteries slide out of the end. If your keyboard has this cap, it is the AA generation.</p>
+            <a href="drivers.html#keyboard">Keyboard battery steps</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <figure class="photo pos-center">
+              <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries." loading="lazy" decoding="async">
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">030E · 2010 · AA batteries</p>
+            <h3>Trackpad with a battery tube</h3>
+            <p>The first Magic Trackpad, wedge-shaped, with the same screw cap on the back edge. Battery percent works; there is nothing to charge.</p>
+            <a href="drivers.html#trackpad">Trackpad battery steps</a>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <div class="no-photo">
+              <span class="no-photo-label">No photo yet</span>
+              <p>We have no freely licensed photo we can prove is the 2024 USB-C trackpad, and the rechargeable picture above can't be pinned to one port. Check the socket yourself, or read the code in Windows.</p>
+            </div>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0324 · 2024 · USB-C</p>
+            <h3>The 2024 USB-C trackpad</h3>
+            <p>Flat back edge, no battery tube, and a small oval USB-C socket instead of the narrow Lightning slot the <code>0265</code> model uses. Battery percent only, same as the rest.</p>
+            <a href="drivers.html#trackpad">Trackpad battery steps</a>
+          </div>
+        </article>
       </div>
+      <p class="credit">Photos, in order: keyboard from above by Karl432, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; battery cap by Roadmr, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; 2010 trackpad © Raimond Spekking / <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a> (via Wikimedia Commons). All files are unedited.</p>
 
-      <h2>Why it is split this way</h2>
+      <h2 id="split">Why don’t you ship one Windows driver for everything?</h2>
+      <p class="lead">Because each device is broken in a different way, and some aren’t broken at all. Replacing a working signed driver would force you into Test Mode for nothing. So we only add code where something is genuinely missing, and we say plainly where we stop.</p>
       <ul class="facts">
-        <li>Old mice already have a signed Apple driver. Replacing it would make people turn on Test Mode for no reason.</li>
-        <li>The 2024 mouse is a new Windows name. The old Apple file does not list it.</li>
-        <li>Keyboards already type. We only flip a setting so battery % shows up.</li>
-        <li>Trackpad gestures are a whole product. We only show battery.</li>
-        <li>If you need a paid, Microsoft-signed 2024 mouse driver today, Magic Utilities still sells that. We will not kill scroll if you stop paying, because we do not charge for scroll.</li>
+        <li>Magic Mouse v1 and v2 already have a signed Apple Windows driver. Swapping it out would mean turning on Test Mode for no gain.</li>
+        <li>The Magic Mouse v3 (2024, USB-C) is a new code, <code>0323</code>, and Apple’s file doesn’t list it. That’s the one case where we ship a driver.</li>
+        <li>Magic Keyboards already type. We only flip one Bluetooth setting so the battery percent shows up.</li>
+        <li>Trackpad gestures are a whole product to build. We show the battery level and stop there.</li>
+        <li>If you want a paid, Microsoft-signed driver for the 2024 mouse today, Magic Utilities sells one. Our scrolling won’t stop if you stop paying, because we don’t charge for it.</li>
       </ul>
+
+      <h2 id="faq">Common questions about Magic devices on Windows 10/11</h2>
+      <div class="how">
+        <h3>How do I tell which Magic Mouse I have without opening Windows settings?</h3>
+        <p>Turn the mouse upside down and look at how it takes power. A door for two AA batteries means Magic Mouse v1 from 2009. A narrow Lightning port means Magic Mouse v2 from 2015. A small oval USB-C port means Apple’s 2024 model, which this site calls Magic Mouse v3.</p>
+      </div>
+      <div class="how">
+        <h3>Does the Magic Tray scrolling driver work for Magic Keyboards and Magic Trackpads?</h3>
+        <p>No. The scrolling Windows driver is for Magic Mouse only. Keyboards already type on Windows 10 and Windows 11, and we don’t ship trackpad gestures. For keyboards and trackpads, Magic Tray shows the battery percent and nothing else.</p>
+      </div>
+      <div class="how">
+        <h3>Why does the Magic Mouse v3 (2024, USB-C) need a different Windows driver from v1 and v2?</h3>
+        <p>A Windows driver only loads for the hardware codes listed inside its setup file. Apple’s Boot Camp driver lists <code>030D</code> and <code>0269</code>, so Magic Mouse v1 and v2 scroll with it. It has no entry for <code>0323</code>, the 2024 USB-C mouse, so that model needs the separate KMDF driver.</p>
+      </div>
     </article>
 
     <aside class="rail">
       <div class="rail-card">
         <h2>On this page</h2>
         <nav class="jump">
-          <a href="#content">Catalog table</a>
-          <a href="drivers.html#identify">Tell versions apart</a>
-          <a href="v3.html">v3 research</a>
-          <a href="funding.html">Signing goal</a>
+          <a href="#identify">Which mouse do I have?</a>
+          <a href="#compare">Compare every device</a>
+          <a href="#kbtrackpad">Keyboards and trackpads</a>
+          <a href="#split">Why it’s split this way</a>
+          <a href="#faq">Common questions</a>
+          <a href="drivers.html#identify">Check the code in Windows</a>
         </nav>
       </div>
       <div class="rail-card">

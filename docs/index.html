@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Magic Tray — free Windows app for Apple Magic Mouse, Keyboard &amp; Trackpad battery</title>
-  <meta name="description" content="Magic Tray is a free Windows 10 and 11 app. It shows Apple Magic Mouse, Magic Keyboard, and Magic Trackpad battery percent in the system tray and installs the scroll driver your Magic Mouse model needs. MIT licensed, no subscription. Software you install — not a desk stand.">
+  <title>Magic Tray — Magic Mouse, Keyboard and Trackpad battery on Windows 10 and Windows 11</title>
+  <meta name="description" content="Free app: Apple Magic Mouse, Keyboard and Trackpad battery in the Windows 10 and 11 tray, plus the scroll driver a Magic Mouse v1 or v2 needs.">
   <link rel="canonical" href="https://magictray.app/">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
-  <meta property="og:title" content="Magic Tray — free Windows app for Magic Mouse, Keyboard &amp; Trackpad battery">
-  <meta property="og:description" content="Free Windows 10/11 app. Battery percent in the tray for Magic Mouse, Magic Keyboard, and Magic Trackpad, plus the right Magic Mouse scroll driver. MIT, no subscription.">
+  <meta property="og:title" content="Magic Tray — Magic Mouse, Keyboard and Trackpad battery on Windows 10 and 11">
+  <meta property="og:description" content="Free app for Windows 10 and Windows 11. See Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock, and install the Boot Camp scroll driver a Magic Mouse v1 or v2 needs. MIT licensed, no subscription. Software, not a desk stand.">
   <meta property="og:url" content="https://magictray.app/">
   <meta property="og:image" content="https://magictray.app/og.png">
   <meta property="og:image:width" content="1200">
@@ -43,15 +43,15 @@
         "screenshot": "https://magictray.app/screenshot-menu.png",
         "author": { "@type": "Person", "name": "Lesley Murfin" },
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "description": "Free Windows 10 and 11 system tray app that shows Apple Magic Mouse, Magic Keyboard, and Magic Trackpad battery percent and installs the correct Magic Mouse scroll driver.",
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent, and installs the Boot Camp scroll driver a Magic Mouse v1 (AA batteries) or v2 (Lightning) needs.",
         "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads.",
         "featureList": [
-          "Battery percent for Apple Magic Mouse v1, v2, and Magic Mouse 2024 (v3)",
-          "Battery percent for Apple Magic Keyboard and Magic Trackpad",
-          "Low battery alerts at 10, 5, and 1 percent",
-          "Installs the Boot Camp scroll driver for Magic Mouse v1 and v2",
-          "Installs the KMDF scroll driver for Magic Mouse 2024 (PID 0323)",
-          "Keyboard battery SDP registry patch"
+          "Battery percent for Apple Magic Mouse v1 (AA batteries), v2 (Lightning) and the 2024 USB-C model",
+          "Battery percent for Apple Magic Keyboard and Magic Trackpad on Windows 10 and Windows 11",
+          "Low battery alerts at 10, 5 and 1 percent",
+          "Installs Apple's signed Boot Camp scroll driver for Magic Mouse v1 and v2",
+          "Identifies Magic Mouse v3 (2024, USB-C, PID 0323) and points to its separate KMDF Windows driver",
+          "One-time SDP registry patch for Magic Keyboard battery"
         ]
       },
       {
@@ -69,42 +69,74 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "Is Magic Tray a physical desk tray for an Apple keyboard?",
+            "name": "What does Magic Tray do on Windows 10 and Windows 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Magic Tray is free Windows software. It runs in the Windows system tray next to the clock. It is not a wooden or 3D-printed desk tray, stand, or cradle."
+              "text": "Magic Tray is a free app that sits in the Windows system tray, next to the clock. It shows the battery percent of your Apple Magic Mouse, Magic Keyboard and Magic Trackpad, and warns you at 10, 5 and 1 percent. It also installs the Windows scroll driver that a Magic Mouse v1 (AA batteries) or v2 (Lightning) needs."
             }
           },
           {
             "@type": "Question",
-            "name": "Does Magic Tray work on Windows 10?",
+            "name": "Is Magic Tray a physical desk tray or stand?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Magic Tray runs on Windows 10 and Windows 11, 64-bit."
+              "text": "No. Magic Tray is software you download and run on a Windows PC. It lives in the system tray, the little row of icons beside the Windows clock. If you came here looking for a wooden or 3D-printed stand for an Apple keyboard, this is the wrong page."
             }
           },
           {
             "@type": "Question",
-            "name": "Does Magic Tray show Magic Keyboard and Magic Trackpad battery, or only the mouse?",
+            "name": "Does Magic Tray run on Windows 10, or only Windows 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "It shows battery percent for Apple Magic Mouse, Magic Keyboard, and Magic Trackpad. Magic Keyboard battery needs a one-time registry patch that ships with the release."
+              "text": "Both. You need 64-bit Windows 10 version 1809 or newer, or any Windows 11. There is no macOS version, because macOS already shows Apple battery levels. On the first run Windows may warn you that it does not know the app. Click More info, then Run anyway."
             }
           },
           {
             "@type": "Question",
-            "name": "Can Magic Tray fix Magic Mouse scrolling on Windows?",
+            "name": "Is Magic Tray free, or does it need a subscription?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Magic Mouse v1 and v2 use Apple's signed Boot Camp driver. Magic Mouse 2024 (USB-C, hardware id PID 0323) is missing from Boot Camp and uses a KMDF driver instead. Magic Tray installs the one your model needs, only when you confirm."
+              "text": "It is free, and the source code is public under the MIT license. There is no trial, no account and no monthly fee, so your scrolling cannot stop working because a payment failed. If Magic Tray helped you, star the GitHub repo. That is the only thing we ask for."
             }
           },
           {
             "@type": "Question",
-            "name": "Does Magic Tray cost money or need a subscription?",
+            "name": "Which Apple Magic mouse, keyboard and trackpad models work with Magic Tray?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Magic Tray is free and MIT licensed. Scrolling never stops working because a payment stopped."
+              "text": "Battery percent works for the Magic Mouse v1 (AA batteries), v2 (Lightning) and the 2024 model with the USB-C port. We call that newest one v3; Apple just calls it Magic Mouse (2024). Magic Keyboard and Magic Trackpad also show battery. The scrolling Windows driver is for the mouse only."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I tell which Magic Mouse I have: v1, v2 or the 2024 USB-C model?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Turn the mouse over and look at the bottom. A door with two AA batteries under it means Magic Mouse v1. A small Lightning socket means Magic Mouse v2. A wider USB-C socket means the 2024 model, which this project calls Magic Mouse v3. The connector is the giveaway."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I download and run Magic Tray on Windows?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Download MagicMouseTray.exe from the GitHub releases page and double-click it. There is no installer, and it does not need admin rights. Battery percent appears as soon as a supported device is paired. Windows may show a SmartScreen warning first, because the app is not signed yet."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why doesn't my Magic Mouse scroll on Windows 10 and Windows 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Windows has no built-in driver for the touch surface on top of a Magic Mouse, so the pointer moves but the wheel does nothing. On a Magic Mouse v1 (AA batteries) or v2 (Lightning), Apple's Boot Camp Windows driver fixes it. On the 2024 USB-C model, scrolling still needs an experimental driver."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Magic Tray replace Magic Utilities?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Magic Utilities is paid software with Microsoft-signed drivers and gestures, and it does more than Magic Tray does. Magic Tray is a free battery meter that can also set up Magic Mouse scrolling. We are not connected to Magic Utilities in any way. If you want gestures, buy theirs."
             }
           }
         ]
@@ -113,7 +145,7 @@
         "@type": "WebPage",
         "@id": "https://magictray.app/#webpage",
         "url": "https://magictray.app/",
-        "name": "Magic Tray — free Windows app for Apple Magic Mouse, Keyboard & Trackpad battery",
+        "name": "Magic Tray — Magic Mouse, Keyboard and Trackpad battery on Windows 10 and Windows 11",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "mainEntity": { "@id": "https://magictray.app/#app" },
@@ -121,7 +153,7 @@
         "breadcrumb": { "@id": "https://magictray.app/#breadcrumb" },
         "publisher": { "@type": "Person", "name": "Lesley Murfin" },
         "inLanguage": "en",
-        "dateModified": "2026-09-04"
+        "dateModified": "2026-09-05"
       },
       {
         "@type": "BreadcrumbList",
@@ -158,12 +190,12 @@
   <section class="hero-wrap">
     <div class="hero">
       <div class="hero-copy">
-        <p class="kicker">Free · Windows 10/11 · not Magic Utilities</p>
-        <h1>Battery next to the clock. Scroll that actually works.</h1>
+        <p class="kicker">Free · Windows 10 and Windows 11 · not Magic Utilities</p>
+        <h1>Magic Mouse battery next to your Windows clock. Scroll that actually works.</h1>
         <ul class="facts">
-          <li>Magic Tray is a tiny program by the Windows clock.</li>
-          <li>It shows how much battery is left in your Apple mouse, keyboard, or trackpad.</li>
-          <li>If your Magic Mouse will not scroll, it can add the extra Windows piece that mouse needs.</li>
+          <li>Magic Tray is a small free app that sits by the Windows clock.</li>
+          <li>It shows how much battery is left in your Apple Magic Mouse, Magic Keyboard or Magic Trackpad.</li>
+          <li>If your Magic Mouse v1 or v2 won't scroll, it can install the Apple Windows driver that fixes that.</li>
           <li>Free. No monthly fee.</li>
         </ul>
       </div>
@@ -180,117 +212,163 @@
 
   <div class="shell">
     <article id="content" class="primary">
-      <h2>Start here</h2>
-      <ul class="facts">
-        <li><a href="drivers.html#identify">Which device is this?</a> Look at the bottom, then check Windows.</li>
-        <li><a href="drivers.html">What should I install?</a> Old mouse, new mouse, keyboard, or trackpad.</li>
-        <li><a href="v3.html">Why the 2024 mouse is annoying</a> It is not the same as Magic Mouse 2.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">How to install the Magic Mouse v3 Windows driver</a> Step by step for the 2024 USB-C mouse.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a> What reads the percent, and what breaks it.</li>
-        <li><a href="funding.html">Stars</a> If this helped, star the GitHub pages. That is free.</li>
-      </ul>
+      <h2 id="what">What does Magic Tray do on Windows 10 and Windows 11?</h2>
+      <p class="lead">Magic Tray is a free app that sits in the Windows system tray, next to the clock. It shows the battery percent of your Apple Magic Mouse, Magic Keyboard and Magic Trackpad, and warns you at 10, 5 and 1 percent. It also installs the Windows scroll driver that a Magic Mouse v1 (AA batteries) or v2 (Lightning) needs.</p>
 
-      <h2>Which mouse?</h2>
-      <ul class="facts">
-        <li>Flip the mouse over.</li>
-        <li>Battery door, Lightning hole, or USB-C hole?</li>
-        <li>Then check Device Manager → Details → Hardware Ids. Windows uses a code like <code>PID_0323</code>.</li>
-      </ul>
+      <h3 id="not-a-stand">Is Magic Tray a physical desk tray or stand?</h3>
+      <p>No. Magic Tray is software you download and run on a Windows PC. It lives in the system tray, the little row of icons beside the Windows clock. If you came here looking for a wooden or 3D-printed stand for an Apple keyboard, this is the wrong page.</p>
+
+      <h2 id="windows">Does Magic Tray run on Windows 10, or only Windows 11?</h2>
+      <p>Both. You need 64-bit Windows 10 version 1809 or newer, or any Windows 11. There's no macOS version, because macOS already shows Apple battery levels. On the first run Windows may warn you that it doesn't know the app. Click More info, then Run anyway.</p>
+
+      <h2 id="free">Is Magic Tray free, or does it need a subscription?</h2>
+      <p>It's free, and the source code is public under the MIT license. There's no trial, no account and no monthly fee, so your scrolling can't stop working because a payment failed. If Magic Tray helped you, star the GitHub repo. That's the only thing we ask for.</p>
+
+      <h2 id="devices">Which Apple Magic mouse, keyboard and trackpad models work with Magic Tray?</h2>
+      <p>Battery percent works for the Magic Mouse v1 (AA batteries), v2 (Lightning) and the 2024 model with the USB-C port. We call that newest one v3; Apple just calls it Magic Mouse (2024). Magic Keyboard and Magic Trackpad also show battery. The scrolling Windows driver is for the mouse only.</p>
+
+      <h3 id="identify">How do I tell which Magic Mouse I have: v1, v2 or the 2024 USB-C model?</h3>
+      <p>Turn the mouse over and look at the bottom. A door with two AA batteries under it means Magic Mouse v1. A small Lightning socket means Magic Mouse v2. A wider USB-C socket means the 2024 model, which this project calls Magic Mouse v3. The connector is the giveaway.</p>
+      <p>Windows tells models apart by their PID, the four-character code inside a device's hardware id. To read yours, open Device Manager, right-click your mouse, then pick Properties, Details, Hardware Ids. You'll see something like <code>PID_0323</code>.</p>
+      <p class="note">Two names come up in the cards below. Boot Camp is Apple's own pack of Windows drivers, and it covers Magic Mouse v1 and v2. KMDF is a Windows driver that runs deep inside the system, and that's the sort the 2024 USB-C mouse needs.</p>
       <div class="ident-grid cols-4">
         <article class="ident-card">
           <div class="ident-visual">
-            <div class="bottom-view mouse aa" aria-hidden="true">
-              <span class="tag">Bottom</span>
-              <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
-            </div>
+            <figure class="photo pos-center">
+              <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
+            </figure>
           </div>
           <div class="ident-body">
-            <p class="pid-line">030D · AA</p>
-            <h3>Mouse v1</h3>
-            <p>AA door. Boot Camp INF.</p>
-            <a href="drivers.html#v1v2">v1 / v2 path</a>
+            <p class="pid-line">030D · AA batteries</p>
+            <h3>Magic Mouse v1</h3>
+            <p>Two AA batteries behind a door. Scrolls with Apple's Boot Camp Windows driver.</p>
+            <a href="drivers.html#v1v2">Driver steps for v1 and v2</a>
           </div>
         </article>
         <article class="ident-card">
           <div class="ident-visual">
-            <div class="bottom-view mouse lightning" aria-hidden="true">
-              <span class="tag">Bottom</span>
-              <span class="port lightning"></span>
-            </div>
+            <figure class="photo pos-center">
+              <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
+            </figure>
           </div>
           <div class="ident-body">
             <p class="pid-line">0269 · Lightning</p>
-            <h3>Mouse v2</h3>
-            <p>Lightning port. Same INF as v1.</p>
-            <a href="drivers.html#v1v2">v1 / v2 path</a>
+            <h3>Magic Mouse v2</h3>
+            <p>Rechargeable, Lightning port. Same Boot Camp Windows driver as v1.</p>
+            <a href="drivers.html#v1v2">Driver steps for v1 and v2</a>
           </div>
         </article>
         <article class="ident-card">
           <div class="ident-visual">
-            <div class="bottom-view mouse usbc" aria-hidden="true">
-              <span class="tag">Bottom</span>
-              <span class="port usbc"></span>
+            <div class="no-photo">
+              <span class="no-photo-label">No photo yet</span>
+              <p>There is no freely licensed photo of a 2024 Magic Mouse underside, and we won't show you an older mouse and call it this one. Look for the small oval USB-C port, or read <code>A3204</code> on the bottom.</p>
             </div>
           </div>
           <div class="ident-body">
             <p class="pid-line">0323 · USB-C</p>
-            <h3>Mouse 2024 / v3</h3>
-            <p>USB-C. Use KMDF, not Boot Camp.</p>
-            <a href="drivers.html#v3">v3 KMDF path</a>
+            <h3>Magic Mouse v3 (2024)</h3>
+            <p>Rechargeable, USB-C port. Scrolling needs the KMDF Windows driver, not Boot Camp.</p>
+            <a href="drivers.html#v3">Driver steps for v3</a>
           </div>
         </article>
         <article class="ident-card">
           <div class="ident-visual">
-            <div class="bottom-view mouse aa" aria-hidden="true">
-              <span class="tag">Bottom</span>
-              <span class="aa-door"><span class="aa-cell"></span><span class="aa-cell"></span></span>
+            <div class="no-photo">
+              <span class="no-photo-label">No photo yet</span>
+              <p>A different device from the Magic Mouse, with no touch surface on top. It runs on two AA batteries behind a door, so Windows treats it like a v1.</p>
             </div>
           </div>
           <div class="ident-body">
-            <p class="pid-line">0310 · AA</p>
-            <h3>Wireless Mouse</h3>
-            <p>AA door. Treat like v1.</p>
-            <a href="drivers.html#v1v2">v1 / v2 path</a>
+            <p class="pid-line">0310 · AA batteries</p>
+            <h3>Apple Wireless Mouse</h3>
+            <p>AA batteries behind a door. Treat it like a Magic Mouse v1.</p>
+            <a href="drivers.html#v1v2">Driver steps for v1 and v2</a>
           </div>
         </article>
       </div>
+      <p class="credit">Photos: FASTILY, via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a> (v1 underside); Syced, via Wikimedia Commons, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a> (v2 underside). The files are unedited; the crop you see is done by the page layout.</p>
       <ul class="facts">
-        <li>Trackpads: <code>030E</code> AA, <code>0265</code> Lightning, <code>0324</code> USB-C. Battery only.</li>
-        <li>Keyboards: 2011 AA, Lightning, or 2024 USB-C. SDP patch, not a mouse driver.</li>
-        <li>Full matrix: <a href="devices.html">Devices</a>.</li>
+        <li>The model number is etched on the underside, next to the small print: <code>A1296</code> is a Magic Mouse v1, <code>A1657</code> is a v2, and <code>A3204</code> is the 2024 USB-C model. It reads the same whether or not a cable is in the way. <a href="devices.html#identify">See what that text looks like</a>.</li>
+        <li>Magic Trackpad: <code>030E</code> AA batteries, <code>0265</code> Lightning, <code>0324</code> USB-C. Battery percent only, no scroll driver.</li>
+        <li>Magic Keyboard: the 2011 AA model, the Lightning models and the 2024 USB-C model. Battery needs the SDP patch, which is a one-time edit to the list of things Windows thinks your keyboard can do.</li>
+        <li>Every model, PID and connector: <a href="devices.html">Devices</a>.</li>
+      </ul>
+
+      <h2 id="get">How do I download and run Magic Tray on Windows?</h2>
+      <p>Download <code>MagicMouseTray.exe</code> from the GitHub releases page and double-click it. There's no installer, and it doesn't need admin rights. Battery percent appears as soon as a supported device is paired. Windows may show a SmartScreen warning first, because the app isn't signed yet.</p>
+      <div class="how">
+        <h3>Three steps to battery percent in the Windows tray</h3>
+        <ol>
+          <li>Pair your Magic Mouse, Magic Keyboard or Magic Trackpad in Windows Bluetooth settings.</li>
+          <li>Download <code>MagicMouseTray.exe</code> from Releases and run it.</li>
+          <li>Click the tray icon. Each paired device shows its percent.</li>
+        </ol>
+        <p>Want keyboard battery too? Run the keyboard patch from the same download. Magic Tray leaves your Windows drivers alone until you pick a driver yourself and approve the Windows permission prompt.</p>
+        <p class="cta">
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
+        </p>
+      </div>
+
+      <h2 id="scroll">Why doesn't my Magic Mouse scroll on Windows 10 and Windows 11?</h2>
+      <p>Windows has no built-in driver for the touch surface on top of a Magic Mouse, so the pointer moves but the wheel does nothing. On a Magic Mouse v1 (AA batteries) or v2 (Lightning), Apple's Boot Camp Windows driver fixes it. On the 2024 USB-C model, scrolling still needs an experimental driver.</p>
+
+      <h3 id="boot-camp">Magic Mouse v1 and v2: install Apple's Boot Camp Windows driver</h3>
+      <p>Boot Camp is Apple's own pack of Windows drivers, built for Macs that also boot Windows. Its mouse driver covers Magic Mouse v1 and v2. Apple signed it, so Windows loads it without any special settings. Magic Tray can install it for you, or you can install the INF yourself.</p>
+      <p>An INF is the small text file Windows reads to set a driver up. Right-click it, choose Install, and reboot if Windows asks you to. <a href="drivers.html#v1v2">Full steps for Magic Mouse v1 and v2</a>.</p>
+
+      <h3 id="v3-scroll">Magic Mouse v3 (2024, USB-C): battery works now, scrolling is still experimental</h3>
+      <p>Battery percent works on this mouse with no driver at all. Scrolling doesn't, because Apple's Boot Camp pack has no entry for PID 0323. A separate project builds a KMDF driver for it. KMDF is the kind of Windows driver that runs deep inside the system, alongside Windows' own code.</p>
+      <p>Microsoft hasn't signed that driver, so Windows only loads it if you switch Test Mode on and turn Memory integrity off. Test Mode is the Windows setting that allows unchecked drivers. It puts a watermark on your desktop and lowers your security. Magic Tray can't install this driver yet.</p>
+      <ul class="facts">
+        <li><a href="v3.html">Why the 2024 USB-C mouse is the hard one</a></li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">How to install the Magic Mouse v3 Windows driver</a></li>
+      </ul>
+
+      <h2 id="magic-utilities">Does Magic Tray replace Magic Utilities?</h2>
+      <p>No. Magic Utilities is paid software with Microsoft-signed drivers and gestures, and it does more than Magic Tray does. Magic Tray is a free battery meter that can also set up Magic Mouse scrolling. We're not connected to Magic Utilities in any way. If you want gestures, buy theirs.</p>
+
+      <h2 id="more">Where do I read more about Magic Mouse drivers on Windows?</h2>
+      <ul class="facts">
+        <li><a href="drivers.html#identify">Which Magic device is this?</a> Check the bottom, then check Windows.</li>
+        <li><a href="drivers.html">Which Windows driver do I install?</a> Mouse v1, v2, v3, keyboard or trackpad.</li>
+        <li><a href="v3.html">Why the Magic Mouse v3 (2024, USB-C) is harder</a> It isn't just a new Magic Mouse v2.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">How to install the Magic Mouse v3 Windows driver</a> Step by step for the 2024 USB-C mouse.</li>
+        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a> What reads the percent, and what breaks it.</li>
+        <li><a href="funding.html">Stars and signing</a> Stars are free, and the goal is a signed driver that needs no Test Mode.</li>
       </ul>
     </article>
 
     <aside class="rail">
       <div class="rail-card">
-        <h2>Get it</h2>
+        <h2>Get Magic Tray for Windows 10/11</h2>
         <ul class="facts">
-          <li>Download the program.</li>
-          <li>You choose if and when to install a driver.</li>
+          <li>Download the app and run it. No installer.</li>
+          <li>You choose if and when a Windows driver gets installed.</li>
         </ul>
         <p class="cta">
           <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
-          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse 2024 (v3) Windows driver</a>
+          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse v3 (2024, USB-C) Windows driver</a>
         </p>
       </div>
       <div class="rail-card">
-        <h2>PID cheat sheet</h2>
+        <h2>PID cheat sheet: which model is which</h2>
         <dl class="pid-sheet">
-          <dt>030D</dt><dd>Mouse v1 · AA</dd>
-          <dt>0269</dt><dd>Mouse v2 · Lightning</dd>
-          <dt>0323</dt><dd>Mouse 2024 · USB-C</dd>
-          <dt>0310</dt><dd>Wireless Mouse · AA</dd>
-          <dt>030E</dt><dd>Trackpad 1 · AA</dd>
-          <dt>0265</dt><dd>Trackpad 2 · Lightning</dd>
-          <dt>0324</dt><dd>Trackpad 2024 · USB-C</dd>
+          <dt>030D</dt><dd>Magic Mouse v1 · AA batteries</dd>
+          <dt>0269</dt><dd>Magic Mouse v2 · Lightning</dd>
+          <dt>0323</dt><dd>Magic Mouse v3 · 2024, USB-C</dd>
+          <dt>0310</dt><dd>Apple Wireless Mouse · AA batteries</dd>
+          <dt>030E</dt><dd>Magic Trackpad 1 · AA batteries</dd>
+          <dt>0265</dt><dd>Magic Trackpad 2 · Lightning</dd>
+          <dt>0324</dt><dd>Magic Trackpad · 2024, USB-C</dd>
         </dl>
       </div>
       <div class="rail-card">
-        <h2>On this site</h2>
+        <h2>More on Magic devices and Windows</h2>
         <nav class="jump">
-          <a href="drivers.html#identify">Tell versions apart</a>
-          <a href="drivers.html">Which driver</a>
-          <a href="v3.html">Why v3 is hard</a>
+          <a href="drivers.html#identify">Tell Magic Mouse versions apart</a>
+          <a href="drivers.html">Which Windows driver do I need</a>
+          <a href="v3.html">Why Magic Mouse v3 is hard</a>
           <a href="funding.html">Stars &amp; signing</a>
           <a href="TESTED.md">Hardware reports</a>
           <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/scroll-fix.html">Magic Mouse v3 Windows driver — scroll fix</a>
