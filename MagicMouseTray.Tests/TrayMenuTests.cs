@@ -354,6 +354,10 @@ public class TrayMenuTests
         Assert.Equal(expected, TrayMenu.DeviceThresholdLabel(pct, hours));
     }
 
+    /// <summary>
+    /// Help menu labels and URLs stay exact: the bug and feature entries and the
+    /// issues fallback must never point users at a dead or wrong page.
+    /// </summary>
     [Fact]
     public void HelpUrls_AndLabels_AreExact()
     {
@@ -361,6 +365,7 @@ public class TrayMenuTests
         Assert.Equal("How alerts work", TrayMenu.HowAlertsWorkLabel);
         Assert.Equal("Repository", TrayMenu.RepositoryLabel);
         Assert.Equal("Report a bug", TrayMenu.ReportBugLabel);
+        Assert.Equal("Request a feature", TrayMenu.RequestFeatureLabel);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray", TrayMenu.RepoUrl);
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray/issues", TrayMenu.IssuesUrl);
         Assert.Equal(

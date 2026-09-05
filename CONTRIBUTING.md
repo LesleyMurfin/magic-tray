@@ -33,7 +33,9 @@ The device list the app and CI use is `MouseBatteryDevice.KnownMice` and `Keyboa
 
 ## Bug reports
 
-Include `%APPDATA%\MagicMouseTray\debug.log` and the device Hardware Ids from Device Manager (look for `VID_004C&PID_xxxx` or `VID_05AC&PID_xxxx`).
+In the tray: **Help → Report a bug**. That copies a MAC-redacted snapshot and opens a GitHub draft; you submit it while logged in. **Help → Request a feature** does the same without diagnostics.
+
+Or include `%APPDATA%\MagicMouseTray\debug.log` and Hardware Ids (`VID_05AC&PID_xxxx`) by hand.
 
 ## License
 

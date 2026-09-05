@@ -138,7 +138,7 @@ Right-click the tray icon.
 | Battery reads | Status only. Visible on 2024 / v3 + KMDF. |
 | Refresh Now | Immediate battery read |
 | Diagnostics | Logs, test notification, capture scripts |
-| Help/Documentation | Alerts doc, this repo, report a bug |
+| Help/Documentation | Alerts doc, this repo, report a bug (pre-filled diagnostics), request a feature |
 | Quit | Exit |
 
 Footer: **Magic Tray 1.1.0**.
