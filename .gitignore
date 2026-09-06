@@ -53,3 +53,7 @@ style-results.json
 # Agent scratch — not product (#66)
 .orca/
 .ai/
+
+# Python bytecode -- coderabbit_eval eval harness is a Python package
+__pycache__/
+*.pyc

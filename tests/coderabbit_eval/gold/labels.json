@@ -1,0 +1,114 @@
+[
+  {
+    "file": "tests/coderabbit_eval/security/sql_injection.py",
+    "category": "sql_injection",
+    "line": 14,
+    "description": "SQL query built via string concatenation of user input",
+    "must_flag": true
+  },
+  {
+    "file": "tests/coderabbit_eval/security/command_injection.py",
+    "category": "command_injection",
+    "line": 13,
+    "description": "os.system invoked with unsanitized user-supplied path",
+    "must_flag": true
+  },
+  {
+    "file": "tests/coderabbit_eval/security/hardcoded_secret.py",
+    "category": "hardcoded_secret",
+    "line": 13,
+    "description": "Fake API key hardcoded as a module-level constant",
+    "must_flag": true
+  },
+  {
+    "file": "tests/coderabbit_eval/correctness/broad_except.py",
+    "category": "broad_except",
+    "line": 17,
+    "description": "except Exception: pass silently swallows a config load error",
+    "must_flag": true
+  },
+  {
+    "file": "tests/coderabbit_eval/correctness/toctou_race.py",
+    "category": "toctou_race",
+    "line": 13,
+    "description": "os.path.exists check followed by a non-atomic create (TOCTOU)",
+    "must_flag": true
+  },
+  {
+    "file": "tests/coderabbit_eval/controls/clean_query.py",
+    "category": "control",
+    "line": null,
+    "description": "Parameterized query, no injection risk",
+    "must_flag": false
+  },
+  {
+    "file": "tests/coderabbit_eval/controls/clean_subprocess.py",
+    "category": "control",
+    "line": null,
+    "description": "subprocess.run with an argument list and no shell, no injection risk",
+    "must_flag": false
+  },
+  {
+    "file": "tests/coderabbit_eval/controls/clean_error_handling.py",
+    "category": "control",
+    "line": null,
+    "description": "Narrow exception handling with logging, no silent swallow",
+    "must_flag": false
+  },
+  {
+    "file": "src/coderabbit_eval/security/sql_injection.py",
+    "category": "sql_injection",
+    "line": 14,
+    "description": "SQL query built via string concatenation of user input",
+    "must_flag": true
+  },
+  {
+    "file": "src/coderabbit_eval/security/command_injection.py",
+    "category": "command_injection",
+    "line": 13,
+    "description": "os.system invoked with unsanitized user-supplied path",
+    "must_flag": true
+  },
+  {
+    "file": "src/coderabbit_eval/security/hardcoded_secret.py",
+    "category": "hardcoded_secret",
+    "line": 13,
+    "description": "Fake API key hardcoded as a module-level constant",
+    "must_flag": true
+  },
+  {
+    "file": "src/coderabbit_eval/correctness/broad_except.py",
+    "category": "broad_except",
+    "line": 17,
+    "description": "except Exception: pass silently swallows a config load error",
+    "must_flag": true
+  },
+  {
+    "file": "src/coderabbit_eval/correctness/toctou_race.py",
+    "category": "toctou_race",
+    "line": 13,
+    "description": "os.path.exists check followed by a non-atomic create (TOCTOU)",
+    "must_flag": true
+  },
+  {
+    "file": "src/coderabbit_eval/controls/clean_query.py",
+    "category": "control",
+    "line": null,
+    "description": "Parameterized query, no injection risk",
+    "must_flag": false
+  },
+  {
+    "file": "src/coderabbit_eval/controls/clean_subprocess.py",
+    "category": "control",
+    "line": null,
+    "description": "subprocess.run with an argument list and no shell, no injection risk",
+    "must_flag": false
+  },
+  {
+    "file": "src/coderabbit_eval/controls/clean_error_handling.py",
+    "category": "control",
+    "line": null,
+    "description": "Narrow exception handling with logging, no silent swallow",
+    "must_flag": false
+  }
+]
