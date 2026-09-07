@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: LesleyMurfin.MagicTray
+PackageVersion: 1.1.0
+PackageLocale: en-US
+Publisher: Lesley Murfin
+PublisherUrl: https://magictray.app/
+PublisherSupportUrl: https://github.com/LesleyMurfin/magic-tray/issues
+Author: Lesley Murfin
+PackageName: Magic Tray
+PackageUrl: https://magictray.app/
+License: MIT
+LicenseUrl: https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE
+Copyright: Copyright (c) Lesley Murfin
+CopyrightUrl: https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE
+# Kept identical to the <meta name="description"> on https://magictray.app/
+# so the listing and the site say the same thing. 153 characters.
+ShortDescription: 'Free Windows 10 and 11 app: see Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent beside the clock, and fix a mouse that won''t scroll.'
+Description: >-
+  Magic Tray puts the battery percentage of an Apple Magic Mouse, Magic
+  Keyboard or Magic Trackpad in the Windows notification area, next to the
+  clock. It is a free, open source, MIT licensed alternative to paid Magic
+  Utilities style tools, with no subscription and no account.
+
+  Magic Tray is portable. It does not need administrator rights to run and
+  show battery levels. Battery percent needs no driver of any kind. It reads
+  battery over Bluetooth HID and polls adaptively so it stays cheap when
+  nothing changes.
+
+  Two optional repairs sit in the tray menu, and neither one ever starts on
+  its own. For a Magic Mouse that will not scroll, "Fix scrolling" offers
+  whatever route exists for that exact model: for the older models it opens a
+  download page and installs nothing itself, and for the 2024 USB-C model it
+  can run a driver step for you once you confirm. "Fix battery reads" runs the
+  one-time keyboard battery unlock for a Magic Keyboard whose battery does not
+  report. Both ask for elevation at the moment they run, and the mouse side can
+  be put back to the stock Windows driver from the same menu.
+Moniker: magictray
+Tags:
+- apple
+- battery
+- bluetooth
+- keyboard
+- magic-keyboard
+- magic-mouse
+- magic-trackpad
+- mouse
+- system-tray
+- tray
+ReleaseNotesUrl: https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0
+Documentations:
+- DocumentLabel: Homepage
+  DocumentUrl: https://magictray.app/
+- DocumentLabel: Readme
+  DocumentUrl: https://github.com/LesleyMurfin/magic-tray/blob/main/README.md
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

@@ -1,7 +1,9 @@
 name: release
 
-# Build, test, publish, optionally Authenticode-sign, and attach the exe, keyboard
-# battery patch, and Diagnostics menu scripts on a v* tag.
+# Build, test, publish, optionally Authenticode-sign, then package the portable
+# MagicTray-<tag>-win-x64.zip (exe + scripts/ + README.txt + SHA256SUMS) and
+# attach it first on a v* tag. The loose exe and scripts stay attached too,
+# because links already in the wild point at them.
 on:
   push:
     tags:
@@ -64,12 +66,41 @@ jobs:
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
           ./scripts/sign-app.ps1 -Exe publish/MagicMouseTray.exe -PfxPath "$env:RUNNER_TEMP\cert.pfx" -PfxPassword $env:SIGN_PFX_PASSWORD
 
+      # Packaging runs AFTER the signing step so the exe inside the ZIP is the
+      # signed one. All layout logic lives in scripts/package-release.ps1.
+      - name: Package portable ZIP
+        id: package
+        shell: pwsh
+        run: ./scripts/package-release.ps1 -PublishDir publish -Tag "$env:GITHUB_REF_NAME" -OutDir dist
+
       # GITHUB_REF_NAME is a default Actions env var: read it instead of
       # interpolating github.ref_name into the command line.
       - name: Verify release artifacts
-        run: pwsh -File scripts/verify-release.ps1 -PublishDir publish -Tag "$env:GITHUB_REF_NAME"
+        shell: pwsh
+        env:
+          ZIP_PATH: ${{ steps.package.outputs.zip }}
+        run: pwsh -File scripts/verify-release.ps1 -PublishDir publish -Tag "$env:GITHUB_REF_NAME" -ZipPath "$env:ZIP_PATH"
 
+      - name: Write release notes
+        shell: pwsh
+        env:
+          ZIP_NAME: ${{ steps.package.outputs.zip_name }}
+          ZIP_SHA256: ${{ steps.package.outputs.zip_sha256 }}
+        run: |
+          $lines = @(
+            "**Recommended download: $env:ZIP_NAME** — unzip the whole folder, then run MagicMouseTray.exe.",
+            '',
+            'Take the zip rather than the bare exe: it includes the scripts folder that the keyboard battery unlock ("Fix battery reads") and the Diagnostics menu read from, and the exe on its own cannot find them.',
+            '',
+            "SHA256 of the zip: $env:ZIP_SHA256"
+          )
+          [IO.File]::WriteAllLines("$env:RUNNER_TEMP/release-notes.md", [string[]]$lines)
+
+      # The ZIP is listed first so it is the primary asset. The loose exe and
+      # scripts stay attached because existing links point at them.
       - name: Create GitHub release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$env:GITHUB_REF_NAME" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --generate-notes
+          ZIP_PATH: ${{ steps.package.outputs.zip }}
+        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes

@@ -3,33 +3,57 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Star the repos · fund public driver signing — Magic Tray</title>
-  <meta name="description" content="Star Magic Tray and magic-mouse-v3-windows-fix if they help. Goal: EV code-signing plus Microsoft attestation so Magic Mouse v3 KMDF loads without Test Mode. Not a subscription that kills scroll.">
+  <title>Help fund a Magic Mouse driver checked for Windows 10 and 11</title>
+  <meta name="description" content="Help pay for a Magic Mouse driver Microsoft has checked, so Windows 10 and 11 load it with no warning. Free ways to help too: star the projects.">
   <link rel="canonical" href="https://magictray.app/funding.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:title" content="Star the repos · fund public driver signing">
-  <meta property="og:description" content="Free MIT tray. Goal is a Microsoft-signed v3 KMDF, not a trial that unbinds scroll.">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Magic Tray">
+  <meta property="og:title" content="Help fund a Magic Mouse driver checked for Windows 10 and 11">
+  <meta property="og:description" content="Magic Tray is free and stays free. Star the projects, test a Magic Keyboard or Magic Trackpad, or help pay for the Microsoft check on the driver.">
   <meta property="og:url" content="https://magictray.app/funding.html">
   <meta property="og:image" content="https://magictray.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Magic Tray menu on Windows 11 showing Magic Keyboard, Magic Mouse 2024, and Magic Mouse v1 battery percent">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Help fund a Magic Mouse driver checked for Windows 10 and 11">
+  <meta name="twitter:description" content="Magic Tray is free and stays free. Star the projects, test a device, or help pay for the Microsoft check on the driver.">
+  <meta name="twitter:image" content="https://magictray.app/og.png">
+  <link rel="icon" href="screenshot-tray.png">
   <link rel="stylesheet" href="site.css">
+  <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "license": "https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "availability": "https://schema.org/InStock" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/funding.html#webpage",
         "url": "https://magictray.app/funding.html",
-        "name": "Star the repos · fund public driver signing — Magic Tray",
-        "description": "Star Magic Tray and magic-mouse-v3-windows-fix if they help. Goal: EV code-signing plus Microsoft attestation so Magic Mouse v3 KMDF loads without Test Mode. Not a subscription that kills scroll.",
+        "name": "Help fund a Magic Mouse driver checked for Windows 10 and 11",
+        "description": "Magic Tray is free and always will be. Nobody has paid for Microsoft's check on the Magic Mouse driver, so Windows shows a warning and you have to change a Windows startup setting. Paying for the check removes both, for everyone.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
+        "mainEntity": { "@id": "https://magictray.app/#app" },
+        "isAccessibleForFree": true,
         "publisher": { "@type": "Person", "name": "Lesley Murfin" },
         "breadcrumb": { "@id": "https://magictray.app/funding.html#breadcrumb" },
         "inLanguage": "en",
-        "dateModified": "2026-09-04"
+        "dateModified": "2026-09-07"
       },
       {
         "@type": "BreadcrumbList",
@@ -44,7 +68,7 @@
           {
             "@type": "ListItem",
             "position": 2,
-            "name": "Stars & signing",
+            "name": "Support",
             "item": "https://magictray.app/funding.html"
           }
         ]
@@ -60,10 +84,12 @@
       <a class="brand" href="./">Magic Tray <small>1.1.0</small></a>
       <nav aria-label="Site">
         <a href="./">Home</a>
-        <a href="drivers.html">Which driver</a>
-        <a href="v3.html">Why v3 is hard</a>
-        <a href="devices.html">Devices</a>
-        <a href="funding.html" aria-current="page">Stars &amp; signing</a>
+        <a href="battery.html">See my battery</a>
+        <a href="devices.html">Which device?</a>
+        <a href="drivers.html">Make it scroll</a>
+        <a href="keyboard.html">Keyboard battery</a>
+        <a href="v3.html">The 2024 mouse</a>
+        <a href="funding.html" aria-current="page">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
@@ -72,96 +98,42 @@
   <div class="shell">
     <article id="content" class="primary">
       <header class="page-intro">
-        <p class="kicker"><a href="./">Magic Tray</a> · signing</p>
-        <h1>If this helped, star the projects</h1>
-        <ul class="facts">
-          <li>A star on GitHub is free and tells other people the project is used.</li>
-          <li>The 2024 mouse driver is not signed by Microsoft yet, so Windows makes you turn on Test Mode.</li>
-          <li>Money would buy a real signing certificate so Test Mode can go away — for everyone, not as a monthly fee.</li>
-        </ul>
+        <p class="kicker"><a href="./">Magic Tray</a> · support</p>
+        <h1>Help fund a Magic Mouse driver checked for Windows 10 and 11</h1>
+        <p class="lead">Magic Tray is free and always will be, and so is the driver. Nobody has paid for Microsoft's check on that driver, the software Windows uses to talk to your mouse.</p>
       </header>
 
-      <h2 id="goal">What we want</h2>
-      <ul class="facts">
-        <li>A proper code-signing certificate, then Microsoft to sign the 2024 mouse driver.</li>
-        <li>After that, the extra scroll piece loads on a normal Windows 11 PC.</li>
-        <li>The tray stays free. The driver stays free. Scroll does not turn off if money stops.</li>
-      </ul>
-      <div class="grid grid-2">
-        <div class="card">
-          <h3>GitHub Sponsors</h3>
-          <p>Profile is submitted and <strong>pending GitHub staff approval</strong>. The Sponsor button will work when they publish it. Goal: EV cert + Microsoft attestation for the v3 KMDF.</p>
-        </div>
-        <div class="card">
-          <h3>Until then</h3>
-          <p><a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a> and <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">star the v3 driver</a>. Optional Stripe Payment Link is not required for Sponsors — <a href="STRIPE-SETUP.md">STRIPE-SETUP.md</a>. No cards in the app.</p>
-        </div>
+      <h2 id="goal">What would the money buy?</h2>
+      <p>Paying for Microsoft's check on the Magic Mouse driver removes the security warning when you install it, and removes the Windows startup setting you currently have to change to make the 2024 mouse scroll. It would work for everyone, not only donors. Magic Tray itself stays free regardless.</p>
+
+      <h2 id="help">Free ways to help</h2>
+      <p>Most people won't pay a penny, and these free actions help as much as money. Star Magic Tray and the 2024 mouse fix on GitHub. Tell us your Apple device works so it joins the tested list. Test a Magic Keyboard or a Magic Trackpad nobody has confirmed.</p>
+
+      <h2 id="test-devices">Devices that need a tester</h2>
+      <p>Only three Apple devices have ever been confirmed by a real tester: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). Every Magic Keyboard and every Magic Trackpad should work, but nobody has confirmed one yet.</p>
+      <div class="table-scroll" tabindex="0">
+      <table>
+        <thead><tr><th>Trackpad</th><th>Code Windows shows</th></tr></thead>
+        <tbody>
+          <tr><td>Magic Trackpad, AA batteries</td><td><code>030E</code></td></tr>
+          <tr><td>Magic Trackpad 2, Lightning</td><td><code>0265</code></td></tr>
+          <tr><td>Magic Trackpad 2024, USB-C</td><td><code>0324</code></td></tr>
+        </tbody>
+      </table>
       </div>
-      <p class="note">We will <strong>not</strong> unbind scroll if money stops.</p>
+      <p class="note"><a href="keyboard.html#test">Keyboards that need a tester</a></p>
+      <p class="cta"><a class="primary" href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a></p>
 
-      <h2 id="app">What “signed publicly” means</h2>
-      <h3>The app (MagicMouseTray.exe)</h3>
-      <ol class="steps">
-        <li>Buy an <strong>OV or EV Authenticode</strong> cert from a public CA (DigiCert, Sectigo, SSL.com) in a verified name — not a self-signed PFX.</li>
-        <li>EV is the one SmartScreen usually trusts on first download; OV still works but reputation builds with volume. EV is typically a USB token or HSM.</li>
-        <li>Put the cert in GitHub secrets <code>SIGN_PFX_BASE64</code> / <code>SIGN_PFX_PASSWORD</code>. <code>scripts/sign-app.ps1</code> already runs on <code>v*</code> tags. Those secrets are empty, so v1.1.0 shipped unsigned.</li>
-        <li>Timestamp every build. Self-signed Authenticode does <em>not</em> clear “Windows protected your PC.”</li>
-      </ol>
-
-      <h3 id="kmdf">The v3 kernel driver (the Test Mode tax)</h3>
-      <table>
-        <thead><tr><th>Level</th><th>User sees</th><th>Requires</th></tr></thead>
-        <tbody>
-          <tr><td>Today: test signing</td><td>Test Mode + Memory Integrity off</td><td>Free</td></tr>
-          <tr><td>Attestation</td><td>Loads on normal Windows 10/11</td><td>EV cert + Partner Center / Hardware Dev Center; Microsoft signs the KMDF package</td></tr>
-          <tr><td>WHQL / HLK</td><td>Logo, MU-class Secure Boot story</td><td>Attestation plus lab tests</td></tr>
-        </tbody>
-      </table>
-
-      <h2 id="compare">Stars vs Stripe vs subscription</h2>
-      <table>
-        <thead><tr><th></th><th>Funds</th><th>We do this?</th></tr></thead>
-        <tbody>
-          <tr><td>Star both repos</td><td>Discoverability</td><td>Yes — please</td></tr>
-          <tr><td>GitHub Sponsors → EV + attestation</td><td>One signed KMDF for everyone</td><td>Pending GitHub approval</td></tr>
-          <tr><td>Stripe Payment Link</td><td>Same goal, off GitHub</td><td>Optional; Dashboard steps in STRIPE-SETUP.md</td></tr>
-          <tr><td>Subscription that expires the filter</td><td>WHQL like MU</td><td><strong>No</strong></td></tr>
-        </tbody>
-      </table>
-
-      <h2 id="msft">Why Windows does not just include this</h2>
-      <ul class="facts">
-        <li>Windows has no built-in Magic Mouse driver like Linux does.</li>
-        <li>Apple’s old Boot Camp file never listed the 2024 mouse.</li>
-        <li>A community driver cannot pretend to be Apple. Microsoft will not logo it for free.</li>
-        <li>New PCs turn on extra security by default, so unsigned drivers are blocked.</li>
-      </ul>
-      <p>Research: <a href="v3.html">Why v3 is hard</a>. Practical install: <a href="drivers.html">Which driver</a>.</p>
+      <h2 id="pay">Paid ways to help</h2>
+      <p>Magic Tray has no sponsor button yet. GitHub hasn't approved the page.</p>
     </article>
 
     <aside class="rail">
       <div class="rail-card">
-        <h2>Actions</h2>
-        <p>Stars are free and useful. The v3 filter stays MIT either way.</p>
         <p class="cta">
           <a class="primary" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-          <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
-          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse v3 Windows driver</a>
+          <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 fix</a>
         </p>
-      </div>
-      <div class="rail-card">
-        <h2>On this page</h2>
-        <nav class="jump">
-          <a href="#goal">The goal</a>
-          <a href="#app">App signing</a>
-          <a href="#kmdf">KMDF / Test Mode</a>
-          <a href="#compare">Stars vs subscription</a>
-          <a href="#msft">Why Microsoft does not</a>
-        </nav>
-      </div>
-      <div class="rail-card">
-        <h2>Promise</h2>
-        <p>No license check in the filter. We will not unbind scroll if money stops.</p>
       </div>
     </aside>
   </div>
@@ -172,9 +144,9 @@
       <p>
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
-        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+        <a href="TESTED.md">Hardware reports</a>
         ·
-        <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a>
+        <a href="llms.txt">llms.txt</a>
       </p>
     </div>
   </footer>

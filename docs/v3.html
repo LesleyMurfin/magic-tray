@@ -3,59 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Magic Mouse v3 (2024, USB-C): why scrolling breaks on Windows 10 and Windows 11 — Magic Tray</title>
-  <meta name="description" content="Windows 10/11 call the Magic Mouse v3 (2024, USB-C) PID 0323. Apple’s Boot Camp Windows driver never listed it, so finger scrolling dies.">
+  <title>Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11</title>
+  <meta name="description" content="The 2024 USB-C Magic Mouse shows battery percent on Windows 10 and 11. Scrolling doesn't work: Apple's Windows software has no entry for code 0323.">
   <link rel="canonical" href="https://magictray.app/v3.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:title" content="Magic Mouse v3 (2024, USB-C): why scrolling breaks on Windows 10 and Windows 11">
-  <meta property="og:description" content="Windows knows the Magic Mouse v3 — Apple’s 2024 model with the USB-C port — as PID 0323, and Apple’s Boot Camp Windows driver never listed it. The pointer still moves. Finger scrolling stops.">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Magic Tray">
+  <meta property="og:title" content="Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11">
+  <meta property="og:description" content="The battery percent already works with no driver. Finger scrolling doesn't, because Apple's Windows software has no entry for device code 0323.">
   <meta property="og:url" content="https://magictray.app/v3.html">
   <meta property="og:image" content="https://magictray.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Magic Tray menu on Windows 11 showing Magic Keyboard, Magic Mouse 2024, and Magic Mouse v1 battery percent">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Magic Mouse 2024 (USB-C) won't scroll on Windows 10 or 11">
+  <meta name="twitter:description" content="Battery percent works with no driver. Finger scrolling needs one, and Apple's Windows software has no entry for code 0323.">
+  <meta name="twitter:image" content="https://magictray.app/og.png">
+  <link rel="icon" href="screenshot-tray.png">
   <link rel="stylesheet" href="site.css">
+  <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebPage",
-        "@id": "https://magictray.app/v3.html",
-        "name": "Magic Mouse v3 (2024, USB-C): why scrolling breaks on Windows 10 and Windows 11",
+        "@id": "https://magictray.app/v3.html#webpage",
+        "name": "Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11",
+        "description": "The 2024 USB-C Magic Mouse shows battery percent on Windows 10 and 11. Scrolling doesn't work: Apple's Windows software has no entry for code 0323.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "url": "https://magictray.app/v3.html",
         "breadcrumb": { "@id": "https://magictray.app/v3.html#breadcrumb" },
+        "hasPart": { "@id": "https://magictray.app/v3.html#faq" },
         "publisher": { "@type": "Person", "name": "Lesley Murfin" },
         "inLanguage": "en",
-        "dateModified": "2026-09-05"
+        "dateModified": "2026-09-07"
       },
       {
         "@type": "FAQPage",
         "@id": "https://magictray.app/v3.html#faq",
+        "isPartOf": { "@id": "https://magictray.app/v3.html#webpage" },
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "Is the Magic Mouse v3 (2024, USB-C) the same as Magic Mouse v2 on Windows?",
+            "name": "Why doesn't Apple's Windows software fix the 2024 Magic Mouse?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Magic Mouse v2 charges through a Lightning port, and Windows knows it by the code 0269. The Magic Mouse v3, Apple’s 2024 model, charges through a USB-C port, and Windows knows it as 0323. Apple’s Boot Camp Windows driver lists 0269 and never listed 0323, so it will not load on the newer mouse."
+              "text": "Windows gives every mouse model a four-character device code, and the 2024 USB-C Magic Mouse reports 0323. Apple's own Windows software lists the older Magic Mouse codes and never listed 0323. Windows finds no match, so it never loads a scroll driver for this mouse."
             }
           },
           {
             "@type": "Question",
-            "name": "Why does Magic Mouse v3 scrolling stop working on Windows 10/11 after the mouse sleeps?",
+            "name": "What does the community driver for the 2024 Magic Mouse do?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Your mouse reports itself to Windows in two separate parts: one for movement, one for battery. After the Bluetooth link goes idle, Windows can cache the two parts as one. The pointer survives because it is in the part that is left, and finger scrolling does not. Restarting Windows does not bring it back."
+              "text": "The community driver for the 2024 USB-C Magic Mouse is meant to sit between the mouse and Windows, watch your fingers move across the top surface, and turn that movement into ordinary scrolling. You can't get it yet. Its own files still say work in progress, and no installer is published."
             }
           },
           {
             "@type": "Question",
-            "name": "Can I install Apple’s Boot Camp Windows driver on the Magic Mouse v3 (2024, USB-C)?",
+            "name": "Which routes give the 2024 Magic Mouse scrolling on Windows?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. A Windows driver only loads for the hardware codes written inside its setup file, and Apple’s file does not contain 0323. Windows will refuse it, or it will load and still leave you without finger scrolling. That is why the 2024 USB-C mouse needs a Windows driver of its own."
+              "text": "Two routes were designed for the 2024 USB-C Magic Mouse, and only one exists today. The community driver would give scrolling and battery percent together, but it isn't published. The patched Apple driver is real today, and on that route you get scrolling or battery percent, never both."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does the 2024 Magic Mouse battery percent need a driver?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The battery percent on the 2024 USB-C Magic Mouse works with no driver at all, on Windows 10 and Windows 11. Only finger scrolling needs one. The scroll-or-battery trade-off belongs to the patched Apple driver route, and to nothing else on this mouse."
             }
           }
         ]
@@ -73,7 +94,7 @@
           {
             "@type": "ListItem",
             "position": 2,
-            "name": "Magic Mouse v3 (2024, USB-C) on Windows 10 and Windows 11",
+            "name": "The 2024 Magic Mouse on Windows",
             "item": "https://magictray.app/v3.html"
           }
         ]
@@ -89,10 +110,12 @@
       <a class="brand" href="./">Magic Tray <small>1.1.0</small></a>
       <nav aria-label="Site">
         <a href="./">Home</a>
-        <a href="drivers.html">Which driver</a>
-        <a href="v3.html" aria-current="page">Why v3 is hard</a>
-        <a href="devices.html">Devices</a>
-        <a href="funding.html">Stars &amp; signing</a>
+        <a href="battery.html">See my battery</a>
+        <a href="devices.html">Which device?</a>
+        <a href="drivers.html">Make it scroll</a>
+        <a href="keyboard.html">Keyboard battery</a>
+        <a href="v3.html" aria-current="page">The 2024 mouse</a>
+        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
@@ -100,225 +123,103 @@
 
   <div class="shell">
     <article id="content" class="primary">
-      <header class="page-intro">
-        <p class="kicker"><a href="./">Magic Tray</a> · research</p>
-        <h1>Why the Magic Mouse v3 (2024, USB-C) won’t scroll on Windows 10 and Windows 11</h1>
-        <ul class="facts">
-          <li><strong>Magic Mouse v3</strong> is our shorthand for Apple’s 2024 model with the USB-C port. Apple just calls it Magic Mouse, so we add the year and the port.</li>
-          <li>Windows 10 and Windows 11 know that mouse by the hardware code <code>0323</code>.</li>
-          <li>Magic Mouse v2 (Lightning), from 2015, is code <code>0269</code>. Magic Mouse v1 (AA batteries), from 2009, is <code>030D</code>.</li>
-          <li>All three look alike. To Windows they are three different products.</li>
-          <li>Apple never wrote a Windows driver for the USB-C one, so "install the Apple mouse driver" is bad advice for it.</li>
-        </ul>
+      <header class="page-intro" id="short">
+        <h1>The Magic Mouse 2024 (USB-C) won't scroll on Windows 10 or 11</h1>
+        <p class="lead">The battery percent on this mouse already works on Windows 10 and 11, with no driver at all. Finger scrolling doesn't, because Apple's Windows software has no entry for the model.</p>
+        <p>A driver is the software Windows uses to talk to your mouse. One route works today, and it costs you the battery percent.</p>
+        <p class="cta">
+          <a class="primary" href="drivers.html#v3">What works today</a>
+          <a class="ghost" href="battery.html#read">See my battery</a>
+        </p>
       </header>
 
-      <h2 id="short">Why did Apple’s 2024 Magic Mouse stop scrolling on Windows 10 and Windows 11?</h2>
-      <p class="lead">Apple released a new Magic Mouse in 2024 that charges through USB-C. Windows gives every model a four-character hardware code, and this one is <code>0323</code>. Apple’s Boot Camp Windows driver only lists the older codes. So Windows moves your pointer, but nothing tells it that a swipe across the mouse means scroll.</p>
-      <ul class="facts">
-        <li>You didn’t break your mouse. Nobody wrote a Windows driver for your exact model.</li>
-        <li>Clicking and moving still work. Finger scrolling and the battery percent are what you lose.</li>
-        <li>A small extra Windows driver puts scrolling back on the Magic Mouse v3. We wrote one and it’s free.</li>
-        <li>PID is the name of that four-character code. It’s how Windows tells one model from another.</li>
-        <li>Boot Camp is Apple’s Windows support pack for Macs. Its mouse driver is where the old codes are listed.</li>
-        <li>Microsoft hasn’t signed our driver yet, so Windows only loads it in Test Mode. Test Mode is a setting that tells Windows to accept a driver Microsoft hasn’t stamped. <a href="funding.html">Signing costs money</a>, and that’s what we’re saving for.</li>
-      </ul>
-      <p class="note">The rest of this page is the detail behind that summary. You don’t need it to get scrolling back — <a href="drivers.html">the driver page</a> has the steps for each model.</p>
+      <h2 id="apple">Why doesn't Apple's Windows software fix the 2024 Magic Mouse?</h2>
+      <p>Windows gives every mouse model a four-character device code, and the 2024 USB-C Magic Mouse reports <code>0323</code>. Apple's own Windows software lists the older Magic Mouse codes and never listed <code>0323</code>. Windows finds no match, so it never loads a scroll driver for this mouse.</p>
 
-      <h2 id="v2">Do Magic Mouse v1 (AA batteries) and v2 (Lightning) already work on Windows 10/11?</h2>
-      <p class="lead">Yes. Both older mice scroll with a Windows driver Apple shipped years ago inside Boot Camp. That driver lists the codes <code>030D</code> and <code>0269</code>, and Microsoft already signed it. Install it and finger scrolling works on Windows 10/11 with no extra settings and no Test Mode.</p>
-      <ul class="facts">
-        <li>Magic Mouse v1 has a door for two AA batteries. Magic Mouse v2 charges through Lightning. Apple’s file lists both.</li>
-        <li>The Apple Wireless Mouse (AA batteries), code <code>0310</code>, rides on the same file.</li>
-        <li>We point at the copy hosted by <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole</a>.</li>
-        <li>Because that file is signed, Windows loads it normally. Nothing about your PC has to change.</li>
-        <li>This Boot Camp path is for mice only. Keyboards and trackpads don’t get a scrolling driver from us.</li>
-      </ul>
-      <div class="diagram paths" id="paths">
-        <div class="panel ok">
-          <h3>Magic Mouse v1 / v2</h3>
-          <p>AA battery door or Lightning port. Apple listed these years ago.</p>
-          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>Apple’s Boot Camp Windows driver</span><span class="sep">→</span><span>scroll works</span></p>
-        </div>
-        <div class="panel bad">
-          <h3>Magic Mouse v3 (2024, USB-C)</h3>
-          <p>USB-C port. Apple never listed this one.</p>
-          <p class="path-steps"><span>Pair</span><span class="sep">→</span><span>no Apple driver</span><span class="sep">→</span><span>pointer yes, scroll dies</span></p>
-        </div>
-      </div>
+      <h2 id="community">What does the community driver for the 2024 Magic Mouse do?</h2>
+      <p>The community driver for the 2024 USB-C Magic Mouse is meant to sit between the mouse and Windows, watch your fingers move across the top surface, and turn that movement into ordinary scrolling. You can't get it yet. Its own files still say work in progress, and no installer is published.</p>
+      <p>When it does ship, Microsoft won't have checked it. Windows will refuse to load it until you change a Windows startup setting yourself, and that lowers one of its security protections.</p>
+      <p>A check by Microsoft costs money. <a href="funding.html">Here's how you can help</a>.</p>
 
-      <h2 id="mode">Why does scrolling die after the Magic Mouse v3 goes to sleep?</h2>
-      <p class="lead">Think of the mouse as a house with two rooms. One room reports movement and finger scrolling. The other reports the battery percent. When the Bluetooth link goes idle, Windows can remember the house as one room. Your pointer keeps working, scrolling is gone, and rebooting doesn’t rebuild the wall.</p>
-      <ul class="facts">
-        <li>Room 1 is the pointer and finger scrolling.</li>
-        <li>Room 2 is the battery percent that Magic Tray shows next to your clock.</li>
-        <li>Windows caches the layout it saw last, so a restart just reloads the broken version.</li>
-        <li>Unpairing the mouse and pairing it again can rebuild the wall. A filter driver stops it collapsing in the first place.</li>
-      </ul>
-      <div class="diagram pair" role="img" aria-label="Working two-room mouse versus broken one-room mouse">
-        <div class="panel ok">
-          <h3>Working — two rooms</h3>
-          <div class="rooms">
-            <div class="room"><strong>Room 1 · movement</strong><span>Cursor and finger-scroll</span></div>
-            <div class="room"><strong>Room 2 · battery</strong><span>Tray reads percent here</span></div>
-          </div>
-        </div>
-        <div class="pair-then">Bluetooth sleeps · Windows merges them</div>
-        <div class="panel bad">
-          <h3>Broken — one room</h3>
-          <div class="rooms">
-            <div class="room"><strong>One leftover room</strong><span>Cursor still works</span></div>
-            <div class="room lost"><strong>Scroll</strong><span>Gone until you unpair or install a filter</span></div>
-          </div>
-        </div>
+      <h2 id="paths">Which routes give the 2024 Magic Mouse scrolling on Windows?</h2>
+      <p>Two routes were designed for the 2024 USB-C Magic Mouse, and only one exists today. The community driver would give scrolling and battery percent together, but it isn't published. The patched Apple driver is real today, and on that route you get scrolling or battery percent, never both.</p>
+      <div class="table-scroll" tabindex="0">
+      <table>
+        <thead>
+          <tr><th>Route</th><th>You get</th><th>The catch</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Community driver</td>
+            <td>Scrolling and battery percent</td>
+            <td>Not published yet. There is nothing to download.</td>
+          </tr>
+          <tr>
+            <td>Patched Apple driver</td>
+            <td>Scrolling, or battery percent, never both on this route</td>
+            <td>You change the Windows startup setting and turn Memory integrity off first. Nobody has confirmed it.</td>
+          </tr>
+        </tbody>
+      </table>
       </div>
-      <p class="caption" style="color:var(--faint);font-size:0.82rem;margin-top:-0.6rem;">The kernel repo calls the two states Mode A and Mode B. Same idea, without the HID names. HID is the standard language mice and keyboards use to describe themselves to a computer.</p>
+      <p class="note">Magic Tray offers the patched Apple driver from its tray menu. It asks first, and it installs only when you say yes. It can't change that Windows startup setting for you.</p>
 
-      <h2 id="stack">How does a Windows filter driver put finger scrolling back?</h2>
-      <p class="lead">Windows never turns a swipe on the mouse surface into wheel scrolling by itself. Something has to sit between Bluetooth and Windows, read where your fingers are, and hand Windows ordinary scroll wheel events. A Windows driver in that slot is called a lower filter. It doesn’t replace the Windows mouse driver; it feeds it.</p>
-      <ul class="facts">
-        <li>LowerFilter is the Windows name for a driver that slots in underneath the main one.</li>
-        <li>It reads what the mouse actually sent, edits it, then passes it up the stack.</li>
-        <li>Apple’s Boot Camp driver uses this same slot for Magic Mouse v1 and v2. Our driver uses it for the v3.</li>
-        <li>The sandwich diagram below is sbagirici’s work, not ours.</li>
-      </ul>
-      <div class="diagram sba-pair" role="img" aria-label="sbagirici LowerFilter stack for v1 v2, same stack with KMDF for v3">
-        <div class="sba">
-          <h3 class="sba-title">sbagirici · v1 / v2</h3>
-          <div class="layer"><strong>Application</strong> browser, Explorer</div>
-          <div class="layer"><strong>Windows HID stack</strong></div>
-          <div class="filter-wrap">
-            <div class="filter">
-              <strong>applewirelessmouse.sys</strong>
-              <em>← LowerFilter · turns finger swipes into scrolling</em>
-            </div>
-          </div>
-          <div class="layer"><strong>Bluetooth HID driver</strong> hidbth.sys</div>
-          <div class="layer"><strong>Bluetooth stack</strong></div>
-          <div class="layer"><strong>Magic Mouse</strong> v1 / v2 hardware</div>
-        </div>
-        <div class="sba">
-          <h3 class="sba-title">Same sandwich · Magic Mouse v3</h3>
-          <div class="layer"><strong>Application</strong> browser, Explorer</div>
-          <div class="layer"><strong>Windows HID stack</strong></div>
-          <div class="filter-wrap">
-            <div class="filter">
-              <strong>KMDF filter</strong>
-              <em>← same slot · keeps the two rooms apart</em>
-            </div>
-          </div>
-          <div class="layer"><strong>Bluetooth HID driver</strong> hidbth.sys</div>
-          <div class="layer"><strong>Bluetooth stack</strong></div>
-          <div class="layer"><strong>Magic Mouse 2024</strong> PID 0323</div>
-        </div>
-      </div>
-      <p class="note">KMDF is the kind of Windows driver that loads deep in the system, written with Microsoft’s own framework for drivers. It’s the same slot Apple’s old file used, so nothing exotic is going on. What’s new is the mouse it targets: PID <code>0323</code>, which Boot Camp has no entry for.</p>
-      <aside class="credit-box" id="sbagirici">
-        <h3>The sandwich diagram is sbagirici’s, not ours</h3>
+      <h2 id="battery">Does the 2024 Magic Mouse battery percent need a driver?</h2>
+      <p>No. The battery percent on the 2024 USB-C Magic Mouse works with no driver at all, on Windows 10 and Windows 11. Only finger scrolling needs one. The scroll-or-battery trade-off belongs to the patched Apple driver route, and to nothing else on this mouse.</p>
+
+      <details id="details">
+        <summary>Show the technical details</summary>
+
+        <h3>Two rooms in one mouse</h3>
+        <p>The mouse describes itself as two HID collections: COL01 movement and finger position, COL02 battery.</p>
+        <p>When the Bluetooth link goes idle, Windows can cache the two collections merged. The pointer survives, the finger data doesn't.</p>
+
+        <h3>The filter driver</h3>
+        <p>The fix is a KMDF LowerFilter beneath the Windows HID stack. It converts finger movement into wheel events.</p>
+        <p>Apple's <code>applewirelessmouse.sys</code> uses that same LowerFilter slot for <code>030D</code> and <code>0269</code>. The community driver claims it for <code>0323</code>.</p>
+
+        <h3>Where the battery percent lives</h3>
+        <p>Battery arrives in byte 2 of input report <code>0x90</code> on COL02, not in feature report <code>0x47</code>.</p>
+
+        <h3 id="sbagirici">Credit</h3>
+        <p>The LowerFilter stack diagram is <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici's work</a>, and it covers the older mice. Please star it.</p>
+
+        <h3 id="sources">Research and code</h3>
         <ul class="facts">
-          <li>They drew it in <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">apple-magic-mouse-scroll-fix-windows</a>.</li>
-          <li>If that picture is what made this click for you, please <strong>star their project</strong>.</li>
-          <li>Their installer covers Magic Mouse v1 and v2. The Magic Mouse v3 (2024, USB-C) still needs our driver.</li>
+          <li><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Driver source</a></li>
+          <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Driver site and FAQ</a></li>
+          <li><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md">Bug analysis</a></li>
+          <li><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md">HID research</a></li>
+          <li><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/diagrams/diagram-mode-ab.md">Mode A/B diagram</a></li>
         </ul>
-        <p class="cta">
-          <a class="primary" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a>
-          <a class="ghost" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows#architecture">Their Architecture section</a>
-        </p>
-      </aside>
-      <div class="grid grid-2">
-        <div class="card">
-          <p class="meta">COL01</p>
-          <h3>The movement half</h3>
-          <p>Cursor and finger scrolling live here. Windows holds this half open, so <code>OPEN_FAILED err=5</code> in the tray log is normal, not a fault.</p>
-        </div>
-        <div class="card">
-          <p class="meta">COL02 · Input 0x90</p>
-          <h3>The battery half</h3>
-          <p>The battery percent arrives here, in byte 2 of report <code>0x90</code>. It isn’t in feature report <code>0x47</code>, the kind a device only answers when asked. It isn’t in the iPhone Hands-Free or WMI data other tools read either.</p>
-        </div>
-      </div>
-      <p class="note">Every route trades something away today. A patched Apple driver can hold scrolling but lose the battery percent. The stock setup can keep the battery percent but lose scrolling. Our KMDF driver aims at both, and it’s still self-signed — <a href="funding.html">that’s what the funding goal is for</a>.</p>
-
-      <h2 id="tray">Why is there a tray app as well as a Windows driver?</h2>
-      <p class="lead">A Windows driver makes hardware work. It doesn’t draw anything on your screen. Magic Tray is the small app beside your clock that shows the battery percent for your mouse, keyboard or trackpad. The driver and the app do different jobs, and you can use either one on its own.</p>
-      <ul class="facts">
-        <li>A driver can’t put "28%" next to your clock. Only an app can do that.</li>
-        <li>A driver doesn’t know your keyboard’s Bluetooth address. The app looks it up.</li>
-        <li>The tray shows battery for mice, keyboards and trackpads. The scrolling driver is for Magic Mouse only. See <a href="devices.html">Devices</a>.</li>
-      </ul>
-
-      <h2 id="faq">Common questions about the Magic Mouse v3 on Windows 10/11</h2>
-      <div class="how">
-        <h3>Is the Magic Mouse v3 (2024, USB-C) the same as Magic Mouse v2 on Windows?</h3>
-        <p>No. Magic Mouse v2 charges through a Lightning port, and Windows knows it by the code <code>0269</code>. The Magic Mouse v3, Apple’s 2024 model, charges through a USB-C port, and Windows knows it as <code>0323</code>. Apple’s Boot Camp Windows driver lists <code>0269</code> and never listed <code>0323</code>, so it will not load on the newer mouse.</p>
-      </div>
-      <div class="how">
-        <h3>Why does Magic Mouse v3 scrolling stop working on Windows 10/11 after the mouse sleeps?</h3>
-        <p>Your mouse reports itself to Windows in two separate parts: one for movement, one for battery. After the Bluetooth link goes idle, Windows can cache the two parts as one. The pointer survives because it is in the part that is left, and finger scrolling does not. Restarting Windows does not bring it back.</p>
-      </div>
-      <div class="how">
-        <h3>Can I install Apple’s Boot Camp Windows driver on the Magic Mouse v3 (2024, USB-C)?</h3>
-        <p>No. A Windows driver only loads for the hardware codes written inside its setup file, and Apple’s file does not contain <code>0323</code>. Windows will refuse it, or it will load and still leave you without finger scrolling. That is why the 2024 USB-C mouse needs a Windows driver of its own.</p>
-      </div>
-
-      <h2 id="sources">Where can I read the research and the code behind the v3 Windows driver?</h2>
-      <p class="lead">All of it is public. The driver lives in the magic-mouse-v3-windows-fix repository. Alongside it are write-ups of how the mouse was traced, which report carries the battery percent, and why a reboot doesn’t help. Start with the install guide for steps, or the bug analysis for proof.</p>
-      <ul class="facts">
-        <li>The driver source: <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">magic-mouse-v3-windows-fix</a>.</li>
-        <li>Its site: <a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse 2024 (v3) Windows driver</a>.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html">How to install the Magic Mouse v3 Windows driver</a> — the steps, in order.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/scroll-fix.html">Magic Mouse v3 Windows driver — scroll fix</a> — what to do when two-finger scroll stops on Windows 11.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/battery.html">Magic Mouse battery percentage on Windows</a> — why the tray app reads the percent instead of the driver.</li>
-        <li><a href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/faq.html">Magic Mouse v3 Windows driver FAQ</a> — short answers to the questions people ask most.</li>
-      </ul>
-      <div class="grid grid-3">
-        <div class="card">
-          <h3><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md">Bug analysis</a></h3>
-          <p>Where Windows keeps the stale copy of your mouse, and why a reboot reloads the broken one.</p>
-        </div>
-        <div class="card">
-          <h3><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md">HID research</a></h3>
-          <p>How we found the battery percent: report <code>0x90</code> on the second half of the mouse, not the feature report other tools try.</p>
-        </div>
-        <div class="card">
-          <h3><a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/diagrams/diagram-mode-ab.md">Mode A/B diagram</a></h3>
-          <p>The two-room mouse and the collapsed one, drawn with the real HID names.</p>
-        </div>
-      </div>
-      <ul class="facts">
-        <li>Linux already understands the 2024 mouse. Windows 10 and Windows 11 don’t.</li>
-        <li>Apple’s Boot Camp driver covers Magic Mouse v1 and v2. It says nothing about the 2024 model.</li>
-      </ul>
+      </details>
     </article>
 
     <aside class="rail">
       <div class="rail-card">
-        <h2>Actions</h2>
-        <p>Check that Windows really calls your mouse <code>0323</code> before you install the KMDF driver. A Lightning port on the bottom means you have Magic Mouse v2, which uses the Boot Camp path instead.</p>
+        <h2>Do this</h2>
         <p class="cta">
-          <a class="primary" href="drivers.html#v3">Install the v3 Windows driver</a>
-          <a class="ghost" href="drivers.html#identify">Find your device code</a>
-          <a class="ghost" href="https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/">Magic Mouse v3 Windows driver</a>
+          <a class="primary" href="battery.html#read">See my battery</a>
+          <a class="ghost" href="drivers.html#v3">What works today</a>
+          <a class="ghost" href="devices.html#identify">Which device?</a>
         </p>
       </div>
       <div class="rail-card">
         <h2>On this page</h2>
         <nav class="jump">
-          <a href="#short">The short version</a>
-          <a href="#v2">Do v1 and v2 work?</a>
-          <a href="#mode">Why scroll dies after sleep</a>
-          <a href="#stack">How the filter fixes it</a>
-          <a href="#tray">Why a tray app too</a>
-          <a href="#faq">Common questions</a>
-          <a href="#sources">Research and code</a>
+          <a href="#short">The short answer</a>
+          <a href="#apple">Why Apple's software skips it</a>
+          <a href="#community">The community driver</a>
+          <a href="#paths">The two routes</a>
+          <a href="#details">Technical details</a>
         </nav>
       </div>
       <div class="rail-card">
-        <h2>Star if this helped</h2>
+        <h2>Star these</h2>
         <nav class="jump">
-          <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici’s scroll fix</a>
-          <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-          <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
-          <a href="funding.html">EV + attestation goal</a>
+          <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">sbagirici's scroll fix</a>
+          <a href="https://github.com/LesleyMurfin/magic-tray">Magic Tray</a>
+          <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">The 2024 driver</a>
         </nav>
       </div>
     </aside>
@@ -332,7 +233,7 @@
         ·
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
-        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the v3 driver</a>
+        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 driver</a>
       </p>
     </div>
   </footer>

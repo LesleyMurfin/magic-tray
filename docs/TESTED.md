@@ -2,6 +2,27 @@
 
 This file is **who tested what**. It is not the device catalog.
 
+## Help us test
+
+Only **three** devices have ever been confirmed by a tester. Everything else in the catalog should work. Nobody has confirmed it yet.
+
+Got an Apple mouse, keyboard or trackpad? [Send a test report](https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md). It's a short table, and "it didn't work" is just as useful as "it worked".
+
+These eight are the priority. Every one is in the app and confirmed by nobody:
+
+| Device | Code | Status |
+|--------|------|--------|
+| Magic Keyboard | `024F` / `0250` | needs a tester |
+| Magic Keyboard with Touch ID | `0267` / `026C` | needs a tester |
+| Magic Keyboard (2021) | `029C` | needs a tester |
+| Magic Trackpad (AA batteries) | `030E` | needs a tester |
+| Magic Trackpad 2 (Lightning) | `0265` | needs a tester |
+| Magic Trackpad 2024 (USB-C) | `0324` | needs a tester |
+
+Bluetooth Magic Keyboards matter most. For a trackpad we only need the battery percent, because Magic Tray does not offer a driver change for a trackpad.
+
+## The catalog
+
 The catalog Magic Tray actually loads is in the app, and CI fails if it drifts:
 
 | What | Where |

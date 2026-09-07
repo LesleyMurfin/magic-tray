@@ -1,0 +1,167 @@
+# Magic Tray -> microsoft/winget-pkgs submission (TEMPLATE, NOT ACTIVE)
+#
+# GitHub only runs workflows that live in .github/workflows/. This file sits in
+# packaging/winget/ on purpose, so it does nothing until a maintainer copies it:
+#
+#   cp packaging/winget/winget-submit.yml .github/workflows/winget-submit.yml
+#
+# It is workflow_dispatch only. It never runs on push, on tag, or as part of the
+# release. That is deliberate: a winget submission is a pull request against
+# someone else's repository and it is reviewed by a human. See
+# packaging/winget/README.md, section "It cannot be fully automated".
+#
+# REQUIRED SECRET THAT THIS REPOSITORY DOES NOT CURRENTLY HAVE:
+#
+#   WINGET_CREATE_GITHUB_TOKEN
+#     A classic GitHub personal access token with the public_repo scope.
+#     Fine-grained tokens are not supported by wingetcreate
+#     (https://github.com/microsoft/winget-create/issues/595).
+#     Optionally add delete_repo so wingetcreate can clean up the fork it makes
+#     if a submission fails.
+#     Docs: https://github.com/microsoft/winget-create/blob/main/doc/token.md
+#
+#   The token owner must have signed the Microsoft CLA at
+#   https://cla.opensource.microsoft.com before any PR of theirs can merge.
+#   Nothing here can sign it for them.
+#
+# The repo's built-in GITHUB_TOKEN is used only to download the release asset.
+# It cannot open a pull request against microsoft/winget-pkgs.
+
+name: Submit to winget-pkgs
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to submit, including the leading v (e.g. v1.1.0)'
+        required: true
+        default: 'v1.1.0'
+      dry_run:
+        description: 'Compute and verify the hash, patch the manifests, but do not open a PR'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    # windows-latest because winget validate / wingetcreate are Windows-only.
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out the manifests
+        uses: actions/checkout@v4
+
+      - name: Require the wingetcreate token unless this is a dry run
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          if ($env:WINGET_CREATE_GITHUB_TOKEN) {
+            Write-Host 'WINGET_CREATE_GITHUB_TOKEN is present.'
+          }
+          elseif ('${{ inputs.dry_run }}' -eq 'true') {
+            Write-Host 'No WINGET_CREATE_GITHUB_TOKEN, but dry_run is true. Continuing without submitting.'
+          }
+          else {
+            Write-Error 'WINGET_CREATE_GITHUB_TOKEN is not set on this repository. Add it as an Actions secret, or re-run with dry_run enabled. See the header of packaging/winget/winget-submit.yml.'
+            exit 1
+          }
+
+      - name: Locate the manifest set for this tag
+        id: locate
+        run: |
+          $tag = '${{ inputs.tag }}'
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            Write-Error "Tag '$tag' does not look like vMAJOR.MINOR.PATCH."
+            exit 1
+          }
+          $version = $tag.TrimStart('v')
+          $dir = "packaging/winget/manifests/l/LesleyMurfin/MagicTray/$version"
+          if (-not (Test-Path $dir)) {
+            Write-Error "No manifest set at $dir. Author one first (copy the newest version folder, bump PackageVersion in all three files, and update InstallerUrl). This workflow patches the hash; it does not invent manifests."
+            exit 1
+          }
+          "version=$version"   >> $env:GITHUB_OUTPUT
+          "dir=$dir"           >> $env:GITHUB_OUTPUT
+          "asset=MagicTray-$tag-win-x64.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Download the published ZIP and its sha256 sidecar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag   = '${{ inputs.tag }}'
+          $asset = '${{ steps.locate.outputs.asset }}'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          gh release download $tag --repo '${{ github.repository }}' --dir dist --pattern $asset
+          gh release download $tag --repo '${{ github.repository }}' --dir dist --pattern "$asset.sha256"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Compute the SHA256 and check it against the sidecar
+        id: hash
+        run: |
+          $asset = '${{ steps.locate.outputs.asset }}'
+          $computed = (Get-FileHash "dist/$asset" -Algorithm SHA256).Hash.ToUpperInvariant()
+          $declared = ((Get-Content "dist/$asset.sha256" -Raw).Trim() -split '\s+')[0].ToUpperInvariant()
+          Write-Host "computed: $computed"
+          Write-Host "sidecar : $declared"
+          if ($computed -ne $declared) {
+            Write-Error 'The published ZIP does not match its .sha256 sidecar. Do not submit. Investigate the release.'
+            exit 1
+          }
+          "sha256=$computed" >> $env:GITHUB_OUTPUT
+
+      - name: Write the real hash into the manifest
+        run: |
+          $dir  = '${{ steps.locate.outputs.dir }}'
+          $file = Join-Path $dir 'LesleyMurfin.MagicTray.installer.yaml'
+          $sha  = '${{ steps.hash.outputs.sha256 }}'
+          $tag  = '${{ inputs.tag }}'
+          $text = Get-Content $file -Raw
+          if ($text -notmatch "releases/download/$([regex]::Escape($tag))/") {
+            Write-Error "InstallerUrl in $file does not point at the $tag release. Fix the manifest before submitting."
+            exit 1
+          }
+          # Replace only a 64-char hex digest, so a stale real hash is replaced too.
+          $patched = [regex]::Replace($text, "(?m)^(\s*InstallerSha256:\s*)'?[A-Fa-f0-9]{64}'?\s*$", "`${1}$sha")
+          if ($patched -eq $text) {
+            Write-Error 'Could not find an InstallerSha256 line to patch.'
+            exit 1
+          }
+          Set-Content -Path $file -Value $patched
+          Select-String -Path $file -Pattern 'InstallerSha256|InstallerUrl'
+
+      - name: Validate the manifest with winget itself
+        continue-on-error: true
+        run: |
+          # Present on windows-latest images. Kept non-blocking because the
+          # runner image occasionally ships without the App Installer package;
+          # read the log rather than trusting a green tick.
+          winget validate --manifest '${{ steps.locate.outputs.dir }}'
+
+      - name: Upload the patched manifests for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: winget-manifests-${{ steps.locate.outputs.version }}
+          path: ${{ steps.locate.outputs.dir }}
+
+      - name: Open the pull request against microsoft/winget-pkgs
+        if: ${{ inputs.dry_run == false }}
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          # --no-open: no browser on a runner. Token comes from the environment
+          # variable, not the command line, so it is not echoed into the log.
+          ./wingetcreate.exe submit `
+            --prtitle 'New package: LesleyMurfin.MagicTray version ${{ steps.locate.outputs.version }}' `
+            --no-open `
+            '${{ steps.locate.outputs.dir }}'
+
+      - name: What happens next
+        run: |
+          Write-Host 'A moderator at microsoft/winget-pkgs now reviews this PR by hand. Watch the Checks tab and the labels. Nothing in this workflow can approve or merge it.'
