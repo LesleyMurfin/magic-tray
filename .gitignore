@@ -5,6 +5,11 @@
 
 bin/
 obj/
+
+# Release build output: dotnet publish target and the portable ZIP staging /
+# output folder written by scripts/package-release.ps1.
+publish/
+dist/
 *.user
 .vs/
 *.suo

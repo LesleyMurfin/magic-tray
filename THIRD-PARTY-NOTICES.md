@@ -44,7 +44,10 @@ listed below, and each carries the credit it requires.
 
 On the pages themselves the credits are consolidated: one `.credit` line under each photo grid
 names every author and licence in that grid, which satisfies the same obligation with less
-clutter than a caption under every image. This file is the authoritative per-file record.
+clutter than a caption under every image. After the September 2026 site rewrite the photographs
+appear on `docs/devices.html` and `docs/keyboard.html`. Two entries below mandate an exact credit
+string; the consolidated line must reproduce those character for character. This file is the
+authoritative per-file record.
 
 Licence texts:
 
@@ -101,6 +104,8 @@ Licence texts:
   `Photo: Syced, via Wikimedia Commons, CC0`
 - Same CC0 series as the two files above (`..._3.jpg` rather than `..._4.jpg`). Pre-existing
   image; it lives at the `docs/` root rather than in `docs/img/`.
+- **Not referenced by any page** after the September 2026 rewrite. The file still ships, so this
+  entry stays: if a page uses it again, the credit above already applies.
 
 ### `docs/img/magic-keyboard-2011-aa-top.jpg`
 
@@ -126,6 +131,25 @@ Licence texts:
 - Required credit: `Photo: Fletcher, via Wikimedia Commons, CC BY 4.0`
 - Shows: a rechargeable Magic Keyboard from above.
 
+### `docs/img/magic-keyboard-touchid-top.jpg`
+
+- Author: Dbirdz
+- Licence: CC BY-SA 4.0 — <https://creativecommons.org/licenses/by-sa/4.0>
+- Source: <https://commons.wikimedia.org/wiki/File:Magic_Keyboard_with_Touch_ID_for_Mac_models_with_Apple_silicon_-_Swiss.jpg>
+  (`AttributionRequired: true`, `LicenseShortName: CC BY-SA 4.0`, read from the Commons API
+  `extmetadata`; no mandated credit string, so the author name plus the licence is enough)
+- Required credit: `Photo: Dbirdz, via Wikimedia Commons, CC BY-SA 4.0`
+- Shows: a compact Magic Keyboard from directly above, Swiss QWERTZ layout, no numeric keypad.
+  The key right of F12 is a plain circular inset with **no glyph printed on it**, which is the
+  fingerprint reader on the Magic Keyboard with Touch ID (PIDs `0267` / `026C`). Verified by
+  reading the shipped pixels, not the filename: speaker, eject, padlock and power glyphs are all
+  absent. A cable enters the rear centre and its connector is out of frame, so the **port type is
+  not claimable** from this photo and the page never names it.
+- Used on `docs/keyboard.html`, beside the tester table that asks for `0267` / `026C` reports.
+- A matching macro of the fingerprint key was downloaded and **not shipped**: the crop showed no
+  chassis, no legends and no branding, so the pixels could not establish that the key belonged to
+  a Magic Keyboard rather than a MacBook. Do not add one back without that evidence.
+
 ### `docs/img/magic-trackpad-2010-aa-battery-tube.jpg`
 
 - Author: Raimond Spekking
@@ -135,6 +159,25 @@ Licence texts:
   `© Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons)`
 - Shows: a Magic Trackpad from 2010 (PID `030E`); a round cap on the back edge unscrews to
   reach the AA batteries.
+
+### `docs/img/magic-trackpad-2010-underside-model-a1339.jpg`
+
+- Author: Raimond Spekking
+- Licence: CC BY-SA 4.0 — <https://creativecommons.org/licenses/by-sa/4.0>
+- Source: <https://commons.wikimedia.org/wiki/File:Apple_Magic_Trackpad-3883.jpg>
+  (`AttributionRequired: true`, `LicenseShortName: CC BY-SA 4.0`, `Attribution` field read from
+  the Commons API `extmetadata`)
+- **The author mandates this exact credit string. Reproduce it character for character:**
+  `© Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons)`
+- Shows: the underside of a 2010 Magic Trackpad (PID `030E`) beside its aluminium battery tube.
+  Verified by reading the shipped pixels: the fine print is legible and reads
+  `Designed by Apple in California  Assembled in China  Model No.: A1339 … FCC ID: BCGA1339 and
+  IC: 579C-A1339 … © 2009 Apple Inc.` A red `INVENTAR-NR.: 00111` inventory sticker from the
+  photographer's own institution is in frame; it is part of the photograph, not our marking.
+- Used on `docs/devices.html#model` as the worked example of reading a model number off a
+  keyboard or trackpad rather than a mouse.
+- Same author and the same mandated string as `magic-trackpad-2010-aa-battery-tube.jpg`, so a
+  `.credit` line covering both needs that string once.
 
 ### `docs/img/magic-trackpad-2-rear-lightning.jpg`
 
@@ -174,11 +217,20 @@ reframe in CSS as above, or to start from one of the CC0 files.
 
 ### Known gap: no free photo of the Magic Mouse v3 (2024, USB-C)
 
-No CC0 or CC BY photograph of the 2024 USB-C Magic Mouse (PID `0323`, model A3204) underside
-exists on Wikimedia Commons — `Category:Magic Mouse` was enumerated in full and every file was
-checked. The site therefore shows a labelled placeholder in that slot instead of a photo of a
-different mouse. Apple's own product renders are **not** usable; they are all-rights-reserved.
+No freely licensed photograph of the 2024 USB-C Magic Mouse (PID `0323`, model A3204) exists at
+all, from any angle, not only of the underside. Commons `Category:Magic Mouse` (56 files),
+`Apple Inc. mice`, `Cordless Apple mice` and `Computer mice` were enumerated in full; Commons
+full-text search, eight Wikipedia local file namespaces, Wikidata `Q621296` / `Q25021606`,
+Openverse, licence-filtered Flickr, the Smithsonian and Europeana APIs and Internet Archive were
+all searched. Every Apple mouse photograph found predates the 2024 revision, which is visually
+identical from above, so even a top view could not honestly be attributed to it. iFixit has the
+only good 2024 photography and licenses it CC BY-NC-SA 3.0, which the NonCommercial term makes
+unusable here. The site therefore shows a labelled placeholder in that slot instead of a photo of
+a different mouse. Apple's own product renders are **not** usable; they are all-rights-reserved.
 A v1 or v2 photo must never be captioned as a v3.
+
+A contributor photo is the only way to close this. Ask for it under **CC0 1.0**, not CC BY-SA:
+the port is small enough to need a crop, and cropping a CC BY-SA file would create an adaptation.
 
 ## Trademarks
 

@@ -21,7 +21,7 @@
 
 ## Scope — three different answers, do not merge them
 
-1. **Battery percent** covers **mice, keyboards and trackpads**: Magic Mouse v1/v2/v3, Apple Wireless Mouse, Apple Wireless Keyboard and Magic Keyboard, Magic Trackpad 1/2/2024. No driver required.
+1. **Battery percent** covers **mice, keyboards and trackpads**: Magic Mouse v1/v2/v3, Apple Wireless Mouse, Apple Wireless Keyboard and Magic Keyboard, Magic Trackpad 1/2/2024. No driver is swapped for any of them. **Keyboards are the exception to "nothing else needed": the battery report `0x47` is declared Input-only, so it is unreadable until the SDP-cache unlock is applied (`scripts/kbd-patch-cachedservices.ps1`, or the tray's "Fix battery reads" item). Re-pairing erases it.**
 2. **The scrolling driver is Magic Mouse only.** No keyboard or trackpad driver ships from this project.
 3. **Which mouse driver depends on the PID.** v1 (`030D`), v2 (`0269`) and the Apple Wireless Mouse (`0310`) use **Apple's own signed Boot Camp INF** — no Test Mode. The v3 (`0323`) needs the separate **KMDF driver**, because Apple's Boot Camp package has no entry for PID 0323.
 
@@ -33,7 +33,7 @@
 
 ## Device photographs
 
-- `docs/img/` holds real licensed photographs of the hardware (Wikimedia Commons: CC0, CC BY 4.0, CC BY-SA 4.0), used by the identification cards on `docs/drivers.html` and `docs/devices.html` and by the model cards on `docs/index.html`. Per-file author, licence, licence URL and source URL are in `THIRD-PARTY-NOTICES.md`; those photos are not covered by this repo's MIT `LICENSE`.
+- `docs/img/` holds real licensed photographs of the hardware (Wikimedia Commons: CC0, CC BY 4.0, CC BY-SA 4.0). After the site rewrite every device photograph lives on `docs/devices.html`, which is the sole owner of device identification. Per-file author, licence, licence URL and source URL are in `THIRD-PARTY-NOTICES.md`; those photos are not covered by this repo's MIT `LICENSE`.
 - **Honest gap:** no free-licensed photograph of the **Magic Mouse v3 (2024, USB-C) underside** exists on Wikimedia Commons, so the site shows a labelled placeholder there. A v1 or v2 photo must never be captioned as a v3, and Apple's renders are all-rights-reserved.
 
 ## Docs
@@ -47,17 +47,21 @@
 
 ## Site pages (published from `docs/`)
 
-- [Magic Tray — Magic Mouse, Keyboard and Trackpad battery on Windows 10 and Windows 11](https://magictray.app/)
-- [Which Windows 10/11 driver does my Magic Mouse need? v1, v2 and v3 (2024, USB-C)](https://magictray.app/drivers.html)
-- [Magic Mouse v3 (2024, USB-C): why scrolling breaks on Windows 10 and Windows 11](https://magictray.app/v3.html)
-- [Which Magic Mouse, keyboard or trackpad do I have, and what works on Windows 10/11?](https://magictray.app/devices.html)
-- [Star the repos · fund public driver signing](https://magictray.app/funding.html)
+- [Magic Tray: Apple mouse and keyboard battery on Windows 10 and 11](https://magictray.app/)
+- [How to see Apple Magic Mouse battery percent on Windows 10 and 11](https://magictray.app/battery.html): the app's main job, and how to read the percent
+- [Magic Keyboard battery on Windows 10 and 11: no driver swap needed](https://magictray.app/keyboard.html): standard Windows driver, plus the one-time SDP unlock
+- [Which Apple Magic Mouse, keyboard or trackpad do I have?](https://magictray.app/devices.html): sole owner of device identification
+- [Windows 10 and 11 drivers for Apple Magic Mouse scrolling](https://magictray.app/drivers.html): sole owner of the install steps
+- [Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11](https://magictray.app/v3.html)
+- [Help pay for a signed Windows driver](https://magictray.app/funding.html): free ways to help first, plus the call for testers
 
 ## Catalog (source of truth)
 
 - [KnownMice](https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs): Mice and trackpads (VID/PID, DisplayName, DeviceKind)
 - [KnownKeyboards](https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs): Keyboards (BT classic / BLE / USB)
+- [Test report issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md): device the app already knows — report what happened
 - [Missing device issue](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md): PID not in those tables
+- Only `0323`, `030D` and `0239` have ever been confirmed by a tester. `024F` `0250` `0267` `026C` `029C` `030E` `0265` `0324` are recognised but unconfirmed — say "should work, nobody has confirmed it yet", never "supported".
 
 ## Magic Mouse v3 (2024, USB-C, PID 0323)
 
@@ -70,7 +74,7 @@
 
 ## Releases
 
-- [Latest GitHub Release](https://github.com/LesleyMurfin/magic-tray/releases/latest): MagicMouseTray.exe, keyboard patch scripts, SHA256SUMS
+- [Latest GitHub Release](https://github.com/LesleyMurfin/magic-tray/releases/latest): `MagicMouseTray.exe` plus the keyboard battery unlock scripts (`kbd-patch-cachedservices.ps1`, `Install-KeyboardBattery.cmd`). The keyboard unlock only works when the scripts sit beside the exe, so download all of them into the same folder.
 - [verify-release.ps1](https://github.com/LesleyMurfin/magic-tray/blob/main/scripts/verify-release.ps1): CI gate before a tag can ship
 
 ## Optional

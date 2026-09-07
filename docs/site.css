@@ -59,6 +59,11 @@ code {
   background: var(--bg-3);
   padding: 0.05em 0.22em;
   border-radius: 0.28rem;
+  /* File paths and command lines are single unbreakable words. On a phone one
+     of them is wider than the column, so allow a break rather than let it run
+     off the edge. This does not change a table's minimum width, so short codes
+     like 030D still stay on one line. */
+  overflow-wrap: break-word;
 }
 
 .skip {
@@ -529,6 +534,32 @@ table {
   font-size: 0.92rem;
   margin: 0.7rem 0 1.4rem;
 }
+
+/* A comparison table can need more width than a phone screen has: its columns
+   cannot shrink below their longest word, so `width: 100%` is a floor, not a
+   ceiling. Left alone the table pushes the whole page sideways. `.table-scroll`
+   keeps that overflow inside its own box. No column is dropped or narrowed;
+   the off-screen columns are reached by scrolling the box. The wrapper takes
+   the table's vertical margin so the rhythm of the page does not change. */
+.table-scroll {
+  margin: 0.7rem 0 1.4rem;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.table-scroll > table { margin: 0; }
+
+/* `tabindex` is what makes the box scrollable from the keyboard: focus it, then
+   use the arrow keys. Without it the far columns are mouse-only. */
+.table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Inside a disclosure, match the inset the table had as a direct child. */
+details > .table-scroll { margin: 0 0.9rem 0.9rem; }
+
 th, td {
   text-align: left;
   vertical-align: top;
@@ -838,4 +869,54 @@ ol.steps li { margin: 0.4rem 0; }
   color: var(--muted);
 }
 .no-photo a { color: var(--muted); }
+
+/* Technical-detail disclosures. Styled on the bare elements so no page needs a
+   class; `details.tech` therefore works too. Engineer-level content lives in
+   here and off the reading path. */
+details {
+  margin: 1.1rem 0;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+details[open] { border-color: var(--line-strong); }
+summary {
+  cursor: pointer;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-2);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius);
+}
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: "";
+  /* A flex item by default shrinks. On a phone the longer summaries wrap to two
+     lines and the chevron was squeezed from 6.4px to 5.3px wide, so it read as
+     a smudge rather than an arrow. Hold its size. */
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.18s var(--ease);
+}
+details[open] > summary::before { transform: rotate(45deg); }
+summary:hover { color: var(--fg); }
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+details > *:not(summary) {
+  margin: 0 0.9rem 0.9rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+details > *:not(summary):first-of-type { margin-top: 0.2rem; }
+details code { font-family: var(--mono); font-size: 0.85rem; }
 

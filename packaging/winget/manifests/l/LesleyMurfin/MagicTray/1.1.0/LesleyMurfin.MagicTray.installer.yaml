@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
+PackageIdentifier: LesleyMurfin.MagicTray
+PackageVersion: 1.1.0
+
+# Magic Tray ships as a portable ZIP, not an installer. MagicMouseTray.exe sits
+# at the root of the archive with its scripts/ folder beside it, and the
+# keyboard battery unlock plus the whole Diagnostics menu look for
+# "<exe folder>/scripts/<name>". Installing the archive rather than the loose
+# exe is what keeps them together. Asset name and internal layout agreed with
+# the release packaging owner; see packaging/winget/README.md.
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: MagicMouseTray.exe
+
+# Add the extracted folder to PATH instead of symlinking the exe into WinGet's
+# Links folder. Verified in winget-cli PortableInstaller.cpp: when
+# ArchiveBinariesDependOnPath is true, symlink creation is skipped and the
+# install directory is added to PATH, so the exe is always launched from the
+# folder that holds scripts/. That is why no PortableCommandAlias is set here:
+# the alias names the Links-folder symlink, which this setting opts out of.
+# https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.12.0/installer.md
+ArchiveBinariesDependOnPath: true
+
+# The extracted folder is on PATH, so the runnable command is the exe name.
+Commands:
+- MagicMouseTray
+Platform:
+- Windows.Desktop
+MinimumOSVersion: 10.0.17763.0
+UpgradeBehavior: install
+# Date of the v1.1.0 tag. Quoted so it stays a YAML string, which is what the
+# schema requires ("type": ["string", "null"], "format": "date").
+ReleaseDate: '2026-09-02'
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/LesleyMurfin/magic-tray/releases/download/v1.1.0/MagicTray-v1.1.0-win-x64.zip
+  # PLACEHOLDER. Not a real hash, and never to be guessed. Replaced, in the
+  # winget-pkgs fork only, with the SHA256 of the published ZIP asset,
+  # cross-checked against the MagicTray-v1.1.0-win-x64.zip.sha256 sidecar on
+  # the release and upper-cased. (The SHA256SUMS file inside the archive lists
+  # the individual files, not the archive itself.)
+  # See "Compute the SHA256" in packaging/winget/README.md.
+  # Kept as 64 zeros so the file still validates against the schema pattern
+  # ^[A-Fa-f0-9]{64}$ while being obviously not a real digest.
+  InstallerSha256: '0000000000000000000000000000000000000000000000000000000000000000'
+ManifestType: installer
+ManifestVersion: 1.12.0
