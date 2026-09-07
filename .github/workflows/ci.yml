@@ -65,5 +65,14 @@ jobs:
         Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
         Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
 
+    # verify-release.ps1 treats a missing ZIP as a hard failure, never a skip,
+    # so CI has to build one. That is deliberate: the portable ZIP is the
+    # primary release asset, and its layout is load-bearing — the tray resolves
+    # the keyboard unlock and the Diagnostics scripts at <exe>/scripts/. Packaging
+    # here means a PR that breaks that layout fails now, not at tag time.
+    - name: Package portable ZIP
+      shell: pwsh
+      run: pwsh -File scripts/package-release.ps1 -PublishDir publish -Tag "ci-${{ github.sha }}" -OutDir dist
+
     - name: Verify release artifacts
       run: pwsh -File scripts/verify-release.ps1 -PublishDir publish
