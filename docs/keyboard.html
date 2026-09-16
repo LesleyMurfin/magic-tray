@@ -241,13 +241,13 @@
       <p>Magic Tray finds your keyboard's Bluetooth address itself, then asks permission before changing anything.</p>
 
       <div class="how">
-        <ol>
-          <li>Pair the keyboard in Windows Bluetooth settings.</li>
-          <li>Click the Magic Tray icon beside the clock.</li>
-          <li>Point at your keyboard's name to open its submenu.</li>
-          <li>Click <strong>Fix battery reads</strong>.</li>
-          <li>Click Yes when Windows asks for admin permission.</li>
-          <li>Turn Bluetooth off and on again.</li>
+        <ol class="stepper">
+          <li><span class="num">1</span><div class="step-body"><strong>Pair the keyboard.</strong><p>Pair it in Windows Bluetooth settings.</p></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Click the Magic Tray icon.</strong><p>It sits beside the clock.</p></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Point at your keyboard's name.</strong><p>This opens its submenu.</p></div></li>
+          <li><span class="num">4</span><div class="step-body"><strong>Click Fix battery reads.</strong></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Click Yes.</strong><p>Windows asks for admin permission.</p></div></li>
+          <li><span class="num">6</span><div class="step-body"><strong>Turn Bluetooth off and on again.</strong></div></li>
         </ol>
       </div>
 
@@ -299,18 +299,38 @@
 
       <h2 id="faq">Common questions</h2>
 
-      <dl class="faq">
-        <dt>How do I see my Apple Magic Keyboard battery percent on Windows 11?</dt>
-        <dd>Install Magic Tray, click its icon beside the clock, point at your keyboard and run the <a href="#unlock">one-time unlock</a>. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu.</dd>
-        <dt>Does my Magic Keyboard need a special driver on Windows?</dt>
-        <dd>No. Your Magic Keyboard keeps the standard Windows Bluetooth driver on Windows 10 and 11. Nothing from Apple gets installed, and no driver is swapped. You run one unlock from the Magic Tray menu, and the battery percent shows up beside your clock.</dd>
-        <dt>Why doesn't my Magic Keyboard battery percent show up?</dt>
-        <dd>Your keyboard does send its battery level. It labels that reading in a way Windows won't answer for, so the number never reaches the tray. We asked it 6,859 times in a row and got nothing back. The unlock relabels it once.</dd>
-        <dt>Do I need that Windows startup setting the 2024 mouse uses?</dt>
-        <dd>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="magic-mouse-2024.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</dd>
-        <dt>Does the unlock survive re-pairing the keyboard?</dt>
-        <dd>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>How do I see my Apple Magic Keyboard battery percent on Windows 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body">
+            <p>Install Magic Tray, click its icon beside the clock, point at your keyboard and run the <a href="#unlock">one-time unlock</a>. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does my Magic Keyboard need a special driver on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body">
+            <p>No. Your Magic Keyboard keeps the standard Windows Bluetooth driver on Windows 10 and 11. Nothing from Apple gets installed, and no driver is swapped. You run one unlock from the Magic Tray menu, and the battery percent shows up beside your clock.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Why doesn't my Magic Keyboard battery percent show up? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body">
+            <p>Your keyboard does send its battery level. It labels that reading in a way Windows won't answer for, so the number never reaches the tray. We asked it 6,859 times in a row and got nothing back. The unlock relabels it once.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Do I need that Windows startup setting the 2024 mouse uses? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body">
+            <p>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="magic-mouse-2024.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does the unlock survive re-pairing the keyboard? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body">
+            <p>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</p>
+          </div>
+        </details>
+      </div>
 
       <details>
         <summary>Show the technical details</summary>
