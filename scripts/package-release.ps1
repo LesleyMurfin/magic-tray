@@ -2,11 +2,18 @@
 # Build the Magic Tray portable ZIP: MagicTray-<tag>-win-x64.zip.
 #
 # The tray resolves the keyboard battery patch and the Diagnostics menu scripts
-# relative to AppContext.BaseDirectory (DriverInstaller.FindKeyboardPatchScript,
-# DiagnosticScripts.Find). Probe 1 in both is "<exe dir>/scripts/<name>", so the
-# ZIP puts the exe at the root and every script in a sibling scripts/ folder.
-# Someone who unzips the whole folder and double-clicks the exe gets a working
-# "Fix battery reads" and a working Diagnostics menu.
+# relative to AppContext.BaseDirectory, and the two resolvers disagree on which
+# location wins. DriverInstaller.FindKeyboardPatchScript probes
+# "<exe dir>/scripts/<name>" first and "<exe dir>/<name>" second;
+# DiagnosticScripts.Find probes them the other way round, "<exe dir>/<name>"
+# first and "<exe dir>/scripts/<name>" second. One layout satisfies both, which
+# is why the ZIP puts the exe at the root and every script in a sibling
+# scripts/ folder. Someone who unzips the whole folder and double-clicks the
+# exe gets a working "Fix battery reads" and a working Diagnostics menu.
+#
+# The consequence of DiagnosticScripts' order is worth knowing when debugging a
+# user's folder: a same-named file left loose beside the exe takes precedence
+# over the copy shipped under scripts/.
 #
 # Emits:
 #   <OutDir>/MagicTray-<tag>-win-x64.zip
@@ -28,8 +35,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
 # Relative path inside the ZIP -> source path relative to the repo root.
-# diagnose-driver.ps1 lives in the repo root but ships under scripts/ so probe 1
-# resolves it; DiagnosticScripts.Find checks "<exe dir>/scripts/<name>".
+# diagnose-driver.ps1 lives in the repo root but ships under scripts/ with the
+# rest, and both resolvers find it there: scripts/ is
+# FindKeyboardPatchScript's first probe and DiagnosticScripts.Find's second.
 $ScriptPayload = [ordered]@{
   'scripts/kbd-patch-cachedservices.ps1' = 'scripts/kbd-patch-cachedservices.ps1'
   'scripts/Install-KeyboardBattery.cmd'  = 'scripts/Install-KeyboardBattery.cmd'

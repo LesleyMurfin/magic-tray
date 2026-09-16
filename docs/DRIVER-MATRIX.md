@@ -20,11 +20,13 @@ reading.
 Find your mouse by its PID (Device Manager -> the device -> Details -> Hardware Ids -> the four
 hex digits after `PID_`). Then:
 
-- **Magic Mouse 2024, USB-C, PID `0323`.** Pick **KMDF**. It is the only choice that gives you
-  scroll and battery percent at the same time. The cost is real: that driver is self-signed, so
-  the PC has to run in Test Mode with Memory integrity off, and it is
-  [not installable from the tray yet](../README.md#what-magic-tray-does-about-drivers).
-  Until then you get battery percent with no driver at all, and no scroll.
+- **Magic Mouse 2024, USB-C, PID `0323`.** **KMDF** is the only driver that gives you scroll and
+  battery percent at the same time, but there is nothing to install yet: the package has never
+  been published, so the tray
+  [cannot install it](../README.md#what-magic-tray-does-about-drivers) and picking the item
+  installs nothing. The cost will be real when it does land: that driver is self-signed, so the
+  PC has to run in Test Mode with Memory integrity off. Until then you get battery percent with
+  no driver at all, and no scroll.
 - **Magic Mouse v1 (AA batteries) `030D`, Magic Mouse v2 (Lightning) `0269`, Apple Wireless
   Mouse (AA) `0310`.** Install **Apple's own mouse driver** (`applewirelessmouse.sys`). Scroll
   works, battery percent works, and **no Windows security setting has to change** - Apple signed
@@ -304,7 +306,10 @@ because "we could not read a date" must not render as "something newer is sittin
 One related consequence, stated as a possibility rather than a certainty: installing Apple's INF
 route on a PC whose `0323` is on KMDF **can** displace KMDF, because a WHQL-signed package outranks
 a test-signed one. If it happens you lose what KMDF gives - the tunable scroll speed and the direct
-battery read - and the fix is to pick KMDF again and reinstall.
+battery read - and there is no way back through the tray: it cannot install KMDF (see
+[the short version](#short-version-which-driver-do-i-pick-and-what-do-i-get)), and the KMDF package
+has never been published, so KMDF can only be put back from wherever that PC got it in the first
+place, by hand.
 
 ---
 

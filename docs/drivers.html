@@ -289,7 +289,7 @@
         <li>What would finish it: <a href="funding.html">a driver Microsoft has checked</a>.</li>
       </ul>
       <p>The tray's <strong>Driver</strong> menu already lists the community driver. Once it's published, picking it will download and install it after you confirm.</p>
-      <p>Pick it today and the tray stops with an error.</p>
+      <p>Pick it today and the tray tells you the driver isn't available yet, and nothing on your PC changes.</p>
       <p>The menu's other choice, the patched Apple driver, does have an installer today. On that route you get scrolling or battery, never both, and nobody has confirmed it.</p>
       <p>Neither driver has been checked by Microsoft, and the startup setting they need lowers a real security protection.</p>
       <details id="cost">
@@ -304,7 +304,7 @@
       </details>
       <details>
         <summary>Show the technical details</summary>
-        <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the install errors and never falls back.</p>
+        <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
         <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is on the branch, with scroll and battery mutually exclusive.</p>
       </details>
 

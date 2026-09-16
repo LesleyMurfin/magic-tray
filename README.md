@@ -69,7 +69,7 @@ Two things Magic Tray **cannot** do for you. The patched-Apple route needs a Win
 
 How the tray works out whether that setting matters to you: it reads the signatures on the driver file your device is bound to right now, not the model code and not the way you installed it. Apple's `applewirelessmouse.sys` carries a test certificate of its own **plus** two valid Microsoft Windows Hardware Compatibility Publisher countersignatures, and Windows loads a file when any one of its signatures is trusted, so on the older mice nothing has to be switched off. The 2024 mouse's driver is signed only by itself, so on that one the setting is real. A driver file the tray cannot read a signature from is reported as unknown, and unknown never claims a driver went unchecked (`MagicMouseTray/SystemConfigChecker.cs`).
 
-The `KMDF` item is wired up and waiting, but the driver it installs [isn't finished](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver). Until it ships, a 2024 mouse gets battery percent from the tray and no scrolling fix worth recommending. Helping that along is what [Support](https://magictray.app/funding.html) is for.
+The `KMDF` item is wired up and waiting, but the driver it would install [isn't on that branch yet](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver), so picking it reports the missing file and stops — it never switches you to the patched-Apple route instead. Until it ships, a 2024 mouse gets battery percent from the tray and no scrolling fix worth recommending. Helping that along is what [Support](https://magictray.app/funding.html) is for.
 
 ---
 
@@ -148,7 +148,7 @@ Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMo
 
 | Model | Code Windows shows | For scrolling | Battery | Confirmed by a tester? |
 |---|---|---|---|---|
-| Magic Mouse 2024 (USB-C) | `0323` | The [community-built driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver), which the tray installs after you confirm | Yes | Yes |
+| Magic Mouse 2024 (USB-C) | `0323` | Nothing the tray can install today. The [community-built driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) is not on that branch, so the `KMDF` item tells you it can't find it and stops. The fallback is the patched Apple driver: scrolling **or** battery percent, never both, and nobody has confirmed it | Yes | Yes |
 | Magic Mouse v1 (AA batteries) | `030D` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Yes | Yes |
 | Magic Mouse v2 (Lightning) | `0269` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Yes | Should work, nobody has confirmed it yet |
 | Apple Wireless Mouse (AA batteries) | `0310` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Yes | Should work, nobody has confirmed it yet |
@@ -157,11 +157,11 @@ The 2024 mouse has three choices in the menu, and they aren't equal:
 
 | Menu item | Scrolls | Battery | Needs the Windows startup setting |
 |---|---|---|---|
-| `KMDF`, the community-built driver | Yes | Yes | Yes |
+| `KMDF`, the community-built driver | Nothing to install yet | Nothing to install yet | Yes, when it ships |
 | `Patched Apple driver` | One or the other, never both | One or the other, never both | Yes |
 | `Stock Windows` | No | Usually yes | No |
 
-Pick the first one. The second is an old experiment we kept for the record. Why this mouse is the awkward one: [The 2024 mouse](https://magictray.app/v3.html).
+The first one is wired up and waiting. The driver isn't on the linked branch, so picking it tells you it can't be found and stops there; it never quietly runs the second one for you instead. That leaves the patched Apple driver as the only route to scrolling today, and it's a poor one: scrolling or battery percent, never both, it needs the Windows startup setting and Memory integrity off, and nobody has confirmed it works. Until the community-built driver ships, `Stock Windows` plus the tray's battery percent is the setup we'd recommend. Why this mouse is the awkward one: [The 2024 mouse](https://magictray.app/v3.html).
 
 Where each of those answers comes from, model by model and driver by driver, with the measurement behind it and every untested cell labelled as untested: [docs/DRIVER-MATRIX.md](docs/DRIVER-MATRIX.md).
 
@@ -263,7 +263,7 @@ Getting the 2024 driver checked by Microsoft would remove the startup setting fo
 ## FAQ
 
 **Does the Magic Mouse 2024 (USB-C) work on Windows 10 and Windows 11?**  
-The battery percent does, with no driver at all. Scrolling needs the community-built driver, plus a Windows startup setting you change yourself. [The 2024 mouse](https://magictray.app/v3.html) explains why.
+The battery percent does, with no driver at all. Scrolling doesn't yet. It needs the community-built driver, and that driver is not on the linked branch, so the tray's `KMDF` item tells you it can't find it and stops. The fallback is the patched Apple driver, which gives you scrolling **or** battery percent, never both, needs a Windows startup setting you change yourself, and has never been confirmed by a tester. [The 2024 mouse](https://magictray.app/v3.html) explains why.
 
 **Will Magic Tray change a driver on its own?**  
 No. You pick the item, a dialog asks you, and only then does anything happen. For the older mice and the AA trackpad it opens a download page and installs nothing.
@@ -298,7 +298,7 @@ The exe filename stays `MagicMouseTray.exe`. The product name is **Magic Tray**.
 
 `main` takes no direct pushes: everything lands through a pull request, and nine checks have to pass first — build and tests, publish and packaging, PowerShell lint, workflow lint, CodeQL, site checks, version sync, winget manifest, DCO sign-off. All nine run on every PR. What each one does, and how to run it locally, is in [.github/workflows/README.md](.github/workflows/README.md).
 
-KMDF sources live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) (`v2-kmdf-driver/`). This repo does not vendor that driver. `DriverInstaller.OfferV3KmdfInstallAsync` snapshots that repo's default branch and runs `v2-kmdf-driver/Install-KMDF.cmd` elevated after the user's OK. The snapshot is the branch tip, not a pinned checksum-verified release. If that script is not on the branch, the install throws and never falls back to `v1-binary-patch/installer/Install-MagicMousePatch.ps1`.
+KMDF sources live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) (`v2-kmdf-driver/`). This repo does not vendor that driver. `DriverInstaller.OfferV3KmdfInstallAsync` snapshots that repo's default branch (`DriverPackageCatalog.V3RepoRef` = `main`) and would run `v2-kmdf-driver/Install-KMDF.cmd` elevated after the user's OK. That file is not on the branch — as of 2026-09-16 the whole `v2-kmdf-driver/` tree on `main` is one `README.md` — so the call reports the missing script and returns `InstallOutcome.Unavailable` (`DriverInstaller.cs:378-390`). It never falls back to `v1-binary-patch/installer/Install-MagicMousePatch.ps1` and never patches `applewirelessmouse.sys`. When the script does land, the snapshot is the branch tip, not a pinned checksum-verified release.
 
 The v1/v2 and `030E` paths never call `pnputil` to install: `OfferV1V2ScrollFix` and `OfferTrackpadV1BootCamp` open the documented GitHub page and stop. `OfferV1V2StockRestore` unbinds `applewirelessmouse` on that PID only, leaving `HidBth`.
 
@@ -329,7 +329,7 @@ After a dead wheel, a failed enable, or a charge/unplug: tray **Diagnostics → 
 
 CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX_*`), package, verify, then create the Release. `scripts/verify-release.ps1` must pass first, and it fails the build on a malformed archive rather than shipping one.
 
-**The primary asset is `MagicTray-<tag>-win-x64.zip`.** Download that, not the bare exe. Its layout exists to satisfy the script resolvers in `DriverInstaller.FindKeyboardPatchScript` and `DiagnosticScripts`, which probe `<exe folder>/scripts/<name>` first:
+**The primary asset is `MagicTray-<tag>-win-x64.zip`.** Download that, not the bare exe. Its layout exists to satisfy two script resolvers that disagree on order. `DriverInstaller.FindKeyboardPatchScript` tries `<exe folder>/scripts/<name>` first, then `<exe folder>/<name>`, then `scripts/<name>` in the exe folder and up to five folders above it. `DiagnosticScripts.Find` tries `<exe folder>/<name>` first and `<exe folder>/scripts/<name>` second, then walks the same six folders in that same root-before-`scripts` order. The ZIP puts every shipped script under `scripts/`, which both resolvers find — but because the diagnostic resolver looks beside the exe first, a same-named file dropped loose next to `MagicMouseTray.exe` wins over the shipped one:
 
 ```
 MagicMouseTray.exe
