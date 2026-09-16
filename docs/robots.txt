@@ -2,7 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -11,7 +10,6 @@ User-agent: GPTBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -20,7 +18,6 @@ User-agent: OAI-SearchBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -29,7 +26,6 @@ User-agent: ChatGPT-User
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -38,7 +34,6 @@ User-agent: ClaudeBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -47,7 +42,6 @@ User-agent: Claude-User
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -56,7 +50,6 @@ User-agent: Claude-SearchBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -65,7 +58,6 @@ User-agent: anthropic-ai
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -74,7 +66,6 @@ User-agent: PerplexityBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -83,7 +74,6 @@ User-agent: Perplexity-User
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -92,7 +82,6 @@ User-agent: Google-Extended
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -101,7 +90,6 @@ User-agent: Applebot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -110,7 +98,6 @@ User-agent: Applebot-Extended
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -119,7 +106,6 @@ User-agent: Bingbot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -128,7 +114,6 @@ User-agent: CCBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -137,7 +122,6 @@ User-agent: Amazonbot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -146,7 +130,6 @@ User-agent: meta-externalagent
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -155,7 +138,6 @@ User-agent: DuckDuckBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -164,7 +146,6 @@ User-agent: YandexBot
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
@@ -173,7 +154,6 @@ User-agent: Bytespider
 Allow: /
 Disallow: /DESIGN-
 Disallow: /SEARCH.md
-Disallow: /STRIPE-SETUP.md
 Disallow: /SEARCH.md
 Disallow: /TESTED.md
 Disallow: /ALERTS.md
