@@ -110,7 +110,10 @@ jobs:
               break
             } catch {
               $lastError = $_
-              Write-Warning "IndexNow request transport error on attempt $attempt of $maxAttempts: $($_.Exception.Message)"
+              # ${maxAttempts}: a bare $maxAttempts: parses as a scope qualifier,
+              # which made this whole step a ParserError - so the retry path, and
+              # with it every IndexNow submission, had never once run.
+              Write-Warning "IndexNow request transport error on attempt $attempt of ${maxAttempts}: $($_.Exception.Message)"
               if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds ($attempt * 2); continue }
             }
           }
