@@ -49,8 +49,15 @@ internal static class BugReport
     {
         if (string.IsNullOrEmpty(text))
             return text;
-        text = Regex.Replace(text, @"\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", "<mac>");
-        text = Regex.Replace(text, @"\bDev_[0-9A-Fa-f]{12}\b", "Dev_<mac>", RegexOptions.IgnoreCase);
+        // The shared address rules live in Logger.RedactMacs, which is the sink
+        // every log line already passes through; one spelling of a redacted MAC
+        // is what lets a device correlate between debug.log and this report.
+        text = Logger.RedactMacs(text);
+        // Public-issue-only belt: a bare 12-hex run with non-hex neighbours.
+        // Logger deliberately does not apply this - it also rewrites the
+        // Bluetooth base UUID tail 00805f9b34fb inside logged instance IDs,
+        // which would corrupt debug.log's own diagnostic identifiers. Here the
+        // scrub is one-way and over-redaction costs nothing.
         text = Regex.Replace(text, @"(?<![0-9A-Fa-f])[0-9A-Fa-f]{12}(?![0-9A-Fa-f])", "<mac>");
         // Logged log/temp/script paths all carry C:\Users\<name>\AppData\...
         text = Regex.Replace(text, @"(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)", "<user>",
