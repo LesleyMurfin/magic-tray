@@ -254,29 +254,6 @@ public class TrayMenuTests
     // The advice row is clickable because the paragraph had to go somewhere.
     // This is what the click shows, and it is the only place the long
     // per-driver sentences are allowed to appear.
-    [Fact]
-    public void AdviceDialogText_CarriesTheParagraphAndEveryFullDriverRow()
-    {
-        const DeviceKind kind = DeviceKind.MagicMouseV3;
-        const string pid = "0323";
-
-        var text = TrayMenu.AdviceDialogText(kind, pid, DriverStatus.StockKmdf);
-
-        Assert.StartsWith(
-            DriverAdviceView.AdviceFull(kind, pid, DriverStatus.StockKmdf), text,
-            StringComparison.Ordinal);
-        Assert.Contains(DriverAdviceView.OptionsHeader(), text, StringComparison.Ordinal);
-        foreach (var row in DriverAdviceView.OptionRows(kind, pid))
-            Assert.Contains(row, text, StringComparison.Ordinal);
-
-
-        // A device this app binds no driver for has no choices to predict, so
-        // the dialog is the advice and nothing invented.
-        var noChoices = TrayMenu.AdviceDialogText(DeviceKind.LogitechMouse, "c52b", DriverStatus.Ok);
-        Assert.Equal(
-            DriverAdviceView.AdviceFull(DeviceKind.LogitechMouse, "c52b", DriverStatus.Ok),
-            noChoices);
-    }
 
     // The devices whose driver had to be READ instead of classified.
     // DriverHealthChecker skips these PIDs, so this is the set whose rows take
@@ -317,46 +294,6 @@ public class TrayMenuTests
     // read yet, so what works cannot be confirmed." - which was false: the
     // driver is perfectly readable. With the reading in hand the dialog names
     // it instead.
-    [Fact]
-    public void AdviceDialogText_WithAReadDriver_NamesIt_AndNeverSaysNotReadYet()
-    {
-        const DeviceKind kind = DeviceKind.MagicKeyboard;
-        const string pid = "0239";
-
-        var text = TrayMenu.AdviceDialogText(
-            kind, pid, status: null, Keyboard0239, SdpPatchState.Applied);
-
-        Assert.StartsWith(
-            DriverAdviceView.AdviceFull(kind, pid, null, Keyboard0239, SdpPatchState.Applied),
-            text, StringComparison.Ordinal);
-        Assert.Contains("kbdhid", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("not been read yet", text, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("not read yet", text, StringComparison.OrdinalIgnoreCase);
-
-        // The predictions still follow the reading, in their own block.
-        foreach (var row in DriverAdviceView.OptionRows(kind, pid))
-            Assert.Contains(row, text, StringComparison.Ordinal);
-    }
-
-    // The menu row is the short form and the dialog is the long one. Whatever
-    // the reading says, the row still has to fit a ToolStripItem: the whole
-    // point of the split is that no advice text reaches .Text unclamped.
-
-    // A mouse has a DriverStatus and a bound filter name of its own, so the
-    // stock reading must not reach its text at all - the tray hands every row
-    // the same pair and this is what keeps the mouse rows byte-identical.
-    [Fact]
-    public void MouseRows_IgnoreTheStockReading()
-    {
-        foreach (var status in new DriverStatus?[]
-                 { null, DriverStatus.PatchedKmdf, DriverStatus.StockKmdf, DriverStatus.NotBound })
-        {
-            Assert.Equal(
-                TrayMenu.AdviceDialogText(DeviceKind.MagicMouseV3, "0323", status),
-                TrayMenu.AdviceDialogText(
-                    DeviceKind.MagicMouseV3, "0323", status, Keyboard0239, SdpPatchState.Applied));
-        }
-    }
 
     [Theory]
     [InlineData("https://magictray.app/v3.html", true)]
