@@ -48,9 +48,10 @@ trees and would let one comment satisfy several gold entries. A control
 fixture is a false positive when any comment matches its path at all.
 Precision is true positives over the number of comments that landed on any
 labelled fixture path, so unrelated chatter on the must-catch files lowers it
-instead of leaving it pinned at 1.00. If the keyword requirement proves too
-strict against a real export, relax the conjunction back to line proximity
-alone, and note that change here.
+instead of leaving it pinned at 1.00. The category keyword is mandatory: if a
+real export uses unfamiliar wording, expand or normalize ``CATEGORY_KEYWORDS``
+while preserving word-boundary matching; never relax the scorer to line
+proximity alone, because that lets a comment that found nothing score as a hit.
 
 Exit codes: 0 on a successful report (whatever the verdict); 2 for genuinely
 invalid JSON, an unreadable/invalid labels manifest, or a ``--threshold``

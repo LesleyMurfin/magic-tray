@@ -208,10 +208,11 @@ No linters, formatters, or project-wide test suites should be run for this spec'
   against a live export: `score.py` parses the GitHub review-comments shape documented in its
   module docstring. Pull one real export before trusting absolute recall numbers, and adjust the
   docstring if it differs from `{path, line, body}`.
-- Keyword-per-category matching in `score.py` is a heuristic, and it is now a conjunction with
-  line proximity. If that proves too strict against a real export, relax it back to file+line
-  proximity alone and note the change in the script's docstring and here — but relaxing it
-  restores the failure mode where a comment that found nothing scores as a detection.
+- Keyword-per-category matching in `score.py` is mandatory alongside the complete path and, when
+  present, line proximity. If a real export uses unfamiliar wording, expand or normalize
+  `CATEGORY_KEYWORDS` while preserving its word-boundary matching; never relax the scorer to
+  file-and-line-only matching, because that lets a comment that found nothing score as a
+  detection.
 - Any figure this harness prints is a function of the vendor's model version and this
   organisation's CodeRabbit configuration at run time. It measures one run, not a standing
   property, so a number measured today does not bind a later purchasing decision.
