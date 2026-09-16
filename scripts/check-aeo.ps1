@@ -107,7 +107,13 @@
        with no dimensions reflows the page as it loads - layout shift is a
        ranking input, not only a nuisance.
 
-   11. noindex pages stay out of the sitemap (Test-NoindexPage)
+   11. Tested reports table stays in sync (Test-TestedReportsSync)
+       The contributor reports table in docs/tested.html has the same number of
+       rows as the markdown table in docs/TESTED.md. Remove this and new
+       community device test reports documented in markdown are silently
+       omitted from the published HTML page.
+
+   12. noindex pages stay out of the sitemap (Test-NoindexPage)
        A page carrying <meta name="robots" content="...noindex..."> is not
        listed in sitemap.xml and carries no canonical link. Remove this and
        the site submits a URL for crawling that it then tells the crawler to
@@ -117,7 +123,7 @@
     A noindex page is exempt from checks 1, 4, 7 and 8. 404.html deliberately
     carries no entity graph, no canonical and nothing worth quoting: demanding
     a graph and a canonical there would force the page to contradict itself.
-    It is still held to checks 9, 10 and 11.
+    It is still held to checks 9, 10 and 12.
 
     Failures are reported as GitHub Actions annotations
     (::error file=<path>,line=<n>::<message>) and as a non-zero exit code.
@@ -1354,7 +1360,7 @@ function Test-PictureFallback {
 function Test-TestedReportsSync {
     <#
     .SYNOPSIS
-        Check 12: docs/tested.html reports table stays in sync with docs/TESTED.md.
+        Check 11: docs/tested.html reports table stays in sync with docs/TESTED.md.
     .DESCRIPTION
         Guards against report divergence: any new hardware confirmation added
         to the Markdown source must also be reflected in the published HTML.
@@ -1380,7 +1386,7 @@ function Test-TestedReportsSync {
         $lines = $mdReports.Groups['rows'].Value.Trim().Split("`n")
         foreach ($line in $lines) {
             $trimmed = $line.Trim()
-            if ($trimmed -match '^\|\s*Model\s*\|' -or $trimmed -match '^\|\s*-+\s*\|') { continue }
+            if ($trimmed -match '^\|\s*Model\s*\|' -or $trimmed -match '^\|\s*[:\-\s|]+\|$') { continue }
             if ($trimmed -match '^\|.*\|$') { $mdRows += $trimmed }
         }
     }
@@ -1389,7 +1395,7 @@ function Test-TestedReportsSync {
     $htmlReports = [regex]::Match($htmlText, '(?ms)<h2[^>]*id="reports"[^>]*>.*?<tbody>(?<rows>.*?)</tbody>')
     $htmlRows = @()
     if ($htmlReports.Success) {
-        foreach ($m in [regex]::Matches($htmlReports.Groups['rows'].Value, '<tr>(?<row>.*?)</tr>')) {
+        foreach ($m in [regex]::Matches($htmlReports.Groups['rows'].Value, '<tr\b[^>]*>(?<row>.*?)</tr>', 'Singleline, IgnoreCase')) {
             $htmlRows += $m.Groups['row'].Value
         }
     }
@@ -1405,7 +1411,7 @@ function Test-TestedReportsSync {
 function Test-NoindexPage {
     <#
     .SYNOPSIS
-        Check 11: a noindex page is absent from sitemap.xml and carries no
+        Check 12: a noindex page is absent from sitemap.xml and carries no
         canonical link.
     .DESCRIPTION
         Whether the sitemap lists every indexable page is

@@ -15,12 +15,12 @@
 
 The app never changes a driver silently. Every action below is user-initiated from the tray menu and confirmed in a dialog first.
 
-- **Runs an installer itself, after you confirm:** the Magic Mouse 2024 (`0323`) community driver (`Install-KMDF.cmd`); the 2024 patched-Apple route; the keyboard battery unlock; and the undo that restores the stock Windows driver.
+- **Runs an installer itself, after you confirm:** the Magic Mouse 2024 (`0323`) community-driver route (the app attempts this route after you confirm, but cannot install it because the package, including `Install-KMDF.cmd`, has not been published); the 2024 patched-Apple route; the keyboard battery unlock; and the undo that restores the stock Windows driver.
 - **Only opens a download page, and installs nothing:** the Magic Mouse v1/v2 scroll driver (`030D` / `0269` / `0310`), and the Magic Trackpad v1 (`030E`). The user downloads and runs those.
 - **Cannot do at all:** turn on the Windows setting that allows drivers Microsoft has not checked, and turn Memory integrity off. There is no `bcdedit` call anywhere in the app. It only warns that these must already be set. The user must do both by hand.
 - **Refuses outright:** any driver change for Magic Trackpad `0265` or `0324`.
 
-Do not write "Magic Tray installs the driver" without qualifying it. For the 2024 mouse that is true. For v1/v2 it is false.
+Do not write "Magic Tray installs the driver" without qualifying it. For the 2024 mouse patched-Apple route that is true (the community KMDF package is not yet published). For v1/v2 it is false.
 
 ## Canonical device names (use these exact names)
 
