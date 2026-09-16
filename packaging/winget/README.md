@@ -217,10 +217,13 @@ needs the `WINGET_CREATE_GITHUB_TOKEN` secret, which this repository does not
 currently have, so until it is added every run must keep dry_run enabled - the
 workflow's first step fails fast otherwise. Its header documents the scope.
 
-The offline half of manifest checking runs on every pull request that touches
-packaging (see `.github/workflows/packaging.yml` for the path filter): all three
-files parse, the required keys are present, and the version agrees with the
-folder it sits in. `scripts/check-version-sync.ps1` then holds the published
+The offline half of manifest checking runs on every pull request - the path
+filter in `.github/workflows/packaging.yml` applies to pushes to `main` only,
+because a required check that a path filter skips never reports and would block
+the PR forever. It checks that all three files parse, the required keys are
+present on every `Installers` entry, and the version agrees with the folder it
+sits in (`scripts/check-winget-manifest.py`).
+`scripts/check-version-sync.ps1` then holds the published
 metadata - these manifests, the installer URL and the version strings on
 magictray.app - to the LATEST RELEASED version, while allowing the csproj
 `<Version>` to run ahead of it. Ahead is the normal "next version in

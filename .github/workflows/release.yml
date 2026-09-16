@@ -54,23 +54,7 @@ jobs:
         run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
       - name: Stage keyboard patch and diagnostic scripts
-        shell: pwsh
-        run: |
-          Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
-          Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
-          Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
-          Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
-          Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
-          foreach ($f in @(
-            'publish/MagicMouseTray.exe',
-            'publish/kbd-patch-cachedservices.ps1',
-            'publish/Install-KeyboardBattery.cmd',
-            'publish/capture-state.ps1',
-            'publish/diagnose-driver.ps1',
-            'publish/mm-bt-stack-snapshot.ps1'
-          )) {
-            if (-not (Test-Path $f)) { throw "$f missing" }
-          }
+        run: pwsh -File scripts/stage-publish.ps1 -PublishDir publish
 
       # Optional Authenticode signing — runs only when the PFX secrets exist.
       - name: Sign (optional)

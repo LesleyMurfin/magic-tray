@@ -114,30 +114,6 @@ function Get-RepoFile {
     return [string[]]@(Get-Content -LiteralPath $full)
 }
 
-function Get-TaggedValue {
-    <#
-    .SYNOPSIS
-        First single-line regex capture in a file, with its 1-based line number.
-    #>
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
-        [Parameter(Mandatory)] [string] $Pattern
-    )
-
-    for ($i = 0; $i -lt $Content.Count; $i++) {
-        $found = [regex]::Match($Content[$i], $Pattern)
-        if ($found.Success) {
-            return [pscustomobject]@{
-                Value = $found.Groups[1].Value.Trim()
-                Line  = $i + 1
-            }
-        }
-    }
-    return $null
-}
-
 function Get-TaggedValueList {
     <#
     .SYNOPSIS
@@ -162,31 +138,50 @@ function Get-TaggedValueList {
     return $hits.ToArray()
 }
 
-function Get-YamlScalar {
+function Get-TaggedValue {
     <#
     .SYNOPSIS
-        Value of a YAML key written as "key: value" on one line, unquoted.
+        First single-line regex capture in a file, with its 1-based line number,
+        or $null when nothing matches.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
+        [Parameter(Mandatory)] [string] $Pattern
+    )
+
+    $hits = @(Get-TaggedValueList -Content $Content -Pattern $Pattern)
+    if ($hits.Count -eq 0) { return $null }
+    return $hits[0]
+}
+
+function Get-YamlScalar {
+    <#
+    .SYNOPSIS
+        Every "key: value" written on one line, unquoted, with its line number.
+    .DESCRIPTION
+        Returns an array, empty when the key is absent. Every occurrence, not
+        just the first: the winget schema lets a key sit at the manifest root and
+        again on each Installers entry, so checking only the first hit would let
+        a second entry carry a stale tag or asset name unchallenged.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
         [Parameter(Mandatory)] [string] $Key
     )
 
     $pattern = '^\s*-?\s*{0}\s*:\s*(\S.*?)\s*$' -f [regex]::Escape($Key)
-    $hit = Get-TaggedValue -Content $Content -Pattern $pattern
-    if ($null -eq $hit) {
-        return $null
-    }
-
-    $text = $hit.Value
-    $quoted = [regex]::Match($text, '^(?:''(.*)''|"(.*)")$')
-    if ($quoted.Success) {
-        $text = if ($quoted.Groups[1].Success) { $quoted.Groups[1].Value } else { $quoted.Groups[2].Value }
-    }
-
-    return [pscustomobject]@{ Value = $text; Line = $hit.Line }
+    return @(Get-TaggedValueList -Content $Content -Pattern $pattern | ForEach-Object {
+            $text = $_.Value
+            $quoted = [regex]::Match($text, '^(?:''(.*)''|"(.*)")$')
+            if ($quoted.Success) {
+                $text = if ($quoted.Groups[1].Success) { $quoted.Groups[1].Value } else { $quoted.Groups[2].Value }
+            }
+            [pscustomobject]@{ Value = $text; Line = $_.Line }
+        })
 }
 
 function Get-ShortVersion {
@@ -267,7 +262,10 @@ if (-not (Test-Path -LiteralPath $manifestRoot -PathType Container)) {
     Write-Problem -Path $manifestRootRel -Line 1 -Message 'No winget manifest folder; cannot determine the released version.'
 }
 else {
-    $versionFolders = @(Get-ChildItem -LiteralPath $manifestRoot -Directory | Sort-Object -Property Name)
+    # Unsorted on purpose: every folder is checked against its own name, and the
+    # released version is picked below by [version] comparison, which a lexical
+    # sort would get wrong anyway (1.1.10 sorts before 1.1.9).
+    $versionFolders = @(Get-ChildItem -LiteralPath $manifestRoot -Directory)
     if ($versionFolders.Count -eq 0) {
         Write-Problem -Path $manifestRootRel -Line 1 -Message 'No version folder under the winget manifest root; cannot determine the released version.'
     }
@@ -335,40 +333,46 @@ foreach ($folder in $versionFolders) {
             continue
         }
 
-        $declared = Get-YamlScalar -Content $manifest -Key 'PackageVersion'
-        if ($null -eq $declared) {
+        $declared = @(Get-YamlScalar -Content $manifest -Key 'PackageVersion')
+        if ($declared.Count -eq 0) {
             Write-Problem -Path $manifestRel -Line 1 -Message 'No PackageVersion key.'
         }
-        elseif ($declared.Value -ne $folderVersion) {
-            Write-Problem -Path $manifestRel -Line $declared.Line -Message ("PackageVersion is '{0}' but the manifest folder is '{1}'. All three manifests must name the folder's version." -f $declared.Value, $folderVersion)
+        foreach ($hit in $declared) {
+            if ($hit.Value -ne $folderVersion) {
+                Write-Problem -Path $manifestRel -Line $hit.Line -Message ("PackageVersion is '{0}' but the manifest folder is '{1}'. All three manifests must name the folder's version." -f $hit.Value, $folderVersion)
+            }
         }
 
         if ($manifestFile -eq 'LesleyMurfin.MagicTray.installer.yaml') {
-            $installerUrl = Get-YamlScalar -Content $manifest -Key 'InstallerUrl'
-            if ($null -eq $installerUrl) {
+            # Every Installers entry, not just the first: an arm64 entry added
+            # beside the x64 one must carry the same tag and asset name.
+            $installerUrls = @(Get-YamlScalar -Content $manifest -Key 'InstallerUrl')
+            if ($installerUrls.Count -eq 0) {
                 Write-Problem -Path $manifestRel -Line 1 -Message 'No InstallerUrl key.'
             }
-            else {
-                if ($installerUrl.Value -notmatch ('/releases/download/{0}/' -f [regex]::Escape($tag))) {
-                    Write-Problem -Path $manifestRel -Line $installerUrl.Line -Message ("InstallerUrl '{0}' does not point at the /releases/download/{1}/ assets of tag {1}." -f $installerUrl.Value, $tag)
+            foreach ($hit in $installerUrls) {
+                if ($hit.Value -notmatch ('/releases/download/{0}/' -f [regex]::Escape($tag))) {
+                    Write-Problem -Path $manifestRel -Line $hit.Line -Message ("InstallerUrl '{0}' does not point at the /releases/download/{1}/ assets of tag {1}." -f $hit.Value, $tag)
                 }
                 if ($null -ne $assetTemplate) {
                     $expectedAsset = $assetTemplate.Replace('$Tag', $tag)
-                    $actualAsset = $installerUrl.Value.Split('/')[-1]
+                    $actualAsset = $hit.Value.Split('/')[-1]
                     if ($actualAsset -ne $expectedAsset) {
-                        Write-Problem -Path $manifestRel -Line $installerUrl.Line -Message ("InstallerUrl asset is '{0}' but {1} publishes '{2}'." -f $actualAsset, $packagerRel, $expectedAsset)
+                        Write-Problem -Path $manifestRel -Line $hit.Line -Message ("InstallerUrl asset is '{0}' but {1} publishes '{2}'." -f $actualAsset, $packagerRel, $expectedAsset)
                     }
                 }
             }
         }
 
         if ($manifestFile -eq 'LesleyMurfin.MagicTray.locale.en-US.yaml') {
-            $notesUrl = Get-YamlScalar -Content $manifest -Key 'ReleaseNotesUrl'
-            if ($null -eq $notesUrl) {
+            $notesUrls = @(Get-YamlScalar -Content $manifest -Key 'ReleaseNotesUrl')
+            if ($notesUrls.Count -eq 0) {
                 Write-Problem -Path $manifestRel -Line 1 -Message 'No ReleaseNotesUrl key.'
             }
-            elseif ($notesUrl.Value -notmatch ('/releases/tag/{0}$' -f [regex]::Escape($tag))) {
-                Write-Problem -Path $manifestRel -Line $notesUrl.Line -Message ("ReleaseNotesUrl '{0}' does not point at the release notes of tag {1}." -f $notesUrl.Value, $tag)
+            foreach ($hit in $notesUrls) {
+                if ($hit.Value -notmatch ('/releases/tag/{0}$' -f [regex]::Escape($tag))) {
+                    Write-Problem -Path $manifestRel -Line $hit.Line -Message ("ReleaseNotesUrl '{0}' does not point at the release notes of tag {1}." -f $hit.Value, $tag)
+                }
             }
         }
     }

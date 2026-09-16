@@ -35,5 +35,4 @@ jobs:
           persist-credentials: false
 
       - name: Validate docs/ site
-        shell: pwsh
         run: pwsh -File scripts/check-site.ps1

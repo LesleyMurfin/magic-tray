@@ -73,6 +73,10 @@ $ErrorActionPreference = 'Stop'
 
 $SiteOrigin = 'https://magictray.app'
 $SitemapUrl = "$SiteOrigin/sitemap.xml"
+# A reference may name this site by its own origin instead of a relative path -
+# every page's rel=canonical does. Those resolve on disk like any other page, so
+# strip the origin and check them rather than writing them off as external.
+$SelfOriginPattern = '^(?:https?:)?//' + [regex]::Escape(([uri]$SiteOrigin).Host) + '(?=[/?#]|$)'
 
 # ---------------------------------------------------------------- helpers ---
 
@@ -286,7 +290,7 @@ function Get-RobotsVerdict {
     $verdict = 'none'
     $specificity = -1
     foreach ($item in $Rule) {
-        if ($Path -notmatch $item.Pattern) { continue }
+        if ($Path -cnotmatch $item.Pattern) { continue }
         $length = $item.Value.Length
         if ($length -gt $specificity) {
             $specificity = $length
@@ -296,6 +300,49 @@ function Get-RobotsVerdict {
         }
     }
     return $verdict
+}
+
+function Test-Reference {
+    <#
+    .SYNOPSIS
+        Resolves one reference and reports it when it escapes the site root or
+        names no file.
+    .DESCRIPTION
+        Shared by the href/src sweep and the CSS url(...) sweep, which differ
+        only in how they word the finding and where they get the line from.
+        A self-origin reference becomes root-relative first: a rel=canonical
+        pointing at a page that was renamed de-indexes it, which is the most
+        expensive dead link on the site and the one a relative-only sweep misses.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][string]$BaseDir,
+        [Parameter(Mandatory)][string]$SiteRoot,
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][int]$Line,
+        [Parameter(Mandatory)][string]$Label
+    )
+
+    $value = $Value
+    if ($value -match $SelfOriginPattern) {
+        $value = $value -replace $SelfOriginPattern, ''
+        if ($value -eq '') { $value = '/' }
+    }
+    if (Test-ExternalReference -Value $value) { return }
+
+    $target = Resolve-Reference -Value $value -BaseDir $BaseDir -SiteRoot $SiteRoot
+    $targetRelative = Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot
+    if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
+        New-Finding -Severity 'error' -Path $Path -Line $Line `
+            -Message ("{0} escapes the site root: {1}" -f $Label, $targetRelative)
+        return
+    }
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+        New-Finding -Severity 'error' -Path $Path -Line $Line `
+            -Message ("dead {0}: no file at {1}" -f $Label, $targetRelative)
+    }
 }
 
 # ----------------------------------------------------------------- checks ---
@@ -313,23 +360,9 @@ function Test-InternalLink {
     )
 
     foreach ($ref in $Reference) {
-        if (Test-ExternalReference -Value $ref.Value) { continue }
-        $target = Resolve-Reference -Value $ref.Value -BaseDir $ref.Directory -SiteRoot $SiteRoot
-        if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
-            New-Finding -Severity 'error' `
-                -Path (Get-RepoRelativePath -FullPath $ref.File -RepoRoot $RepoRoot) `
-                -Line $ref.Line `
-                -Message ("{0}=""{1}"" escapes the site root: {2}" -f $ref.Attribute, $ref.Value,
-                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            New-Finding -Severity 'error' `
-                -Path (Get-RepoRelativePath -FullPath $ref.File -RepoRoot $RepoRoot) `
-                -Line $ref.Line `
-                -Message ("dead {0}=""{1}"": no file at {2}" -f $ref.Attribute, $ref.Value,
-                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
-        }
+        Test-Reference -Value $ref.Value -BaseDir $ref.Directory -SiteRoot $SiteRoot -RepoRoot $RepoRoot `
+            -Path (Get-RepoRelativePath -FullPath $ref.File -RepoRoot $RepoRoot) -Line $ref.Line `
+            -Label ('{0}="{1}"' -f $ref.Attribute, $ref.Value)
     }
 
     $cssPath = Join-Path $SiteRoot 'site.css'
@@ -339,21 +372,9 @@ function Test-InternalLink {
     $cssRelative = Get-RepoRelativePath -FullPath $cssPath -RepoRoot $RepoRoot
     foreach ($match in [regex]::Matches($css, 'url\(\s*(?<quote>["'']?)(?<value>[^"''()]*)\k<quote>\s*\)', 'IgnoreCase')) {
         $value = $match.Groups['value'].Value.Trim()
-        if (Test-ExternalReference -Value $value) { continue }
-        $target = Resolve-Reference -Value $value -BaseDir $SiteRoot -SiteRoot $SiteRoot
-        if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
-            New-Finding -Severity 'error' -Path $cssRelative `
-                -Line (Get-LineNumber -Text $css -Offset $match.Index) `
-                -Message ("url(""{0}"") escapes the site root: {1}" -f $value,
-                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            New-Finding -Severity 'error' -Path $cssRelative `
-                -Line (Get-LineNumber -Text $css -Offset $match.Index) `
-                -Message ("dead url(""{0}""): no file at {1}" -f $value,
-                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
-        }
+        Test-Reference -Value $value -BaseDir $SiteRoot -SiteRoot $SiteRoot -RepoRoot $RepoRoot `
+            -Path $cssRelative -Line (Get-LineNumber -Text $css -Offset $match.Index) `
+            -Label ('url("{0}")' -f $value)
     }
 }
 
@@ -394,6 +415,10 @@ function Test-Sitemap {
 
     $listed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($entry in $entries) {
+        if ($entry.PSObject.Properties.Name -notcontains 'loc') {
+            New-Finding -Severity 'error' -Path $sitemapRelative -Message 'a <url> entry has no <loc>'
+            continue
+        }
         $loc = "$($entry.loc)".Trim()
         $line = 1
         $locMatch = [regex]::Match($raw, "<loc>\s*$([regex]::Escape($loc))\s*</loc>")
@@ -512,7 +537,8 @@ function Test-RobotsFile {
         }
 
         $key = $directive.Groups['key'].Value.ToLowerInvariant()
-        $value = $directive.Groups['value'].Value.Trim()
+        # RFC 9309 2.2: a directive line may end in a '# comment'.
+        $value = ($directive.Groups['value'].Value -split '#', 2)[0].Trim()
 
         if ($key -eq 'sitemap') {
             $sitemapSeen = $true
@@ -688,12 +714,8 @@ foreach ($finding in $findings) {
     Write-Output "::$($finding.Severity) $location::$($finding.Message)"
 }
 
-$scanned = $htmlFiles.Count
-foreach ($extra in @('site.css', 'sitemap.xml', 'robots.txt', 'CNAME', '.nojekyll')) {
-    if (Test-Path -LiteralPath (Join-Path $siteRoot $extra) -PathType Leaf) { $scanned++ }
-}
-
-Write-Output ("Site checks: {0} files, {1} errors, {2} warnings" -f $scanned, $errors.Count, $warnings.Count)
+Write-Output ("Site checks: {0} pages, {1} references, {2} errors, {3} warnings" -f
+    $htmlFiles.Count, $references.Count, $errors.Count, $warnings.Count)
 
 if ($errors.Count -gt 0) { exit 1 }
 exit 0
