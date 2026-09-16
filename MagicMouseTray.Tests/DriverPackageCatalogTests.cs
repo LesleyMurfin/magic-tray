@@ -466,4 +466,41 @@ public class DriverPackageCatalogTests
         Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.PathAPatched));
         Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.StockKmdf));
     }
+
+    [Fact]
+    public void DeclinedUacPrompt_IsTheNativeErrorCode_NotEveryElevationFailure()
+    {
+        // 1223 ERROR_CANCELLED is what ShellExecute reports when the user
+        // clicks No, and the only signal that may downgrade an offer from
+        // Failed to Cancelled. The message is localised, so the code decides.
+        Assert.True(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(1223)));
+        Assert.True(DriverInstaller.IsUacDeclined(
+            new System.ComponentModel.Win32Exception(1223, "Der Vorgang wurde durch den Benutzer abgebrochen.")));
+
+        // Elevation that was granted and then went wrong is still a failure:
+        // 2 ERROR_FILE_NOT_FOUND, 740 ERROR_ELEVATION_REQUIRED, and
+        // RunElevated's own timeout / non-zero-exit / no-process throws.
+        Assert.False(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(2)));
+        Assert.False(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(740)));
+        Assert.False(DriverInstaller.IsUacDeclined(
+            new InvalidOperationException("Install-KMDF.cmd exited 1.")));
+        Assert.False(DriverInstaller.IsUacDeclined(
+            new InvalidOperationException("Could not start elevated process (UAC cancelled?).")));
+    }
+
+    [Fact]
+    public void V3StockRestore_SecondDeclineNamesTheHalfThatAlreadyRan()
+    {
+        var text = DriverInstaller.V3StockPartialRestoreMessage();
+
+        // Both halves by name: one ran, one did not.
+        Assert.Contains(DriverPackageCatalog.KmdfUninstallCmdRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains(DriverPackageCatalog.PathAUninstallScriptRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains("was declined", text, StringComparison.Ordinal);
+        // the state the machine is actually in, and the way out
+        Assert.Contains("not on stock HidBth yet", text, StringComparison.Ordinal);
+        Assert.Contains("Run Stock again", text, StringComparison.Ordinal);
+    }
 }

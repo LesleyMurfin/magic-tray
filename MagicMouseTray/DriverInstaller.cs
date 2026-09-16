@@ -231,6 +231,11 @@ internal static class DriverInstaller
         {
             ExecuteV1V2StockRestore(plan);
         }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_V1V2_STOCK_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
         catch (Exception ex)
         {
             ShowBlocked(ex.Message);
@@ -405,6 +410,11 @@ foreach ($id in $restart) {
                 windowStyle: ProcessWindowStyle.Normal,
                 timeout: TimeSpan.FromMinutes(15));
         }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_KMDF_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
         catch (Exception ex)
         {
             ShowBlocked(ex.Message);
@@ -479,6 +489,11 @@ foreach ($id in $restart) {
                 windowStyle: ProcessWindowStyle.Normal,
                 timeout: TimeSpan.FromMinutes(15));
         }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_PATHA_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
         catch (Exception ex)
         {
             ShowBlocked(ex.Message);
@@ -548,6 +563,11 @@ foreach ($id in $restart) {
             return InstallOutcome.Unavailable;
         }
 
+        // Two elevated steps, so a declined prompt means different things at
+        // each one. Counting the steps that returned is the only way to tell
+        // "nothing happened" from "half of it happened": RunElevated returns
+        // only after the process exited 0.
+        var completedSteps = 0;
         try
         {
             if (kmdfUninstall is not null)
@@ -559,6 +579,7 @@ foreach ($id in $restart) {
                     workingDirectory: Path.GetDirectoryName(kmdfUninstall),
                     windowStyle: ProcessWindowStyle.Normal,
                     timeout: TimeSpan.FromMinutes(15));
+                completedSteps++;
             }
 
             if (pathAUninstall is not null)
@@ -570,7 +591,25 @@ foreach ($id in $restart) {
                     workingDirectory: Path.GetDirectoryName(pathAUninstall),
                     windowStyle: ProcessWindowStyle.Normal,
                     timeout: TimeSpan.FromMinutes(15));
+                completedSteps++;
             }
+        }
+        catch (Exception ex) when (IsUacDeclined(ex) && completedSteps == 0)
+        {
+            Logger.Log("DRIVER_STOCK_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            // Declining the second prompt is not the same as declining the
+            // first. completedSteps == 1 here can only be the KMDF uninstall,
+            // which already ran elevated, and nothing rolls it back - so this
+            // stays Failed and keeps its error box: the mouse is off KMDF with
+            // the patched Apple filter still bound, and only the user can
+            // finish that.
+            Logger.Log("DRIVER_STOCK_PARTIAL cancelled reason=uac-declined step=2");
+            ShowBlocked(V3StockPartialRestoreMessage());
+            return InstallOutcome.Failed;
         }
         catch (Exception ex)
         {
@@ -579,6 +618,16 @@ foreach ($id in $restart) {
         }
         return InstallOutcome.Confirmed;
     }
+
+    // Says which half of the restore happened, because "The operation was
+    // canceled by the user." (the Win32Exception text) would leave the user
+    // believing the machine is untouched when it is mid-change.
+    internal static string V3StockPartialRestoreMessage() =>
+        $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} ran, then the administrator prompt " +
+        $"for {DriverPackageCatalog.PathAUninstallScriptRelativePath} was declined. " +
+        "The KMDF uninstall is done and the patched Apple filter is still in place, " +
+        "so this Magic Mouse is not on stock HidBth yet. " +
+        "Run Stock again and approve both prompts to finish it.";
 
     // Keyboard PATH-C. Discovers the live Bluetooth MAC and passes -Mac.
     // The script requires -Mac - never omit it. Confirm-first like every other
@@ -619,6 +668,11 @@ foreach ($id in $restart) {
         try
         {
             RunElevated("powershell.exe", args);
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_SDP_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
         }
         catch (Exception ex)
         {
@@ -866,6 +920,17 @@ foreach ($id in $restart) {
         if (pidIdx < 0 || pidIdx + 9 > subkeyName.Length) return null;
         return subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
     }
+
+    // ShellExecute reports a declined UAC prompt as Win32Exception with native
+    // error 1223 (ERROR_CANCELLED); Process.Start surfaces that unchanged.
+    // Same signal DeviceEnable.LaunchElevated and DeviceRepair.LaunchElevated
+    // fold into Started=false. The native code is the test, not the message,
+    // which is localised. Every other Win32Exception - 2 ERROR_FILE_NOT_FOUND,
+    // 740 ERROR_ELEVATION_REQUIRED - is a real failure and stays Failed.
+    // A caller that sees this must not also show an error box: the user is the
+    // one who said no, and nothing ran.
+    internal static bool IsUacDeclined(Exception ex) =>
+        ex is System.ComponentModel.Win32Exception w && w.NativeErrorCode == 1223;
 
     static void RunElevated(
         string fileName,
