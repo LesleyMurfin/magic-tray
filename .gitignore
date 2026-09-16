@@ -54,6 +54,6 @@ style-results.json
 .orca/
 .ai/
 
-# Python bytecode -- coderabbit_eval eval harness is a Python package
+# Python bytecode -- byte-compiling the coderabbit_eval harness leaves these behind
 __pycache__/
 *.pyc

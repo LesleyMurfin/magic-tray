@@ -1,7 +1,4 @@
-"""Control fixture: parameterized SQL, no injection risk.
-
-No planted bug. CodeRabbit flagging anything here counts as a false positive.
-"""
+"""User directory queries using bound sqlite3 parameters."""
 
 import sqlite3
 

@@ -1,8 +1,4 @@
-"""Eval fixture: broad exception handler that silently swallows a failure.
-
-Intentionally buggy. This file exists only as ground truth for the CodeRabbit
-eval harness and is never imported by production code.
-"""
+"""JSON config loading with built-in defaults."""
 
 import json
 
@@ -13,7 +9,6 @@ def load_config(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
             config.update(json.load(handle))
-    # GOLD-BUG: broad_except
-    except Exception:  # noqa: BLE001, S110 — GOLD-BUG fixture: bug is the point
+    except Exception:
         pass
     return config

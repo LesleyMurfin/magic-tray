@@ -1,7 +1,4 @@
-"""Control fixture: narrow exception handling with logging.
-
-No planted bug. CodeRabbit flagging anything here counts as a false positive.
-"""
+"""Config loading that logs known failures and falls back to defaults."""
 
 import json
 import logging

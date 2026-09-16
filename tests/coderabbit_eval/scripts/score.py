@@ -13,34 +13,48 @@ Assumed comments schema
 The ``--comments`` file is a JSON array of objects, each with at least::
 
     {"path": "tests/coderabbit_eval/security/sql_injection.py",
-     "line": 14,
+     "line": 9,
      "body": "This query concatenates user input into SQL."}
 
 This shape was NOT confirmed against a live CodeRabbit export; it mirrors the
 GitHub review-comments API, which CodeRabbit posts through. Tolerated aliases:
 ``file``/``filename``/``path`` for the path, and ``line``/``original_line``/
-``start_line`` for the line. GitHub's ``position`` field is deliberately NOT
-accepted: it is a line index inside the unified diff, not a source-file line,
-and the harness has no diff to translate it through. A top-level object is
-accepted only as a wrapper carrying the list under ``comments``; any other
-object shape is a fatal input error rather than a silent zero-comment report.
-An empty file (e.g. ``/dev/null``) parses as zero comments rather than an
-error.
+``start_line`` for the line. A comment line must be a positive integer, either
+as an int or as an all-digit string; anything else -- including ``0`` and
+``"-5"`` -- counts as "no line". GitHub's ``position`` field is deliberately
+NOT accepted: it is a line index inside the unified diff, not a source-file
+line, and the harness has no diff to translate it through. A top-level object
+is accepted only as a wrapper carrying the list under ``comments``; any other
+object shape is a fatal input error rather than a silent zero-comment report,
+and so is an array holding anything other than comment objects: the array must
+contain only objects. An empty file (e.g. ``/dev/null``) parses as zero
+comments rather than an error.
 
 Matching heuristic
 ------------------
 A ``must_flag`` fixture is a true positive when some comment names the fixture
-file by its complete repository-relative path AND either the comment line is
-within +/-3 of the gold line, or the comment body contains a keyword for the
-fixture's category (see ``CATEGORY_KEYWORDS``). A basename-only path (e.g.
+file by its complete repository-relative path AND mentions a keyword for the
+fixture's category (see ``CATEGORY_KEYWORDS``) AND -- when the gold entry
+carries a line -- reports a line within +/-3 of it. A gold entry with no line
+(``"line": null``) matches on path and keyword alone. Both signals are
+required because either one on its own is satisfiable by a comment that found
+nothing: five "Consider adding a type annotation." comments on the gold lines
+used to print ``recall=1.00 precision=1.00 verdict=buy``. Keywords match on
+word boundaries, so ``except`` cannot be claimed by the word "exceptions",
+while ``os.system`` still matches inside ``os.system(...)`` prose because a
+parenthesis is a non-word character. A basename-only path (e.g.
 ``sql_injection.py``) is rejected, because it is ambiguous across fixture
 trees and would let one comment satisfy several gold entries. A control
-fixture is a false positive when any comment matches its path at all. If the
-keyword requirement proves too strict against a real export, drop it and match
-on file+line proximity alone, and note that change here.
+fixture is a false positive when any comment matches its path at all.
+Precision is true positives over the number of comments that landed on any
+labelled fixture path, so unrelated chatter on the must-catch files lowers it
+instead of leaving it pinned at 1.00. If the keyword requirement proves too
+strict against a real export, relax the conjunction back to line proximity
+alone, and note that change here.
 
-Exit codes: 0 on a successful report (whatever the verdict); 2 only for
-genuinely invalid JSON or an unreadable/invalid labels manifest. This is a
+Exit codes: 0 on a successful report (whatever the verdict); 2 for genuinely
+invalid JSON, an unreadable/invalid labels manifest, or a ``--threshold``
+outside 0.0-1.0 (rejected by argparse, which also exits 2). This is a
 reporting tool, not a test-suite gate.
 """
 
@@ -49,6 +63,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -70,10 +85,13 @@ CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
         "credential",
     ),
     "broad_except": (
-        "except",
+        "broad except",
         "broad exception",
         "bare except",
+        "except exception",
         "swallow",
+        "swallows",
+        "swallowed",
         "silently ignored",
     ),
     "toctou_race": ("race condition", "toctou", "time-of-check", "atomic"),
@@ -111,7 +129,13 @@ def load_comments(path: str) -> list[dict[str, Any]]:
         raise ScoreError(
             f"comments file {path} must contain a JSON array of comment objects"
         )
-    return [item for item in payload if isinstance(item, dict)]
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise ScoreError(
+                f"comments file {path} entry {index} must be a comment object, "
+                f"got {type(item).__name__}"
+            )
+    return payload
 
 
 def load_labels(path: str) -> list[dict[str, Any]]:
@@ -163,10 +187,10 @@ def comment_line(comment: dict[str, Any]) -> int | None:
         value = comment.get(key)
         if isinstance(value, bool):
             continue
-        if isinstance(value, int):
+        if isinstance(value, str) and value.strip().isdigit():
+            value = int(value)
+        if isinstance(value, int) and value > 0:
             return value
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value)
     return None
 
 
@@ -196,24 +220,32 @@ def body_mentions_category(comment: dict[str, Any], category: str) -> bool:
     if not isinstance(body, str):
         return False
     lowered = body.lower()
-    return any(word in lowered for word in CATEGORY_KEYWORDS.get(category, ()))
+    return any(
+        re.search(rf"(?<!\w){re.escape(word)}(?!\w)", lowered)
+        for word in CATEGORY_KEYWORDS.get(category, ())
+    )
 
 
 def fixture_is_hit(entry: dict[str, Any], comments: list[dict[str, Any]]) -> bool:
-    """True when some comment plausibly reports this fixture's planted bug."""
+    """True when some comment reports this fixture's planted bug.
+
+    Requires the comment to name the fixture by its complete repository-relative
+    path and to mention the category, plus - when the gold entry carries a line -
+    to land within ``LINE_TOLERANCE`` of it. Either signal alone is reachable by a
+    comment that found nothing, which would print ``verdict=buy`` for a reviewer
+    that detected nothing.
+    """
     gold_line = entry.get("line")
     category = str(entry.get("category", ""))
     for comment in comments:
         if not paths_match(str(entry["file"]), comment_path(comment)):
             continue
-        line = comment_line(comment)
-        if (
-            isinstance(gold_line, int)
-            and line is not None
-            and abs(line - gold_line) <= LINE_TOLERANCE
-        ):
+        if not body_mentions_category(comment, category):
+            continue
+        if not isinstance(gold_line, int):
             return True
-        if body_mentions_category(comment, category):
+        line = comment_line(comment)
+        if line is not None and abs(line - gold_line) <= LINE_TOLERANCE:
             return True
     return False
 
@@ -243,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if not 0.0 <= args.threshold <= 1.0:
+        parser.error("--threshold must be between 0.0 and 1.0")
+
     try:
         comments = load_comments(args.comments)
         labels = load_labels(args.labels)
@@ -269,8 +304,11 @@ def main(argv: list[str] | None = None) -> int:
             rows.append((file_name, category, "FP" if flagged else "CLEAN"))
 
     recall = true_positives / must_catch if must_catch else 0.0
-    flagged_total = true_positives + false_positives
-    precision = true_positives / flagged_total if flagged_total else 1.0
+    on_corpus = sum(
+        any(paths_match(str(entry["file"]), comment_path(comment)) for entry in labels)
+        for comment in comments
+    )
+    precision = true_positives / on_corpus if on_corpus else 1.0
     verdict = "buy" if recall >= args.threshold and false_positives == 0 else "skip"
 
     width = max((len(row[0]) for row in rows), default=4)

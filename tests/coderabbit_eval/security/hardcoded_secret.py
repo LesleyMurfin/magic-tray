@@ -1,14 +1,12 @@
-"""Eval fixture: hardcoded credential in source.
+"""Account record lookups against the billing API.
 
-THE SECRET BELOW IS FAKE. It is a non-functional placeholder string with an
-obvious ``sk-fake-`` prefix, invented solely so the CodeRabbit eval harness has
-a secret-detection target. It is not a credential, has never been issued by any
-vendor, and authenticates against nothing.
+The API key below is fake. It is a non-functional placeholder string with an
+obvious ``sk-fake-`` prefix, has never been issued by any vendor, and
+authenticates against nothing.
 """
 
 import urllib.request
 
-# GOLD-BUG: hardcoded_secret
 # FAKE, NON-FUNCTIONAL PLACEHOLDER -- never a real credential.
 API_KEY = "sk-fake-1234567890abcdef"
 
