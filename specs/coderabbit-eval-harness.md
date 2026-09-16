@@ -101,12 +101,23 @@ New files only (nothing existing is modified):
      shape if available; otherwise document the assumed shape inline in a module docstring).
    - Reading `/dev/null` (empty input) MUST parse as zero comments, not error.
    - Matching logic: a `must_flag` fixture counts as a true positive if any comment's `path`
-     matches the fixture's `file` (suffix match is fine) AND either the comment's `line` is
+     names the fixture's `file` by its complete repository-relative path (a longer candidate
+     that ends with that full path is fine; a basename-only path such as `sql_injection.py` is
+     NOT, since it cannot identify one fixture unambiguously) AND either the comment's `line` is
      within ±3 of the gold `line`, or the comment `body` contains a category keyword (e.g. "sql
      injection", "command injection", "secret", "except", "race condition" — keyword list per
-     category, defined as a constant dict in the script).
+     category, defined as a constant dict in the script). A keyword-only match is sufficient for
+     a `must_flag` entry with no gold `line`.
+   - Comment line aliases: `line`, `original_line`, `start_line`. GitHub's `position` field MUST
+     NOT be used — it is an index inside the unified diff, not a source-file line, and the
+     harness has no diff to translate it through.
    - A `must_flag: false` (control) fixture counts as a false positive if any comment matches its
      `path` at all.
+   - Validate the labels manifest up front: it must be a non-empty JSON array of objects, and
+     every entry must carry a non-empty string `file`, a boolean `must_flag`, a non-empty string
+     `category`, and a `line` that is an integer or `null`. A malformed entry (e.g. the truthy
+     string `"false"` for `must_flag`) silently changes the recall denominator, so it is a fatal
+     input error, not a warning.
    - Compute: `recall = true_positives / count(must_flag fixtures)`,
      `precision = true_positives / (true_positives + false_positives)` (define precision as 1.0
      when there are zero flagged comments on any fixture, to avoid divide-by-zero).
@@ -114,9 +125,11 @@ New files only (nothing existing is modified):
      `recall=<r> precision=<p> verdict=<buy|skip>`.
    - `verdict = "buy"` iff `recall >= threshold` (default 0.8) and `false_positives == 0`, else
      `"skip"`.
-   - Exit code 0 always (this is a reporting tool, not a test-suite gate); no exceptions on
-     empty/malformed comment lists beyond a clear error message and non-zero exit for genuinely
-     invalid JSON.
+   - Exit codes: `0` for any successfully produced report, whatever the verdict — including an
+     empty comments input such as `/dev/null`. `2` for a genuinely invalid input: malformed JSON
+     in either file, an unreadable file, a comments payload that is not a JSON array, or a
+     labels manifest that fails the validation above. This is a reporting tool rather than a
+     test-suite gate, so a `skip` verdict is still exit `0`.
 5. Do not wire this into CI, PR templates, or any existing test runner in this pass — it is a
    standalone package meant to be run manually against an exported CodeRabbit comments dump.
 

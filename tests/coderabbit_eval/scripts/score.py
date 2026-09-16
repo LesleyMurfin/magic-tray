@@ -19,19 +19,23 @@ The ``--comments`` file is a JSON array of objects, each with at least::
 This shape was NOT confirmed against a live CodeRabbit export; it mirrors the
 GitHub review-comments API, which CodeRabbit posts through. Tolerated aliases:
 ``file``/``filename``/``path`` for the path, and ``line``/``original_line``/
-``start_line``/``position`` for the line. A top-level object wrapping the list
-under ``comments`` is also accepted. An empty file (e.g. ``/dev/null``) parses
-as zero comments rather than an error.
+``start_line`` for the line. GitHub's ``position`` field is deliberately NOT
+accepted: it is a line index inside the unified diff, not a source-file line,
+and the harness has no diff to translate it through. A top-level object
+wrapping the list under ``comments`` is also accepted. An empty file (e.g.
+``/dev/null``) parses as zero comments rather than an error.
 
 Matching heuristic
 ------------------
-A ``must_flag`` fixture is a true positive when some comment's path matches the
-fixture file (suffix match) AND either the comment line is within +/-3 of the
-gold line, or the comment body contains a keyword for the fixture's category
-(see ``CATEGORY_KEYWORDS``). A control fixture is a false positive when any
-comment matches its path at all. If the keyword requirement proves too strict
-against a real export, drop it and match on file+line proximity alone, and note
-that change here.
+A ``must_flag`` fixture is a true positive when some comment names the fixture
+file by its complete repository-relative path AND either the comment line is
+within +/-3 of the gold line, or the comment body contains a keyword for the
+fixture's category (see ``CATEGORY_KEYWORDS``). A basename-only path (e.g.
+``sql_injection.py``) is rejected, because it is ambiguous across fixture
+trees and would let one comment satisfy several gold entries. A control
+fixture is a false positive when any comment matches its path at all. If the
+keyword requirement proves too strict against a real export, drop it and match
+on file+line proximity alone, and note that change here.
 
 Exit codes: 0 on a successful report (whatever the verdict); 2 only for
 genuinely invalid JSON or an unreadable/invalid labels manifest. This is a
@@ -115,9 +119,27 @@ def load_labels(path: str) -> list[dict[str, Any]]:
 
     if not isinstance(payload, list) or not payload:
         raise ScoreError(f"labels file {path} must be a non-empty JSON array")
-    for entry in payload:
+    for index, entry in enumerate(payload):
         if not isinstance(entry, dict) or "file" not in entry:
             raise ScoreError(f"labels file {path} has an entry without a 'file' key")
+        where = f"labels file {path} entry {index} ({entry['file']!r})"
+        if not isinstance(entry["file"], str) or not entry["file"].strip():
+            raise ScoreError(f"{where}: 'file' must be a non-empty string")
+        must_flag = entry.get("must_flag")
+        if not isinstance(must_flag, bool):
+            raise ScoreError(
+                f"{where}: 'must_flag' must be a boolean, got "
+                f"{type(must_flag).__name__}"
+            )
+        category = entry.get("category")
+        if not isinstance(category, str) or not category.strip():
+            raise ScoreError(f"{where}: 'category' must be a non-empty string")
+        line = entry.get("line")
+        if line is not None and (isinstance(line, bool) or not isinstance(line, int)):
+            raise ScoreError(
+                f"{where}: 'line' must be an integer or null, got "
+                f"{type(line).__name__}"
+            )
     return payload
 
 
@@ -130,7 +152,7 @@ def comment_path(comment: dict[str, Any]) -> str:
 
 
 def comment_line(comment: dict[str, Any]) -> int | None:
-    for key in ("line", "original_line", "start_line", "position"):
+    for key in ("line", "original_line", "start_line"):
         value = comment.get(key)
         if isinstance(value, bool):
             continue
@@ -141,13 +163,25 @@ def comment_line(comment: dict[str, Any]) -> int | None:
     return None
 
 
+def _normalize_path(value: str) -> str:
+    """Collapse separators and strip a leading ``./`` for comparison."""
+    return os.path.normpath(value).replace(os.sep, "/").removeprefix("./")
+
+
 def paths_match(gold_file: str, candidate: str) -> bool:
-    """Suffix-tolerant path comparison, normalized to forward slashes."""
+    """True when ``candidate`` names exactly the gold file, not just a basename.
+
+    An extra leading prefix on the candidate (e.g. a checkout directory) is
+    tolerated because the complete gold path is still present. A shorter,
+    basename-only candidate is rejected: it cannot identify one fixture
+    unambiguously, and accepting it would let a single comment satisfy several
+    gold entries at once.
+    """
     if not candidate:
         return False
-    gold = os.path.normpath(gold_file).replace(os.sep, "/").lstrip("./")
-    other = os.path.normpath(candidate).replace(os.sep, "/").lstrip("./")
-    return gold == other or gold.endswith("/" + other) or other.endswith("/" + gold)
+    gold = _normalize_path(gold_file)
+    other = _normalize_path(candidate)
+    return gold == other or other.endswith("/" + gold)
 
 
 def body_mentions_category(comment: dict[str, Any], category: str) -> bool:
