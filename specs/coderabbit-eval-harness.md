@@ -74,6 +74,7 @@ New files only (nothing existing is modified):
    a similar operation (parameterized query, argument-list subprocess call, narrow exception
    handling with logging) so CodeRabbit has no legitimate reason to flag them.
 3. Write `gold/labels.json` as a JSON array of objects, one per fixture file:
+
    ```json
    [
      {
@@ -92,6 +93,7 @@ New files only (nothing existing is modified):
      }
    ]
    ```
+
    Include all 8 fixtures (5 must-catch + 3 controls).
 4. Write `scripts/score.py`:
    - Argparse CLI: `score.py --comments <path-to-json-or-/dev/null> --labels
@@ -137,16 +139,18 @@ New files only (nothing existing is modified):
 
 Run from the worktree root once `scripts/score.py` exists:
 
-```
+```bash
 python -m py_compile tests/coderabbit_eval/scripts/score.py
 ```
+
 Expected: exits 0, no output (syntax-valid).
 
-```
+```bash
 python tests/coderabbit_eval/scripts/score.py \
   --comments /dev/null \
   --labels tests/coderabbit_eval/gold/labels.json
 ```
+
 Expected: runs without raising, treats `/dev/null` as zero comments, prints a summary line with
 `recall=0.0` (or `recall=0.00`) and `verdict=skip` (zero comments cannot satisfy the recall
 threshold on any must-catch fixture).
