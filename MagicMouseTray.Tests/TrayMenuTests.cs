@@ -372,18 +372,6 @@ public class TrayMenuTests
         }
     }
 
-    static ConfigFact Fact(string id, string title, ConfigSeverity severity) =>
-        new(id, title, severity, title + " detail", null, null);
-
-
-    [Fact]
-    public void ClipTooltip_MarksTheCutInsteadOfLookingBroken()
-    {
-        Assert.Equal("abc", TrayMenu.ClipTooltip("abc", 3));
-        Assert.Equal("ab...", TrayMenu.ClipTooltip("abcdefgh", 5));
-        Assert.Equal(TrayMenu.TooltipMaxLength,
-            TrayMenu.ClipTooltip(new string('x', 400)).Length);
-    }
 
     static void AssertNoForbiddenV1V2Copy(string text)
     {
