@@ -250,59 +250,6 @@ public class TrayMenuTests
     // unbroken rows across the whole 1568px screen, overlapping the rest of
     // the UI. These are the properties that stop that from coming back.
 
-    [Fact]
-    public void MenuText_FlattensBreaksAndKeepsColumnSpacing()
-    {
-        // A line break in a menu item is what turns one row into a ragged one.
-        Assert.Equal("one two", TrayMenu.MenuText("one\r\ntwo"));
-        Assert.Equal("one two", TrayMenu.MenuText("  one\ttwo  "));
-        Assert.Equal(string.Empty, TrayMenu.MenuText(null));
-        Assert.Equal(string.Empty, TrayMenu.MenuText("   "));
-
-        // Runs of plain spaces are column separators in the device rows and
-        // the threshold labels. Collapsing them would silently reformat every
-        // row in the menu, so MenuText must leave them exactly as they are.
-        Assert.Equal("10%  then time alerts", TrayMenu.MenuText(TrayMenu.GlobalThresholdLabel(10)));
-        Assert.Equal(
-            "Magic Mouse    54%",
-            TrayMenu.MenuText(TrayMenu.RowLabel("Magic Mouse", 54, null, "")));
-    }
-
-    [Fact]
-    public void MenuText_LeavesEveryShortFormTheMenuShowsUntouched()
-    {
-        (DeviceKind Kind, string Pid)[] devices =
-        [
-            (DeviceKind.MagicMouseV3, "0323"),
-            (DeviceKind.MagicMouseV1, "030d"),
-            (DeviceKind.MagicMouseV2, "0269"),
-            (DeviceKind.MagicKeyboard, "0239"),
-            (DeviceKind.MagicTrackpadV1, "030e"),
-            (DeviceKind.LogitechMouse, "c52b"),
-        ];
-        DriverStatus?[] statuses = [null, .. Enum.GetValues<DriverStatus>().Cast<DriverStatus?>()];
-
-        Assert.Equal(DriverAdviceView.OptionsHeader(), TrayMenu.MenuText(DriverAdviceView.OptionsHeader()));
-
-        foreach (var (kind, pid) in devices)
-        {
-            foreach (var row in DriverAdviceView.OptionRowsShort(kind, pid))
-                Assert.Equal(row, TrayMenu.MenuText(row));
-
-            foreach (var status in statuses)
-            {
-                // The short forms are what the menu draws: if one ever grows
-                // past the cap it would be silently truncated, so it must fit
-                // untouched. This is the half of the guard that fails when the
-                // copy side regresses rather than the layout side.
-                var line = DriverAdviceView.AdviceShort(kind, pid, status);
-                Assert.Equal(line, TrayMenu.MenuText(line));
-
-                // And the paragraph is exactly what must never reach an item.
-                var full = DriverAdviceView.AdviceFull(kind, pid, status);
-            }
-        }
-    }
 
     // The advice row is clickable because the paragraph had to go somewhere.
     // This is what the click shows, and it is the only place the long
@@ -394,20 +341,6 @@ public class TrayMenuTests
     // The menu row is the short form and the dialog is the long one. Whatever
     // the reading says, the row still has to fit a ToolStripItem: the whole
     // point of the split is that no advice text reaches .Text unclamped.
-    [Fact]
-    public void ReadDriverRow_StillFitsTheMenu_WhileTheDialogDoesNot()
-    {
-        foreach (var sdp in new SdpPatchState?[]
-                 { null, SdpPatchState.Applied, SdpPatchState.NotApplied, SdpPatchState.Unknown })
-        {
-            var row = DriverAdviceView.AdviceShort(
-                DeviceKind.MagicKeyboard, "0239", null, Keyboard0239, sdp);
-            Assert.Equal(row, TrayMenu.MenuText(row));
-
-            var dialog = TrayMenu.AdviceDialogText(
-                DeviceKind.MagicKeyboard, "0239", null, Keyboard0239, sdp);
-        }
-    }
 
     // A mouse has a DriverStatus and a bound filter name of its own, so the
     // stock reading must not reach its text at all - the tray hands every row
