@@ -138,7 +138,8 @@ internal static class DriverAdviceView
             return null;
 
         // AllNodesOk false is missing evidence, never a fault (StockDriverReader
-        // only sets it true for nodes positively observed present and started),
+        // only sets it true for nodes positively observed present and problem-free
+        // - it tests the problem code, never DN_STARTED; see NodeOk),
         // so the unconfirmed line says that and stops: the battery tail is the
         // first thing to give up for width, and it is the less urgent fact.
         if (!info!.AllNodesOk)

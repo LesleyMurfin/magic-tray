@@ -403,6 +403,14 @@ try {
 Write-Log "  HVCI Enabled=$hvci"
 $testsigningOn = ($testsigning -eq 'on')
 $hvciOn = ($hvci -eq '1')
+# Trap: the two booleans above collapse three states into two. A failed registry
+# read leaves $testsigning as "unread: <message>" (and $hvci likewise), so
+# -not $testsigningOn is TRUE for a value nobody read - indistinguishable from a
+# measured 'off'. Downstream guards must test $policyUnread explicitly instead of
+# trusting the booleans, or they announce a code-integrity block having measured
+# no policy at all. 'key-missing' is NOT unread: an absent HVCI scenario key is a
+# real reading of HVCI off, and $hvciOn keeps treating it as off.
+$policyUnread = ($testsigning -like 'unread*') -or ($hvci -like 'unread*')
 if ($testsigningOn -and -not $hvciOn) {
     Write-Log '  self-signed KMDF filters can load on this machine (test signing on, HVCI off); Test Mode is not the fix here.' 'Green'
 }
@@ -570,8 +578,15 @@ foreach ($hex in $pids) {
             $msg = "PID $($hex.ToUpperInvariant()): bound filter $boundName is $($boundSnap.State) win32_exit=$($boundSnap.Win32Exit) while still named on the live stack (stopped-but-bound). Pointer/battery can work; scroll is dead until the BTHENUM parent is restarted. Fix: pnputil /restart-device on the BTHENUM instance - sc start cannot load a PnP lower filter. USB charge leftovers are not the live stack."
             $diagnoses += $msg
             Write-Log "  ! $msg" 'Red'
-            if (-not $testsigningOn -or $hvciOn) {
-                $msg = "PID $($hex.ToUpperInvariant()): code integrity would block a self-signed filter here (testsigning=$testsigning HVCI=$hvci). Enable Test Mode or install a cross-signed build, then restart the device."
+            # This script never reads $boundName's Authenticode signature, so it
+            # cannot say the filter is self-signed. Report the measured policy and
+            # what that policy rejects; the reader matches it against the build
+            # they installed. applewirelessmouse is Apple cross-signed and must
+            # not collect a self-signed diagnosis from a policy value alone.
+            if ($policyUnread) {
+                Write-Log ("  PID {0}: code integrity policy could not be read (testsigning={1} HVCI={2}), so signing enforcement is UNKNOWN here - neither confirmed nor ruled out as the reason {3} is not running. Re-read it elevated (bcdedit /enum plus the DeviceGuard HVCI value) before treating this as a signing problem." -f $hex.ToUpperInvariant(), $testsigning, $hvci, $boundName) 'Yellow'
+            } elseif (-not $testsigningOn -or $hvciOn) {
+                $msg = "PID $($hex.ToUpperInvariant()): measured code integrity policy (testsigning=$testsigning HVCI=$hvci) rejects any driver that is not cross-signed. This run did not read $boundName's signature, so that is a policy fact and not a diagnosis of this filter. If the installed build is self-signed, enable Test Mode or install a cross-signed build, then restart the device."
                 $diagnoses += $msg
                 Write-Log "  ! $msg" 'Red'
             }
@@ -735,8 +750,10 @@ if ($Repair) {
                 $svcSnaps[$boundFilter.ToLowerInvariant()] = $after
                 if ($after.Running) {
                     Write-Log ("    {0} is now RUNNING (win32_exit={1}). Confirm the wheel by scrolling." -f $after.Name, $after.Win32Exit) 'Green'
+                } elseif ($policyUnread) {
+                    Write-Log ("    {0} is still {1} after restart-device. Code integrity policy could not be read (testsigning={2} HVCI={3}), so signing enforcement is UNKNOWN - neither confirmed nor ruled out. Check the System event log and setupapi.dev.log for {0}, and re-read the policy elevated before assuming a signing problem." -f $after.Name, $after.State, $testsigning, $hvci) 'Yellow'
                 } elseif (-not $testsigningOn -or $hvciOn) {
-                    Write-Log ("    {0} is still {1} after restart-device and code integrity blocks unsigned drivers (testsigning={2} HVCI={3}). Enable Test Mode or install a cross-signed build, then restart the device again." -f $after.Name, $after.State, $testsigning, $hvci) 'Red'
+                    Write-Log ("    {0} is still {1} after restart-device; measured code integrity policy (testsigning={2} HVCI={3}) rejects any driver that is not cross-signed. This run did not read {0}'s signature, so that is a policy fact, not the confirmed cause. If the installed build is self-signed, enable Test Mode or install a cross-signed build, then restart the device again." -f $after.Name, $after.State, $testsigning, $hvci) 'Red'
                 } else {
                     Write-Log ("    {0} is still {1} after restart-device even though test signing is on and HVCI={2}. Not a signing problem - check the System event log and setupapi.dev.log for {0}." -f $after.Name, $after.State, $hvci) 'Red'
                 }

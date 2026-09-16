@@ -632,8 +632,9 @@ public class DriverAdvisorTests
     }
 
     // AllNodesOk = false means NOT CONFIRMED, never broken (StockDriverReader
-    // sets it true only for nodes positively observed present and started), so
-    // it must not turn a healthy PC's row into a repair prompt.
+    // sets it true only for nodes positively observed present and problem-free -
+    // NodeOk never tests DN_STARTED), so it must not turn a healthy PC's row
+    // into a repair prompt.
     [Fact]
     public void Unconfirmed_nodes_are_missing_evidence_and_not_a_fault()
     {

@@ -524,16 +524,27 @@ internal static class DriverAdvisor
              + $"{string.Join(", ", facts)}.";
     }
 
-    // AllNodesOk = false means NOT CONFIRMED, never broken - StockDriverReader
-    // sets it true only when every node it resolved was positively observed
-    // present and started. Missing evidence is not a fault, so the false
+    // "Present and problem-free" is the whole claim because it is the whole of
+    // what was measured. StockDriverReader.NodeOk is
+    // problem == 0 && (status & DN_HAS_PROBLEM) == 0 and never reads DN_STARTED
+    // (StockDriverReader.cs:442-472, where that omission is recorded as a
+    // measured decision): the reference PC's BTHENUM {00001200} SDP parent
+    // counts toward AllNodesOk=true on status word 0x01802000 with DN_STARTED
+    // CLEAR, because that profile node carries no function driver to start
+    // while the keyboard types perfectly. So neither branch may say "started" -
+    // the affirmative one would assert it on a node where it is measured clear,
+    // and the negative one would imply a started check was attempted.
+    //
+    // AllNodesOk = false means NOT CONFIRMED, never broken - it is also what an
+    // unreadable status returns. Missing evidence is not a fault, so the false
     // branch still names the driver affirmatively and never asks the user to
     // repair anything.
     static string HealthSentence(StockDriverInfo info) =>
         info.AllNodesOk
-            ? "Every device node it owns was read as present and started, so it is working, "
-              + "and there is nothing for you to install: Windows ships this driver itself."
-            : "Not every device node it owns could be confirmed as present and started on "
+            ? "Every device node it owns was read as present, and Windows reports no problem "
+              + "with any of them, so it is working, and there is nothing for you to install: "
+              + "Windows ships this driver itself."
+            : "Not every device node it owns could be confirmed present and problem-free on "
               + "this read, which is missing evidence and not a fault. There is still nothing "
               + "for you to install: Windows ships this driver itself.";
 
