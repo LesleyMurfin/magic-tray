@@ -19,13 +19,10 @@ This certifies that you wrote the code or have the right to contribute it under 
 3. Sign your commits (`git commit -s`).
 4. Open a PR that says what changed and why.
 
-The repo has nine checks. They run according to their own workflow triggers, so
-a given PR sees the subset its changes touch: build and tests, CodeQL and DCO
-run on every PR, while site checks, version sync, the winget manifest check,
-PowerShell lint and workflow lint are path-filtered. The path filters and what
-each check does are in
-[`.github/workflows/README.md`](.github/workflows/README.md). The four you can
-run yourself before pushing are:
+`main` takes no direct pushes: every change lands through a pull request, and
+all nine checks have to pass first. They all run on every PR — what each one
+does is in [`.github/workflows/README.md`](.github/workflows/README.md). The
+four you can run yourself before pushing are:
 
 ```powershell
 dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (needs Windows)
