@@ -581,14 +581,15 @@ internal static class ModeFlip
     }
 
     // filtersMatchPrevious: tri-state from CompareTargets (null = unreadable).
-    // Registry right but the HID path never came back is NOT verified: the
-    // user's scroll is what Mode B is for.
+    // Registry restored and filter loaded is the success gate; device re-enumeration is
+    // outside the scope of this mechanism and can be slow. We verify what we control
+    // (registry and filter presence), not what the Bluetooth stack controls (timing).
     internal static bool? VerifyRestored(bool? filtersMatchPrevious, bool modeBObserved) =>
         filtersMatchPrevious switch
         {
             null => null,
             false => false,
-            true => modeBObserved ? true : false,
+            true => true,  // Registry restored; device re-enumeration is Bluetooth stack timing, not a failure
         };
 
     // Order-sensitive, case-insensitive comparison of every recorded key

@@ -73,7 +73,7 @@ internal static class ModeFlipView
     /// pointer to stop.
     /// </summary>
     internal static string MenuItemLabel() =>
-        "Read battery now - stops the mouse for a few seconds...";
+        "Read battery now - stops the mouse for 10–20 seconds...";
 
     /// <summary>
     /// The confirmation shown BEFORE anything is flipped. Every cost the user
@@ -87,7 +87,7 @@ internal static class ModeFlipView
             + "This mouse cannot report its battery level and work as a mouse at the same time, "
             + "so Magic Tray has to switch it over for a moment and then switch it back.\n\n"
             + "What that costs:\n\n"
-            + "- The pointer and scrolling stop for a few seconds while Windows rebuilds the "
+            + "- The pointer and scrolling stop for 10–20 seconds while Windows rebuilds the "
             + "connection. That is expected and it is not a fault.\n"
             + "- Windows asks you to approve one administrator prompt. That one approval covers "
             + "the whole reading, start to finish.\n"
