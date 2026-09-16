@@ -213,6 +213,34 @@ function Resolve-Reference {
     return [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($anchor, $native))
 }
 
+function Test-NoIndexPage {
+    <#
+    .SYNOPSIS
+        True when a page carries a robots meta tag asking crawlers not to index
+        it.
+    .DESCRIPTION
+        Each <meta> tag is inspected on its own, and the two attributes are
+        matched independently of each other's order and of quoting. HTML does
+        not order attributes, so <meta content="noindex" name="robots"> means
+        exactly what <meta name="robots" content="noindex"> means: a pattern
+        that insisted on name-before-content would miss an equivalent tag and
+        re-open the false failure this predicate exists to prevent. 'noindex' is
+        matched as a whole word so a content list like "noindex, nofollow"
+        counts and an unrelated value containing the letters does not.
+    #>
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    $html = Get-Content -LiteralPath $Path -Raw
+    foreach ($tag in [regex]::Matches($html, '<meta\b[^>]*>', 'IgnoreCase')) {
+        if ($tag.Value -notmatch 'name\s*=\s*["'']?robots\b') { continue }
+        if ($tag.Value -match 'content\s*=\s*["'']?[^>]*\bnoindex\b') { return $true }
+    }
+    return $false
+}
+
 function Test-PathInside {
     <#
     .SYNOPSIS
@@ -445,6 +473,10 @@ function Test-Sitemap {
             New-Finding -Severity 'error' -Path $sitemapRelative -Line $line -Message "<loc>$loc</loc> maps to $relative, which does not exist in $siteRelative/"
             continue
         }
+        if (Test-NoIndexPage -Path $target) {
+            New-Finding -Severity 'error' -Path $sitemapRelative -Line $line -Message "<loc>$loc</loc> maps to $relative, which is marked noindex; a sitemap must not advertise a page that tells crawlers to skip it"
+            continue
+        }
         [void]$listed.Add($relative)
     }
 
@@ -452,12 +484,12 @@ function Test-Sitemap {
     foreach ($page in $HtmlFile) {
         if ($page.DirectoryName -ne $rootPath) { continue }
         if ($listed.Contains($page.Name)) { continue }
-        # A page that tells crawlers not to index it must not be advertised in the
-        # sitemap: the two directives contradict each other, and Search Console
-        # reports the pair as an error. docs/404.html is the case that exists
-        # today. Requiring membership here would make the two rules unsatisfiable.
-        $head = Get-Content -LiteralPath $page.FullName -Raw
-        if ([regex]::IsMatch($head, '<meta[^>]+name\s*=\s*["'']robots["''][^>]+content\s*=\s*["''][^"'']*noindex', 'IgnoreCase')) { continue }
+        # A page that tells crawlers not to index it must not be advertised in
+        # the sitemap: the two directives contradict each other, and Search
+        # Console reports the pair as an error. Requiring membership here would
+        # make the two rules unsatisfiable. The entry loop above rejects the
+        # other half of the contradiction, a noindex page that IS listed.
+        if (Test-NoIndexPage -Path $page.FullName) { continue }
         New-Finding -Severity 'error' -Path $sitemapRelative -Message "$($page.Name) is published but missing from sitemap.xml"
     }
 }
