@@ -6,6 +6,52 @@ request. Nothing here is wired into the release build; a winget submission is a
 pull request against a repository we do not own, and a person on the other side
 reads it.
 
+## Blocked: v1.1.0 does not publish the ZIP
+
+Checked 2026-09-16. Do not submit this manifest set yet. The `InstallerUrl` it
+names is HTTP 404:
+
+```
+https://github.com/.../download/v1.1.0/MagicTray-v1.1.0-win-x64.zip  -> 404
+https://github.com/.../download/v1.1.0/MagicTray-v1.1.0-win-x64.zip.sha256 -> 404
+```
+
+`gh release view v1.1.0` lists three assets, and none of them is the archive:
+
+| asset | sha256 (verified by download) |
+|---|---|
+| `MagicMouseTray.exe` | `696db5ff96360a125c83af7c3c5d752626b9de728ea42240d0ecab81b9f4dcd7` |
+| `kbd-patch-cachedservices.ps1` | `e0815e90bc83104d462914f47367ec82450c0af6f2ce0b2dc64aff64907ab375` |
+| `Install-KeyboardBattery.cmd` | `708f290711c98c6152554c73a1e766181303744f9822efd342ba28022025db04` |
+
+The reason is ordering, not a broken workflow. The `v1.1.0` tag is commit
+`f655203` (2026-09-02); `scripts/package-release.ps1` and the release step that
+uploads its output landed later, in `9d9a553` (2026-09-07). So the packaging
+exists and the published release does not use it.
+
+WinGet validation downloads `InstallerUrl` before anything else, so a PR opened
+today fails on the first step and costs a volunteer moderator a review slot.
+
+What unblocks it, in order:
+
+1. Publish a release whose assets include `MagicTray-<tag>-win-x64.zip` and its
+   `.sha256` sidecar — either re-run the release workflow for a new tag, or
+   build the archive with `scripts/package-release.ps1` on Windows and attach
+   both files to an existing release with `gh release upload`.
+2. Bump `PackageVersion`, `InstallerUrl`, `ReleaseDate` and `ReleaseNotesUrl` to
+   that tag if it is not `v1.1.0`, in all three files where they appear.
+3. Then follow "Compute the SHA256" and "Fork and PR flow" below.
+
+Repointing the manifest at the loose `MagicMouseTray.exe` is not the fix. That
+installs a tray with no `scripts/` folder beside it, which is the whole reason
+for the ZIP — see "Why it installs as a ZIP and not as a bare exe".
+
+Everything else in the set has been verified against the live release and the
+current `winget-pkgs` requirements: schema `1.12.0` still matches the PR
+template's checklist, `LesleyMurfin.MagicTray` does not exist in
+`microsoft/winget-pkgs` and has no PR in flight, and every other URL in the
+manifests returns 200.
+
 ## What is in here
 
 ```

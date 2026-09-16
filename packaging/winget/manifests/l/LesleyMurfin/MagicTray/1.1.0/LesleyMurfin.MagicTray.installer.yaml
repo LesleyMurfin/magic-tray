@@ -36,6 +36,15 @@ ReleaseDate: '2026-09-02'
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/LesleyMurfin/magic-tray/releases/download/v1.1.0/MagicTray-v1.1.0-win-x64.zip
+  # NOT PUBLISHED YET. Checked 2026-09-16: this URL is HTTP 404. The v1.1.0
+  # release (tag f655203, 2026-09-02) predates scripts/package-release.ps1,
+  # which landed in 9d9a553 on 2026-09-07, so v1.1.0 carries only the loose
+  # MagicMouseTray.exe, kbd-patch-cachedservices.ps1 and
+  # Install-KeyboardBattery.cmd. This manifest cannot be submitted until a
+  # release actually attaches MagicTray-<tag>-win-x64.zip. Do not repoint it
+  # at the loose exe: that ships a tray with no scripts/ folder beside it, so
+  # "Fix battery reads" and the whole Diagnostics menu are dead. See
+  # "Blocked" in packaging/winget/README.md.
   # PLACEHOLDER. Not a real hash, and never to be guessed. Replaced, in the
   # winget-pkgs fork only, with the SHA256 of the published ZIP asset,
   # cross-checked against the MagicTray-v1.1.0-win-x64.zip.sha256 sidecar on
