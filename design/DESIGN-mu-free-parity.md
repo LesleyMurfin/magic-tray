@@ -1,6 +1,6 @@
 # DESIGN — Magic Utilities free parity
 
-Status: Docs + tap vertical implementing (`docs/DESIGN-trackpad-tap.md`). Sources: [magicutilities.net](https://magicutilities.net/), [mouse/features](https://magicutilities.net/magic-mouse/features), [keyboard/features](https://magicutilities.net/magic-keyboard/features), [trackpad/features](https://magicutilities.net/magic-trackpad/features) (fetched 2026-09-01).
+Status: Docs + tap vertical implementing (`design/DESIGN-trackpad-tap.md`). Sources: [magicutilities.net](https://magicutilities.net/), [mouse/features](https://magicutilities.net/magic-mouse/features), [keyboard/features](https://magicutilities.net/magic-keyboard/features), [trackpad/features](https://magicutilities.net/magic-trackpad/features) (fetched 2026-09-01).
 
 Magic Tray is a **free MIT alternative** for battery %, time alerts, and a user-confirmed mouse scroll-driver install. It is **not** a clone of Magic Utilities' proprietary WHQL drivers, gesture suite, trackpad suite, or media/fn/modifier remaps. Do not vendor Magic Utilities binaries or `MagicMouse.sys`.
 
@@ -12,7 +12,7 @@ Official MU sells three paid apps (mouse, keyboard, trackpad) plus shared Blueto
 
 **Out** = mouse gestures / middle-click modes, desktop swipes, trackpad custom areas / silent click / pressure / 3-finger drag / desktop swipes, media / fn / modifier remaps, MU WHQL drivers, MU binaries.
 
-Trackpads are battery rows (enable + threshold + time alerts). No KMDF / Boot Camp radios on the tray. Tap is the KMDF PTP vertical (`docs/DESIGN-trackpad-tap.md`).
+Trackpads are battery rows (enable + threshold + time alerts). No KMDF / Boot Camp radios on the tray. Tap is the KMDF PTP vertical (`design/DESIGN-trackpad-tap.md`).
 
 ## Matrix
 
@@ -69,7 +69,7 @@ Live PC must not regress: `0323` KMDF, `030D` Boot Camp, `0239` keyboard.
 
 | File | Role |
 |---|---|
-| `docs/DESIGN-mu-free-parity.md` | This design. |
+| `design/DESIGN-mu-free-parity.md` | This design. |
 | `README.md` | Features (no 10% floor, no evening reminder), USB column, Supported trackpads, MIT / not-a-clone. |
 
 USB VID rows live in `MouseBatteryDevice` / `KeyboardBatteryDevice` (UsbVidCoverage). Trackpad menu behavior lives in TrayMenu tests (TrackpadProduct). This vertical does not edit those.

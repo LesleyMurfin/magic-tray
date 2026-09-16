@@ -69,9 +69,9 @@ That INF’s hardware ID list is a single row. It does **not** name `0265` or `0
 
 Searched: tealtadpole `AppleWirelessTrackpad.inf` (`030E` only); published 0323 KMDF (`Install-KMDF.cmd` / `MagicMouseDriver-kmdf-204-scroll.inf`, `0323` only); `DriverPackageCatalog` (no trackpad URL). **No `0265` / `0324` installer anywhere.**
 
-Do **not** recommend `v2-kmdf-driver/TrackpadPtp.c`, unshipped KMDF `1c7b8e0`, a Magic Tray PTP `.sys`, or new hardware IDs. `docs/DESIGN-trackpad-tap.md` is not a magic-tray deliverable.
+Do **not** recommend `v2-kmdf-driver/TrackpadPtp.c`, unshipped KMDF `1c7b8e0`, a Magic Tray PTP `.sys`, or new hardware IDs. `design/DESIGN-trackpad-tap.md` is not a magic-tray deliverable.
 
-MU-style pixel / smooth scroll, custom areas, silent click, 3-finger **drag**, and desktop swipes stay **Out** (`docs/DESIGN-mu-free-parity.md`).
+MU-style pixel / smooth scroll, custom areas, silent click, 3-finger **drag**, and desktop swipes stay **Out** (`design/DESIGN-mu-free-parity.md`).
 
 ## Tray offer (v1 trackpad only)
 
@@ -79,7 +79,7 @@ Clone `OfferV1V2ScrollFix` for Magic Trackpad v1 (`030E` / `MagicTrackpadV1`) on
 
 - Open `https://github.com/tealtadpole/MagicMouse2DriversWin11x64` (same host as v1 mouse; trackpad folder is `AppleWirelessTrackpad/`).
 - User right-clicks `AppleWirelessTrackpad.inf`. Test Mode not required.
-- `0265` / `0324` rows stay battery-only (`docs/DESIGN-trackpad.md`): no Driver submenu, no KMDF, no fake INF.
+- `0265` / `0324` rows stay battery-only (`design/DESIGN-trackpad.md`): no Driver submenu, no KMDF, no fake INF.
 
 This DESIGN vertical does not land C#. When the offer is wired, it is that clone — not `Install-KMDF.cmd`, not `TrackpadPtp.c`.
 
@@ -87,9 +87,9 @@ This DESIGN vertical does not land C#. When the offer is wired, it is that clone
 
 | File | Role |
 |---|---|
-| `docs/DESIGN-trackpad-where.md` | This placement decision. |
-| `docs/DESIGN-trackpad.md` | Battery rows; `0265`/`0324` stay without radios. |
-| `docs/DESIGN-mu-free-parity.md` | MU pixel/smooth scroll Out. |
+| `design/DESIGN-trackpad-where.md` | This placement decision. |
+| `design/DESIGN-trackpad.md` | Battery rows; `0265`/`0324` stay without radios. |
+| `design/DESIGN-mu-free-parity.md` | MU pixel/smooth scroll Out. |
 | `MagicMouseTray/DriverPackageCatalog.cs` | Existing mouse + keyboard URLs (do not edit this vertical). |
 | tealtadpole `AppleWirelessTrackpad/AppleWirelessTrackpad.inf` | Existing `030E` installer (`applewtp` / `applewtp.cat`). |
 | `v2-kmdf-driver/GestureEngine.c` | Live 0323 touch→wheel (other worktree; evidence). |

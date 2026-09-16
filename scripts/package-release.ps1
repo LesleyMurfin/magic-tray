@@ -11,6 +11,7 @@
 # Emits:
 #   <OutDir>/MagicTray-<tag>-win-x64.zip
 #   <OutDir>/MagicTray-<tag>-win-x64.zip.sha256
+#   <OutDir>/SHA256SUMS                          (one line per uploaded asset)
 # Staging happens in <OutDir>/zip-stage, which is wiped first so no stale file
 # can ride along into the archive.
 [CmdletBinding()]
@@ -44,6 +45,18 @@ function Get-CsprojVersion {
   $versions = @(@($xml.Project.PropertyGroup) | ForEach-Object { $_.Version } | Where-Object { $_ })
   if ($versions.Count -eq 0) { throw "no <Version> in $Path" }
   return [string]$versions[0]
+}
+
+# Checksum files are LF even on a Windows runner. `sha256sum -c` takes a
+# trailing CR as part of the filename and then cannot find the file, and
+# packaging/winget/README.md tells people to run exactly that. (README.txt is
+# the deliberate exception below: it is CRLF because it opens in Notepad.)
+function Write-SumsFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string[]]$Lines
+  )
+  [IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), [Text.Encoding]::ASCII)
 }
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
@@ -108,7 +121,7 @@ $sumLines = foreach ($rel in $staged) {
   $hash = (Get-FileHash -LiteralPath (Join-Path $stage ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)) -Algorithm SHA256).Hash.ToLowerInvariant()
   '{0}  {1}' -f $hash, $rel
 }
-[IO.File]::WriteAllLines((Join-Path $stage 'SHA256SUMS'), [string[]]$sumLines, [Text.Encoding]::ASCII)
+Write-SumsFile -Path (Join-Path $stage 'SHA256SUMS') -Lines $sumLines
 
 # 5. Zip it. ZipFile writes '/' separators and root-level entries, which is what
 # the layout contract and the winget NestedInstallerFiles path both need.
@@ -120,11 +133,44 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyCon
 
 # 6. Standalone checksum for the ZIP itself, so people can check the download.
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllLines(
-  "$zipPath.sha256", [string[]]@('{0}  {1}' -f $zipHash, $zipName), [Text.Encoding]::ASCII)
+Write-SumsFile -Path "$zipPath.sha256" -Lines @('{0}  {1}' -f $zipHash, $zipName)
+
+# 7. SHA256SUMS over every file the release uploads, so someone who downloads a
+# single asset can check that one on its own. Bare filenames, lower-case hex,
+# two spaces: the format `sha256sum -c` reads, and the one a Get-FileHash result
+# can be compared against by eye (Get-FileHash prints the same digest in upper
+# case). The loose entries hash the publish copies the workflow attaches, not
+# the repo sources, so a signed exe is the one described here.
+$assetNames = @('MagicMouseTray.exe') + @($ScriptPayload.Keys | ForEach-Object { Split-Path -Leaf $_ })
+$sidecarName = "$zipName.sha256"
+$sidecarPath = "$zipPath.sha256"
+$sidecarHash = (Get-FileHash -LiteralPath $sidecarPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$assetHashes = [ordered]@{
+  $zipName     = $zipHash
+  $sidecarName = $sidecarHash
+}
+foreach ($name in $assetNames) {
+  $assetPath = Join-Path $PublishDir $name
+  if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+    throw "release asset not found in publish dir: $assetPath"
+  }
+  $assetHashes[$name] = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$sumsPath = Join-Path $OutDir 'SHA256SUMS'
+Write-SumsFile -Path $sumsPath -Lines @(
+  $assetHashes.GetEnumerator() | ForEach-Object { '{0}  {1}' -f $_.Value, $_.Key })
+
+# The exe is the asset most people click, and the release notes quote its digest
+# and length so nobody has to fetch a second file to check the one they got.
+$exeHash = [string]$assetHashes['MagicMouseTray.exe']
+$exeBytes = (Get-Item -LiteralPath $exeSource).Length
+$zipBytes = (Get-Item -LiteralPath $zipPath).Length
 
 Write-Host "packaged $zipPath"
 Write-Host "sha256   $zipHash"
+Write-Host "sums     $sumsPath"
+Write-Host "exe      $exeHash"
+Write-Host "exe size $exeBytes bytes"
 # $staged was captured before SHA256SUMS was written, so list it explicitly:
 # the log should name every entry the archive actually carries.
 Write-Host 'contents:'
@@ -135,5 +181,9 @@ if ($env:GITHUB_OUTPUT) {
   Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "zip=$zipPath"
   Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "zip_name=$zipName"
   Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "zip_sha256=$zipHash"
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "zip_bytes=$zipBytes"
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "sums=$sumsPath"
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "exe_sha256=$exeHash"
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "exe_bytes=$exeBytes"
 }
 exit 0

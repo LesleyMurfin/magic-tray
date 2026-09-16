@@ -1,6 +1,6 @@
 # DESIGN — Magic Trackpad as a first-class battery device
 
-Status: Battery product implemented. Tap 1/2/3 + 3-finger middle is **implementing** in KMDF (`docs/DESIGN-trackpad-tap.md`). `TrayApp.BuildDeviceRow` is unchanged — mouse driver radios and Unknown-mouse warnings already do not apply to trackpad kinds.
+Status: Battery product implemented. Tap 1/2/3 + 3-finger middle is **implementing** in KMDF (`design/DESIGN-trackpad-tap.md`). `TrayApp.BuildDeviceRow` is unchanged — mouse driver radios and Unknown-mouse warnings already do not apply to trackpad kinds.
 
 Magic Utilities ships trackpad tap, scroll, and gestures. Magic Tray battery rows stay enable + threshold + time alerts for Trackpad v1 `030E`, v2 `0265`, 2024 `0324`. **Tap** is our KMDF PTP vertical, not MU: 1-finger = primary, 2-finger = secondary, 3-finger = middle from Windows Precision Touchpad. No Boot Camp. No PathA. No custom button areas / silent click / pressure / desktop swipes.
 
@@ -63,7 +63,7 @@ No 10% floor. No evening reminder. Title is `Trackpad battery low` when the disp
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-trackpad.md` | This design. |
+| `design/DESIGN-trackpad.md` | This design. |
 | `MagicMouseTray.Tests/TrayMenuTests.cs` | Append: radios / `IsV3` / `IsV1V2Mouse` / `RecommendedLabel` false or null for trackpad kinds. |
 | `MagicMouseTray.Tests/MouseBatteryDeviceTests.cs` | Append: `TryKnownMouse` for `030e` / `0265` / `0324` only. Do not rewrite `KnownMice`. |
 | `MagicMouseTray.Tests/BatteryAlertPolicyTests.cs` | 1–2 tests if missing: v1 AA 48h; v2 Lightning / v3 USB-C 24h. Policy itself is unchanged. |
@@ -91,4 +91,4 @@ WindowsDesktop, slice filter only. No live HID.
 - README / MU feature matrix (MuFreeParity tap rows).
 - Push. Killing the live tray. Publishing unless `TrayApp.cs` changed (it did not).
 
-Tap 1/2/3 and 3-finger middle: `docs/DESIGN-trackpad-tap.md`.
+Tap 1/2/3 and 3-finger middle: `design/DESIGN-trackpad-tap.md`.

@@ -122,9 +122,9 @@ No hardware on this agent: slice tests + descriptor size proof.
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-trackpad-tap.md` | This design (tray worktree). |
-| `docs/DESIGN-trackpad.md` | Tap rows In; tray UI still battery-only this vertical. |
-| `docs/DESIGN-mu-free-parity.md` | Tap 1/2/3 and 3-finger tap-as-middle In. |
+| `design/DESIGN-trackpad-tap.md` | This design (tray worktree). |
+| `design/DESIGN-trackpad.md` | Tap rows In; tray UI still battery-only this vertical. |
+| `design/DESIGN-mu-free-parity.md` | Tap 1/2/3 and 3-finger tap-as-middle In. |
 | `v2-kmdf-driver/TrackpadPtp.h` / `.c` | PTP blob, PID predicate, Apple→PTP translate, MT-enable bytes. |
 | `v2-kmdf-driver/InputHandler.c` / `.h` | `SdpRewrite_ProcessEx` so SDP can inject either blob. |
 | `v2-kmdf-driver/AclTranslate.c` | Trackpad PID early-return; mouse `0x12` untouched. |

@@ -42,7 +42,7 @@ DRIVER_CHECK pid=0x0323 bth=HidBth hid=MagicMouseDriver bound=MagicMouseDriver s
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-driver-bind.md` | This design. |
+| `design/DESIGN-driver-bind.md` | This design. |
 | `MagicMouseTray/DriverHealthChecker.cs` | Scan `Enum\HID` by PID; merge into `PreferredBoundName`; log `bth=` / `hid=` / `bound=`. |
 | `MagicMouseTray.Tests/DriverHealthCheckerTests.cs` | Merge contracts below. |
 
