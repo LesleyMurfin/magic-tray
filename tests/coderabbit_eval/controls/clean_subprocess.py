@@ -1,7 +1,4 @@
-"""Control fixture: subprocess with an argument list, no shell.
-
-No planted bug. CodeRabbit flagging anything here counts as a false positive.
-"""
+"""Archive and reachability helpers that run commands without a shell."""
 
 import subprocess
 
