@@ -177,7 +177,7 @@ differs too.
 
 **Magic Mouse 2024 (`0323`) splits its collections and also keeps a collection-less parent.** All
 three keys were enumerated live on 2026-09-15 while the mouse was in use, verbatim
-(`MagicMouseTray/DeviceDiagReader.cs:466-480`):
+(`MagicMouseTray/DeviceDiagReader.cs:468-482`):
 
 ```
 HID\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0323&COL01\A&31E5D054&2A&0000

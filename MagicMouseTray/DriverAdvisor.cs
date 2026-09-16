@@ -433,8 +433,8 @@ internal static class DriverAdvisor
     //                    10.0.26100.8972, stack \Driver\kbdclass,
     //                    \Driver\kbdhid, \Driver\HidBth; filters EMPTY
     //   ...&COL02/03   : hidserv.inf, Microsoft, stack \Driver\HidBth; the
-    //                    battery Feature cap lives on COL02
-    //                    (DeviceRegistry.cs:138-140)
+    //                    battery Feature cap lives on COL02 (the col02 gate
+    //                    in DeviceRegistry.TryClassify)
     // So the honest line for that row is affirmative and specific, and this is
     // where it is written.
     //

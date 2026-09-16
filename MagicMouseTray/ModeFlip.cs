@@ -1710,9 +1710,14 @@ exit 1
     //
     // In Mode A BOTH collections are present: col01 is the standard HID mouse
     // page and answers nothing useful, col02 is the vendor collection that
-    // carries input report 0x90. DeviceRegistry.Discover returns whichever the
-    // SetupDi enumeration yielded first, so it silently read -1 from col01 -
-    // col02 has to be targeted by name.
+    // carries input report 0x90. DeviceRegistry.Discover returns EVERY matching
+    // interface, col01 and col02 alike, and defers the choice to the poller:
+    // AdaptivePoller.BestReading reads a device's collections as one group and
+    // keeps the best-ranked answer (AdaptivePoller.ReadingRank - a real
+    // percentage beats -2 present-but-unreadable beats -1 not found). That is a
+    // poll-cadence decision and this is a one-shot read, with no group to rank
+    // and nothing to stop it taking the -1 from col01 - so col02 has to be
+    // targeted by name.
     internal static int ReadCol02BatteryPercent()
     {
         var path = HidNative.EnumerateHidPaths().FirstOrDefault(p =>

@@ -29,7 +29,7 @@ internal static class DeviceDiagReader
     // has exactly one collection and therefore no suffix).
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
 
-    // NORMAL = present devices only, same reason as DeviceStackReader.cs:37-40:
+    // NORMAL = present devices only, same reason as DeviceStackReader.cs:41-44:
     // a charge-cable phantom must never be allowed to answer a question about
     // the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
@@ -211,12 +211,14 @@ internal static class DeviceDiagReader
     //         keys are AMBIGUOUS (see SelectPointerKeys), or the walk failed.
     //         Never a finding.
     //
-    // USB / HID\VID_05AC...&MI_..&COL01 charge-cable phantoms are EXCLUDED. A
-    // phantom COL01 exists on the reference PC after any USB-C charge
-    // (DeviceRegistry.cs:27-31), which is exactly why the older substring flags
-    // Col01Present/Col02Present read true even when the Bluetooth pointer child
-    // is gone (DeviceSnapshotReader.ReadHidLayer matches COL01 across ALL
-    // Enum\HID subkeys for the PID). Presence is therefore resolved through
+    // USB / HID\VID_05AC...&MI_..&COL01 charge-cable phantoms are EXCLUDED.
+    // After a USB-C charge Windows leaves phantom
+    // HID\VID_05AC&PID_xxxx&MI_yy&COLzz interfaces behind, all CM_PROB_PHANTOM,
+    // so a phantom COL01 exists on the reference PC after any charge. That is
+    // exactly why the older substring flags Col01Present/Col02Present read true
+    // even when the Bluetooth pointer child is gone
+    // (DeviceSnapshotReader.ReadHidLayer matches COL01 across ALL Enum\HID
+    // subkeys for the PID). Presence is therefore resolved through
     // CM_Locate_DevNodeW, never through key existence alone.
     internal static bool? PointerChildLive(string pid)
     {
@@ -533,7 +535,7 @@ internal static class DeviceDiagReader
 
     // Two gates before a caller-supplied string is ever concatenated into a key
     // path: it must be one of the driver families the planner knows
-    // (RepairPlanner.cs:358-366), and it must look like a service name -
+    // (RepairPlanner.cs:363-371), and it must look like a service name -
     // no separators, no dots, nothing that could climb out of Services\.
     static bool IsSafeFamilyServiceName(string? service)
     {
@@ -700,7 +702,7 @@ internal static class DeviceDiagReader
     static string Describe(bool? value) =>
         value is null ? "unknown" : value.Value ? "true" : "false";
 
-    // Duplicate of the declaration in DeviceStackReader.cs:211-212, which is
+    // Duplicate of the declaration in DeviceStackReader.cs:215-216, which is
     // private to that class. Keeping it private here avoids editing that file;
     // if the two are ever merged, the shared home is a P/Invoke holder, not
     // either reader.

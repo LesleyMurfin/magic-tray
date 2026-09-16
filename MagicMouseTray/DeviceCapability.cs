@@ -225,7 +225,7 @@ internal static class DeviceCapability
             if (f.LastPct >= 0 && f.Sdp == SdpPatchState.Applied)
                 return $"Battery: {f.LastPct}% (SDP patch)";
             // -2 is KeyboardBatteryDevice's "present but blocked" sentinel
-            // (KeyboardBatteryDevice.cs:163-164), which is exactly what an
+            // (KeyboardBatteryDevice.cs:164-165), which is exactly what an
             // unpatched SDP record produces.
             if (f.LastPct == -2 && f.Sdp == SdpPatchState.NotApplied)
                 return $"{BatteryLabel(f.LastPct)} (needs the SDP patch)";

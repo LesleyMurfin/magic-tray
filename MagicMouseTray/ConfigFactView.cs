@@ -26,8 +26,8 @@ namespace MagicMouseTray;
 // That is enforced structurally rather than by a number this file could get
 // wrong:
 //   - RepairPlanner.MenuLabel owns the first row and speaks in the bare fault
-//     voice ("Scroll driver is not installed", "2 problems found",
-//     RepairPlanner.cs:477-482, rendered at TrayApp.cs:834);
+//     voice ("Scroll driver is not installed", "2 problems found"), rendered
+//     at TrayApp.cs:834;
 //   - every string SectionLabel can return is prefixed with "System config: ",
 //     so a config line is never readable as that headline no matter how severe
 //     the fact behind it is. Rank below orders facts only WITHIN this section.

@@ -1035,7 +1035,7 @@ internal static class SystemConfigChecker
     // Every installed service in the family, read from its own ImagePath,
     // because that is the file Windows loads and because Check is not told
     // which variant is bound: the KMDF package ships MagicMouseDriver204Scroll
-    // beside MagicMouseDriver (RepairPlanner.cs:495-501). One self-signed file
+    // beside MagicMouseDriver (RepairPlanner.cs:509-515). One self-signed file
     // is enough for signing policy to matter; it takes every file on this PC
     // reading as trusted to say that it does not.
     static List<string> DriverImages(SigningSubject subject)
