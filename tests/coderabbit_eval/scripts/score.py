@@ -21,9 +21,11 @@ GitHub review-comments API, which CodeRabbit posts through. Tolerated aliases:
 ``file``/``filename``/``path`` for the path, and ``line``/``original_line``/
 ``start_line`` for the line. GitHub's ``position`` field is deliberately NOT
 accepted: it is a line index inside the unified diff, not a source-file line,
-and the harness has no diff to translate it through. A top-level object
-wrapping the list under ``comments`` is also accepted. An empty file (e.g.
-``/dev/null``) parses as zero comments rather than an error.
+and the harness has no diff to translate it through. A top-level object is
+accepted only as a wrapper carrying the list under ``comments``; any other
+object shape is a fatal input error rather than a silent zero-comment report.
+An empty file (e.g. ``/dev/null``) parses as zero comments rather than an
+error.
 
 Matching heuristic
 ------------------
@@ -99,7 +101,12 @@ def load_comments(path: str) -> list[dict[str, Any]]:
         raise ScoreError(f"invalid JSON in comments file {path}: {exc}") from exc
 
     if isinstance(payload, dict):
-        payload = payload.get("comments", [])
+        if "comments" not in payload:
+            raise ScoreError(
+                f"comments file {path} must contain a JSON array of comment "
+                f"objects, or an object wrapping one under 'comments'"
+            )
+        payload = payload["comments"]
     if not isinstance(payload, list):
         raise ScoreError(
             f"comments file {path} must contain a JSON array of comment objects"
