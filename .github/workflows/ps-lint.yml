@@ -12,7 +12,8 @@ on:
     paths:
       - '**.ps1'
       - 'PSScriptAnalyzerSettings.psd1'
-      - '.github/workflows/ps-lint.yml'
+      - '.github/workflows/**'
+      - 'scripts/check-workflow-pwsh.py'
   # No paths filter on pull_request: `PowerShell lint` is a required check, and
   # a check skipped by a path filter never reports, which blocks the PR forever.
   # The push filter above stays - main only needs a re-lint when a script changes.
@@ -84,6 +85,27 @@ jobs:
             exit 1
           }
           Write-Output "Parse check: $($files.Count) script(s) parsed cleanly."
+
+      # The step above globs *.ps1 and never sees PowerShell written inline in a
+      # workflow run: block. That gap shipped: indexnow.yml carried
+      # `$maxAttempts:` inside a string, PowerShell read it as a scope qualifier,
+      # the whole step was a ParserError, and every IndexNow submission had never
+      # once run with nothing red anywhere. Same blast radius as a broken
+      # package-release.ps1, so it gets the same parser: the checker extracts
+      # every pwsh run: block (step shell, or a job/workflow defaults.run.shell)
+      # and hands it to [Parser]::ParseFile, annotating the real .yml line.
+      #
+      # Through a throwaway venv because PyYAML is NOT on the ubuntu-latest image
+      # and the system interpreter is PEP 668 externally managed, so pip into it
+      # is refused - same approach as packaging.yml's Winget manifest job.
+      - name: Check PowerShell in workflow run blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/yamlenv"
+          "${RUNNER_TEMP}/yamlenv/bin/python" -m pip install \
+            --disable-pip-version-check --quiet 'PyYAML==6.0.3'
+          "${RUNNER_TEMP}/yamlenv/bin/python" scripts/check-workflow-pwsh.py
 
       # Pinned so an upstream PSScriptAnalyzer release cannot turn a green repo red
       # with no repo change. 1.25.0 is the version this repo was verified clean
