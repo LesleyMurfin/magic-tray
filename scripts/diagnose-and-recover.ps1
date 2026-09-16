@@ -73,12 +73,14 @@ function Test-InstanceMatchesPid {
     param([string]$InstanceId, [string]$Hex)
     $n = Get-PidNeedle $Hex
     $low = $InstanceId.ToLowerInvariant()
-    # A PID alone is not unique across vendors. Preserve all accepted Apple
-    # encodings, and reject a candidate with another explicit vendor ID.
+    # A PID alone is not unique across vendors, so a match needs an Apple
+    # vendor ID as well: VID_05AC on USB/HID, and _VID&0001004c_ or
+    # _VID&000205ac_ on BTHENUM. A candidate with no vendor ID, or with
+    # another vendor's, is never a target even when the PID token collides.
     $vid = [regex]::Match(
         $low,
         '(?:^|[^a-z0-9])vid(?:_|&)([0-9a-f]+)(?=[^0-9a-f]|$)')
-    if ($vid.Success -and
+    if (-not $vid.Success -or
         @('05ac', '0001004c', '000205ac') -notcontains $vid.Groups[1].Value) {
         return $false
     }
