@@ -261,12 +261,12 @@
 
       <h2 id="get">Install it in four steps</h2>
       <div class="how">
-        <ol>
-          <li>Pair your device in Windows Bluetooth settings.</li>
-          <li>Download <code>MagicMouseTray.exe</code> from <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">GitHub</a>.</li>
-          <li>Verify the file by opening PowerShell, <code>cd</code> to your Downloads folder, then pasting <code>(Get-FileHash MagicMouseTray.exe).Hash</code> and comparing it to the SHA-256 checksum in the <code>SHA256SUMS</code> file on the release page.</li>
-          <li>Double-click <code>MagicMouseTray.exe</code>.</li>
-          <li>Windows may warn you. Click More info, then Run anyway.</li>
+        <ol class="stepper">
+          <li><span class="num">1</span><div class="step-body"><strong>Pair your device</strong><p>Pair your device in Windows Bluetooth settings.</p></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Download the app</strong><p>Download <code>MagicMouseTray.exe</code> from <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">GitHub</a>.</p></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Verify the file</strong><p>Verify the file by opening PowerShell, <code>cd</code> to your Downloads folder, then pasting <code>(Get-FileHash MagicMouseTray.exe).Hash</code> and comparing it to the SHA-256 checksum in the <code>SHA256SUMS</code> file on the release page.</p></div></li>
+          <li><span class="num">4</span><div class="step-body"><strong>Double-click to run it</strong><p>Double-click <code>MagicMouseTray.exe</code>.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Click More info, then Run anyway</strong><p>Windows may warn you. Click More info, then Run anyway.</p></div></li>
         </ol>
       </div>
 
@@ -279,28 +279,48 @@
       <p>Magic Utilities is paid software and does much more: gestures on the mouse and trackpad, and remapping the keys along the top of a Magic Keyboard. Magic Tray has no gestures and no media-key remapping, and it is not a copy of it. If you need gestures, buy Magic Utilities.</p>
 
       <h2 id="faq">Questions</h2>
-      <dl class="faq">
-        <dt>What does Magic Tray do?</dt>
-        <dd>Magic Tray shows how much battery your Apple Magic Mouse, Magic Keyboard or Magic Trackpad has left, next to the Windows 10 or Windows 11 clock. It warns you at 10, 5 and 1 percent. It can also help an Apple mouse scroll again, after you confirm.</dd>
-        <dt>Is Magic Tray free?</dt>
-        <dd>Yes. It is MIT licensed and every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>. There is no subscription, no trial, no account and no email address to hand over.</dd>
-        <dt>Is Magic Tray a free alternative to Magic Utilities?</dt>
-        <dd>Partly. Magic Tray is free, shows battery percent, and can help a Magic Mouse scroll after you confirm. It has no gestures and no media-key remapping, so it is not a Magic Utilities clone. Magic Utilities is paid and does gestures. If you want gestures, buy it.</dd>
-        <dt>How do I check my Apple Magic Mouse battery on Windows 10 or 11?</dt>
-        <dd>Pair the mouse in Windows Bluetooth settings, then download <code>MagicMouseTray.exe</code> and run it. A tray icon appears next to the clock with the percent beside it. Windows may hide it behind the ^ arrow, so drag it out. Full steps are on the <a href="battery.html#read">battery page</a>.</dd>
-        <dt>Is Magic Tray a desk stand?</dt>
-        <dd>No. Magic Tray is downloadable Windows software that sits beside your Windows 10 or 11 clock. It is not a desk tray, riser or cradle for an Apple keyboard.</dd>
-        <dt>Does Magic Tray work on Windows 10?</dt>
-        <dd>Yes. Magic Tray runs on 64-bit Windows 10 version 1809 or newer, and on any Windows 11.</dd>
-        <dt>Does an Apple Magic Mouse work with Windows 11?</dt>
-        <dd>Yes. Pair it in Windows Bluetooth settings and it clicks and moves straight away, on Windows 11 and Windows 10. Scrolling with one finger is the part Windows doesn't do, and that needs a driver. Magic Tray adds the battery percent Windows never shows.</dd>
-        <dt>Do I need a Mac to use an Apple mouse or keyboard on Windows?</dt>
-        <dd>No. Magic Tray is a Windows PC app and everything here runs on Windows 10 or Windows 11 alone. Apple's old mouse drivers are called Boot Camp, which is a Mac name, but you download and install them on Windows without owning a Mac.</dd>
-        <dt>Is Magic Tray safe to install?</dt>
-        <dd>Magic Tray is MIT licensed and every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, so you can read what it does. Windows warns you on first run because nobody has paid for Microsoft's check, <a href="funding.html">which costs money</a>. Magic Tray changes no driver until you pick one and confirm.</dd>
-        <dt>Will Magic Tray change my drivers on its own?</dt>
-        <dd>No. Magic Tray only touches a driver after you pick it from the tray menu and confirm.</dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>What does Magic Tray do? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Magic Tray shows how much battery your Apple Magic Mouse, Magic Keyboard or Magic Trackpad has left, next to the Windows 10 or Windows 11 clock. It warns you at 10, 5 and 1 percent. It can also help an Apple mouse scroll again, after you confirm.</p></div>
+        </details>
+        <details>
+          <summary>Is Magic Tray free? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes. It is MIT licensed and every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>. There is no subscription, no trial, no account and no email address to hand over.</p></div>
+        </details>
+        <details>
+          <summary>Is Magic Tray a free alternative to Magic Utilities? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Partly. Magic Tray is free, shows battery percent, and can help a Magic Mouse scroll after you confirm. It has no gestures and no media-key remapping, so it is not a Magic Utilities clone. Magic Utilities is paid and does gestures. If you want gestures, buy it.</p></div>
+        </details>
+        <details>
+          <summary>How do I check my Apple Magic Mouse battery on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Pair the mouse in Windows Bluetooth settings, then download <code>MagicMouseTray.exe</code> and run it. A tray icon appears next to the clock with the percent beside it. Windows may hide it behind the ^ arrow, so drag it out. Full steps are on the <a href="battery.html#read">battery page</a>.</p></div>
+        </details>
+        <details>
+          <summary>Is Magic Tray a desk stand? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>No. Magic Tray is downloadable Windows software that sits beside your Windows 10 or 11 clock. It is not a desk tray, riser or cradle for an Apple keyboard.</p></div>
+        </details>
+        <details>
+          <summary>Does Magic Tray work on Windows 10? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes. Magic Tray runs on 64-bit Windows 10 version 1809 or newer, and on any Windows 11.</p></div>
+        </details>
+        <details>
+          <summary>Does an Apple Magic Mouse work with Windows 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes. Pair it in Windows Bluetooth settings and it clicks and moves straight away, on Windows 11 and Windows 10. Scrolling with one finger is the part Windows doesn't do, and that needs a driver. Magic Tray adds the battery percent Windows never shows.</p></div>
+        </details>
+        <details>
+          <summary>Do I need a Mac to use an Apple mouse or keyboard on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>No. Magic Tray is a Windows PC app and everything here runs on Windows 10 or Windows 11 alone. Apple's old mouse drivers are called Boot Camp, which is a Mac name, but you download and install them on Windows without owning a Mac.</p></div>
+        </details>
+        <details>
+          <summary>Is Magic Tray safe to install? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Magic Tray is MIT licensed and every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, so you can read what it does. Windows warns you on first run because nobody has paid for Microsoft's check, <a href="funding.html">which costs money</a>. Magic Tray changes no driver until you pick one and confirm.</p></div>
+        </details>
+        <details>
+          <summary>Will Magic Tray change my drivers on its own? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>No. Magic Tray only touches a driver after you pick it from the tray menu and confirm.</p></div>
+        </details>
+      </div>
     </article>
 
     <aside class="rail">
