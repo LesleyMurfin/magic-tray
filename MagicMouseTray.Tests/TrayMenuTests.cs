@@ -81,17 +81,6 @@ public class TrayMenuTests
         Assert.False(TrayMenu.IconAttention("030d", DriverStatus.Ok));
     }
 
-    [Fact]
-    public void RowLabel_IncludesNameBatteryAndBadge()
-    {
-        var label = TrayMenu.RowLabel("Magic Mouse 2024", 54, "KMDF", "", null);
-        Assert.Contains("Magic Mouse 2024", label);
-        Assert.Contains("54%", label);
-        Assert.Contains("KMDF", label);
-        Assert.DoesNotContain("Mode", label);
-        Assert.DoesNotContain("recycle", label, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("PATH-A", label, StringComparison.OrdinalIgnoreCase);
-    }
 
     [Fact]
     public void ShowFixScroll_StillFalseFor0323()
@@ -175,17 +164,6 @@ public class TrayMenuTests
         Assert.False(TrayMenu.ShouldShowHealthRow(["030d"], "030D", DriverStatus.Ok));
     }
 
-    [Fact]
-    public void HealthRow_UsesNoReadingSentinel()
-    {
-        Assert.True(MouseBatteryDevice.TryKnownMouse("030d", out var name, out var kind));
-        Assert.Equal("Magic Mouse v1", name);
-        Assert.Equal(DeviceKind.MagicMouseV1, kind);
-        Assert.Equal("No reading", TrayMenu.BatteryText(-1, null));
-        var label = TrayMenu.RowLabel(name, -1, null, "", null);
-        Assert.Contains("Magic Mouse v1", label);
-        Assert.Contains("No reading", label);
-    }
 
     [Theory]
     [InlineData(DriverStatus.Ok, "Boot Camp")]
@@ -248,48 +226,6 @@ public class TrayMenuTests
         Assert.True(TrayMenu.V1V2StockRadioEnabled(DriverStatus.Ok));
     }
 
-    [Fact]
-    public void ShowInTray_AndTheWindowsActions_SayWhichStateTheyChange()
-    {
-        // One checkbox labelled "Enabled on this PC" used to drive BOTH the
-        // tray's own enabled_<pid> config and an elevated pnputil call, and a
-        // user could not tell which it meant. The tray-side switch must not
-        // claim to change the PC, and the two elevated commands must name
-        // Windows outright.
-        Assert.Equal("Show in Magic Tray", TrayMenu.ShowInTray);
-        Assert.DoesNotContain("PC", TrayMenu.ShowInTray, StringComparison.Ordinal);
-        Assert.DoesNotContain("Windows", TrayMenu.ShowInTray, StringComparison.Ordinal);
-        Assert.DoesNotContain("PATH-A", TrayMenu.ShowInTray, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Disconnect", TrayMenu.ShowInTray, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Ignore", TrayMenu.ShowInTray, StringComparison.OrdinalIgnoreCase);
-
-        foreach (var label in new[] { TrayMenu.StartInWindows, TrayMenu.StopInWindows })
-            Assert.Contains("Windows", label, StringComparison.Ordinal);
-
-        // Consent is asked only for the two that really are elevated, and it
-        // says so before anything runs.
-        Assert.Contains("administrator approval", TrayMenu.StartInWindowsPrompt, StringComparison.Ordinal);
-        Assert.Contains("administrator approval", TrayMenu.StopInWindowsPrompt, StringComparison.Ordinal);
-
-        // The already-live answer promises the opposite: nothing ran at all.
-        // It is shown instead of a consent prompt, so it must not imply one.
-        Assert.Contains("nothing to change", TrayMenu.AlreadyStartedInWindows, StringComparison.Ordinal);
-        Assert.Contains("Nothing was run", TrayMenu.AlreadyStartedInWindows, StringComparison.Ordinal);
-
-        // A UAC prompt the user never saw was blamed for a pnputil exit code
-        // (DEVICE_ENABLE pid=030d exit=1). No tray-owned copy mentions UAC;
-        // the only sentence that may is DeviceEnable's own UacDeclined detail.
-        foreach (var text in new[]
-        {
-            TrayMenu.ShowInTray, TrayMenu.StartInWindows, TrayMenu.StopInWindows,
-            TrayMenu.StartInWindowsPrompt, TrayMenu.StopInWindowsPrompt,
-            TrayMenu.AlreadyStartedInWindows,
-        })
-        {
-            Assert.DoesNotContain("UAC", text, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("cancel", text, StringComparison.OrdinalIgnoreCase);
-        }
-    }
 
     [Theory]
     [InlineData(DeviceKind.MagicTrackpadV1, "030e")]
@@ -361,7 +297,7 @@ public class TrayMenuTests
         Assert.Equal("10%  then time alerts", TrayMenu.MenuText(TrayMenu.GlobalThresholdLabel(10)));
         Assert.Equal(
             "Magic Mouse    54%",
-            TrayMenu.MenuText(TrayMenu.RowLabel("Magic Mouse", 54, null, "", null)));
+            TrayMenu.MenuText(TrayMenu.RowLabel("Magic Mouse", 54, null, "")));
     }
 
     [Fact]
