@@ -8,7 +8,7 @@
   <link rel="canonical" href="https://magictray.app/trackpad.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Magic Trackpad on Windows 10 and 11: battery, no gestures">
   <meta property="og:description" content="Your Magic Trackpad already moves the pointer and clicks on Windows. Magic Tray shows its battery percent for free. Gestures come from nowhere on this site.">
@@ -31,6 +31,43 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/trackpad.html#webpage",
         "url": "https://magictray.app/trackpad.html",
@@ -39,28 +76,10 @@
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "breadcrumb": { "@id": "https://magictray.app/trackpad.html#breadcrumb" },
-        "mainEntity": { "@id": "https://magictray.app/trackpad.html#faq" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "hasPart": { "@id": "https://magictray.app/trackpad.html#faq" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "inLanguage": "en",
         "dateModified": "2026-09-15"
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://magictray.app/trackpad.html#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Magic Tray",
-            "item": "https://magictray.app/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Magic Trackpad on Windows",
-            "item": "https://magictray.app/trackpad.html"
-          }
-        ]
       },
       {
         "@type": "FAQPage",
@@ -98,6 +117,24 @@
               "@type": "Answer",
               "text": "Not yet. Magic Tray knows all three trackpads and should read a percent from each, but no test report exists for any of them. The three devices that are confirmed were all tested by the author on his own PC, so no trackpad on this page has an independent report behind it. A report from you would fix that."
             }
+          }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://magictray.app/trackpad.html#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Magic Tray",
+            "item": "https://magictray.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Trackpad battery on Windows",
+            "item": "https://magictray.app/trackpad.html"
           }
         ]
       }
@@ -277,6 +314,7 @@
         ·
         <a href="llms.txt">llms.txt</a>
       </p>
+      <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>
   </footer>
 </body>
