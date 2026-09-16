@@ -872,6 +872,114 @@ ol.steps { color: var(--muted); padding-left: 1.2rem; }
 ol.steps strong { color: var(--fg); }
 ol.steps li { margin: 0.4rem 0; }
 
+/* ---------- Stepper: numbered-circle sequential instructions ---------- */
+ol.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+ol.stepper > li {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr;
+  gap: 0.85rem;
+  padding-bottom: 1.35rem;
+  position: relative;
+}
+ol.stepper > li:last-child { padding-bottom: 0; }
+ol.stepper > li::before {
+  content: "";
+  position: absolute;
+  left: 1.2rem;
+  top: 2.4rem;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+ol.stepper > li:last-child::before { display: none; }
+ol.stepper .num {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-strong);
+  color: var(--accent-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  z-index: 1;
+}
+ol.stepper .step-body { color: var(--muted); padding-top: 0.3rem; }
+ol.stepper .step-body strong { color: var(--fg); }
+ol.stepper .step-body p { margin: 0.2rem 0 0; }
+
+/* ---------- Accordion: collapsible FAQ, replaces plain dl.faq ---------- */
+.accordion { display: grid; gap: 0.6rem; margin: 1rem 0 1.6rem; }
+@media (min-width: 900px) { .accordion.two-col { grid-template-columns: 1fr 1fr; align-items: start; } }
+.accordion details {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.accordion summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.85rem 1.05rem;
+  font-weight: 650;
+  color: var(--fg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+.accordion summary::-webkit-details-marker { display: none; }
+.accordion summary .chev {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  color: var(--faint);
+  transition: transform 0.15s var(--ease);
+}
+.accordion details[open] summary .chev { transform: rotate(180deg); }
+.accordion .a-body { padding: 0 1.05rem 0.95rem; color: var(--muted); font-size: 0.95rem; }
+.accordion .a-body p { margin: 0.5rem 0 0; }
+.accordion .a-body p:first-child { margin-top: 0; }
+
+/* ---------- Badges: small status pills ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.badge-ok { background: rgba(74, 222, 128, 0.14); color: var(--ok); }
+.badge-accent { background: rgba(167, 139, 250, 0.14); color: var(--accent-2); }
+.badge-muted { background: var(--bg-3); color: var(--muted); border: 1px solid var(--line); }
+
+/* ---------- Stat grid: quick-fact cards ---------- */
+.stat-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(2, 1fr); margin: 1rem 0 1.6rem; }
+@media (min-width: 640px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
+.stat-card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+.stat-card .value { font-weight: 700; font-size: 1rem; }
+.stat-card .label { font-size: 0.78rem; color: var(--faint); margin-top: 0.1rem; }
+
 .site-footer {
   border-top: 1px solid var(--line);
   color: var(--muted);
