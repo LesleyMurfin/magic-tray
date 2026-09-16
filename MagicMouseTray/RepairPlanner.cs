@@ -450,9 +450,33 @@ internal static class RepairPlanner
         return findings;
     }
 
+    // The 0-findings arm says what PlanOne actually looked at, and no more.
+    // The rules above read driver state (is the bound filter's service
+    // running, is a rival build registered beside it, is the filter in the
+    // live device stack, is the package installed) and connection state (are
+    // there live BTHENUM instances, are the only entries charge-cable
+    // phantoms, does the Bluetooth pointer child resolve, does the keyboard's
+    // pairing record carry the cap Windows needs). They never decide whether
+    // the battery percent is arriving or whether the wheel really scrolls:
+    // rule 2d fires for a keyboard -2 alone and a mouse -2, -3 or -1 is
+    // deliberately silent, and DeviceSnapshot.MultitouchAdvancing is null
+    // whenever the counter is still.
+    //
+    // Measured on the reference PC: one menu open wrote "REPAIR_FINDINGS
+    // raw=0 confirmed=0 pending=0" beside "REPAIR_SNAPSHOT pid=0323 ...
+    // batt=-2", so the old wording "No problems found" stood directly above a
+    // device row reading "Battery unavailable". Both lines were true; only the
+    // header's scope was wrong, because "no problems" is a claim about the
+    // whole device made by a checker that never read the battery or the
+    // wheel. Naming the two areas that were checked keeps the row reassuring
+    // where it is entitled to be and silent where it measured nothing.
+    //
+    // The one- and many-finding arms are unchanged: a confirmed fault keeps
+    // the bare fault voice the rest of the menu is ranked against
+    // (ConfigFactView.cs:28-30).
     internal static string MenuLabel(IReadOnlyList<RepairFinding> findings) => findings.Count switch
     {
-        0 => "No problems found",
+        0 => "No driver or connection problems found",
         1 => findings[0].Title,
         _ => $"{findings.Count} problems found",
     };

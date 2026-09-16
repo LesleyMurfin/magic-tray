@@ -680,7 +680,7 @@ internal sealed class TrayApp : IDisposable
     IReadOnlyList<RepairFinding> _findings = Array.Empty<RepairFinding>();
     // Raw findings the gate is still holding. Never shown as a fault and never
     // toasted, but an explicit user-initiated check reports them rather than
-    // answering "No problems found" while a real fault is mid-confirmation.
+    // answering with the all-clear row while a real fault is mid-confirmation.
     IReadOnlyList<RepairFinding> _pendingFindings = Array.Empty<RepairFinding>();
     // The snapshots the current _findings were planned from, so the device rows
     // can state per-capability health without a second read.
@@ -2818,8 +2818,8 @@ internal sealed class TrayApp : IDisposable
     /// language before anything is changed; Cancel stops the walk.
     ///
     /// This is the answer to a direct user question - the top-of-menu row and
-    /// "Check for problems now" both land here - so it must never say "No problems
-    /// found" while the gate is still holding one. It must not bypass the gate
+    /// "Check for problems now" both land here - so it must never report an
+    /// all-clear while the gate is still holding one. It must not bypass the gate
     /// either: an unconfirmed fault is offered a repair that elevates and runs
     /// pnputil /restart-device, and during a driver install that fights the
     /// install. Asking does not make a 900 ms fault real. So the honest answer is
@@ -2846,7 +2846,10 @@ internal sealed class TrayApp : IDisposable
                     + "reported if it is still there.");
                 return;
             }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+            // The same words as the top-of-menu row, taken from the row's own
+            // label, so the answer to "Check for problems now" cannot claim a
+            // wider all-clear than the row directly above it.
+            ToastNotifier.Show(TrayMenu.ProductName, $"{RepairPlanner.MenuLabel(_findings)}.");
             return;
         }
 

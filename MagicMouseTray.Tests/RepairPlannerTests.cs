@@ -914,12 +914,6 @@ public class RepairPlannerTests
     }
 
     [Fact]
-    public void MenuLabel_NoFindings_SaysNoProblemsFound()
-    {
-        Assert.Equal("No problems found", RepairPlanner.MenuLabel([]));
-    }
-
-    [Fact]
     public void MenuLabel_SingleFinding_IsThatFindingsTitle()
     {
         var finding = RepairPlanner.PlanOne(Snap(

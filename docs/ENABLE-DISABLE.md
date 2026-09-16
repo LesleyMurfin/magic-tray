@@ -22,7 +22,7 @@ This document is about what is wrong **right now** and how it gets fixed. For wh
 
 No PowerShell. The app does the diagnosis, explains the cause, and only then acts.
 
-1. Open the tray menu. When something is wrong, the **top row is the problem row** (for example "Scroll wheel is dead - the scroll driver stopped"). When nothing is wrong the row reads **No problems found**.
+1. Open the tray menu. When something is wrong, the **top row is the problem row** (for example "Scroll wheel is dead - the scroll driver stopped"). When none of those checks finds anything the row reads **No driver or connection problems found** - it is scoped on purpose, because those checks read driver and connection state and never decide whether the battery percent is arriving or whether the wheel really scrolls (see "What the tray reports per capability").
 2. Nothing at the top and you still suspect trouble? **Diagnostics -> Check for problems now** re-reads the live stack on demand.
 3. Click the problem row. A **guided dialog** states, before anything runs: which device (PID), what the app found, what caused it, and exactly what the fix will do.
 4. If the problem is auto-fixable, the dialog's action button runs the fix (one UAC prompt, because restarting a device node is an elevated operation). Otherwise the dialog lists the manual steps and opens the right Windows page for you.
