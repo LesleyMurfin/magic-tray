@@ -125,7 +125,7 @@ public class ModeFlipViewTests
 
         Assert.Contains("0323", text, StringComparison.Ordinal);
         // The pause, and that it covers pointing as well as scrolling.
-        Assert.Contains("few seconds", text, StringComparison.Ordinal);
+        Assert.Contains("10-20 seconds", text, StringComparison.Ordinal);
         Assert.Contains("pointer", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("scrolling stop", text, StringComparison.Ordinal);
         // Exactly one elevation, said as one.
@@ -156,7 +156,7 @@ public class ModeFlipViewTests
         var label = ModeFlipView.MenuItemLabel();
 
         Assert.StartsWith("Read battery", label, StringComparison.Ordinal);
-        Assert.Contains("few seconds", label, StringComparison.Ordinal);
+        Assert.Contains("10-20 seconds", label, StringComparison.Ordinal);
         Assert.DoesNotContain("\n", label, StringComparison.Ordinal);
     }
 
