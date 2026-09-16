@@ -19,6 +19,20 @@ This certifies that you wrote the code or have the right to contribute it under 
 3. Sign your commits (`git commit -s`).
 4. Open a PR that says what changed and why.
 
+Nine checks run on your PR. All of them are described in
+[`.github/workflows/README.md`](.github/workflows/README.md); the four you can
+run yourself before pushing are:
+
+```powershell
+dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (needs Windows)
+pwsh -File scripts/check-site.ps1                                         # Site checks, if you touched docs/
+pwsh -File scripts/check-version-sync.ps1                                 # Version sync, if you touched a version string
+Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
+```
+
+`DCO sign-off` fails if any commit in the PR lacks a `Signed-off-by` trailer.
+Fix it with `git rebase --signoff origin/main && git push --force-with-lease`.
+
 Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-A (`Install-MagicMousePatch.ps1` / `applewirelessmouse.sys` binary patch) must not be silent and must not be a KMDF fallback; a user-initiated Patched Apple offer is allowed. KMDF install is `v2-kmdf-driver/Install-KMDF.cmd` from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `main` and never falls back to PATH-A.
 
 Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not triplicate them.

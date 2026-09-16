@@ -1,4 +1,4 @@
-#Requires -Version 5
+﻿#Requires -Version 5
 # Gate a Magic Tray publish folder and the portable ZIP: required artifacts,
 # metadata, ZIP layout, and SHA256SUMS.
 # Exit 0 on pass, 1 on any failure. Does not call gh or create a release.

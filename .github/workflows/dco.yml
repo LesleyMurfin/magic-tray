@@ -1,0 +1,80 @@
+name: DCO
+
+# CONTRIBUTING.md requires every contribution to be signed off
+# (https://developercertificate.org). This enforces it on pull requests.
+#
+# Merge commits are skipped (they are generated, not authored), and so are
+# dependabot[bot] / github-actions[bot] commits, which are unsigned by design
+# and would otherwise permanently block automated dependency PRs.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: dco-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Signed-off-by trailers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Commit subjects and author names are untrusted input: they only ever
+          # travel through files, env vars and jq - never through the command line.
+          gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/commits" \
+            > "${RUNNER_TEMP}/commits.json"
+
+          jq '
+            def is_merge: (.parents | length) > 1;
+            def is_bot: (.author.login // "") as $login
+              | $login == "dependabot[bot]" or $login == "github-actions[bot]";
+            def subject: .commit.message | split("\n") | .[0];
+            # jq anchors ^ at the start of the whole string, so test each
+            # message line separately rather than relying on multiline mode.
+            def signed: [ .commit.message
+              | split("\n")[]
+              | test("^ *Signed-off-by: .+ <.+>")
+            ] | any;
+
+            [ .[] | select((is_merge or is_bot) | not) ] as $checked
+            | {
+                total: length,
+                skipped: (length - ($checked | length)),
+                checked: ($checked | length),
+                missing: [ $checked[]
+                  | select(signed | not)
+                  | { sha: .sha[0:7], subject: subject }
+                ]
+              }
+          ' "${RUNNER_TEMP}/commits.json" > "${RUNNER_TEMP}/dco.json"
+
+          total="$(jq -r '.total' "${RUNNER_TEMP}/dco.json")"
+          skipped="$(jq -r '.skipped' "${RUNNER_TEMP}/dco.json")"
+          checked="$(jq -r '.checked' "${RUNNER_TEMP}/dco.json")"
+          missing="$(jq -r '.missing | length' "${RUNNER_TEMP}/dco.json")"
+
+          jq -r '.missing[]
+            | "::error::Commit \(.sha) (\(.subject)) has no \"Signed-off-by:\" trailer. "
+              + "Fix: git commit -s (new commits), or "
+              + "git rebase --signoff origin/main && git push --force-with-lease (existing ones)."
+          ' "${RUNNER_TEMP}/dco.json"
+
+          echo "DCO: ${total} commit(s), ${checked} checked, ${skipped} skipped (merge/bot), ${missing} missing sign-off."
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi

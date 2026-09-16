@@ -1,0 +1,55 @@
+name: Workflow lint
+
+# Static analysis of this repo's GitHub Actions workflows (expression syntax,
+# action inputs, runner labels, embedded shell via shellcheck).
+# actionlint is installed from a version-pinned release tarball whose SHA256 is
+# pinned below, so no third-party action is required.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # https://github.com/rhysd/actionlint/releases
+      ACTIONLINT_VERSION: 1.7.12
+      # sha256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's
+      # actionlint_1.7.12_checksums.txt
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          curl -sSfL -o "${RUNNER_TEMP}/${tarball}" "${url}"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${tarball}" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}" actionlint
+          sudo install -m 0755 "${RUNNER_TEMP}/actionlint" /usr/local/bin/actionlint
+          actionlint -version
+
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          actionlint -color

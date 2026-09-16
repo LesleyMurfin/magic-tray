@@ -1,0 +1,444 @@
+#Requires -Version 7
+
+<#
+.SYNOPSIS
+    Checks that every version string Magic Tray publishes agrees with the
+    version that was actually released.
+
+.DESCRIPTION
+    Magic Tray carries its version number in four independent places, and they
+    do not all mean the same thing:
+
+      1. MagicMouseTray/MagicMouseTray.csproj  - the version being DEVELOPED.
+      2. packaging/winget/manifests/.../<ver>/ - the version that was RELEASED.
+      3. docs/index.html                       - what magictray.app ADVERTISES.
+      4. scripts/package-release.ps1           - the asset NAME pattern.
+
+    The rule this script encodes is therefore not "all four must be equal":
+
+      * The winget manifests and the public site describe a build that people
+        can actually download, so they must both name the LATEST RELEASED
+        version, and the installer URL must point at that release's tag and at
+        the exact asset file name scripts/package-release.ps1 produces.
+      * The csproj may legitimately run AHEAD of the released version - that is
+        the normal "next version in development" state, and it is reported as a
+        ::notice, not an error. It may never run BEHIND it, because that means
+        a release was cut from a tree whose version was never bumped.
+
+    The drift this prevents, in the order it has historically happened:
+
+      * A release is tagged and published, but docs/index.html still offers the
+        previous version, so the site's "Download vX.Y.Z" text, its brand
+        <small> badge and its softwareVersion JSON-LD disagree with the ZIP the
+        download link actually serves.
+      * A winget manifest folder is copied for a new version but one of the
+        three YAML files keeps the old PackageVersion, or the InstallerUrl still
+        points at the previous tag - which winget accepts and then installs the
+        wrong build from.
+      * The asset file name in the manifest drifts away from the name
+        package-release.ps1 emits, so the submission 404s on download.
+      * AssemblyVersion or FileVersion is bumped without Version (or the other
+        way round), so the shipped exe reports a version nothing else knows.
+
+    Every failure is printed as a GitHub annotation
+    (::error file=<path>,line=<n>::<message>) and the script exits non-zero.
+    It reads files only: no network access and no build.
+
+.PARAMETER RepoRoot
+    Repository root to check. Defaults to the parent of the folder holding this
+    script, so the script works from any working directory.
+
+.EXAMPLE
+    pwsh -File scripts/check-version-sync.ps1
+
+.EXAMPLE
+    pwsh -File scripts/check-version-sync.ps1 -RepoRoot /path/to/magic-tray
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter()]
+    [string] $RepoRoot
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+    $RepoRoot = Split-Path -Parent $PSScriptRoot
+}
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
+
+$script:ProblemCount = 0
+
+function Write-Problem {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [int]    $Line,
+        [Parameter(Mandatory)] [string] $Message
+    )
+
+    $script:ProblemCount++
+    Write-Host ('::error file={0},line={1}::{2}' -f $Path, $Line, $Message)
+}
+
+function Write-Advice {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [int]    $Line,
+        [Parameter(Mandatory)] [string] $Message
+    )
+
+    Write-Host ('::notice file={0},line={1}::{2}' -f $Path, $Line, $Message)
+}
+
+function Get-RepoFile {
+    <#
+    .SYNOPSIS
+        Reads a repo-relative file as an array of lines, or $null if absent.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string] $RelativePath
+    )
+
+    $full = Join-Path -Path $RepoRoot -ChildPath $RelativePath
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        return $null
+    }
+    return [string[]]@(Get-Content -LiteralPath $full)
+}
+
+function Get-TaggedValue {
+    <#
+    .SYNOPSIS
+        First single-line regex capture in a file, with its 1-based line number.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
+        [Parameter(Mandatory)] [string] $Pattern
+    )
+
+    for ($i = 0; $i -lt $Content.Count; $i++) {
+        $found = [regex]::Match($Content[$i], $Pattern)
+        if ($found.Success) {
+            return [pscustomobject]@{
+                Value = $found.Groups[1].Value.Trim()
+                Line  = $i + 1
+            }
+        }
+    }
+    return $null
+}
+
+function Get-TaggedValueList {
+    <#
+    .SYNOPSIS
+        Every single-line regex capture in a file, each with its line number.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
+        [Parameter(Mandatory)] [string] $Pattern
+    )
+
+    $hits = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $Content.Count; $i++) {
+        foreach ($found in [regex]::Matches($Content[$i], $Pattern)) {
+            $hits.Add([pscustomobject]@{
+                    Value = $found.Groups[1].Value.Trim()
+                    Line  = $i + 1
+                })
+        }
+    }
+    return $hits.ToArray()
+}
+
+function Get-YamlScalar {
+    <#
+    .SYNOPSIS
+        Value of a YAML key written as "key: value" on one line, unquoted.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Content,
+        [Parameter(Mandatory)] [string] $Key
+    )
+
+    $pattern = '^\s*-?\s*{0}\s*:\s*(\S.*?)\s*$' -f [regex]::Escape($Key)
+    $hit = Get-TaggedValue -Content $Content -Pattern $pattern
+    if ($null -eq $hit) {
+        return $null
+    }
+
+    $text = $hit.Value
+    $quoted = [regex]::Match($text, '^(?:''(.*)''|"(.*)")$')
+    if ($quoted.Success) {
+        $text = if ($quoted.Groups[1].Success) { $quoted.Groups[1].Value } else { $quoted.Groups[2].Value }
+    }
+
+    return [pscustomobject]@{ Value = $text; Line = $hit.Line }
+}
+
+function Get-ShortVersion {
+    <#
+    .SYNOPSIS
+        Drops a trailing ".0" revision field, so 1.1.1.0 reads as 1.1.1.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $Version
+    )
+
+    $trimmed = [regex]::Match($Version, '^(\d+\.\d+\.\d+)\.0$')
+    if ($trimmed.Success) {
+        return $trimmed.Groups[1].Value
+    }
+    return $Version
+}
+
+$csprojRel = 'MagicMouseTray/MagicMouseTray.csproj'
+$packagerRel = 'scripts/package-release.ps1'
+$docsRel = 'docs/index.html'
+$manifestRootRel = 'packaging/winget/manifests/l/LesleyMurfin/MagicTray'
+
+# ---------------------------------------------------------------------------
+# 1. The three csproj version properties must agree with each other.
+# ---------------------------------------------------------------------------
+
+$csprojVersion = $null
+$csprojVersionLine = 1
+$csproj = Get-RepoFile -RelativePath $csprojRel
+if ($null -eq $csproj) {
+    Write-Problem -Path $csprojRel -Line 1 -Message 'Project file is missing; cannot check the developed version.'
+}
+else {
+    $properties = @('Version', 'AssemblyVersion', 'FileVersion')
+    $readValues = @{}
+    foreach ($property in $properties) {
+        $hit = Get-TaggedValue -Content $csproj -Pattern ('<{0}>\s*([^<]+?)\s*</{0}>' -f $property)
+        if ($null -eq $hit) {
+            Write-Problem -Path $csprojRel -Line 1 -Message ("No <{0}> property. All of {1} must be present and agree." -f $property, ($properties -join ', '))
+        }
+        else {
+            $readValues[$property] = $hit
+        }
+    }
+
+    if ($readValues.ContainsKey('Version')) {
+        $csprojVersion = $readValues['Version'].Value
+        $csprojVersionLine = $readValues['Version'].Line
+
+        if ($csprojVersion -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Problem -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> is '{0}'; expected MAJOR.MINOR.PATCH." -f $csprojVersion)
+            $csprojVersion = $null
+        }
+        else {
+            foreach ($property in @('AssemblyVersion', 'FileVersion')) {
+                if (-not $readValues.ContainsKey($property)) { continue }
+                $other = Get-ShortVersion -Version $readValues[$property].Value
+                if ($other -ne $csprojVersion) {
+                    Write-Problem -Path $csprojRel -Line $readValues[$property].Line -Message ("<{0}> is '{1}' but <Version> is '{2}'. They must describe the same version (a trailing '.0' revision is allowed)." -f $property, $readValues[$property].Value, $csprojVersion)
+                }
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 2. The released version is the winget manifest folder. Each folder's three
+#    manifests must agree with the folder name they sit in; the released
+#    version is the newest folder.
+# ---------------------------------------------------------------------------
+
+$manifestRoot = Join-Path -Path $RepoRoot -ChildPath $manifestRootRel
+$versionFolders = @()
+if (-not (Test-Path -LiteralPath $manifestRoot -PathType Container)) {
+    Write-Problem -Path $manifestRootRel -Line 1 -Message 'No winget manifest folder; cannot determine the released version.'
+}
+else {
+    $versionFolders = @(Get-ChildItem -LiteralPath $manifestRoot -Directory | Sort-Object -Property Name)
+    if ($versionFolders.Count -eq 0) {
+        Write-Problem -Path $manifestRootRel -Line 1 -Message 'No version folder under the winget manifest root; cannot determine the released version.'
+    }
+}
+
+# The folder name is the source of truth for the released version: it is the
+# path microsoft/winget-pkgs indexes the package under. When more than one
+# version folder is kept, the newest is the released one; every folder's own
+# manifests are still checked against the folder they sit in, so a disagreeing
+# set is reported rather than silently picked.
+$releasedVersion = $null
+foreach ($candidate in $versionFolders) {
+    if ($candidate.Name -notmatch '^\d+\.\d+\.\d+$') { continue }
+    if ($null -eq $releasedVersion -or [version]$candidate.Name -gt [version]$releasedVersion) {
+        $releasedVersion = $candidate.Name
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 3. Every manifest set must name its own folder version, and the installer
+#    URL must point at that tag and at the asset package-release.ps1 emits.
+# ---------------------------------------------------------------------------
+
+# Derive the asset name from the packaging script instead of restating it here,
+# so renaming the ZIP in one place cannot silently pass this check.
+$assetTemplate = $null
+$packager = Get-RepoFile -RelativePath $packagerRel
+if ($null -eq $packager) {
+    Write-Problem -Path $packagerRel -Line 1 -Message 'Packaging script is missing; cannot derive the release asset name.'
+}
+else {
+    $assetHit = Get-TaggedValue -Content $packager -Pattern '^\s*\$zipName\s*=\s*"([^"]+)"'
+    if ($null -eq $assetHit) {
+        Write-Problem -Path $packagerRel -Line 1 -Message 'No `$zipName = "..."` assignment found; this script derives the expected release asset name from it.'
+    }
+    elseif ($assetHit.Value -notmatch '\$Tag') {
+        Write-Problem -Path $packagerRel -Line $assetHit.Line -Message ("Asset name '{0}' does not interpolate `$Tag; this script cannot derive a per-release asset name from it." -f $assetHit.Value)
+    }
+    else {
+        $assetTemplate = $assetHit.Value
+    }
+}
+
+foreach ($folder in $versionFolders) {
+    $folderVersion = $folder.Name
+    $folderRel = '{0}/{1}' -f $manifestRootRel, $folderVersion
+    $tag = 'v{0}' -f $folderVersion
+
+    if ($folderVersion -notmatch '^\d+\.\d+\.\d+$') {
+        Write-Problem -Path $folderRel -Line 1 -Message ("Manifest folder '{0}' is not a MAJOR.MINOR.PATCH version." -f $folderVersion)
+        continue
+    }
+
+    $manifestFiles = @(
+        'LesleyMurfin.MagicTray.yaml'
+        'LesleyMurfin.MagicTray.installer.yaml'
+        'LesleyMurfin.MagicTray.locale.en-US.yaml'
+    )
+
+    foreach ($manifestFile in $manifestFiles) {
+        $manifestRel = '{0}/{1}' -f $folderRel, $manifestFile
+        $manifest = Get-RepoFile -RelativePath $manifestRel
+        if ($null -eq $manifest) {
+            Write-Problem -Path $folderRel -Line 1 -Message ("Manifest set is incomplete: {0} is missing." -f $manifestFile)
+            continue
+        }
+
+        $declared = Get-YamlScalar -Content $manifest -Key 'PackageVersion'
+        if ($null -eq $declared) {
+            Write-Problem -Path $manifestRel -Line 1 -Message 'No PackageVersion key.'
+        }
+        elseif ($declared.Value -ne $folderVersion) {
+            Write-Problem -Path $manifestRel -Line $declared.Line -Message ("PackageVersion is '{0}' but the manifest folder is '{1}'. All three manifests must name the folder's version." -f $declared.Value, $folderVersion)
+        }
+
+        if ($manifestFile -eq 'LesleyMurfin.MagicTray.installer.yaml') {
+            $installerUrl = Get-YamlScalar -Content $manifest -Key 'InstallerUrl'
+            if ($null -eq $installerUrl) {
+                Write-Problem -Path $manifestRel -Line 1 -Message 'No InstallerUrl key.'
+            }
+            else {
+                if ($installerUrl.Value -notmatch ('/releases/download/{0}/' -f [regex]::Escape($tag))) {
+                    Write-Problem -Path $manifestRel -Line $installerUrl.Line -Message ("InstallerUrl '{0}' does not point at the /releases/download/{1}/ assets of tag {1}." -f $installerUrl.Value, $tag)
+                }
+                if ($null -ne $assetTemplate) {
+                    $expectedAsset = $assetTemplate.Replace('$Tag', $tag)
+                    $actualAsset = $installerUrl.Value.Split('/')[-1]
+                    if ($actualAsset -ne $expectedAsset) {
+                        Write-Problem -Path $manifestRel -Line $installerUrl.Line -Message ("InstallerUrl asset is '{0}' but {1} publishes '{2}'." -f $actualAsset, $packagerRel, $expectedAsset)
+                    }
+                }
+            }
+        }
+
+        if ($manifestFile -eq 'LesleyMurfin.MagicTray.locale.en-US.yaml') {
+            $notesUrl = Get-YamlScalar -Content $manifest -Key 'ReleaseNotesUrl'
+            if ($null -eq $notesUrl) {
+                Write-Problem -Path $manifestRel -Line 1 -Message 'No ReleaseNotesUrl key.'
+            }
+            elseif ($notesUrl.Value -notmatch ('/releases/tag/{0}$' -f [regex]::Escape($tag))) {
+                Write-Problem -Path $manifestRel -Line $notesUrl.Line -Message ("ReleaseNotesUrl '{0}' does not point at the release notes of tag {1}." -f $notesUrl.Value, $tag)
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 4. The public site must advertise the released version, everywhere it says
+#    a version at all.
+# ---------------------------------------------------------------------------
+
+if ($null -ne $releasedVersion) {
+    $docs = Get-RepoFile -RelativePath $docsRel
+    if ($null -eq $docs) {
+        Write-Problem -Path $docsRel -Line 1 -Message 'Home page is missing; cannot check the advertised version.'
+    }
+    else {
+        $advertised = [System.Collections.Generic.List[object]]::new()
+
+        $jsonLd = Get-TaggedValue -Content $docs -Pattern '"softwareVersion"\s*:\s*"([^"]+)"'
+        if ($null -eq $jsonLd) {
+            Write-Problem -Path $docsRel -Line 1 -Message 'No "softwareVersion" in the JSON-LD block. Search engines read it, so it must state the released version.'
+        }
+        else {
+            $advertised.Add([pscustomobject]@{ What = 'softwareVersion JSON-LD value'; Hit = $jsonLd })
+        }
+
+        $brand = Get-TaggedValue -Content $docs -Pattern 'class="brand"[^>]*>.*?<small>\s*([^<]+?)\s*</small>'
+        if ($null -eq $brand) {
+            Write-Problem -Path $docsRel -Line 1 -Message 'No <small> version badge inside the brand link.'
+        }
+        else {
+            $advertised.Add([pscustomobject]@{ What = 'brand link <small> badge'; Hit = $brand })
+        }
+
+        $downloads = @(Get-TaggedValueList -Content $docs -Pattern 'Download v(\d+\.\d+\.\d+)')
+        if ($downloads.Count -eq 0) {
+            Write-Problem -Path $docsRel -Line 1 -Message 'No "Download vX.Y.Z" link text found.'
+        }
+        foreach ($download in $downloads) {
+            $advertised.Add([pscustomobject]@{ What = 'Download link text'; Hit = $download })
+        }
+
+        foreach ($entry in $advertised) {
+            $stated = $entry.Hit.Value.TrimStart('v')
+            if ($stated -ne $releasedVersion) {
+                Write-Problem -Path $docsRel -Line $entry.Hit.Line -Message ("{0} says '{1}' but the released version is '{2}'. The site must advertise the version people can actually download." -f $entry.What, $entry.Hit.Value, $releasedVersion)
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 5. The csproj may lead the released version, never trail it.
+# ---------------------------------------------------------------------------
+
+if ($null -ne $csprojVersion -and $null -ne $releasedVersion) {
+    $developed = [version]$csprojVersion
+    $released = [version]$releasedVersion
+    if ($developed -lt $released) {
+        Write-Problem -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> {0} is behind the released version {1}. Bump the csproj: a release must never be cut from a tree with a stale version." -f $csprojVersion, $releasedVersion)
+    }
+    elseif ($developed -gt $released) {
+        Write-Advice -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> {0} is ahead of the released version {1}. That is the normal 'next version in development' state; the winget manifests and docs/index.html stay on {1} until {0} is tagged and published." -f $csprojVersion, $releasedVersion)
+    }
+}
+
+if ($script:ProblemCount -gt 0) {
+    Write-Host ('version sync: {0} problem(s) found.' -f $script:ProblemCount)
+    exit 1
+}
+
+Write-Host ('version sync: OK (released {0}, csproj {1}).' -f $releasedVersion, $csprojVersion)
+exit 0

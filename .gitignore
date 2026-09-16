@@ -39,10 +39,8 @@ scripts/m13-procmon-filter..PMF
 # 7-Zip extraction artefacts from Inno Setup probe (PE sections, ~80 MB, transient)
 $tmp/
 
-# check-style.sh output artifacts -- regenerated each run, written by scripts/check-style.sh
-# (lines 37-38 of check-style.sh write these to repo root)
-style-report.md
-style-results.json
+# dotnet test --logger trx output (CI writes it here too, see ci.yml)
+TestResults/
 
 # Agent session scratch -- handoff/fix notes, not product code
 .run/

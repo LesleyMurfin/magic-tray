@@ -105,7 +105,7 @@ foreach ($d in $bthenum) {
             FriendlyName = $d.FriendlyName
             BatteryLevel_DEVPKEY = $val
         }
-    } catch {}
+    } catch { Write-Verbose "Battery-level property unavailable for $($d.InstanceId): $($_.Exception.Message)" }
 }
 
 # applewirelessmouse service

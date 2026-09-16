@@ -79,7 +79,7 @@ if ($Compare) {
     Write-Host "  B: $($b.label)  [$($b.timestamp)]"
     Write-Host ""
 
-    function Diff-Field {
+    function Compare-Field {
         param($Name, $ValA, $ValB, [switch]$GoodIfTrue, [switch]$GoodIfEqual)
         $changed = ($ValA -ne $ValB) -and ($null -ne $ValA) -and ($null -ne $ValB)
         if ($changed) {
@@ -95,13 +95,13 @@ if ($Compare) {
         }
     }
 
-    Diff-Field "col01Present"           $a.col01Present          $b.col01Present          -GoodIfTrue
-    Diff-Field "col02Present"           $a.col02Present          $b.col02Present          -GoodIfTrue
-    Diff-Field "filterInStack"          $a.filterInStack         $b.filterInStack
-    Diff-Field "lowerFiltersEnumKey"    ($a.lowerFiltersEnumKey  -join ',') ($b.lowerFiltersEnumKey  -join ',') -GoodIfEqual
-    Diff-Field "lowerFiltersDriverKey"  ($a.lowerFiltersDriverKey -join ',') ($b.lowerFiltersDriverKey -join ',') -GoodIfEqual
-    Diff-Field "serviceState"           $a.serviceState          $b.serviceState
-    Diff-Field "hidDeviceCount"         $a.hidDeviceCount        $b.hidDeviceCount        -GoodIfTrue
+    Compare-Field "col01Present"           $a.col01Present          $b.col01Present          -GoodIfTrue
+    Compare-Field "col02Present"           $a.col02Present          $b.col02Present          -GoodIfTrue
+    Compare-Field "filterInStack"          $a.filterInStack         $b.filterInStack
+    Compare-Field "lowerFiltersEnumKey"    ($a.lowerFiltersEnumKey  -join ',') ($b.lowerFiltersEnumKey  -join ',') -GoodIfEqual
+    Compare-Field "lowerFiltersDriverKey"  ($a.lowerFiltersDriverKey -join ',') ($b.lowerFiltersDriverKey -join ',') -GoodIfEqual
+    Compare-Field "serviceState"           $a.serviceState          $b.serviceState
+    Compare-Field "hidDeviceCount"         $a.hidDeviceCount        $b.hidDeviceCount        -GoodIfTrue
 
     Write-Host ""
     Write-Host "=== STARTUP-REPAIR LOG (B only - last 10 lines) ===" -ForegroundColor Cyan
@@ -155,14 +155,14 @@ if ($btDev) {
             $stackStr = $stackProp.Data -join ' '
             $state.filterInStack = $stackStr -imatch 'applewirelessmouse'
         }
-    } catch {}
+    } catch { Write-Verbose "DEVPKEY_Device_Stack unavailable: $($_.Exception.Message)" }
 
     # LowerFilters - Enum key
     $btRegPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $btDev.InstanceId
     try {
         $lf = (Get-ItemProperty -Path $btRegPath -Name LowerFilters -ErrorAction SilentlyContinue).LowerFilters
         if ($lf) { $state.lowerFiltersEnumKey = @($lf) }
-    } catch {}
+    } catch { Write-Verbose "Enum-key LowerFilters unreadable: $($_.Exception.Message)" }
 
     # LowerFilters - driver instance key
     try {
@@ -172,7 +172,7 @@ if ($btDev) {
             $lf2 = (Get-ItemProperty -Path $driverInstPath -Name LowerFilters -ErrorAction SilentlyContinue).LowerFilters
             if ($lf2) { $state.lowerFiltersDriverKey = @($lf2) }
         }
-    } catch {}
+    } catch { Write-Verbose "Driver-key LowerFilters unreadable: $($_.Exception.Message)" }
 }
 
 # HID devices with this PID
@@ -191,7 +191,7 @@ $state.col02Present   = @($hidList | Where-Object { $_.InstanceId -match 'COL02'
 try {
     $scOut = & sc.exe query applewirelessmouse 2>&1
     $state.serviceState = ($scOut | Where-Object { $_ -match 'STATE' } | Select-Object -First 1).Trim()
-} catch {}
+} catch { Write-Verbose "sc.exe query applewirelessmouse failed: $($_.Exception.Message)" }
 
 # startup-repair.log
 $logFile = "C:\ProgramData\MagicMouseTray\startup-repair.log"

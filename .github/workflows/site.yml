@@ -1,0 +1,35 @@
+name: Site
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/check-site.ps1'
+      - '.github/workflows/site.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'scripts/check-site.ps1'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site-checks:
+    name: Site checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Validate docs/ site
+        shell: pwsh
+        run: pwsh -File scripts/check-site.ps1

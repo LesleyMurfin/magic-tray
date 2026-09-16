@@ -5,16 +5,29 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
+    name: Build and test
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
+    # No NuGet caching: setup-dotnet's `cache: true` demands a packages.lock.json
+    # (this repo has none, and does not set RestorePackagesWithLockFile), and
+    # actions/cache is outside the approved action set. Restore stays uncached.
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
       with:
         dotnet-version: '8.0.x'
 
@@ -25,13 +38,23 @@ jobs:
       run: dotnet build MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-restore -c Release
 
     - name: Test
-      run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-build -c Release --verbosity normal
+      run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-build -c Release --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      with:
+        name: test-results
+        path: TestResults/*.trx
+        retention-days: 14
 
   verify-publish:
+    name: Verify publish
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
     # Guards the MSB3030 class of break: a Content Include left pointing at a
     # file that no longer exists fails the build for every PR, not just its own.
@@ -49,7 +72,7 @@ jobs:
         Write-Host "All csproj Content Include paths exist."
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
       with:
         dotnet-version: '8.0.x'
 
@@ -76,3 +99,14 @@ jobs:
 
     - name: Verify release artifacts
       run: pwsh -File scripts/verify-release.ps1 -PublishDir publish
+
+    # Hand the packaged ZIP (and its checksum) to reviewers so a PR build can be
+    # downloaded and run without rebuilding it locally.
+    - name: Upload portable ZIP
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      with:
+        name: portable-zip
+        path: |
+          dist/*.zip
+          dist/*.zip.sha256
+        retention-days: 14
