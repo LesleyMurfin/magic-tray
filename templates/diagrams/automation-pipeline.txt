@@ -1,0 +1,10 @@
+   <FILL: trigger>
+        |
+        v
+   <FILL: stage 1> --> <FILL: stage 2> --> <FILL: stage 3>
+        |
+        v
+   <FILL: output / result>
+
+   CURRENT: <FILL: today's flow, or (none)>
+   FUTURE:  <FILL: what this PR adds or changes>

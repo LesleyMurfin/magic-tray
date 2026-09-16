@@ -1,0 +1,5 @@
+   CURRENT                                 FUTURE
+   +---------------------+                 +---------------------+
+   | <FILL: component>   |  -- this PR --> | <FILL: component>   |
+   | <FILL: state now>   |                 | <FILL: new state>   |
+   +---------------------+                 +---------------------+

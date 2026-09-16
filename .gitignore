@@ -1,5 +1,13 @@
-# Internal research / agent state — not part of the public tray app
-.ai/
+# Internal research / agent state — not part of the public tray app.
+#
+# `.ai/*` + `!.ai/validators/` instead of a blanket `.ai/`: git cannot
+# re-include a path whose parent directory is excluded, so a blanket `.ai/`
+# makes `.ai/validators/` unaddable even with a later negation. The PR gates in
+# scripts/github.py resolve `.ai/validators/*.py` relative to THIS repo, so the
+# validators must be tracked here. See .ai/validators/README.md.
+.ai/*
+!.ai/validators/
+.ai/validators/__pycache__/
 .orca/
 .riley-session
 
@@ -50,4 +58,3 @@ TestResults/
 
 # Agent scratch — not product (#66)
 .orca/
-.ai/
