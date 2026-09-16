@@ -460,12 +460,14 @@ internal static class RepairPlanner
     // running, is a rival build registered beside it, is the filter in the
     // live device stack, is the package installed) and connection state (are
     // there live BTHENUM instances, are the only entries charge-cable
-    // phantoms, does the Bluetooth pointer child resolve, does the keyboard's
-    // pairing record carry the cap Windows needs). What they never decide is
-    // whether the MOUSE battery percent is arriving, or whether the wheel
-    // really scrolls: a mouse -2, -3 or -1 is deliberately silent, while a
-    // connected keyboard reading -2 IS reported, by rule 2d, because the
-    // missing SDP cap behind it is a measured cause with a guided fix. And
+    // phantoms, does the Bluetooth pointer child resolve). What they never
+    // decide is whether the MOUSE battery percent is arriving, or whether the
+    // wheel really scrolls: a mouse -2, -3 or -1 is deliberately silent, while
+    // a connected keyboard reading -2 IS reported, by rule 2d. That rule reads
+    // the sentinel and the PID, never the pairing record itself: a missing SDP
+    // cap is the measured cause behind it and the one with a guided fix, but
+    // an interface answering 0 reaches -2 as well (KB_BATTERY_ZERO), so the
+    // finding is an inference the log can contradict.
     // DeviceSnapshot.MultitouchAdvancing is a tri-state that can raise no
     // problem row in any state: false never occurs and null means only "no
     // evidence", so a still counter is never a fault - nor is it necessarily
