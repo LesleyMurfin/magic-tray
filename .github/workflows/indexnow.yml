@@ -84,13 +84,43 @@ jobs:
           $urls | ForEach-Object { Write-Host "  $_" }
 
           # Body is sent as UTF-8 bytes so the declared charset is the truth.
-          $response = Invoke-WebRequest -Uri 'https://api.indexnow.org/IndexNow' `
-            -Method Post `
-            -ContentType 'application/json; charset=utf-8' `
-            -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) `
-            -SkipHttpErrorCheck
+          # Bounded retry loop: handles transient transport/5xx failures without stalling CI.
+          $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+          $maxAttempts = 3
+          $attempt = 0
+          $response = $null
+          $lastError = $null
+
+          while ($attempt -lt $maxAttempts) {
+            $attempt++
+            $lastError = $null
+            try {
+              $response = Invoke-WebRequest -Uri 'https://api.indexnow.org/IndexNow' `
+                -Method Post `
+                -ContentType 'application/json; charset=utf-8' `
+                -Body $bodyBytes `
+                -ConnectionTimeoutSeconds 15 `
+                -OperationTimeoutSeconds 30 `
+                -SkipHttpErrorCheck
+              $status = [int]$response.StatusCode
+              if ($status -ge 500 -and $status -le 599) {
+                Write-Warning "IndexNow returned HTTP $status on attempt $attempt of $maxAttempts."
+                if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds ($attempt * 2); continue }
+              }
+              break
+            } catch {
+              $lastError = $_
+              Write-Warning "IndexNow request transport error on attempt $attempt of $maxAttempts: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds ($attempt * 2); continue }
+            }
+          }
+
+          if ($null -ne $lastError -and $null -eq $response) {
+            throw "IndexNow request failed after $maxAttempts attempts: $($lastError.Exception.Message)"
+          }
+
           $status = [int]$response.StatusCode
-          $body = $response.Content
+          $respBody = $response.Content
 
           # 200 = accepted, 202 = accepted but the key is still being validated.
           # 202 is a success: IndexNow has the URLs, and re-submitting would not
@@ -101,5 +131,5 @@ jobs:
           if ($status -eq 200 -or $status -eq 202) {
             Write-Host "IndexNow accepted the submission (HTTP $status)."
           } else {
-            throw "IndexNow rejected the submission: HTTP $status`n$body"
+            throw "IndexNow rejected the submission: HTTP $status`n$respBody"
           }

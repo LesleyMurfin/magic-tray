@@ -18,39 +18,24 @@ CopyrightUrl: https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE
 ShortDescription: 'Free Windows 10 and 11 app: see Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent beside the clock, and fix a mouse that won''t scroll.'
 Description: >-
   Magic Tray puts the battery percentage of an Apple Magic Mouse, Magic
-  Keyboard or Magic Trackpad in the notification area of Windows 10 and
-  Windows 11, next to the clock. It warns you at 10, 5 and 1 percent. It is
-  free, open source and MIT licensed, with no subscription and no account.
+  Keyboard or Magic Trackpad in the Windows notification area, next to the
+  clock. It is a free, open source, MIT licensed alternative to paid Magic
+  Utilities style tools, with no subscription and no account.
 
   Magic Tray is portable. It does not need administrator rights to run and
   show battery levels. Battery percent needs no driver of any kind. It reads
   battery over Bluetooth HID and polls adaptively so it stays cheap when
   nothing changes.
 
-  A Magic Keyboard is the one exception. Its battery stays hidden until a
-  one-time unlock is applied, and "Fix battery reads" in the keyboard's menu
-  does that for you after you confirm. That item runs
-  kbd-patch-cachedservices.ps1 and looks for it beside the exe, which a
-  portable install does not carry. If it reports the script missing, download
-  Install-KeyboardBattery.cmd from the release page and run it as
-  administrator instead. It does the same thing.
-
-  Magic Tray can also help an Apple mouse scroll again. Each mouse gets its
-  own "Driver" submenu listing the routes that exist for that exact model.
-  For the Magic Mouse v1 and v2 it only opens a download page and installs
-  nothing itself; you run what you downloaded. For the 2024 USB-C Magic Mouse
-  it can run the driver step for you once you confirm, and the same menu puts
-  the stock Windows driver back. Nothing ever changes a driver on its own,
-  and both repairs ask for elevation at the moment they run.
-
-  Magic Tray has no gestures and no media-key remapping, so it is not a copy
-  of Magic Utilities. It is downloadable Windows software, not a physical desk
-  tray or stand.
+  Two optional repairs sit in the tray menu, and neither one ever starts on
+  its own. For a Magic Mouse that will not scroll, "Fix scrolling" offers
+  whatever route exists for that exact model: for the older models it opens a
+  download page and installs nothing itself, and for the 2024 USB-C model it
+  can run a driver step for you once you confirm. "Fix battery reads" runs the
+  one-time keyboard battery unlock for a Magic Keyboard whose battery does not
+  report. Both ask for elevation at the moment they run, and the mouse side can
+  be put back to the stock Windows driver from the same menu.
 Moniker: magictray
-# Search terms, 15 of the 16 the schema allows. Windows 10 and Windows 11 are
-# in here because "magic mouse battery windows 11" is how people ask for this,
-# and magic-mouse-2 is Apple's retail name for the Lightning model (PID 0269).
-# No gesture or media-key term: the app does neither.
 Tags:
 - apple
 - battery
@@ -58,15 +43,10 @@ Tags:
 - keyboard
 - magic-keyboard
 - magic-mouse
-- magic-mouse-2
 - magic-trackpad
 - mouse
-- scroll
 - system-tray
-- trackpad
 - tray
-- windows-10
-- windows-11
 ReleaseNotesUrl: https://github.com/LesleyMurfin/magic-tray/releases/tag/v1.1.0
 Documentations:
 - DocumentLabel: Homepage

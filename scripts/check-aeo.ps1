@@ -608,10 +608,16 @@ function Get-SitemapLocation {
     $text = Get-Content -LiteralPath $path -Raw
     if ([string]::IsNullOrEmpty($text)) { return }
 
-    foreach ($match in [regex]::Matches($text, '<loc>(?<loc>[^<]*)</loc>', 'IgnoreCase')) {
+    foreach ($match in [regex]::Matches($text, '<url>(?<content>[\s\S]*?)</url>', 'IgnoreCase')) {
+        $content = $match.Groups['content'].Value
+        $locMatch = [regex]::Match($content, '<loc>(?<loc>[^<]*)</loc>', 'IgnoreCase')
+        if (-not $locMatch.Success) { continue }
+        $lastmodMatch = [regex]::Match($content, '<lastmod>(?<lastmod>[^<]*)</lastmod>', 'IgnoreCase')
+        $locOffset = $match.Index + $locMatch.Index
         [pscustomobject]@{
-            Url  = $match.Groups['loc'].Value.Trim()
-            Line = (Get-LineNumber -Text $text -Offset $match.Index)
+            Url     = $locMatch.Groups['loc'].Value.Trim()
+            Lastmod = if ($lastmodMatch.Success) { $lastmodMatch.Groups['lastmod'].Value.Trim() } else { $null }
+            Line    = (Get-LineNumber -Text $text -Offset $locOffset)
         }
     }
 }
@@ -1180,8 +1186,11 @@ function Test-FreshnessLine {
     #>
     [OutputType([pscustomobject])]
     param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page,
+        [Parameter()][string]$SiteRoot = ''
     )
+
+    $locations = if (-not [string]::IsNullOrEmpty($SiteRoot)) { @(Get-SitemapLocation -SiteRoot $SiteRoot) } else { @() }
 
     foreach ($page in $Page) {
         if (-not $page.IsIndexable) { continue }
@@ -1219,6 +1228,15 @@ function Test-FreshnessLine {
         if ($null -ne $dateModified -and $time.Value -cne $dateModified) {
             New-Finding -Severity 'error' -Path $page.Relative -Line $time.Line `
                 -Message ("the footer shows {0} but the WebPage node says dateModified {1}: the page tells a reader one date and a crawler another" -f $time.Value, $dateModified)
+        }
+        if ($locations.Count -gt 0 -and $null -ne $dateModified) {
+            $loc = $locations | Where-Object { $_.Url -ceq $page.PublishedUrl } | Select-Object -First 1
+            if ($null -ne $loc -and -not [string]::IsNullOrEmpty($loc.Lastmod)) {
+                if ($loc.Lastmod -cne $dateModified) {
+                    New-Finding -Severity 'error' -Path $page.Relative -Line $time.Line `
+                        -Message ("the footer and WebPage node say {0} but sitemap.xml says <lastmod>{1}</lastmod> for {2}: the sitemap tells search engines one date and the page another" -f $dateModified, $loc.Lastmod, $page.PublishedUrl)
+                }
+            }
         }
     }
 }
@@ -1333,6 +1351,56 @@ function Test-PictureFallback {
         }
     }
 }
+function Test-TestedReportsSync {
+    <#
+    .SYNOPSIS
+        Check 12: docs/tested.html reports table stays in sync with docs/TESTED.md.
+    .DESCRIPTION
+        Guards against report divergence: any new hardware confirmation added
+        to the Markdown source must also be reflected in the published HTML.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    $mdPath = Join-Path $SiteRoot 'TESTED.md'
+    $htmlPath = Join-Path $SiteRoot 'tested.html'
+    if (-not (Test-Path -LiteralPath $mdPath -PathType Leaf) -or -not (Test-Path -LiteralPath $htmlPath -PathType Leaf)) {
+        return
+    }
+
+    $mdText = Get-Content -LiteralPath $mdPath -Raw
+    $htmlText = Get-Content -LiteralPath $htmlPath -Raw
+
+    # Extract Markdown report rows (after ## Reports, lines starting with |)
+    $mdReports = [regex]::Match($mdText, '(?ms)##\s+Reports\s*\n.*?(?<rows>(?:\|[^\n]+\|\s*\n?)+)')
+    $mdRows = @()
+    if ($mdReports.Success) {
+        $lines = $mdReports.Groups['rows'].Value.Trim().Split("`n")
+        foreach ($line in $lines) {
+            $trimmed = $line.Trim()
+            if ($trimmed -match '^\|\s*Model\s*\|' -or $trimmed -match '^\|\s*-+\s*\|') { continue }
+            if ($trimmed -match '^\|.*\|$') { $mdRows += $trimmed }
+        }
+    }
+
+    # Extract HTML report rows inside <h2 id="reports"> ... <tbody>
+    $htmlReports = [regex]::Match($htmlText, '(?ms)<h2[^>]*id="reports"[^>]*>.*?<tbody>(?<rows>.*?)</tbody>')
+    $htmlRows = @()
+    if ($htmlReports.Success) {
+        foreach ($m in [regex]::Matches($htmlReports.Groups['rows'].Value, '<tr>(?<row>.*?)</tr>')) {
+            $htmlRows += $m.Groups['row'].Value
+        }
+    }
+
+    if ($mdRows.Count -ne $htmlRows.Count) {
+        New-Finding -Severity 'error' -Path 'docs/tested.html' `
+            -Line (Get-TextLine -Text $htmlText -Needle @('id="reports"') -Fallback 1) `
+            -Message ("tested.html reports table has {0} row(s) but docs/TESTED.md has {1} row(s): contributor reports in Markdown must stay synchronized with the published HTML" -f $htmlRows.Count, $mdRows.Count)
+    }
+}
+
 
 function Test-NoindexPage {
     <#
@@ -1398,9 +1466,10 @@ $findings.AddRange([pscustomobject[]]@(Test-PageIdentity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-FaqParity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-VersionCoherence -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-PreviewMetadata -Page $pages -SiteRoot $siteRoot))
-$findings.AddRange([pscustomobject[]]@(Test-FreshnessLine -Page $pages))
+$findings.AddRange([pscustomobject[]]@(Test-FreshnessLine -Page $pages -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-MarkdownLink -Page $pages -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-PictureFallback -Page $pages -SiteRoot $siteRoot))
+$findings.AddRange([pscustomobject[]]@(Test-TestedReportsSync -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-NoindexPage -Page $pages -SiteRoot $siteRoot -RepoRoot $repoRoot))
 
 $errors = @($findings | Where-Object { $_.Severity -eq 'error' })

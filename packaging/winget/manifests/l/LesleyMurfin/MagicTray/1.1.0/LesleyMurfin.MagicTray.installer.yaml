@@ -3,36 +3,47 @@
 PackageIdentifier: LesleyMurfin.MagicTray
 PackageVersion: 1.1.0
 
-# Magic Tray is not an installer. MagicMouseTray.exe is a self-contained,
-# single-file .NET publish (PublishSingleFile + SelfContained + RuntimeIdentifier
-# win-x64 in MagicMouseTray.csproj), so the exe the release attaches is the whole
-# app and is the asset every link on https://magictray.app/ already points at.
-# That is exactly what InstallerType: portable is for.
-InstallerType: portable
+# Magic Tray ships as a portable ZIP, not an installer. MagicMouseTray.exe sits
+# at the root of the archive with its scripts/ folder beside it, and the
+# keyboard battery unlock plus the whole Diagnostics menu look for
+# "<exe folder>/scripts/<name>". Installing the archive rather than the loose
+# exe is what keeps them together. Asset name and internal layout agreed with
+# the release packaging owner; see packaging/winget/README.md.
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: MagicMouseTray.exe
 
-# For a non-archive portable, WinGet takes the symlink name from Commands[0] and
-# falls back to the file name. Verified in winget-cli PortableFlow.cpp: the
-# non-nested branch reads Installer->Commands and uses commands[0] as
-# commandAlias, appending .exe. So this one entry is the command alias, and
-# `magictray` is what a person types rather than the historical exe name.
-# PortableCommandAlias is deliberately absent: the 1.12 schema only defines it
-# inside NestedInstallerFiles, and PortableFlow.cpp only reads it on the nested
-# path, so on a bare portable it would be an unknown field that does nothing.
+# Add the extracted folder to PATH instead of symlinking the exe into WinGet's
+# Links folder. Verified in winget-cli PortableInstaller.cpp: when
+# ArchiveBinariesDependOnPath is true, symlink creation is skipped and the
+# install directory is added to PATH, so the exe is always launched from the
+# folder that holds scripts/. That is why no PortableCommandAlias is set here:
+# the alias names the Links-folder symlink, which this setting opts out of.
+# https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.12.0/installer.md
+ArchiveBinariesDependOnPath: true
+
+# The extracted folder is on PATH, so the runnable command is the exe name.
 Commands:
-- magictray
+- MagicMouseTray
 Platform:
 - Windows.Desktop
-# Windows 10 1809. Matches the csproj target framework, net8.0-windows10.0.17763.0.
 MinimumOSVersion: 10.0.17763.0
 UpgradeBehavior: install
-# Date the v1.1.0 release was published. Quoted so it stays a YAML string, which
-# is what the schema requires ("type": ["string", "null"], "format": "date").
+# Date of the v1.1.0 tag. Quoted so it stays a YAML string, which is what the
+# schema requires ("type": ["string", "null"], "format": "date").
 ReleaseDate: '2026-09-02'
 Installers:
 - Architecture: x64
-  InstallerUrl: https://github.com/LesleyMurfin/magic-tray/releases/download/v1.1.0/MagicMouseTray.exe
-  # Downloaded from the URL above on 2026-09-16, 186,528,764 bytes, and hashed.
-  # Matches the digest the GitHub release API reports for the asset.
-  InstallerSha256: 696DB5FF96360A125C83AF7C3C5D752626B9DE728EA42240D0ECAB81B9F4DCD7
+  InstallerUrl: https://github.com/LesleyMurfin/magic-tray/releases/download/v1.1.0/MagicTray-v1.1.0-win-x64.zip
+  # PLACEHOLDER. Not a real hash, and never to be guessed. Replaced, in the
+  # winget-pkgs fork only, with the SHA256 of the published ZIP asset,
+  # cross-checked against the MagicTray-v1.1.0-win-x64.zip.sha256 sidecar on
+  # the release and upper-cased. (The SHA256SUMS file inside the archive lists
+  # the individual files, not the archive itself.)
+  # See "Compute the SHA256" in packaging/winget/README.md.
+  # Kept as 64 zeros so the file still validates against the schema pattern
+  # ^[A-Fa-f0-9]{64}$ while being obviously not a real digest.
+  InstallerSha256: '0000000000000000000000000000000000000000000000000000000000000000'
 ManifestType: installer
 ManifestVersion: 1.12.0

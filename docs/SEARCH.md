@@ -177,8 +177,10 @@ What changed:
   the price and the author.
 - **One `Person` node** (`#person`) with `sameAs` to the GitHub profile, this repo and the v3 driver
   repo, referenced by `@id` from every `author` and `publisher`. No anonymous `Person` is left.
-- **`#app` gained** `softwareRequirements`, `processorRequirements`, `datePublished`,
-  `releaseNotes`, and a `sameAs` array instead of a single string.
+- **`#app` on the homepage gained** `softwareRequirements`, `processorRequirements`, `datePublished`,
+  `releaseNotes`, `featureList`, and a `sameAs` array; subpages declare a compact `#app` (name,
+  type, OS, category, author, version, offers) so every `@id` reference resolves independently
+  without duplicating homepage-only release metadata.
 - **The homepage H1 names the product.** It read "Apple Magic Mouse and Keyboard battery on Windows
   10 and 11" — the brand query that failed was the one string the page never contained.
 - **Magic Utilities is answered, not avoided** (`#mu`). The comparison is honest: no gestures, no
