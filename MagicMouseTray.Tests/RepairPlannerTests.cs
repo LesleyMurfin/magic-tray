@@ -913,6 +913,16 @@ public class RepairPlannerTests
         Assert.Empty(RepairPlanner.Plan([]));
     }
 
+    // The 0-findings arm is a SCOPE claim, not a greeting: PlanOne reads driver state and
+    // connection state only, so it must never widen back into an unqualified all-clear.
+    // TEST-PLAN rows D1, D1b, D16, D19, D21 and ENABLE-DISABLE.md are read off this exact
+    // sentence on hardware, so the wording is part of the contract.
+    [Fact]
+    public void MenuLabel_NoFindings_ClaimsOnlyDriverAndConnection()
+    {
+        Assert.Equal("No driver or connection problems found", RepairPlanner.MenuLabel([]));
+    }
+
     [Fact]
     public void MenuLabel_SingleFinding_IsThatFindingsTitle()
     {

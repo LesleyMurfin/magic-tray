@@ -245,15 +245,20 @@ internal static class RepairPlanner
         // was byte-identical to a healthy mouse.
         //
         // FilterServiceRunning cannot see this. It is the word "RUNNING" in
-        // sc query output (DriverHealthChecker.cs:324-345): proof that the
+        // sc query output (DriverHealthChecker.cs:320-347): proof that the
         // driver image is loaded on this PC, never proof that the filter
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
-        // the property this repo's own capture script already trusts
-        // (scripts/capture-state.ps1:152-157) and the one V3RecycleManager
-        // calls authoritative (V3RecycleManager.cs:320-322). FilterInStack
-        // carries it into the planner. docs/TEST-PLAN.md:21 had already named
-        // this exact shape - wheel dead while the BOUND filter service
-        // reports RUNNING - as a failure with no diagnosis attached.
+        // the property this repo's own capture script reads on the live
+        // BTHENUM instance, noting there that LowerFilters and sc query only
+        // prove registration (scripts/capture-state.ps1:212-221, with the name
+        // match against the returned string list in Test-StackHasFilter at
+        // scripts/capture-state.ps1:146-155), and the one the recovery script
+        // names the discriminator for this exact post-reboot case
+        // (scripts/diagnose-and-recover.ps1:266-268). FilterInStack carries it
+        // into the planner. The A5/A6 pass rule in
+        // docs/TEST-PLAN.md had already named this exact shape - wheel dead
+        // while the BOUND filter service reports RUNNING - as a failure with
+        // no diagnosis attached.
         //
         // Ranked below rule 2 because when two rival filter names are
         // registered, stripping the leftover is the better-evidenced repair
@@ -456,24 +461,33 @@ internal static class RepairPlanner
     // live device stack, is the package installed) and connection state (are
     // there live BTHENUM instances, are the only entries charge-cable
     // phantoms, does the Bluetooth pointer child resolve, does the keyboard's
-    // pairing record carry the cap Windows needs). They never decide whether
-    // the battery percent is arriving or whether the wheel really scrolls:
-    // rule 2d fires for a keyboard -2 alone and a mouse -2, -3 or -1 is
-    // deliberately silent, and DeviceSnapshot.MultitouchAdvancing is null
-    // whenever the counter is still.
+    // pairing record carry the cap Windows needs). What they never decide is
+    // whether the MOUSE battery percent is arriving, or whether the wheel
+    // really scrolls: a mouse -2, -3 or -1 is deliberately silent, while a
+    // connected keyboard reading -2 IS reported, by rule 2d, because the
+    // missing SDP cap behind it is a measured cause with a guided fix. And
+    // DeviceSnapshot.MultitouchAdvancing is a tri-state that can raise no
+    // problem row in any state: false never occurs and null means only "no
+    // evidence", so a still counter is never a fault - nor is it necessarily
+    // null, because DeviceDiagReader keeps a proven advance reading true for
+    // DeviceDiagReader.AliveMemory (60 s) after the last movement (the
+    // alive-memory arm of DeviceDiagReader.EvaluateCounterSample, pinned by
+    // EvaluateCounterSample_UnchangedShortlyAfterMovement_StaysAdvancing).
+    // Either way the wheel is not something this arm can speak for.
     //
     // Measured on the reference PC: one menu open wrote "REPAIR_FINDINGS
     // raw=0 confirmed=0 pending=0" beside "REPAIR_SNAPSHOT pid=0323 ...
     // batt=-2", so the old wording "No problems found" stood directly above a
     // device row reading "Battery unavailable". Both lines were true; only the
     // header's scope was wrong, because "no problems" is a claim about the
-    // whole device made by a checker that never read the battery or the
-    // wheel. Naming the two areas that were checked keeps the row reassuring
-    // where it is entitled to be and silent where it measured nothing.
+    // whole device made by a checker that never read that mouse's battery and
+    // never proved its wheel. Naming the two areas the wording does claim
+    // keeps the row reassuring where it is entitled to be and silent where it
+    // measured nothing.
     //
     // The one- and many-finding arms are unchanged: a confirmed fault keeps
-    // the bare fault voice the rest of the menu is ranked against
-    // (ConfigFactView.cs:28-30).
+    // the bare fault voice the rest of the menu is ranked against (the
+    // PRECEDENCE note in ConfigFactView).
     internal static string MenuLabel(IReadOnlyList<RepairFinding> findings) => findings.Count switch
     {
         0 => "No driver or connection problems found",
