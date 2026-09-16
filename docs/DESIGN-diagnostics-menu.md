@@ -4,7 +4,7 @@ Status: Implemented. Small ADW vertical so Lesley can capture driver/device stat
 
 The user wants **existing repo scripts**, not a new in-process dump formatter. There is no `DriverStateDump` and no `driver-state.txt`. Diagnostics runs `powershell.exe -File` on scripts the resolver finds next to the exe, in `scripts\`, or by walking up to the repo root the same way `FindKeyboardPatchScript` does.
 
-`scripts/` has on the order of a hundred lab tools. The tray does not list them. Allowlist only, and only when the file is present. The published exe does not copy these scripts; a ship install without a checkout simply omits the items.
+`scripts/` has on the order of a hundred lab tools. The tray does not list them. Allowlist only, and only when the file is present. CI copies the allowlisted scripts next to the published exe (`csproj` Content + `verify-release.ps1` `$shipNames`).
 
 ## Menu
 
@@ -14,8 +14,9 @@ Tray → **Diagnostics** →
 Test notification
 Open logs
 Open diagnostics folder
-Run capture-state.ps1              ← if found (current state)
+Run capture-state.ps1              ← if found (current state, 0323 only)
 Run diagnose-driver.ps1            ← if found
+Run diagnose-and-recover.ps1       ← if found (all catalog PIDs; no -Repair)
 Run mm-bt-stack-snapshot.ps1       ← if found
 Run mm-devmgr-dump.ps1             ← if snapshot missing and this exists
 ```
@@ -25,8 +26,9 @@ Run mm-devmgr-dump.ps1             ← if snapshot missing and this exists
 | Test notification | — | Keep. Preview toast. |
 | Open logs | — | Keep. `%APPDATA%\MagicMouseTray\debug.log`. |
 | Open diagnostics folder | — | Keep. Same directory. |
-| Run capture-state.ps1 | `scripts/capture-state.ps1` (or next to exe) | Current device/driver state (COL01/COL02, LowerFilters, service). |
+| Run capture-state.ps1 | `scripts/capture-state.ps1` (or next to exe) | Current v3 device/driver state (COL01/COL02, LowerFilters, service). 0323-only compare schema. |
 | Run diagnose-driver.ps1 | `diagnose-driver.ps1` at **repo root** (or next to exe / `scripts\`) | applewirelessmouse .sys, sc, pnputil, LowerFilters. |
+| Run diagnose-and-recover.ps1 | `scripts/diagnose-and-recover.ps1` | All catalog PIDs, both filter services, USB phantom vs BTHENUM, config.ini, debug.log tail. Tray does **not** pass `-Repair`. |
 | Run mm-bt-stack-snapshot.ps1 | `scripts/mm-bt-stack-snapshot.ps1` | BT HID stack + filter chain. Preferred over devmgr. |
 | Run mm-devmgr-dump.ps1 | `scripts/mm-devmgr-dump.ps1` | Fallback when snapshot is absent. |
 
@@ -74,7 +76,7 @@ WindowsDesktop, resolver only. No live HID. No `Process.Start`.
 - Snapshot missing, devmgr present → stack-dump path is devmgr.
 - Missing name → null. Allowlist does not include mm-rev-eng, mm-magicutilities-capture, mm-state-flip, or ETW scripts.
 - `StartInfo` is `powershell.exe` with `-File` and the script path. Arguments do not mention `driver-state.txt`.
-- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`. No `PATH-A` in labels.
+- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run diagnose-and-recover.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`. No `PATH-A` in labels.
 
 ## Non-goals
 
