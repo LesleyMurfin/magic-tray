@@ -84,13 +84,7 @@ jobs:
       run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
     - name: Stage keyboard patch and diagnostic scripts
-      shell: pwsh
-      run: |
-        Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
-        Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
-        Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
-        Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
-        Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
+      run: pwsh -File scripts/stage-publish.ps1 -PublishDir publish
 
     # verify-release.ps1 treats a missing ZIP as a hard failure, never a skip,
     # so CI has to build one. That is deliberate: the portable ZIP is the
@@ -98,7 +92,6 @@ jobs:
     # the keyboard unlock and the Diagnostics scripts at <exe>/scripts/. Packaging
     # here means a PR that breaks that layout fails now, not at tag time.
     - name: Package portable ZIP
-      shell: pwsh
       run: pwsh -File scripts/package-release.ps1 -PublishDir publish -Tag "ci-${{ github.sha }}" -OutDir dist
 
     - name: Verify release artifacts

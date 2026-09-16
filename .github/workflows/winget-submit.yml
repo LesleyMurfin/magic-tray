@@ -93,8 +93,14 @@ jobs:
 
       - name: Locate the manifest set for this tag
         id: locate
+        # The dispatch input arrives through env, not textual interpolation into
+        # the script body: a tag carrying a quote would otherwise close the
+        # string literal and run as PowerShell before the format guard below
+        # ever sees it.
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          $tag = '${{ inputs.tag }}'
+          $tag = $env:TAG
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             Write-Error "Tag '$tag' does not look like vMAJOR.MINOR.PATCH."
             exit 1
@@ -112,8 +118,9 @@ jobs:
       - name: Download the published ZIP and its sha256 sidecar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
         run: |
-          $tag   = '${{ inputs.tag }}'
+          $tag   = $env:TAG
           $asset = '${{ steps.locate.outputs.asset }}'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           gh release download $tag --repo '${{ github.repository }}' --dir dist --pattern $asset
@@ -135,11 +142,13 @@ jobs:
           "sha256=$computed" >> $env:GITHUB_OUTPUT
 
       - name: Write the real hash into the manifest
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           $dir  = '${{ steps.locate.outputs.dir }}'
           $file = Join-Path $dir 'LesleyMurfin.MagicTray.installer.yaml'
           $sha  = '${{ steps.hash.outputs.sha256 }}'
-          $tag  = '${{ inputs.tag }}'
+          $tag  = $env:TAG
           $text = Get-Content $file -Raw
           if ($text -notmatch "releases/download/$([regex]::Escape($tag))/") {
             Write-Error "InstallerUrl in $file does not point at the $tag release. Fix the manifest before submitting."

@@ -36,6 +36,7 @@ nothing.
 dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (Windows only)
 pwsh -File scripts/check-site.ps1                                         # Site checks
 pwsh -File scripts/check-version-sync.ps1                                 # Version sync
+python3 scripts/check-winget-manifest.py                                  # Winget manifest (needs PyYAML)
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 
@@ -131,7 +132,8 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
   tracks the **latest release**, while the csproj may run ahead of it as the next
   version in development. It also derives the expected ZIP asset name from
   `scripts/package-release.ps1` rather than hardcoding it. `Winget manifest`
-  parses the manifest set offline and asserts the keys winget-pkgs will require,
+  (`scripts/check-winget-manifest.py`) parses the manifest set offline and
+  asserts the keys winget-pkgs will require of every `Installers` entry,
   accepting the deliberate 64-zero installer digest.
 - **Permissions**: `contents: read`. **Timeout**: 10 min per job.
 
@@ -139,9 +141,11 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 - **Purpose**: `CONTRIBUTING.md` requires `git commit -s`; this enforces it.
   Every non-merge, non-bot commit in the PR needs a real `Signed-off-by:` Git
-  trailer: it has to sit in the message's final trailer block, and that block
-  must hold nothing but trailers. A sign-off buried in the body with prose after
-  it is text, not a trailer, and is rejected.
+  trailer in the message's final trailer block. `git interpret-trailers --parse`
+  decides what that block is, so a sign-off buried in an earlier paragraph with
+  prose after it is text, not a trailer, and is rejected — while the shapes Git
+  itself writes (`git cherry-pick -x` provenance lines, folded trailers) are
+  accepted. Trailer tokens are matched case-insensitively, as Git matches them.
   Merge commits and `dependabot[bot]`/`github-actions[bot]` commits are skipped —
   they are unsigned by design and would otherwise block dependency PRs forever.
 - **Fix a red run**: `git commit -s` for new commits, or
@@ -172,15 +176,20 @@ Anything added here follows the same rules:
 1. GitHub-hosted runners only; `windows-latest` only when Windows is genuinely
    required.
 2. Only `actions/*` and `github/codeql-action/*` actions. Any other tool is
-   installed from a version-pinned release download with a verified checksum.
+   installed from a version-pinned release download with a verified checksum —
+   with one exception, `pip install PyYAML==6.0.3` in `packaging.yml`, which is
+   version-pinned but not hash-pinned: a wheel hash is specific to the runner
+   image's Python minor version, so pinning one would turn a required check red
+   the next time the image moves.
 3. Every `uses:` is a 40-character commit SHA with a trailing `# vX.Y.Z`
    comment. Dependabot (`.github/dependabot.yml`, weekly, 5-day cooldown,
    `chore(ci)` prefix) proposes the bumps.
 4. Every workflow declares an explicit minimal `permissions:` block; every job
    declares `timeout-minutes`; everything except `release.yml` declares a
    `concurrency:` group with `cancel-in-progress`.
-5. Repo-owned checks live in `scripts/check-*.ps1`, emit `::error
+5. Repo-owned checks live in `scripts/check-*`, emit `::error
    file=…,line=…::` annotations, print a one-line summary, and exit non-zero.
    That way the same script is the CI gate and the local pre-push check.
 6. Tools that Dependabot cannot see are pinned in the workflow that uses them
-   and named in this file: PSScriptAnalyzer `1.25.0`, actionlint `1.7.12`.
+   and named in this file: PSScriptAnalyzer `1.25.0`, actionlint `1.7.12`,
+   PyYAML `6.0.3`.

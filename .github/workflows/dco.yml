@@ -3,10 +3,14 @@ name: DCO
 # CONTRIBUTING.md requires every contribution to be signed off
 # (https://developercertificate.org). This enforces it on pull requests.
 #
-# A sign-off only counts as a real Git trailer: it must appear in the commit
-# message's final trailer block, and that block must contain nothing but
-# trailers. A "Signed-off-by:" line buried in the middle of the body, with more
-# prose after it, is rejected - that is text, not a trailer.
+# A sign-off only counts as a real Git trailer: `git interpret-trailers --parse`
+# emits the commit message's final trailer block and nothing else, so a
+# "Signed-off-by:" line buried in an earlier paragraph with prose after it is
+# rejected - that is text, not a trailer. Git's parser is the authority on
+# purpose: it accepts the shapes Git itself writes, notably the
+# "(cherry picked from commit ...)" line `git cherry-pick -x` appends and folded
+# multi-line trailers, which a hand-rolled "every line must look like a trailer"
+# rule fails on while offering the contributor no way to fix it.
 #
 # Merge commits are skipped (they are generated, not authored), and so are
 # dependabot[bot] / github-actions[bot] commits, which are unsigned by design
@@ -67,49 +71,18 @@ jobs:
           while read -r sha encoded; do
             printf '%s' "${encoded}" | base64 -d > "${work}/message"
 
-            # The candidate trailer block is the message's final paragraph.
-            awk '
-              { line[NR] = $0 }
-              END {
-                last = 0
-                for (i = NR; i >= 1; i--) {
-                  if (line[i] !~ /^[ \t]*$/) { last = i; break }
-                }
-                if (last == 0) { exit }
-                start = 1
-                for (i = last; i >= 1; i--) {
-                  if (line[i] ~ /^[ \t]*$/) { start = i + 1; break }
-                }
-                for (i = start; i <= last; i++) { print line[i] }
-              }
-            ' "${work}/message" > "${work}/block"
-
-            # git interpret-trailers is the authority on what the trailer block
-            # contains, but its own heuristic accepts a block in which as few as
-            # a quarter of the lines are trailers - so a Signed-off-by buried in
-            # a paragraph of prose passes it. Require the final paragraph to be
-            # pure as well: every line in it must be trailer-shaped.
-            pure=1
-            while IFS= read -r line; do
-              if ! printf '%s\n' "${line}" | grep -qE '^[A-Za-z][A-Za-z0-9-]*:[ \t]'; then
-                pure=0
-                break
-              fi
-            done < "${work}/block"
-
-            signed=0
-            if [ "${pure}" -eq 1 ] &&
-              git interpret-trailers --parse < "${work}/message" |
-                grep -qE '^Signed-off-by: .+ <.+>$'; then
-              signed=1
+            # Trailer tokens are case-insensitive in Git, so match them that way.
+            # Parsed to a file rather than a pipe: `set -o pipefail` would report
+            # git's SIGPIPE if grep -q exited first.
+            git interpret-trailers --parse < "${work}/message" > "${work}/trailers"
+            if grep -qiE '^Signed-off-by: .+ <.+>$' "${work}/trailers"; then
+              continue
             fi
 
-            if [ "${signed}" -eq 0 ]; then
-              missing=$(( missing + 1 ))
-              subject="$(head -n 1 "${work}/message")"
-              printf '::error::Commit %s (%s) has no "Signed-off-by:" trailer in its final trailer block. Fix: git commit -s (new commits), or git rebase --signoff origin/main && git push --force-with-lease (existing ones).\n' \
-                "${sha:0:7}" "${subject}"
-            fi
+            missing=$(( missing + 1 ))
+            subject="$(head -n 1 "${work}/message")"
+            printf '::error::Commit %s (%s) has no "Signed-off-by:" trailer in its final trailer block. Fix: git commit -s (new commits), or git rebase --signoff origin/main && git push --force-with-lease (existing ones).\n' \
+              "${sha:0:7}" "${subject}"
           done < "${work}/checked.txt"
 
           echo "DCO: ${total} commit(s), ${checked} checked, ${skipped} skipped (merge/bot), ${missing} missing sign-off."
