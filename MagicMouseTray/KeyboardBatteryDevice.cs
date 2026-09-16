@@ -96,7 +96,8 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     }
 
     // Active read of the col02 Battery Strength Feature report (RID 0x47).
-    // Returns 0-100, -2 if present but the Feature cap/read is blocked (patch needed), -1 on open failure.
+    // Returns 1-100, -2 if present but the Feature cap/read is blocked (patch needed) or the read
+    // yields 0, -1 on open failure.
     public int GetBatteryPercent()
     {
         using var handle = HidNative.CreateFile(
@@ -166,7 +167,14 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
 
         var fbuf = new byte[Math.Max(featureLen, 2)];
         fbuf[0] = batteryReportId;
-        if (HidNative.HidD_GetFeature(handle, fbuf, fbuf.Length) && fbuf[1] is >= 0 and <= 100)
+        // Same floor as the mouse path (MouseBatteryDevice.MinValidPercent): Apple firmware reports
+        // 1..100, so a read that succeeds with exactly 0 came from a dead/phantom interface. The
+        // keyboard needs the floor now because DeviceRegistry.Discover keeps a paired keyboard's
+        // leftover USB col02 next to the live interface, and AdaptivePoller.ReadingRank scores a
+        // real percentage above both -2 and -1, so an accepted 0 would outrank the live read and
+        // fire the low-battery alert on a healthy keyboard. fbuf[1] is a byte, so >= 0 rejected
+        // nothing.
+        if (HidNative.HidD_GetFeature(handle, fbuf, fbuf.Length) && fbuf[1] is >= MouseBatteryDevice.MinValidPercent and <= 100)
         {
             int pct = fbuf[1];
             Logger.Log($"KB_BATTERY_OK device={DeviceName} pct={pct}% (Feature 0x{batteryReportId:X2})");

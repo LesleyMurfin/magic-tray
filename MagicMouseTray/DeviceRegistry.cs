@@ -1,4 +1,5 @@
-// Discovers all connected Apple HID battery devices by scanning the HID device interface list.
+// Discovers connected Apple HID battery interfaces by scanning the HID device interface list.
+// One IBatteryDevice per matched interface path, so one physical device can yield several.
 // Returns a fresh snapshot per call — no caching. AdaptivePoller drives the poll cadence.
 
 namespace MagicMouseTray;
@@ -6,7 +7,11 @@ namespace MagicMouseTray;
 internal static class DeviceRegistry
 {
     /// <summary>
-    /// Scans all present HID interfaces and returns one IBatteryDevice per matched Apple device.
+    /// Scans all present HID interfaces and returns one IBatteryDevice per matched Apple
+    /// interface PATH, not one per physical device. The multiplicity is deliberate: a single
+    /// mouse exposes several interfaces that pass the same gate and only some of them answer
+    /// a battery read, so every candidate is handed to AdaptivePoller, which groups by
+    /// DeviceName and keeps the best-ranked reading. Only identical path strings collapse.
     /// Matching priority: mouse VID/PID checked first, then keyboard VID/PID.
     /// </summary>
     public static IReadOnlyList<IBatteryDevice> Discover(bool enableThirdParty = false)
@@ -28,30 +33,39 @@ internal static class DeviceRegistry
         // only some of them answer HidD_GetInputReport with a real level; the rest return
         // [90 00 00]. Discovery cannot tell which is which without reading, so it keeps them
         // all and AdaptivePoller picks the winner: it groups by DeviceName and ranks a real
-        // percentage above -2 above -1 (AdaptivePoller.cs:131-143). Dropping candidates here
-        // ran before that ranking and could leave only an interface that never reports.
+        // percentage above -2 above -1 (AdaptivePoller.ReadingRank), and stops reading a
+        // group's remaining interfaces once one answers with a real percentage. Dropping
+        // candidates here ran before that ranking and could leave only an interface that
+        // never reports.
         //
         // There is deliberately no transport preference and no one-device-per-PID rule. The
         // false 0% from a charge-cable phantom that those rules were written for is rejected
-        // at parse level instead: MinValidPercent = 1 (MouseBatteryDevice.cs:78), enforced by
-        // ParseRid90Percent (MouseBatteryDevice.cs:182), and logged distinctly as -2 via
-        // IsBogusZeroReport (MouseBatteryDevice.cs:187). A phantom therefore ranks below any
-        // interface that reports a real level, so it cannot win.
+        // at parse level instead, in both IBatteryDevice implementations: the floor
+        // MinValidPercent = 1 (MouseBatteryDevice.cs:78) is enforced by ParseRid90Percent
+        // (MouseBatteryDevice.cs:182), and the rejected zero is logged distinctly and
+        // returned as -2 (MouseBatteryDevice.cs:158-161); KeyboardBatteryDevice.GetBatteryPercent
+        // enforces the same floor on its Feature read. Both need it because a real 0 outranks
+        // -2 and -1 in AdaptivePoller.ReadingRank, so without the floor a dead interface
+        // answering zero would beat the live interface's failure sentinel and win the group.
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {
+            var device = TryClassify(path, enableThirdParty);
+            if (device is null)
+                continue;
+
             // Renamed from DISCOVER_SKIP_DUPLICATE: that marker used to cover skipped
             // transports and extra interfaces as well, which is no longer what happens.
-            // This one fires only for a repeated path string.
+            // This one fires only for a repeated path string, and only below TryClassify so
+            // that only a path that really classified as an Apple battery interface is
+            // reported - a repeated dock or non-Apple keyboard path writes nothing.
             if (!seenPaths.Add(path))
             {
                 Logger.Log($"DISCOVER_SKIP_SAME_PATH pid={ExtractPid(path)} path={path}");
                 continue;
             }
 
-            var device = TryClassify(path, enableThirdParty);
-            if (device is not null)
-                results.Add(device);
+            results.Add(device);
         }
         return results;
     }

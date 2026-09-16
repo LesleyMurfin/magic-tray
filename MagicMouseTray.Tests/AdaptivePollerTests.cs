@@ -103,4 +103,77 @@ public class AdaptivePollerTests : IDisposable
         cfg.SetDeviceEnabled("030d", true);
         Assert.False(AdaptivePoller.ShouldSkipPid(cfg, "030d"));
     }
+
+    [Fact]
+    public void BestReading_FirstRealPercentWins_LaterInterfacesNotRead()
+    {
+        var unreadable = new CountingDevice(-2);
+        var real = new CountingDevice(42);
+        var later = new CountingDevice(77);
+
+        int best = AdaptivePoller.BestReading(
+            [unreadable, real, later], TimeSpan.FromSeconds(1));
+
+        Assert.Equal(42, best);
+        Assert.Equal(1, unreadable.Reads);
+        Assert.Equal(1, real.Reads);
+        Assert.Equal(0, later.Reads);
+    }
+
+    [Fact]
+    public void BestReading_AllInterfacesFail_MinusTwoBeatsMinusOne()
+    {
+        var notFound = new CountingDevice(-1);
+        var present = new CountingDevice(-2);
+        var alsoNotFound = new CountingDevice(-1);
+
+        int best = AdaptivePoller.BestReading(
+            [notFound, present, alsoNotFound], TimeSpan.FromSeconds(1));
+
+        Assert.Equal(-2, best);
+        Assert.Equal(1, notFound.Reads);
+        Assert.Equal(1, present.Reads);
+        Assert.Equal(1, alsoNotFound.Reads);
+    }
+
+    // A real 0 is an answer, not a failure, so it ends the group like any other
+    // percentage. This is why both IBatteryDevice implementations floor at
+    // MouseBatteryDevice.MinValidPercent: an unfloored zero from a dead interface
+    // would end the group here and be reported as the device's level.
+    [Fact]
+    public void BestReading_RealZeroCountsAsAnAnswer_AndOutranksUnreadable()
+    {
+        var present = new CountingDevice(-2);
+        var zero = new CountingDevice(0);
+        var notFound = new CountingDevice(-1);
+
+        int best = AdaptivePoller.BestReading(
+            [present, zero, notFound], TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0, best);
+        Assert.Equal(1, present.Reads);
+        Assert.Equal(1, zero.Reads);
+        Assert.Equal(0, notFound.Reads);
+    }
+
+    // One HID interface of one device, returning a fixed reading and counting how often
+    // it was read, so a test can pin which interfaces BestReading actually touched.
+    sealed class CountingDevice : IBatteryDevice
+    {
+        readonly int _pct;
+
+        internal CountingDevice(int pct) => _pct = pct;
+
+        internal int Reads { get; private set; }
+
+        public string DeviceName => "Magic Mouse";
+        public string Pid => "0323";
+        public DeviceKind Kind => DeviceKind.MagicMouseV3;
+
+        public int GetBatteryPercent()
+        {
+            Reads++;
+            return _pct;
+        }
+    }
 }
