@@ -12,18 +12,80 @@ internal static class DeviceRegistry
     public static IReadOnlyList<IBatteryDevice> Discover(bool enableThirdParty = false)
         => DiscoverFromPaths(HidNative.EnumerateHidPaths(), enableThirdParty);
 
-    // Test hook — same classify rules as Discover, no live HID scan.
+    // Test hook - same classify rules as Discover, no live HID scan.
     internal static IReadOnlyList<IBatteryDevice> DiscoverFromPaths(
         IEnumerable<string> paths, bool enableThirdParty = false)
     {
-        var results = new List<IBatteryDevice>();
+        var matched = new List<(string Path, IBatteryDevice Device)>();
         foreach (var path in paths)
         {
             var device = TryClassify(path, enableThirdParty);
             if (device is not null)
-                results.Add(device);
+                matched.Add((path, device));
+        }
+
+        // One entry per physical device. After a USB-C charge Windows leaves phantom
+        // HID\VID_05AC&PID_xxxx&MI_yy&COLzz interfaces behind (live: all CM_PROB_PHANTOM);
+        // they still answer HidD_GetInputReport, with a zero percent byte, so the same
+        // Magic Mouse was listed twice and the dead cable interface reported a false 0%.
+        // Prefer the live Bluetooth interface; keep USB only when it is the sole transport
+        // for that PID (a genuinely cabled mouse must still report battery).
+        var results = new List<IBatteryDevice>(matched.Count);
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, device) in matched)
+        {
+            var pid = ExtractPid(path);
+            bool bluetooth = IsBluetoothTransportPath(path);
+
+            if (!bluetooth && IsUsbTransportPath(path) && HasBluetoothTransport(matched, pid))
+            {
+                Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport=usb path={path}");
+                continue;
+            }
+
+            if (!claimed.Add(pid))
+            {
+                Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport={(bluetooth ? "bt" : "usb")} path={path}");
+                continue;
+            }
+
+            results.Add(device);
         }
         return results;
+    }
+
+    static bool HasBluetoothTransport(List<(string Path, IBatteryDevice Device)> matched, string pid)
+    {
+        foreach (var (path, _) in matched)
+        {
+            if (IsBluetoothTransportPath(path) &&
+                ExtractPid(path).Equals(pid, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    // A Bluetooth / HID-over-GATT interface carries the BT service GUID plus the
+    // "_vid&<bt-vid>_pid&<pid>" form, e.g.
+    // \\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col02#...
+    // 0001004C = Bluetooth SIG Apple vendor id, 000205AC = USB-IF Apple vendor id over BT.
+    static readonly string[] BluetoothVidForms = ["_vid&0001004c_", "_vid&000205ac_"];
+
+    internal static bool IsBluetoothTransportPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        if (!path.Contains("_pid&", StringComparison.OrdinalIgnoreCase)) return false;
+        return Array.Exists(BluetoothVidForms,
+            form => path.Contains(form, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // A USB interface carries the "vid_xxxx&pid_yyyy" form (plus mi_/col for the
+    // charge-cable phantoms), e.g. \\?\hid#vid_05ac&pid_0323&mi_01&col02#...
+    internal static bool IsUsbTransportPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        return path.Contains("vid_", StringComparison.OrdinalIgnoreCase)
+            && path.Contains("pid_", StringComparison.OrdinalIgnoreCase);
     }
 
     // iPhone Hands-Free / HFP exposes a WMI battery (live 60%) that is not the mouse.

@@ -58,6 +58,26 @@ public class DriverHealthCheckerTests
     }
 
     [Fact]
+    public void AfterFilterServiceState_PatchedKmdfStopped_IsNotBound()
+    {
+        Assert.Equal(DriverStatus.NotBound,
+            DriverHealthChecker.AfterFilterServiceState(DriverStatus.PatchedKmdf, "0323", filterServiceRunning: false));
+        Assert.Equal(DriverStatus.PatchedKmdf,
+            DriverHealthChecker.AfterFilterServiceState(DriverStatus.PatchedKmdf, "0323", filterServiceRunning: true));
+        Assert.Equal(DriverStatus.StockKmdf,
+            DriverHealthChecker.AfterFilterServiceState(DriverStatus.StockKmdf, "0323", filterServiceRunning: false));
+    }
+
+    [Fact]
+    public void AfterFilterServiceState_V1OkStopped_IsNotBound()
+    {
+        Assert.Equal(DriverStatus.NotBound,
+            DriverHealthChecker.AfterFilterServiceState(DriverStatus.Ok, "030d", filterServiceRunning: false));
+        Assert.Equal(DriverStatus.Ok,
+            DriverHealthChecker.AfterFilterServiceState(DriverStatus.Ok, "030d", filterServiceRunning: true));
+    }
+
+    [Fact]
     public void Classify_0323_MissingAppleLowerFilters_IsNotNotBound_WhenNoKmdfPackage()
     {
         // Live PC: LowerFilters applewirelessmouse missing, HidBth function driver.
@@ -215,6 +235,100 @@ public class DriverHealthCheckerTests
         Assert.Equal("MagicMouseDriver", bound);
         Assert.Equal(DriverStatus.PatchedKmdf,
             DriverHealthChecker.Classify("0323", bound, appleFilterPackagePresent: false, kmdfPackagePresent: true));
+    }
+
+    [Fact]
+    public void PreferredBoundName_0323_SuffixedKmdfFilter_ReturnsVerbatimName()
+    {
+        // Live 2024 (PID 0323): LowerFilters=MagicMouseDriver204Scroll. The verbatim
+        // registry name must survive - callers query SCM with it.
+        var bound = DriverHealthChecker.PreferredBoundName(
+            "0323", "HidBth", ["MagicMouseDriver204Scroll"]);
+        Assert.Equal("MagicMouseDriver204Scroll", bound);
+        Assert.NotEqual(DriverPackageCatalog.PatchedKmdfServiceName, bound);
+    }
+
+    [Fact]
+    public void Classify_0323_SuffixedKmdfBound_IsPatchedKmdf()
+    {
+        Assert.Equal(DriverStatus.PatchedKmdf,
+            DriverHealthChecker.Classify("0323", "MagicMouseDriver204Scroll", appleFilterPackagePresent: false, kmdfPackagePresent: true));
+    }
+
+    [Fact]
+    public void AfterFilterServiceState_0323_SuffixedKmdfRunning_StaysPatchedKmdf()
+    {
+        // Healthy live case: MagicMouseDriver204Scroll is Running, so no downgrade.
+        var bound = DriverHealthChecker.MergeBoundLayers(
+            "0323", "HidBth", ["MagicMouseDriver204Scroll"], "mouhid", null);
+        Assert.Equal("MagicMouseDriver204Scroll", bound);
+        var status = DriverHealthChecker.Classify(
+            "0323", bound, appleFilterPackagePresent: false, kmdfPackagePresent: true);
+        Assert.Equal(DriverStatus.PatchedKmdf,
+            DriverHealthChecker.AfterFilterServiceState(status, "0323", filterServiceRunning: true));
+    }
+
+    [Fact]
+    public void BoundCandidates_0323_TwoKmdfFamilyFilters_ReturnsBothVerbatim()
+    {
+        // Live 2024 stack: LowerFilters names the stale MagicMouseDriver AND the
+        // working MagicMouseDriver204Scroll. Both are loaded by PnP, so both are
+        // candidates - in registry order, verbatim.
+        var cands = DriverHealthChecker.BoundCandidates(
+            "0323", "HidBth", ["MagicMouseDriver", "MagicMouseDriver204Scroll"]);
+        Assert.Equal(["MagicMouseDriver", "MagicMouseDriver204Scroll"], cands);
+    }
+
+    [Fact]
+    public void BoundCandidates_0323_KmdfServiceFirstThenApple_DeDuplicatesCaseInsensitively()
+    {
+        var cands = DriverHealthChecker.BoundCandidates(
+            "0323",
+            "MagicMouseDriver204Scroll",
+            ["magicmousedriver204scroll", "applewirelessmouse"]);
+        Assert.Equal(["MagicMouseDriver204Scroll", "applewirelessmouse"], cands);
+        Assert.Empty(DriverHealthChecker.BoundCandidates("0323", "HidBth", ["mouhid"]));
+        Assert.Empty(DriverHealthChecker.BoundCandidates("0323", "HidBth", null));
+    }
+
+    [Fact]
+    public void PickEffectiveBound_PrefersRunningCandidate_EvenWhenSecond()
+    {
+        // The exact live regression: the stale MagicMouseDriver (Stopped) comes first
+        // in LowerFilters, the Running MagicMouseDriver204Scroll second.
+        string[] cands = ["MagicMouseDriver", "MagicMouseDriver204Scroll"];
+        var picked = DriverHealthChecker.PickEffectiveBound(
+            cands, n => n == "MagicMouseDriver204Scroll");
+        Assert.Equal("MagicMouseDriver204Scroll", picked);
+    }
+
+    [Fact]
+    public void PickEffectiveBound_NoneRunning_ReturnsFirstCandidate()
+    {
+        // Nothing running: keep the stopped-but-bound diagnosis alive.
+        string[] cands = ["MagicMouseDriver", "MagicMouseDriver204Scroll"];
+        Assert.Equal("MagicMouseDriver",
+            DriverHealthChecker.PickEffectiveBound(cands, _ => false));
+        Assert.Null(DriverHealthChecker.PickEffectiveBound([], _ => true));
+    }
+
+    [Fact]
+    public void EffectiveBound_StaleFilterFirst_RunningVariantSecond_StaysPatchedKmdf()
+    {
+        // Live PC end-to-end over the pure helpers: bth Service=HidBth,
+        // LowerFilters=[MagicMouseDriver, MagicMouseDriver204Scroll], hid Service=mouhid,
+        // only the 204Scroll variant Running. Healthy mouse must read PatchedKmdf.
+        var merged = DriverHealthChecker.BoundCandidates(
+            "0323", "HidBth", ["MagicMouseDriver", "MagicMouseDriver204Scroll", "mouhid"]);
+        var bound = DriverHealthChecker.PickEffectiveBound(
+            merged, n => n == "MagicMouseDriver204Scroll");
+        Assert.Equal("MagicMouseDriver204Scroll", bound);
+
+        var status = DriverHealthChecker.Classify(
+            "0323", bound, appleFilterPackagePresent: false, kmdfPackagePresent: true);
+        Assert.Equal(DriverStatus.PatchedKmdf, status);
+        Assert.Equal(DriverStatus.PatchedKmdf,
+            DriverHealthChecker.AfterFilterServiceState(status, "0323", filterServiceRunning: true));
     }
 
 
