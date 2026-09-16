@@ -259,11 +259,13 @@
         <li><a href="v3.html">The 2024 mouse</a></li>
       </ul>
 
-      <h2 id="get">Install it in three steps</h2>
+      <h2 id="get">Install it in four steps</h2>
       <div class="how">
         <ol>
           <li>Pair your device in Windows Bluetooth settings.</li>
-          <li>Download <code>MagicMouseTray.exe</code> from GitHub and double-click it.</li>
+          <li>Download <code>MagicMouseTray.exe</code> from <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">GitHub</a>.</li>
+          <li>Verify the file by opening PowerShell, <code>cd</code> to your Downloads folder, then pasting <code>(Get-FileHash MagicMouseTray.exe).Hash</code> and comparing it to the SHA-256 checksum in the <code>SHA256SUMS</code> file on the release page.</li>
+          <li>Double-click <code>MagicMouseTray.exe</code>.</li>
           <li>Windows may warn you. Click More info, then Run anyway.</li>
         </ol>
       </div>

@@ -50,10 +50,11 @@
 - [Magic Tray: Apple mouse and keyboard battery on Windows 10 and 11](https://magictray.app/)
 - [How to see Apple Magic Mouse battery percent on Windows 10 and 11](https://magictray.app/battery.html): the app's main job, and how to read the percent
 - [Magic Keyboard battery on Windows 10 and 11: no driver swap needed](https://magictray.app/keyboard.html): standard Windows driver, plus the one-time SDP unlock
+- [Apple Magic Trackpad on Windows 10 and 11: battery percent, no gestures](https://magictray.app/trackpad.html): no driver needed for pointer, clicks or battery; gestures only from a third-party driver
 - [Which Apple Magic Mouse, keyboard or trackpad do I have?](https://magictray.app/devices.html): sole owner of device identification
 - [Windows 10 and 11 drivers for Apple Magic Mouse scrolling](https://magictray.app/drivers.html): sole owner of the install steps
-- [Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11](https://magictray.app/v3.html)
-- [Help pay for a signed Windows driver](https://magictray.app/funding.html): free ways to help first, plus the call for testers
+- [Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11](https://magictray.app/magic-mouse-2024.html)
+- [How to help Magic Tray: test a device, or star the repo](https://magictray.app/funding.html): free ways to help first; nothing to pay into yet, and a test report is worth more than money
 
 ## Catalog (source of truth)
 
@@ -79,5 +80,5 @@
 
 ## Optional
 
-- [MU free-parity design](https://github.com/LesleyMurfin/magic-tray/blob/main/docs/DESIGN-mu-free-parity.md): What is in vs out vs Magic Utilities
+- [MU free-parity design](https://github.com/LesleyMurfin/magic-tray/blob/main/design/DESIGN-mu-free-parity.md): What is in vs out vs Magic Utilities
 - [License](https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE): MIT, Copyright 2026 Lesley Murfin

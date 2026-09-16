@@ -3,7 +3,9 @@ name: release
 # Build, test, publish, optionally Authenticode-sign, then package the portable
 # MagicTray-<tag>-win-x64.zip (exe + scripts/ + README.txt + SHA256SUMS) and
 # attach it first on a v* tag. The loose exe and scripts stay attached too,
-# because links already in the wild point at them.
+# because links already in the wild point at them. A SHA256SUMS covering every
+# uploaded asset goes up with them, and the notes quote the exe's digest and
+# byte length so nobody needs a second download to check the first.
 on:
   push:
     tags:
@@ -84,13 +86,32 @@ jobs:
         env:
           ZIP_NAME: ${{ steps.package.outputs.zip_name }}
           ZIP_SHA256: ${{ steps.package.outputs.zip_sha256 }}
+          ZIP_BYTES: ${{ steps.package.outputs.zip_bytes }}
+          EXE_SHA256: ${{ steps.package.outputs.exe_sha256 }}
+          EXE_BYTES: ${{ steps.package.outputs.exe_bytes }}
         run: |
+          # N0 against the invariant culture: the byte counts read the same
+          # whatever locale the runner image happens to carry.
+          $inv = [Globalization.CultureInfo]::InvariantCulture
+          $exeSize = ([long]$env:EXE_BYTES).ToString('N0', $inv)
+          $zipSize = ([long]$env:ZIP_BYTES).ToString('N0', $inv)
+          # Backticks are PowerShell's escape character, so every line carrying
+          # markdown code spans is a single-quoted template filled with -f.
           $lines = @(
             "**Recommended download: $env:ZIP_NAME** — unzip the whole folder, then run MagicMouseTray.exe.",
             '',
             'Take the zip rather than the bare exe: it includes the scripts folder that the keyboard battery unlock ("Fix battery reads") and the Diagnostics menu read from, and the exe on its own cannot find them.',
             '',
-            "SHA256 of the zip: $env:ZIP_SHA256"
+            '### Check what you downloaded',
+            '',
+            'You do not have to do this. Open PowerShell in the folder you downloaded to, run `Get-FileHash` on the file, and compare it with the line below. `Get-FileHash` uses SHA-256 by default and prints it in capitals, so it matches ignoring case.',
+            '',
+            '| Asset | Bytes | SHA-256 |',
+            '| --- | --- | --- |',
+            ('| `MagicMouseTray.exe` | {0} | `{1}` |' -f $exeSize, $env:EXE_SHA256),
+            ('| `{0}` | {1} | `{2}` |' -f $env:ZIP_NAME, $zipSize, $env:ZIP_SHA256),
+            '',
+            ('`SHA256SUMS` below lists every other file attached here (it cannot list itself) in the usual `<hash>  <filename>` form, so `sha256sum -c SHA256SUMS` checks the lot at once.')
           )
           [IO.File]::WriteAllLines("$env:RUNNER_TEMP/release-notes.md", [string[]]$lines)
 
@@ -101,4 +122,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ZIP_PATH: ${{ steps.package.outputs.zip }}
-        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/SHA256SUMS" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes
+          SUMS_PATH: ${{ steps.package.outputs.sums }}
+        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes

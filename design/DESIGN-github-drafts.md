@@ -81,7 +81,7 @@ Else empty. Do not hint on `Ok` / `PatchedKmdf`.
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-github-drafts.md` | This design. |
+| `design/DESIGN-github-drafts.md` | This design. |
 | `specs/github-drafts.md` | SSSF for BUILD after approve. |
 | `MagicMouseTray/BugReport.cs` | Redact, collect, markdown, title, hint, URL. No WinForms. No HTTP. |
 | `MagicMouseTray/TrayApp.cs` (`TrayMenu` + `OpenGitHubDraft`) | Labels, confirm copy, clipboard, `OpenHelpUrl`. |

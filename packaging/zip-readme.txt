@@ -67,8 +67,9 @@ this in:
 Compare what you get with the line for MagicMouseTray.exe in
 SHA256SUMS. They should match, ignoring capital letters.
 
-The release page also lists a fingerprint for the zip file itself, so
-you can check the download before you even unzip it.
+The release page lists a fingerprint for the zip file itself and one for
+MagicMouseTray.exe, so you can check either download before you even
+unzip it.
 
 
 NEED A HAND?

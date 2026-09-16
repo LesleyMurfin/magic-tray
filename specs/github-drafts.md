@@ -1,6 +1,6 @@
 # Spec — Help → GitHub issue drafts
 
-Status: Implemented. Built and reviewed on `feat/report-bug-snapshot` (PR #102). `docs/DESIGN-github-drafts.md` remains the contract; this spec records the shipped surface.
+Status: Implemented. Built and reviewed on `feat/report-bug-snapshot` (PR #102). `design/DESIGN-github-drafts.md` remains the contract; this spec records the shipped surface.
 
 ## Current State
 
@@ -36,7 +36,7 @@ Do not edit README, CONTRIBUTING, ISSUE_TEMPLATE, pairing/driver code, or Diagno
 
 ## Step-by-Step
 
-1. Stop until `docs/DESIGN-github-drafts.md` is approved. Then that file wins over this branch’s C#.
+1. Stop until `design/DESIGN-github-drafts.md` is approved. Then that file wins over this branch’s C#.
 2. Keep `BugReport` a pure helper. No `HttpClient`, no GitHub token, no OpenAI/Riley package, no `issues` POST.
 3. Bug path: `Collect(_health, _deviceBatteries)` + `ReadLogTail(Logger.LogPath, 40)` + `FormatMarkdown` + `IssueTitle` + `IssueUrl(..., "bug")`.
 4. Feature path: `FormatFeatureMarkdown` + `FeatureTitle` + `IssueUrl(..., "enhancement")`. No log tail, no device table.

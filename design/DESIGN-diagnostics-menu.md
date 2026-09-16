@@ -58,7 +58,7 @@ Launch: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<path>"`, `Use
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-diagnostics-menu.md` | This design. |
+| `design/DESIGN-diagnostics-menu.md` | This design. |
 | `MagicMouseTray/DiagnosticScripts.cs` | Names, labels, `Find`, snapshot-or-devmgr, `powershell -File` start info. No WinForms. No dump text. |
 | `MagicMouseTray/TrayApp.cs` (`BuildMenu` Diagnostics) | Keep Test notification, Open logs, Open diagnostics folder. Add allowlisted items when `Find` returns a path. |
 | `MagicMouseTray.Tests/DiagnosticScriptsTests.cs` | Fake tree: finds `capture-state.ps1`; root `diagnose-driver.ps1`; snapshot preferred; does not invent a dump format. |

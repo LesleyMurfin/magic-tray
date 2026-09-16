@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5
 # Gate a Magic Tray publish folder and the portable ZIP: required artifacts,
-# metadata, ZIP layout, and SHA256SUMS.
+# metadata, ZIP layout, and both SHA256SUMS files (in-archive and published).
 # Exit 0 on pass, 1 on any failure. Does not call gh or create a release.
 param(
   [Parameter(Mandatory)][string]$PublishDir,
@@ -8,6 +8,9 @@ param(
   # Portable ZIP to gate. Empty: auto-discover dist/MagicTray-*-win-x64.zip.
   # A path that does not exist is a failure, never a skip.
   [string]$ZipPath = '',
+  # Published SHA256SUMS listing every uploaded asset. Empty: the SHA256SUMS
+  # beside the resolved ZIP. Absent is a failure, never a skip.
+  [string]$SumsPath = '',
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 )
 
@@ -221,22 +224,7 @@ try {
     Write-Check -Ok $false -Name 'kbd-patch-cachedservices.ps1' -Detail 'file missing'
   }
 
-  # 7. SHA256 of the three ship files (not the sums file).
-  if ($missing.Count -eq 0) {
-    $lines = foreach ($name in $shipNames) {
-      $hash = (Get-FileHash -LiteralPath (Join-Path $PublishDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-      '{0}  {1}' -f $hash, $name
-    }
-    $sumsPath = Join-Path $PublishDir 'SHA256SUMS'
-    $ascii = [Text.Encoding]::ASCII
-    [IO.File]::WriteAllLines($sumsPath, [string[]]$lines, $ascii)
-    $wrote = (Test-Path -LiteralPath $sumsPath -PathType Leaf) -and ((Get-Item -LiteralPath $sumsPath).Length -gt 0)
-    Write-Check -Ok $wrote -Name 'SHA256SUMS' -Detail $sumsPath
-  } else {
-    Write-Check -Ok $false -Name 'SHA256SUMS' -Detail 'ship files missing'
-  }
-
-  # 8. Portable ZIP: it exists, its tree matches the layout contract exactly,
+  # 7. Portable ZIP: it exists, its tree matches the layout contract exactly,
   # every payload file is non-empty, nothing stray rode along (.pdb, a nested
   # second exe), its SHA256SUMS verifies against real entry bytes, and the
   # packaged exe is byte-identical to the one in publish (so a signed exe was
@@ -383,7 +371,7 @@ try {
       $archive.Dispose()
     }
 
-    # 9. Published checksum for the download itself.
+    # 8. Published checksum for the download itself.
     $sidecar = "$zip.sha256"
     if (Test-Path -LiteralPath $sidecar -PathType Leaf) {
       $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -406,6 +394,74 @@ try {
     } else {
       Write-Check -Ok $false -Name 'zip sha256 sidecar' -Detail "not found $sidecar"
     }
+  }
+
+  # 9. The published SHA256SUMS asset: it exists, names every uploaded asset
+  # with a bare filename, and every digest matches bytes recomputed here. This
+  # is the file a visitor is told to compare their own Get-FileHash output
+  # against, so a missing or stale one fails the release instead of shipping
+  # quietly. Nothing in this script writes it — package-release.ps1 does.
+  $sums = [string]$SumsPath
+  if ([string]::IsNullOrWhiteSpace($sums)) {
+    $sumsDir = if ($zipOk) { Split-Path -Parent $zip } else { Join-Path $RepoRoot 'dist' }
+    $sums = Join-Path $sumsDir 'SHA256SUMS'
+  }
+  if (-not (Test-Path -LiteralPath $sums -PathType Leaf)) {
+    Write-Check -Ok $false -Name 'published SHA256SUMS' -Detail "not found $sums"
+  } else {
+    # Strict on purpose: this is our own generator's output and it is the
+    # published format contract. Lower-case hex, exactly two spaces, no
+    # directory part, because the reader runs Get-FileHash on a bare download.
+    $declaredAssets = [ordered]@{}
+    $assetReasons = @()
+    foreach ($line in (Get-Content -LiteralPath $sums)) {
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      $m = [regex]::Match($line, '^([0-9a-f]{64})  ([^\\/]+)$')
+      if (-not $m.Success) {
+        $assetReasons += "unparsable line '$($line.Trim())' (expect '<64 lower-case hex>  <bare filename>')"
+        continue
+      }
+      if ($declaredAssets.Contains($m.Groups[2].Value)) {
+        $assetReasons += "duplicate asset '$($m.Groups[2].Value)' in SHA256SUMS"
+        continue
+      }
+      $declaredAssets[$m.Groups[2].Value] = $m.Groups[1].Value
+    }
+    $expectedAssets = @($shipNames)
+    if ($zipOk) {
+      $expectedAssets += $zipFile
+      $expectedAssets += "$zipFile.sha256"
+    }
+    foreach ($name in $expectedAssets) {
+      if (-not $declaredAssets.Contains($name)) {
+        $assetReasons += "$name not listed in SHA256SUMS"
+        continue
+      }
+      $assetPath = if ($zipOk -and $name -eq $zipFile) {
+        $zip
+      } elseif ($zipOk -and $name -eq "$zipFile.sha256") {
+        "$zip.sha256"
+      } else {
+        Join-Path $PublishDir $name
+      }
+      if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+        $assetReasons += "$name listed in SHA256SUMS but not on disk at $assetPath"
+        continue
+      }
+      $realHash = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($realHash -ne $declaredAssets[$name]) {
+        $assetReasons += "$name hash mismatch (SHA256SUMS $($declaredAssets[$name]), actual $realHash)"
+      }
+    }
+    foreach ($name in @($declaredAssets.Keys)) {
+      if ($expectedAssets -notcontains $name) {
+        $assetReasons += "$name listed in SHA256SUMS but is not an uploaded asset"
+      }
+    }
+    Write-Check -Ok ($assetReasons.Count -eq 0) -Name 'published SHA256SUMS' -Detail $(
+      if ($assetReasons.Count -gt 0) { $assetReasons -join '; ' }
+      else { "$sums, $($expectedAssets.Count) assets verified" }
+    )
   }
 } catch {
   Write-Host "FAIL  unexpected: $_"

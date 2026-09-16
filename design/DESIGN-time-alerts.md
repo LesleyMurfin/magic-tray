@@ -71,7 +71,7 @@ Diagnostics **Test notification** (`PreviewToast`) may still use percent copy. T
 
 | File | Role |
 | --- | --- |
-| `docs/DESIGN-time-alerts.md` | This design. |
+| `design/DESIGN-time-alerts.md` | This design. |
 | `MagicMouseTray/BatteryAlertPolicy.cs` | Pure `Evaluate`. No WinForms. |
 | `MagicMouseTray.Tests/BatteryAlertPolicyTests.cs` | Observable contracts below. |
 | `MagicMouseTray/TrayApp.cs` | Pass `threshold` into `RearmFired`. No `if (pct > threshold) return`. Global **Low battery threshold** and per-device **Low battery alert** offer 10/5/1 going down (`Config.ThresholdChoices`), with observed time in the label. |

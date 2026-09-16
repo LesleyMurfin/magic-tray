@@ -79,6 +79,58 @@ Once HTTPS is enforced on GitHub the proxy may be switched back on, with SSL/TLS
 7. Tick **Enforce HTTPS** once it becomes available.
 8. `gh repo edit LesleyMurfin/magic-tray --homepage https://magictray.app`
 
+## Page URLs
+
+File names are the one piece of page text that shows up in a result snippet, in a shared link, and
+in the citation line of an AI answer. `v3.html` said nothing to any of them: "v3" is our internal
+word for the 2024 USB-C mouse, it matches no query anyone types, and it reads like a version of the
+app rather than a model of mouse. That page is now **`magic-mouse-2024.html`**, which carries the
+two words people actually search with.
+
+Every other page already names its subject in one word (`battery`, `keyboard`, `drivers`,
+`devices`, `funding`), so they keep their URLs. A rename costs whatever ranking history the old
+URL had earned; it is only worth paying where the old name was meaningless.
+
+`docs/v3.html` still exists as a **redirect stub**: a zero-second `<meta http-equiv="refresh">`, a
+`<link rel="canonical">` at the new URL, a `location.replace` that preserves the `#fragment`, and a
+visible link for anyone whose browser does neither. GitHub Pages serves static files and cannot
+issue a real `301`, so this is the strongest available signal; Google treats an instant meta
+refresh as a permanent redirect, which is why the delay is `0` and not `1`. The visible fallback
+text does not weaken that. Keep the stub. Old Reddit and GitHub comments link the old URL and
+will not be edited.
+
+The stub is deliberately **not** in `sitemap.xml`. A sitemap is a list of URLs you want indexed,
+and this one exists only to hand visitors and crawlers on to the new URL. Note for whoever lands
+`scripts/check-site.ps1` (branch `ci/full-actions-suite`): its `Test-Sitemap` rule errors on any
+`docs/*.html` missing from the sitemap, so it needs an explicit exception for both pages that are
+deliberately absent — this redirect stub and `docs/404.html` — or it will fail them on
+purpose-built behaviour.
+
+### Why not drivers.magictray.app
+
+A `drivers.` subdomain with `/mouse`, `/keyboard`, `/trackpad` under it was considered and
+rejected, on two counts:
+
+1. **It splits the site in two.** Google evaluates a subdomain as its own host. The trust that
+   `magictray.app` has accumulated does not transfer in full, and a brand-new host starts cold —
+   for a site this small, that is the whole budget. Subdirectories on one host keep it pooled.
+2. **GitHub Pages allows one custom domain per site.** `docs/CNAME` holds exactly one hostname, so
+   a second host means a second repository, a second Pages deployment, a second certificate, a
+   second Search Console property, and a second sitemap — for the same handful of pages.
+
+A third count used to stand here: that a `/trackpad` route would be a page with nothing on it. That
+is no longer true, and the correction is worth recording. `vitoplantamura/MagicTrackpad2ForWindows`
+is a Precision Touchpad driver for the Magic Trackpad 2 on Windows 11, GPL-2.0, **signed by
+Microsoft** — so it needs no Test Mode, unlike the 2024 mouse route — with its `v2.0` release published in February 2026. Together with the "does my trackpad do gestures
+on Windows" demand, that is real content, so `docs/trackpad.html` exists on **this** host. It is not
+ours and we have not tested it: the page names it, states what it targets, and links its repo
+rather than repeating its steps.
+
+The lesson is the one that rejected the subdomain in the first place. A route earns a URL when
+there is something true to put on it, not when it completes a pattern. If the driver content ever
+outgrows one page, the move is `magictray.app/drivers/mouse-2024.html` style paths on this host —
+same authority, same deployment, real content per path.
+
 ## Search Console
 
 The old project-path property on the shared `github.io` subdomain does not carry over; a new
@@ -89,8 +141,10 @@ the search history and the verification do not follow.
    This is possible now that the domain is ours — on `github.io` it was not, because GitHub Pages
    cannot serve a DNS TXT record, and only the HTML-file method worked.
 2. Submit `sitemap.xml`.
-3. URL Inspection → **Request indexing** for `/`, `/drivers.html`, `/v3.html`. Editing files does not
-   force a recrawl; Google keeps serving the stale description until it re-reads the pages.
+3. URL Inspection → **Request indexing** for `/`, `/drivers.html` and `/magic-mouse-2024.html`.
+   Editing files does not force a recrawl; Google keeps serving the stale description until it
+   re-reads the pages. Submit `/v3.html` as well — not because it should be indexed, but because
+   the meta refresh only counts once Googlebot re-fetches the old URL and sees it.
 4. Repeat in Bing Webmaster Tools. Bing feeds several AI answer engines.
 
 ## What is already done in the repo
@@ -100,19 +154,43 @@ the search history and the verification do not follow.
   physical desk tray.
 - `docs/drivers.html` — `HowTo` for reading the hardware id, so "how do I tell which Magic Mouse I
   have" can be answered directly from the site.
-- `docs/v3.html` — `FAQPage` for "is the 2024 mouse the same as Magic Mouse 2" and the sleep/scroll
-  question.
-- `docs/sitemap.xml` — site URLs only. A sitemap must not point at another host.
-- `docs/robots.txt` — internal `DESIGN-*.md` and `STRIPE-SETUP.md` are no longer crawlable. They
-  contradict shipped behaviour and were competing with the real docs.
+- `docs/magic-mouse-2024.html` — `FAQPage` for "is the 2024 mouse the same as Magic Mouse 2" and
+  the sleep/scroll question.
+- `docs/sitemap.xml` — site URLs only. A sitemap must not point at another host. It also no longer
+  lists `TESTED.md` and `ALERTS.md`: Pages serves raw Markdown as plain text, with no title, no
+  description and no structured data, so those entries could only ever produce a bad result. Both
+  files still exist and are still linked from the pages. Every `lastmod` is the rename date, so the
+  pages that link the new URL are all re-fetched.
+- `design/` — the internal `DESIGN-*.md` files and `STRIPE-SETUP.md` used to sit in `docs/`, which
+  publishes them. `robots.txt` disallowed them, but that is a crawl request and not access
+  control: anyone could still fetch them, and they contradict shipped behaviour. All thirteen now
+  live in a top-level `design/` directory that Pages does not serve, so the `Disallow:` lines are
+  gone with them.
 - `README.md` — the website is linked in the first three lines with descriptive anchor text.
 - `docs/robots.txt` — explicit `Allow: /` stanzas for 19 AI and answer-engine crawlers (GPTBot,
-  ClaudeBot, PerplexityBot, Applebot, CCBot, and the rest). Each stanza repeats the two `Disallow:`
-  lines, because a matched user-agent group replaces the wildcard group instead of adding to it.
-- Every page — a `WebPage` plus `BreadcrumbList`, and an `ItemList` of PID → driver path on
-  `docs/drivers.html`, all referencing the `#app` and `#site` ids declared on the homepage.
-- Outbound links — keyword-bearing anchors from the homepage, `v3.html`, `drivers.html`, and
-  `devices.html` to the Magic Mouse v3 driver site, which is the other half of this entity.
+  ClaudeBot, PerplexityBot, Applebot, CCBot, and the rest) plus the wildcard. The stanzas are
+  deliberately identical rather than collapsed into one, because a matched user-agent group
+  replaces the wildcard group instead of adding to it: a crawler that matches its own name would
+  otherwise read no rules at all.
+- `docs/404.html` — GitHub Pages serves this for any unknown path, so a mistyped or truncated
+  inbound link lands on a real page that routes to the five main destinations instead of GitHub's
+  generic one. Every path on it is root-relative, because a 404 is served at arbitrary depth. It
+  carries `noindex`, has no `canonical`, and is not in `sitemap.xml`.
+- Every page — a `WebPage` plus a `BreadcrumbList`, both referencing the `#app` and `#site` ids
+  declared on the homepage. This list used to claim an `ItemList` of PID → driver path on
+  `docs/drivers.html`; there has never been one. If it is worth adding, `drivers.html` is where the
+  PID table already lives.
+- Photographs — every device photo is WebP, resized to twice its rendered width. The set went from
+  2,850,283 bytes of JPEG to 844,479, and `devices.html` from 2.17 MB to 553 KB. WebP has no
+  fallback here on purpose: every browser the site targets reads it, and a `<picture>` element
+  would double the files to maintain. Licensing is unaffected — resizing and re-encoding were
+  already being done, and `THIRD-PARTY-NOTICES.md` carries every author, licence and source.
+- Icons — `docs/icon.svg` plus a 180px `apple-touch-icon.png`. The favicon used to be
+  `screenshot-tray.png`, a 353×201 screenshot of the Windows tray flyout. Google only shows a site
+  icon in results if it is square, so the site was showing the generic globe.
+- Outbound links — keyword-bearing anchors from the homepage, `magic-mouse-2024.html`,
+  `drivers.html`, and `devices.html` to the Magic Mouse v3 driver site, which is the other half of
+  this entity.
 
 Validate after any edit:
 <https://search.google.com/test/rich-results?url=https%3A%2F%2Fmagictray.app%2F>
@@ -122,7 +200,7 @@ Validate after any edit:
 The identification cards on `docs/drivers.html` and `docs/devices.html`, and the model cards on
 `docs/index.html`, used to be CSS-drawn grey rectangles labelled BOTTOM, which told a reader
 nothing. They are now **real photographs of the actual hardware**, shipped under `docs/img/`
-(ten files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. All but one come from
+(ten files) plus the pre-existing `docs/magic-mouse-v2-lightning.webp`. All but one come from
 Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0; the exception is the 2024 Magic Mouse
 underside, which is an Apple product image and is not freely licensed.
 

@@ -22,6 +22,7 @@
   <meta name="twitter:description" content="No new driver and no Apple software. One unlock from the Magic Tray menu turns the battery percent on.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
   <link rel="icon" href="screenshot-tray.png">
+
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
@@ -216,7 +217,8 @@
         <a href="devices.html">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
         <a href="keyboard.html" aria-current="page">Keyboard battery</a>
-        <a href="v3.html">The 2024 mouse</a>
+        <a href="trackpad.html">Trackpad</a>
+        <a href="magic-mouse-2024.html">The 2024 mouse</a>
         <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
@@ -224,7 +226,7 @@
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <h1>Magic Keyboard battery on Windows 10 and 11</h1>
 
       <p class="lead">Your Magic Keyboard needs no new driver, the software Windows uses to talk to your keyboard. You run one unlock instead.</p>
@@ -257,10 +259,11 @@
 
       <h2 id="test">Can you help test a Magic Keyboard?</h2>
 
-      <p>One keyboard has been confirmed by a tester: the Apple Wireless Keyboard from 2011. Every other keyboard below should work, but nobody has confirmed it yet.</p>
+      <p>One keyboard has been tested by the author: the Apple Wireless Keyboard from 2011. Every other keyboard below should work, but nobody has confirmed it yet.</p>
 
-      <div class="table-scroll" tabindex="0">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Magic Keyboards and their test status, scrollable table">
       <table>
+        <caption>Each Magic Keyboard, the device code Windows shows for it, and whether anyone has tested it yet</caption>
         <thead>
           <tr><th>Keyboard</th><th>Device code</th><th>Status</th></tr>
         </thead>
@@ -279,6 +282,7 @@
           <source srcset="img/magic-keyboard-touchid-top.webp" type="image/webp">
           <img src="img/magic-keyboard-touchid-top.jpg" width="1600" height="840" loading="lazy" decoding="async" alt="The top of a compact Magic Keyboard, Swiss layout. Right of F12 sits a plain round key with no symbol printed on it.">
         </picture>
+
       </figure>
       <p class="credit">Photo via Wikimedia Commons: Dbirdz, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
 
@@ -303,7 +307,7 @@
         <dt>Why doesn't my Magic Keyboard battery percent show up?</dt>
         <dd>Your keyboard does send its battery level. It labels that reading in a way Windows won't answer for, so the number never reaches the tray. We asked it 6,859 times in a row and got nothing back. The unlock relabels it once.</dd>
         <dt>Do I need that Windows startup setting the 2024 mouse uses?</dt>
-        <dd>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="v3.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</dd>
+        <dd>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="magic-mouse-2024.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</dd>
         <dt>Does the unlock survive re-pairing the keyboard?</dt>
         <dd>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</dd>
       </dl>
@@ -314,7 +318,7 @@
         <p>The patch relabels <code>0x47</code> as a Feature report in the BTHPORT <code>CachedServices</code> SDP cache, and re-pairing rebuilds that cache.</p>
         <p>Source: <code>MagicMouseTray/KeyboardBatteryDevice.cs</code> and <code>scripts/kbd-patch-cachedservices.ps1</code>.</p>
       </details>
-    </article>
+    </main>
 
     <aside class="rail">
       <div class="rail-card">
@@ -326,22 +330,46 @@
       </div>
       <div class="rail-card">
         <h2>Next</h2>
-        <p><a href="battery.html#read">Read any battery in the tray</a></p>
-        <p><a href="devices.html#identify">Which device do I have?</a></p>
-        <p><a href="drivers.html#v1v2">Make an older mouse scroll</a></p>
-        <p><a href="funding.html">Support the project</a></p>
+        <nav class="jump" aria-label="Next">
+          <a href="battery.html#read">Read any battery in the tray</a>
+          <a href="devices.html#identify">Which device do I have?</a>
+          <a href="drivers.html#v1v2">Make an older mouse scroll</a>
+          <a href="funding.html">Support the project</a>
+        </nav>
       </div>
     </aside>
   </div>
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html">Which device?</a>
+          ·
+          <a href="drivers.html">Make it scroll</a>
+          ·
+          <a href="keyboard.html" aria-current="page">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="funding.html">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Magic Tray is Windows software, not a desk stand.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
       <p>
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
         <a href="tested.html">Hardware reports</a>
+
         ·
         <a href="llms.txt">llms.txt</a>
       </p>
