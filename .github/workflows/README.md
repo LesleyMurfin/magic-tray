@@ -2,10 +2,9 @@
 
 Every check that runs on this repository, what it protects, and how to run it
 yourself before pushing. Nine workflow files; the first nine rows below are the
-checks that gate a pull request, and each runs on its own trigger - several are
-path-filtered, so a given PR sees only the subset its changes touch. All of them
-run on GitHub-hosted runners; none needs a self-hosted runner, and only the two
-release-side workflows need a secret.
+checks that gate a pull request, and every one of them runs on every pull
+request. All of them run on GitHub-hosted runners; none needs a self-hosted
+runner, and only the two release-side workflows need a secret.
 
 `main` is protected by a ruleset: no direct pushes, no force pushes, and all
 nine checks below must pass on a pull request before it can merge. There are no
