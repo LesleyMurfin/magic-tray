@@ -38,6 +38,19 @@ public class AdaptivePollerTests : IDisposable
         Assert.False(AdaptivePoller.DeviceSetChanged(names, ["Magic Mouse v1", "Magic Keyboard"]));
     }
 
+    // Discovery now yields one name per INTERFACE, so WaitForNextCycle compares a list
+    // holding a mouse's name three times against the name-keyed _lastSeen. Only a
+    // set comparison survives that; a count or sequence comparison would report a
+    // device-set change on every 15 s probe and turn a 24 h battery interval into a
+    // permanent 15 s HID poll.
+    [Fact]
+    public void DeviceSetChanged_FalseWhenOneDeviceRepeatsItsName()
+    {
+        Assert.False(AdaptivePoller.DeviceSetChanged(
+            ["Magic Mouse 2024"],
+            ["Magic Mouse 2024", "Magic Mouse 2024", "Magic Mouse 2024"]));
+    }
+
     [Fact]
     public void DeviceSetChanged_TrueWhenNameDisappears()
     {
@@ -112,7 +125,7 @@ public class AdaptivePollerTests : IDisposable
         var later = new CountingDevice(77);
 
         int best = AdaptivePoller.BestReading(
-            [unreadable, real, later], TimeSpan.FromSeconds(1));
+            [unreadable, real, later], TimeSpan.FromSeconds(30));
 
         Assert.Equal(42, best);
         Assert.Equal(1, unreadable.Reads);
@@ -128,12 +141,18 @@ public class AdaptivePollerTests : IDisposable
         var alsoNotFound = new CountingDevice(-1);
 
         int best = AdaptivePoller.BestReading(
-            [notFound, present, alsoNotFound], TimeSpan.FromSeconds(1));
+            [notFound, present, alsoNotFound], TimeSpan.FromSeconds(30));
 
         Assert.Equal(-2, best);
         Assert.Equal(1, notFound.Reads);
         Assert.Equal(1, present.Reads);
         Assert.Equal(1, alsoNotFound.Reads);
+
+        // Nothing present at all stays -1, which is what PollLoop counts three of before
+        // it mints -3. Seeding best at -2 would pass every assertion above and silently
+        // retire the -3 escalation for every device.
+        Assert.Equal(-1, AdaptivePoller.BestReading(
+            [new CountingDevice(-1), new CountingDevice(-1)], TimeSpan.FromSeconds(30)));
     }
 
     // A real 0 is an answer, not a failure, so it ends the group like any other
@@ -148,7 +167,7 @@ public class AdaptivePollerTests : IDisposable
         var notFound = new CountingDevice(-1);
 
         int best = AdaptivePoller.BestReading(
-            [present, zero, notFound], TimeSpan.FromSeconds(1));
+            [present, zero, notFound], TimeSpan.FromSeconds(30));
 
         Assert.Equal(0, best);
         Assert.Equal(1, present.Reads);
