@@ -54,6 +54,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # pwsh is preinstalled on the ubuntu-latest image; the checker is
       # PowerShell 7 and cross-platform on purpose so it can run here rather
@@ -69,10 +71,26 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      # PyYAML is preinstalled with python3 on the ubuntu-latest image, so this
-      # needs no install step and no third-party action. Every failure is a
-      # GitHub annotation on the offending key, and the job exits non-zero.
+      # PyYAML is NOT on the ubuntu-latest (24.04) runner image - only
+      # libyaml-dev is - and the system interpreter is PEP 668 externally
+      # managed, so `pip install` into it is refused. A throwaway venv gets a
+      # pinned PyYAML with no third-party action and no image assumptions;
+      # prepending its bin to PATH makes the `python3` below resolve to it.
+      - name: Install PyYAML 6.0.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/yamlenv"
+          "${RUNNER_TEMP}/yamlenv/bin/python" -m pip install \
+            --disable-pip-version-check --quiet 'PyYAML==6.0.3'
+          echo "${RUNNER_TEMP}/yamlenv/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/yamlenv/bin/python" -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      # Every failure is a GitHub annotation on the offending key, and the job
+      # exits non-zero.
       - name: Validate the manifest set
         shell: bash
         run: |

@@ -75,10 +75,12 @@ Get-FileHash .\MagicTray-v1.1.0-win-x64.zip -Algorithm SHA256
 
 Compare it with the `.sha256` sidecar. Authenticode signing is wired into the release workflow
 and runs when the signing certificate secrets are present; it is not guaranteed for every
-release, and v1.1.0 shipped unsigned. When a build *is* signed, check the signature too:
+release, and v1.1.0 shipped unsigned. The signature lives on the exe inside the archive, not on
+the ZIP, so extract it first and check the extracted `MagicMouseTray.exe`:
 
 ```powershell
-Get-AuthenticodeSignature .\MagicMouseTray.exe | Format-List Status, SignerCertificate
+Expand-Archive .\MagicTray-v1.1.0-win-x64.zip -DestinationPath .\MagicTray-v1.1.0
+Get-AuthenticodeSignature .\MagicTray-v1.1.0\MagicMouseTray.exe | Format-List Status, SignerCertificate
 ```
 
 A hash that does not match the sidecar, or a signature from a name other than the maintainer's,

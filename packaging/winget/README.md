@@ -1,10 +1,9 @@
 # Submitting Magic Tray to winget
 
-Notes for a maintainer. This folder holds the Windows Package Manager manifest
-for Magic Tray and the one workflow template that can open the submission pull
-request. Nothing here is wired into the release build; a winget submission is a
-pull request against a repository we do not own, and a person on the other side
-reads it.
+Notes for a maintainer. This folder holds the Windows Package Manager manifests
+for Magic Tray and these maintainer notes - nothing else. Nothing here is wired
+into the release build; a winget submission is a pull request against a
+repository we do not own, and a person on the other side reads it.
 
 ## What is in here
 
@@ -17,7 +16,8 @@ packaging/winget/
     LesleyMurfin.MagicTray.locale.en-US.yaml  default locale manifest
 ```
 
-The submission workflow itself now lives at
+There is no workflow in this folder: it holds the manifests and these
+maintainer notes, nothing else. The submission workflow lives at
 `.github/workflows/winget-submit.yml`, because GitHub only runs workflows from
 that folder. It is still `workflow_dispatch` only and still defaults to a dry
 run; see "Fork and PR flow" below.
@@ -217,9 +217,15 @@ needs the `WINGET_CREATE_GITHUB_TOKEN` secret, which this repository does not
 currently have, so until it is added every run must keep dry_run enabled - the
 workflow's first step fails fast otherwise. Its header documents the scope.
 
-The offline half of manifest checking - all three files parse, the keys are
-present, and the version agrees with the folder, the csproj and the site - runs
-on every pull request in `.github/workflows/packaging.yml`.
+The offline half of manifest checking runs on every pull request that touches
+packaging (see `.github/workflows/packaging.yml` for the path filter): all three
+files parse, the required keys are present, and the version agrees with the
+folder it sits in. `scripts/check-version-sync.ps1` then holds the published
+metadata - these manifests, the installer URL and the version strings on
+magictray.app - to the LATEST RELEASED version, while allowing the csproj
+`<Version>` to run ahead of it. Ahead is the normal "next version in
+development" state; behind the released version is an error, because a release
+must never be cut from a tree with a stale version.
 
 ## It cannot be fully automated
 

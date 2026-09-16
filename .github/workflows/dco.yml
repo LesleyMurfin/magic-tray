@@ -3,6 +3,11 @@ name: DCO
 # CONTRIBUTING.md requires every contribution to be signed off
 # (https://developercertificate.org). This enforces it on pull requests.
 #
+# A sign-off only counts as a real Git trailer: it must appear in the commit
+# message's final trailer block, and that block must contain nothing but
+# trailers. A "Signed-off-by:" line buried in the middle of the body, with more
+# prose after it, is rejected - that is text, not a trailer.
+#
 # Merge commits are skipped (they are generated, not authored), and so are
 # dependabot[bot] / github-actions[bot] commits, which are unsigned by design
 # and would otherwise permanently block automated dependency PRs.
@@ -33,45 +38,79 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Commit subjects and author names are untrusted input: they only ever
+          work="${RUNNER_TEMP}/dco"
+          rm -rf "${work}"
+          mkdir -p "${work}"
+
+          # Commit messages and author names are untrusted input: they only ever
           # travel through files, env vars and jq - never through the command line.
           gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/commits" \
-            > "${RUNNER_TEMP}/commits.json"
+            > "${work}/commits.json"
 
-          jq '
+          # One line per commit that has to be checked: the sha (hex, safe) and
+          # the base64 of the whole message, so a message containing newlines or
+          # shell metacharacters cannot break the loop below.
+          jq -r '
             def is_merge: (.parents | length) > 1;
             def is_bot: (.author.login // "") as $login
               | $login == "dependabot[bot]" or $login == "github-actions[bot]";
-            def subject: .commit.message | split("\n") | .[0];
-            # jq anchors ^ at the start of the whole string, so test each
-            # message line separately rather than relying on multiline mode.
-            def signed: [ .commit.message
-              | split("\n")[]
-              | test("^ *Signed-off-by: .+ <.+>")
-            ] | any;
+            .[]
+            | select((is_merge or is_bot) | not)
+            | "\(.sha) \(.commit.message | @base64)"
+          ' "${work}/commits.json" > "${work}/checked.txt"
 
-            [ .[] | select((is_merge or is_bot) | not) ] as $checked
-            | {
-                total: length,
-                skipped: (length - ($checked | length)),
-                checked: ($checked | length),
-                missing: [ $checked[]
-                  | select(signed | not)
-                  | { sha: .sha[0:7], subject: subject }
-                ]
+          total="$(jq -r 'length' "${work}/commits.json")"
+          checked="$(wc -l < "${work}/checked.txt" | tr -d '[:space:]')"
+          skipped=$(( total - checked ))
+          missing=0
+
+          while read -r sha encoded; do
+            printf '%s' "${encoded}" | base64 -d > "${work}/message"
+
+            # The candidate trailer block is the message's final paragraph.
+            awk '
+              { line[NR] = $0 }
+              END {
+                last = 0
+                for (i = NR; i >= 1; i--) {
+                  if (line[i] !~ /^[ \t]*$/) { last = i; break }
+                }
+                if (last == 0) { exit }
+                start = 1
+                for (i = last; i >= 1; i--) {
+                  if (line[i] ~ /^[ \t]*$/) { start = i + 1; break }
+                }
+                for (i = start; i <= last; i++) { print line[i] }
               }
-          ' "${RUNNER_TEMP}/commits.json" > "${RUNNER_TEMP}/dco.json"
+            ' "${work}/message" > "${work}/block"
 
-          total="$(jq -r '.total' "${RUNNER_TEMP}/dco.json")"
-          skipped="$(jq -r '.skipped' "${RUNNER_TEMP}/dco.json")"
-          checked="$(jq -r '.checked' "${RUNNER_TEMP}/dco.json")"
-          missing="$(jq -r '.missing | length' "${RUNNER_TEMP}/dco.json")"
+            # git interpret-trailers is the authority on what the trailer block
+            # contains, but its own heuristic accepts a block in which as few as
+            # a quarter of the lines are trailers - so a Signed-off-by buried in
+            # a paragraph of prose passes it. Require the final paragraph to be
+            # pure as well: every line in it must be trailer-shaped.
+            pure=1
+            while IFS= read -r line; do
+              if ! printf '%s\n' "${line}" | grep -qE '^[A-Za-z][A-Za-z0-9-]*:[ \t]'; then
+                pure=0
+                break
+              fi
+            done < "${work}/block"
 
-          jq -r '.missing[]
-            | "::error::Commit \(.sha) (\(.subject)) has no \"Signed-off-by:\" trailer. "
-              + "Fix: git commit -s (new commits), or "
-              + "git rebase --signoff origin/main && git push --force-with-lease (existing ones)."
-          ' "${RUNNER_TEMP}/dco.json"
+            signed=0
+            if [ "${pure}" -eq 1 ] &&
+              git interpret-trailers --parse < "${work}/message" |
+                grep -qE '^Signed-off-by: .+ <.+>$'; then
+              signed=1
+            fi
+
+            if [ "${signed}" -eq 0 ]; then
+              missing=$(( missing + 1 ))
+              subject="$(head -n 1 "${work}/message")"
+              printf '::error::Commit %s (%s) has no "Signed-off-by:" trailer in its final trailer block. Fix: git commit -s (new commits), or git rebase --signoff origin/main && git push --force-with-lease (existing ones).\n' \
+                "${sha:0:7}" "${subject}"
+            fi
+          done < "${work}/checked.txt"
 
           echo "DCO: ${total} commit(s), ${checked} checked, ${skipped} skipped (merge/bot), ${missing} missing sign-off."
 
