@@ -72,16 +72,27 @@ namespace MagicMouseTray;
 //      record is the one shape with no way back.
 //
 // The sentinel lives in %APPDATA%, which every unprivileged process on this
-// desktop can rewrite, so it does NOT get to aim an elevated script. Exactly
-// two scalars cross that boundary: the 4-hex PID (re-checked by ValidatePid)
-// and the filter-family service name (re-checked by IsPlainServiceName and
-// RepairPlanner.IsAppleFamily). The elevated restore script then RE-DISCOVERS
-// the keys it writes by walking SYSTEM\CurrentControlSet\Enum\BTHENUM itself
-// under the same PID + VID + not-a-phantom gate the flip script uses - no
-// registry path out of the sentinel ever reaches script text. The recorded key
-// paths and previous values stay in the file and in the log as FORENSIC data:
-// they are what CompareTargets verifies the end state against and what the
-// tray quotes back to the user when a restore has to be done by hand.
+// desktop can rewrite, so it does NOT get to aim an elevated script. Two
+// things cross that boundary, and both are re-checked here as if the file
+// were hostile: the 4-hex PID (ValidatePid) and the recorded LowerFilters
+// value itself - every name in it through IsPlainServiceName, and at least
+// one of them through RepairPlanner.IsAppleFamily, before any of them is
+// rendered as a quoted literal.
+//
+// The VALUE has to cross because Windows loads LowerFilters IN ORDER. A
+// recorded ["mouhid", "applewirelessmouse"] put back as
+// ["applewirelessmouse", "mouhid"] is a different value than the one that
+// came off, and the tray's own CompareTargets - deliberately order-sensitive
+// - would refuse it. The live key cannot supply that order: in Mode A the
+// family name is not on it at all, so nothing there records where it sat.
+//
+// The elevated restore script still RE-DISCOVERS the keys it writes by
+// walking SYSTEM\CurrentControlSet\Enum\BTHENUM itself under the same PID +
+// VID + not-a-phantom gate the flip script uses - no registry path out of the
+// sentinel ever reaches script text. The recorded key paths stay in the file
+// and in the log as FORENSIC data: they are what CompareTargets re-reads the
+// end state from and what the tray quotes back to the user when a restore has
+// to be done by hand.
 internal enum ModeFlipOutcome
 {
     Ok,
@@ -100,14 +111,20 @@ internal sealed record ModeFlipResult(ModeFlipOutcome Outcome, int Percent, bool
 // LowerFilters value at all is not the same as a key with an empty one, and
 // restoring the wrong one of those two is how a stack loses its filter.
 //
-// FORENSIC ONLY once it has been through the sentinel file, which lives in a
-// user-writable directory. Every field is still recorded and still logged, and
-// each has a consumer that is NOT script generation:
+// Once it has been through the sentinel file - which lives in a user-writable
+// directory - each field has exactly one consumer, and only ONE of them can
+// reach generated script text:
 //
-//   KeyPath          CompareTargets (which live key to re-read), the log, and
-//                    HandRecoveryDetail's hand-recovery message.
-//   Previous         the same three, plus RestoreFilterName - which takes the
-//                    Apple-family NAME out of it and nothing else.
+//   KeyPath          FORENSIC ONLY: CompareTargets (which live key to
+//                    re-read), the log, and HandRecoveryDetail's
+//                    hand-recovery message. Never script text - the elevated
+//                    script derives the keys it writes itself.
+//   Previous         the same three, plus RestoreSequence - the recorded
+//                    LowerFilters value the standalone restore has to write
+//                    back, in its recorded order. This is the one field that
+//                    crosses into script text, and every name in it is
+//                    re-validated on the way (see RestoreSequence and
+//                    BuildRestoreScript).
 //   PreviousPresent  CompareTargets only. It used to drive the restore
 //                    script's "Present = $true/$false" rows; the elevated
 //                    script now decides absent-versus-empty from the LIVE key
@@ -115,8 +132,7 @@ internal sealed record ModeFlipResult(ModeFlipOutcome Outcome, int Percent, bool
 //                    all. It is kept because it is the one fact a human
 //                    recovering by hand cannot re-derive after the fact.
 //
-// Nothing here is ever interpolated into an elevated script. See the
-// trust-boundary note in the file header.
+// See the trust-boundary note in the file header.
 internal sealed record ModeFlipTarget(string KeyPath, bool PreviousPresent, string[] Previous);
 
 // StartedUnixMs doubles as the cycle nonce that tags the %TEMP% handshake
@@ -251,12 +267,11 @@ internal static class ModeFlip
     // One elevated restore, verified.
     //
     // The elevated script derives the keys it writes ITSELF. Out of the
-    // sentinel this path trusts exactly two scalars - the PID and the
-    // filter-family service name, both re-validated here - and hands the
-    // script nothing else. The recorded key paths and previous values stay
-    // forensic: CompareTargets verifies the live end state against them and
-    // HandRecoveryDetail quotes them to the user, but neither becomes script
-    // text. See the trust-boundary note in the file header.
+    // sentinel this path trusts the PID and the recorded LowerFilters value,
+    // both re-validated here, and hands the script nothing else. The recorded
+    // key paths stay forensic: CompareTargets re-reads the live end state from
+    // them and HandRecoveryDetail quotes them to the user, but neither becomes
+    // script text. See the trust-boundary note in the file header.
     internal static ModeFlipResult RestoreModeB()
     {
         if (Interlocked.CompareExchange(ref _cycleInFlight, 1, 0) != 0)
@@ -289,17 +304,18 @@ internal static class ModeFlip
         foreach (var t in sentinel.Targets)
             Logger.Log($"{LogPrefix} phase=restore_start key={t.KeyPath} present={t.PreviousPresent} prev={Render(t.Previous)}");
 
-        // The one name the restore may put back. A sentinel recording no
-        // Apple-family filter never described a Mode B at all, so there is
-        // nothing to restore and picking a name anyway would mean writing a
-        // driver binding the tray never measured.
-        var filterName = RestoreFilterName(sentinel);
-        if (filterName is null)
+        // The exact value the restore has to put back, in its recorded order.
+        // A sentinel recording no Apple-family filter never described a Mode B
+        // at all, so there is nothing to restore and picking a value anyway
+        // would mean writing a driver binding the tray never measured.
+        var recorded = RestoreSequence(sentinel);
+        if (recorded is null)
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=RestoreFailed reason=no_family_filter");
             return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false,
                 HandRecoveryDetail(sentinel));
         }
+        Logger.Log($"{LogPrefix} phase=restore recorded={Render(recorded)}");
 
         // A restore is its own cycle and gets its own nonce: two restores from
         // the same sentinel must not share a transcript either.
@@ -308,7 +324,7 @@ internal static class ModeFlip
         string script;
         try
         {
-            script = BuildRestoreScript(pid, nonce, filterName);
+            script = BuildRestoreScript(pid, nonce, recorded);
         }
         catch (Exception ex)
         {
@@ -347,9 +363,12 @@ internal static class ModeFlip
         {
             var transcript = AwaitTerminal(proc, statusPath, RestoreGraceMs, null, out _);
             var terminal = TerminalToken(transcript);
-            var verified = VerifyRestored(CompareTargets(sentinel.Targets, ReadStack(pid)?.Targets),
-                WaitForModeB(ModeBVerifyMs));
-            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} verified={Render(verified)}");
+            // The verdict, whole: the recorded value back, verbatim and in
+            // order. Mode B is measured and logged as evidence beside it,
+            // never as a condition - see FlipEvidence.
+            var verified = CompareTargets(sentinel.Targets, ReadStack(pid)?.Targets);
+            bool modeB = WaitForModeB(ModeBVerifyMs);
+            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} filters_match={Render(verified)} mode_b={modeB}");
 
             if (verified == true)
             {
@@ -406,10 +425,11 @@ internal static class ModeFlip
             return new ModeFlipResult(refused, -1, intact, DetailFor(refused, -1, intact));
         }
 
-        // One of these names is the single scalar the restore path will
-        // re-elevate (RestoreFilterName picks the Apple-family one), and all of
-        // them go into the forensic record, so anything that is not a plain
-        // service name is refused now rather than quoted and hoped for.
+        // This whole value is what the restore path will re-elevate
+        // (RestoreSequence hands the carrier's recorded names to the script,
+        // in order), and all of it goes into the forensic record, so a name
+        // that is not a plain service name is refused now rather than quoted
+        // and hoped for.
         foreach (var t in targets)
         {
             foreach (var name in t.Previous)
@@ -514,14 +534,16 @@ internal static class ModeFlip
         }
 
         var live = ReadStack(pid)?.Targets;
-        var match = CompareTargets(targets, live);
+        // The verdict, whole: the restore is verified when, and only when, the
+        // recorded LowerFilters value came back verbatim and in order. Mode B
+        // is measured for the log, never as a condition - see FlipEvidence.
+        var verified = CompareTargets(targets, live);
         bool modeB = WaitForModeB(ModeBVerifyMs);
-        var verified = VerifyRestored(match, modeB);
 
         var evidence = new FlipEvidence(started, ready, terminal, percent, verified);
         var outcome = MapOutcome(evidence);
 
-        Logger.Log($"{LogPrefix} phase=verify filters_match={Render(match)} mode_b={modeB} verified={Render(verified)}");
+        Logger.Log($"{LogPrefix} phase=verify filters_match={Render(verified)} mode_b={modeB}");
         foreach (var t in targets)
             Logger.Log($"{LogPrefix} phase=verify key={t.KeyPath} prev={Render(t.Previous)} post={Render(LiveFor(live, t.KeyPath))}");
         Logger.Log($"{LogPrefix} phase=done started={started} ready={ready} script_terminal={(terminal.Length == 0 ? "none" : terminal)} pct={percent} outcome={outcome}");
@@ -538,10 +560,21 @@ internal static class ModeFlip
     // --- decision logic (pure) -------------------------------------------
 
     // What the elevated script and the tray's own re-read jointly prove.
-    // PostModeBVerified is tri-state on purpose: null means the end state
-    // could not be read at all, and that must never be reported as success.
+    //
+    // FiltersRestored is the recorded-value comparison (CompareTargets) and
+    // nothing else. It is tri-state on purpose: null means the end state could
+    // not be read at all, and that must never be reported as success.
+    //
+    // Observing Mode B is deliberately NOT part of it. The BTHENUM devnode
+    // re-enumerates on the Bluetooth stack's own schedule - measured on the
+    // reference PC (2026-09-15) as arriving AFTER the registry value is
+    // already correct, and sometimes past any budget worth blocking a user on
+    // - so requiring it would report a restore that did land as failed and
+    // send the user to click Restore again. The registry value is what binds
+    // the filter and is the only half of the end state the tray controls; Mode
+    // B is still measured and logged beside every verdict as evidence.
     internal readonly record struct FlipEvidence(
-        bool Started, bool ReadyObserved, string Terminal, int Percent, bool? PostModeBVerified);
+        bool Started, bool ReadyObserved, string Terminal, int Percent, bool? FiltersRestored);
 
     internal static ModeFlipOutcome MapOutcome(FlipEvidence e)
     {
@@ -553,9 +586,10 @@ internal static class ModeFlip
             return ModeFlipOutcome.NoInstances;
         if (string.Equals(e.Terminal, TokenNoFilter, StringComparison.OrdinalIgnoreCase))
             return ModeFlipOutcome.NotPathA;
-        // Anything less than a confirmed Mode B outranks every other result:
-        // an unread battery is an inconvenience, a dead scroll wheel is not.
-        if (e.PostModeBVerified != true)
+        // Anything less than the recorded value back outranks every other
+        // result: an unread battery is an inconvenience, a dead scroll wheel
+        // is not.
+        if (e.FiltersRestored != true)
             return ModeFlipOutcome.RestoreFailed;
         if (!e.ReadyObserved)
             return ModeFlipOutcome.FlipFailed;
@@ -579,18 +613,6 @@ internal static class ModeFlip
             return ModeFlipOutcome.NotPathA;
         return null;
     }
-
-    // filtersMatchPrevious: tri-state from CompareTargets (null = unreadable).
-    // Registry restored and filter loaded is the success gate; device re-enumeration is
-    // outside the scope of this mechanism and can be slow. We verify what we control
-    // (registry and filter presence), not what the Bluetooth stack controls (timing).
-    internal static bool? VerifyRestored(bool? filtersMatchPrevious, bool modeBObserved) =>
-        filtersMatchPrevious switch
-        {
-            null => null,
-            false => false,
-            true => true,  // Registry restored; device re-enumeration is Bluetooth stack timing, not a failure
-        };
 
     // Order-sensitive, case-insensitive comparison of every recorded key
     // against the live registry. A recorded key that is no longer present at
@@ -688,21 +710,38 @@ internal static class ModeFlip
         return false;
     }
 
-    // The ONE name the standalone restore may hand to an elevated script,
-    // picked out of the sentinel and re-validated as if the file were hostile -
+    // The recorded LowerFilters value the standalone restore has to put back,
+    // and the only thing out of the sentinel besides the PID that an elevated
+    // script ever sees. It is re-validated here as if the file were hostile,
     // because it lives in a directory every unprivileged process on this
-    // desktop can rewrite. It must be a plain service name AND a member of the
-    // Apple filter family per the catalog; null means this sentinel describes
-    // no Mode B to go back to, which is a refusal, not a guess.
-    internal static string? RestoreFilterName(ModeFlipSentinel sentinel)
+    // desktop can rewrite.
+    //
+    // The carrier is the recorded key whose value names an Apple-family
+    // filter: that is the value Mode B had, so that is the value - whole and
+    // in its recorded ORDER, because Windows loads LowerFilters in order -
+    // that Mode B needs back. Every name in it must be a plain service name;
+    // a single unusable name disqualifies the whole sequence, since a restore
+    // that silently dropped one element would write a value the tray never
+    // measured. null means this sentinel describes no Mode B to go back to,
+    // which is a refusal, not a guess.
+    internal static string[]? RestoreSequence(ModeFlipSentinel sentinel)
     {
         foreach (var t in sentinel.Targets)
         {
+            bool family = false;
+            bool usable = true;
             foreach (var name in t.Previous)
             {
-                if (IsPlainServiceName(name) && RepairPlanner.IsAppleFamily(name))
-                    return name;
+                if (!IsPlainServiceName(name))
+                {
+                    usable = false;
+                    break;
+                }
+                if (RepairPlanner.IsAppleFamily(name))
+                    family = true;
             }
+            if (usable && family)
+                return [.. t.Previous];
         }
         return null;
     }
@@ -751,6 +790,15 @@ internal static class ModeFlip
     // not atomic against power loss, and a file torn mid-value - a half
     // written filter= line still parses as a plain service name - must be
     // refused rather than acted on.
+    //
+    // The filter= lines under a key are the recorded REG_MULTI_SZ, one element
+    // per line, in the order the registry held them. That order is load
+    // bearing, not incidental: Windows loads LowerFilters in order, and it is
+    // the order RestoreSequence hands to the elevated restore and the order
+    // CompareTargets verifies the end state against. Nothing here may sort,
+    // deduplicate or otherwise tidy them. Version 1 has always recorded the
+    // whole sequence this way, which is why restoring the order needed no
+    // format change and old sentinels still parse.
     internal static string FormatSentinel(ModeFlipSentinel s)
     {
         var sb = new StringBuilder();
@@ -1328,23 +1376,32 @@ exit 1
     //
     // MF-SENTINEL-TARGET-CONTROL: the sentinel sits where every unprivileged
     // process can rewrite it, so it does NOT get to name the keys this script
-    // writes. Two scalars come in - $targetPid and $restoreName, both
-    // re-validated in C# - and the script derives its own targets with
-    // Get-BthenumNode, the same walk and gates the flip uses. There is no
-    // recorded-target table any more, and the Enum\BTHENUM\ entry in
+    // writes. What comes in is $targetPid and $restoreNames - the recorded
+    // LowerFilters value, every name in it re-validated in C# and rendered as
+    // a quoted literal - and the script derives its own targets with
+    // Get-BthenumNode, the same walk and gates the flip uses. No recorded KEY
+    // PATH appears anywhere in here, and the Enum\BTHENUM\ entry in
     // BannedScriptTokens is what stops one coming back.
     //
     // What "the same value back" means once the targets are re-derived. The
-    // flip only ever takes family names OFF a live LowerFilters and copies
-    // every other name through untouched, so its inverse is: put the family
-    // name back at the head, leave every other name exactly where it is. The
-    // LIVE value supplies those other names, which is why none of them has to
-    // be trusted from a file:
+    // recorded value IS the answer, in its recorded ORDER: the flip took
+    // family names off a live LowerFilters and copied every other name
+    // through untouched, so the value recorded before the flip is exactly the
+    // value Mode B had. Windows loads LowerFilters in order, and that
+    // recorded order is also what the tray's order-sensitive CompareTargets
+    // re-reads for - so a restore that writes the same names in a different
+    // order writes a value that was never measured and fails verification.
+    //
+    // The live key cannot supply that order: in Mode A the family name is off
+    // it entirely, so nothing there says whether it sat first, last or in the
+    // middle. The live value is still read, for one thing - a name on it that
+    // the record does not know about was added after the record was taken,
+    // and dropping it would be a loss, so it goes on the end.
     //
     //   absent            the flip's Clear-LowerFilters signature - the family
-    //                     name was the only entry -> write @($restoreName)
-    //   non-family names  the flip's filtered rebuild -> write $restoreName
-    //                     then those names, in their order, untouched
+    //                     name was the only entry -> write the recorded value
+    //   non-family names  the flip's filtered rebuild -> write the recorded
+    //                     value, then anything live it does not name
     //   present but empty the flip CLEARS rather than empties, so this key was
     //                     never a carrier -> leave it completely alone
     //   already family    this key is in Mode B already -> nothing to write,
@@ -1352,8 +1409,8 @@ exit 1
     const string RestoreBody = """
 
 $statusFile = Join-Path $env:TEMP ('mm-modeflip-restore-' + $targetPid + '-' + $nonce + '.status')
-$restoreName = __FILTER_NAME__
-Write-Phase ('restore-only pid=' + $targetPid + ' name=' + $restoreName)
+$restoreNames = @(__RESTORE_NAMES__)
+Write-Phase ('restore-only pid=' + $targetPid + ' recorded=' + (Show-Names $restoreNames))
 
 $stack = Get-BthenumNode
 $nodes = $stack.Nodes
@@ -1373,27 +1430,27 @@ foreach ($n in $nodes) {
         Write-Phase ('skip key=' + $n.Path + ' reason=present-empty')
         continue
     }
+    # The recorded value first, in the order it was recorded in. Nothing here
+    # sorts, filters or reorders it - that order is the whole point.
     $want = New-Object System.Collections.Generic.List[string]
-    $foundFamily = $false
-    # Preserve the recorded order: replace family filters in-place, keep others.
+    foreach ($m in @($restoreNames)) {
+        $s = [string]$m
+        if ($s.Length -eq 0) { continue }
+        [void]$want.Add($s)
+    }
+    # Then whatever the LIVE key carries that the record does not name: it was
+    # added after the record was taken, and a restore may not lose it.
+    #
+    # @($null) is a one-element array holding $null, so an ABSENT value would
+    # otherwise contribute an empty string and the key would come back as
+    # REG_MULTI_SZ { applewirelessmouse, "" } - a value the flip never wrote.
+    # -contains compares strings case-insensitively, which is the same
+    # spelling rule CompareTargets applies to the end state.
     foreach ($m in @($n.Names)) {
         $s = [string]$m
         if ($s.Length -eq 0) { continue }
-        # Family filter: replace with the one we're restoring to
-        if ($s -imatch '^(MagicMouseDriver|mouhid|applewirelessmouse)') {
-            if (-not $foundFamily) {
-                [void]$want.Add($restoreName)
-                $foundFamily = $true
-            }
-            # Skip the old family filter; we already added the new one
-            continue
-        }
-        # Non-family filter: keep it
+        if ($want -contains $s) { continue }
         [void]$want.Add($s)
-    }
-    # If no family filter was in the recorded list, add it at the end
-    if (-not $foundFamily) {
-        [void]$want.Add($restoreName)
     }
     [void]$expect.Add($n)
     [void]$pending.Add([pscustomobject]@{ Path = $n.Path; Want = $want })
@@ -1443,17 +1500,32 @@ exit 1
     internal static string BuildFlipScript(string pid, long nonce) =>
         Finish(Preamble(pid, nonce) + FlipBody);
 
-    // filterName is the ONE value out of the sentinel that reaches script text,
-    // and it is re-validated here as if the file were hostile: a plain service
-    // name AND a member of the Apple filter family per the catalog. No key path
-    // is accepted at any price - the script derives its own.
-    internal static string BuildRestoreScript(string pid, long nonce, string filterName)
+    // recorded is the ONE thing out of the sentinel besides the PID that
+    // reaches script text: the LowerFilters value to put back, in the order it
+    // was recorded in. It is re-validated here as if the file were hostile,
+    // and ALL of it is - a sequence is only as safe as its worst element, so
+    // every name must be a plain service name and at least one must belong to
+    // the Apple filter family per the catalog. A refusal throws, which the
+    // caller turns into the ordinary restore-failed path that quotes the
+    // recorded value for hand recovery. No key path is accepted at any price -
+    // the script derives its own.
+    internal static string BuildRestoreScript(string pid, long nonce, IReadOnlyList<string> recorded)
     {
-        if (!IsPlainServiceName(filterName))
-            throw new InvalidOperationException($"ModeFlip refuses filter name '{filterName}'.");
-        if (!RepairPlanner.IsAppleFamily(filterName))
-            throw new InvalidOperationException($"ModeFlip refuses non-family filter '{filterName}'.");
-        var body = RestoreBody.Replace("__FILTER_NAME__", Literal(filterName), StringComparison.Ordinal);
+        ArgumentNullException.ThrowIfNull(recorded);
+        if (recorded.Count == 0)
+            throw new InvalidOperationException("ModeFlip needs a recorded LowerFilters value to restore.");
+        foreach (var name in recorded)
+        {
+            if (!IsPlainServiceName(name))
+                throw new InvalidOperationException($"ModeFlip refuses filter name '{name}'.");
+        }
+        if (!recorded.Any(RepairPlanner.IsAppleFamily))
+            throw new InvalidOperationException(
+                $"ModeFlip refuses a recorded value with no family filter: {string.Join("|", recorded)}.");
+        var body = RestoreBody.Replace(
+            "__RESTORE_NAMES__",
+            string.Join(", ", recorded.Select(Literal)),
+            StringComparison.Ordinal);
         return Finish(Preamble(pid, nonce) + body);
     }
 

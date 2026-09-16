@@ -25,8 +25,9 @@ public class ModeFlipTests
     // elevation boundary.
     const long Nonce = 1_757_900_000_000;
 
-    // The filter name the flip removed. Together with the PID it is the ONLY
-    // thing that crosses out of the sentinel into generated script text.
+    // The Apple-family name the flip removed. It is not the only thing that
+    // crosses out of the sentinel into generated script text: the whole
+    // recorded LowerFilters value does, because its ORDER is part of the value.
     const string FilterName = "applewirelessmouse";
 
     static ModeFlipSentinel Sentinel(params ModeFlipTarget[] targets) =>
@@ -34,8 +35,28 @@ public class ModeFlipTests
 
     static string FlipScript() => ModeFlip.BuildFlipScript(ModeFlip.V3Pid, Nonce);
 
-    static string RestoreScript(string filterName = FilterName) =>
-        ModeFlip.BuildRestoreScript(ModeFlip.V3Pid, Nonce, filterName);
+    // The recorded value Carrier() describes - what the restore has to put
+    // back, in this order.
+    static string RestoreScript() => RestoreScriptFor(FilterName, "mouhid");
+
+    static string RestoreScriptFor(params string[] recorded) =>
+        ModeFlip.BuildRestoreScript(ModeFlip.V3Pid, Nonce, recorded);
+
+    // The REG_MULTI_SZ the restore script will write, read back out of the
+    // generated text: an @(...) of single-quoted names, in order.
+    static string[] ScriptNames(string script)
+    {
+        const string marker = "$restoreNames = @(";
+        var at = script.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(at >= 0, "the restore script carries no recorded value");
+        var open = at + marker.Length;
+        var close = script.IndexOf(')', open);
+        var parts = script[open..close].Split(',', StringSplitOptions.TrimEntries);
+        var names = new string[parts.Length];
+        for (int i = 0; i < names.Length; i++)
+            names[i] = parts[i].Trim('\'');
+        return names;
+    }
 
     static ModeFlip.FlipEvidence Evidence(
         bool started = true,
@@ -164,8 +185,10 @@ public class ModeFlipTests
         Assert.Contains("if (-not $low.StartsWith($hidUuidPrefix.ToLowerInvariant())) { continue }",
             script, StringComparison.Ordinal);
         Assert.Contains("if (-not [string]::IsNullOrEmpty($svc))", script, StringComparison.Ordinal);
-        // And there is no recorded-target table left to aim it with.
-        Assert.DoesNotContain("$recorded", script, StringComparison.Ordinal);
+        // And nothing out of the recovery record aims it: the record supplies
+        // NAMES to write, never a key to write them to.
+        Assert.DoesNotContain(DeviceKey, script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(@"Enum\BTHENUM\", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -179,10 +202,11 @@ public class ModeFlipTests
             new ModeFlipTarget(foreign, true, [FilterName]),
             Carrier());
 
-        // Exactly one scalar crosses the boundary...
-        var filterName = ModeFlip.RestoreFilterName(tampered);
-        Assert.Equal(FilterName, filterName);
-        var script = ModeFlip.BuildRestoreScript(tampered.Pid, Nonce, filterName!);
+        // Only recorded NAMES cross the boundary, and only from the key whose
+        // recorded value describes Mode B...
+        var recorded = ModeFlip.RestoreSequence(tampered);
+        Assert.Equal(new[] { FilterName }, recorded!);
+        var script = ModeFlip.BuildRestoreScript(tampered.Pid, Nonce, recorded!);
 
         // ...and no key path does - not the forged one, and not even the real
         // one, because the script has no business being told either.
@@ -198,48 +222,69 @@ public class ModeFlipTests
     }
 
     [Fact]
-    public void RestoreScript_RefusesAFilterNameItCannotSafelyReElevate()
+    public void RestoreScript_RefusesARecordedValueItCannotSafelyReElevate()
     {
         // Not a plain service name: quoting it and hoping is how an elevated
         // shell ends up running somebody else's text.
-        Assert.Throws<InvalidOperationException>(() => RestoreScript("apple'; rm -rf"));
-        Assert.Throws<InvalidOperationException>(() => RestoreScript(""));
-        // Plain, but not the Apple filter family. The restore has exactly one
-        // job and putting an unrelated service on LowerFilters is not it.
-        Assert.Throws<InvalidOperationException>(() => RestoreScript("mouhid"));
-        Assert.Throws<InvalidOperationException>(() => RestoreScript("MagicMouseDriver204Scroll"));
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor("apple'; rm -rf"));
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor(""));
+        // A sequence is only as safe as its worst element, so one unusable
+        // name refuses the whole restore. Dropping it instead would write a
+        // value nobody ever measured.
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor("mouhid", "apple'; del"));
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor(FilterName, "mou hid"));
+        // Plain, but nothing in it belongs to the Apple filter family. The
+        // restore has exactly one job and putting an unrelated service on
+        // LowerFilters is not it.
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor("mouhid"));
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor("MagicMouseDriver204Scroll"));
+        // And nothing recorded at all is not a value to write back.
+        Assert.Throws<InvalidOperationException>(() => RestoreScriptFor());
         // A family variant is carried through VERBATIM, because that is the
         // name that was actually removed.
-        Assert.Contains("$restoreName = 'AppleWirelessMouse204'",
-            RestoreScript("AppleWirelessMouse204"), StringComparison.Ordinal);
+        Assert.Contains("$restoreNames = @('AppleWirelessMouse204')",
+            RestoreScriptFor("AppleWirelessMouse204"), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void RestoreFilterName_RejectsASentinelThatDescribesNoScrollMode()
+    public void RestoreSequence_RejectsASentinelThatDescribesNoScrollMode()
     {
         // Nothing Apple-family was ever recorded, so there is no Mode B to go
-        // back to - and inventing a name to write would be inventing a driver
+        // back to - and inventing a value to write would be inventing a driver
         // binding the tray never measured.
-        Assert.Null(ModeFlip.RestoreFilterName(Sentinel(
+        Assert.Null(ModeFlip.RestoreSequence(Sentinel(
             new ModeFlipTarget(DeviceKey, true, ["mouhid", "HidBth"]))));
-        Assert.Null(ModeFlip.RestoreFilterName(Sentinel(NoValue())));
-        // The recorded spelling wins over the catalog's, so the name that goes
-        // back is the name that came off.
-        Assert.Equal("AppleWirelessMouse204", ModeFlip.RestoreFilterName(Sentinel(
-            new ModeFlipTarget(DeviceKey, true, ["mouhid", "AppleWirelessMouse204"]))));
+        Assert.Null(ModeFlip.RestoreSequence(Sentinel(NoValue())));
+        // One unusable name disqualifies the whole recorded value. The
+        // sentinel is a file any unprivileged process can rewrite, and a
+        // restore that quietly dropped an element would write a value the tray
+        // never measured.
+        Assert.Null(ModeFlip.RestoreSequence(Sentinel(
+            new ModeFlipTarget(DeviceKey, true, ["mou hid", FilterName]))));
+        // The recorded value comes back whole, in its recorded order and in
+        // its recorded spelling: that is the value that came off.
+        Assert.Equal(
+            new[] { "mouhid", "AppleWirelessMouse204" },
+            ModeFlip.RestoreSequence(Sentinel(
+                new ModeFlipTarget(DeviceKey, true, ["mouhid", "AppleWirelessMouse204"])))!);
     }
 
     [Fact]
-    public void RestoreScript_RebuildsTheValueFromTheLiveKeyAndKeepsNonFamilyNames()
+    public void RestoreScript_WritesTheRecordedValueAndKeepsWhateverTheLiveKeyAdded()
     {
         var script = RestoreScript();
 
-        // The family name goes back at the head and every other name on the
-        // LIVE value is copied through in place, so mouhid and HidBth are
-        // never dropped and never reordered.
-        Assert.Contains("[void]$want.Add($restoreName)", script, StringComparison.Ordinal);
+        // The recorded value goes back first and in its recorded order. The
+        // live key cannot supply that order: in Mode A the family name is off
+        // it entirely, so nothing there says where it sat.
+        Assert.Contains("$restoreNames = @('applewirelessmouse', 'mouhid')",
+            script, StringComparison.Ordinal);
+        Assert.Contains("foreach ($m in @($restoreNames)) {", script, StringComparison.Ordinal);
+        // A name on the LIVE key that the record does not name was added after
+        // the record was taken, so it is kept - on the end, where it cannot
+        // disturb the recorded order.
         Assert.Contains("foreach ($m in @($n.Names)) {", script, StringComparison.Ordinal);
-        Assert.Contains("[void]$want.Add($s)", script, StringComparison.Ordinal);
+        Assert.Contains("if ($want -contains $s) { continue }", script, StringComparison.Ordinal);
         // ABSENT is the flip's Clear-LowerFilters signature and gets a write;
         // PRESENT-but-empty is a key the flip never touched and is left alone.
         // Collapsing those two is how a stack gains a filter it never had.
@@ -257,6 +302,27 @@ public class ModeFlipTests
         Assert.Contains("Wait-Mode { Test-ModeB }", script, StringComparison.Ordinal);
         Assert.Contains("Write-Phase 'restored'", script, StringComparison.Ordinal);
         Assert.Contains("Write-Phase 'restore-failed'", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RestoreScript_PutsBackTheRecordedOrderWhenTheFamilyFilterIsNotFirst()
+    {
+        // Recorded with the family name SECOND. Windows loads LowerFilters in
+        // order, so hoisting it to the head writes a different value than the
+        // one that came off.
+        var recorded = new ModeFlipTarget(DeviceKey, true, ["mouhid", FilterName]);
+
+        var written = ScriptNames(ModeFlip.BuildRestoreScript(ModeFlip.V3Pid, Nonce, recorded.Previous));
+
+        // The value the script will write IS the recorded value, element for
+        // element...
+        Assert.Equal(recorded.Previous, written);
+        // ...which is what the tray then verifies, order and all. The hoisted
+        // rebuild this replaced would have been refused here.
+        Assert.True(ModeFlip.CompareTargets(
+            [recorded], [new ModeFlipTarget(DeviceKey, true, written)]));
+        Assert.False(ModeFlip.CompareTargets(
+            [recorded], [new ModeFlipTarget(DeviceKey, true, [FilterName, "mouhid"])]));
     }
 
     [Fact]
@@ -452,26 +518,6 @@ public class ModeFlipTests
     // --- verification -----------------------------------------------------
 
     [Fact]
-    public void VerifyRestored_UnreadableFiltersAreNoEvidence()
-    {
-        Assert.Null(ModeFlip.VerifyRestored(null, modeBObserved: true));
-        Assert.Null(ModeFlip.VerifyRestored(null, modeBObserved: false));
-    }
-
-    [Fact]
-    public void VerifyRestored_OnlyChecksFiltersNotDeviceReEnumeration()
-    {
-        // Registry right and filters match: restore is verified.
-        Assert.True(ModeFlip.VerifyRestored(true, modeBObserved: true));
-        // Registry right but device re-enumeration is slow (modeBObserved false):
-        // device re-enumeration is Bluetooth stack timing, not a failure.
-        Assert.True(ModeFlip.VerifyRestored(true, modeBObserved: false));
-        // Registry not restored: restore failed.
-        Assert.False(ModeFlip.VerifyRestored(false, modeBObserved: true));
-        Assert.False(ModeFlip.VerifyRestored(false, modeBObserved: false));
-    }
-
-    [Fact]
     public void CompareTargets_MatchesVerbatimValueAndPresence()
     {
         var recorded = new[] { Carrier(), NoValue() };
@@ -490,24 +536,25 @@ public class ModeFlipTests
         Assert.False(ModeFlip.CompareTargets(recorded,
             [Carrier(), new ModeFlipTarget(InstanceKey, true, ["applewirelessmouse"])]));
     }
+
     [Fact]
-    public void CompareTargets_PreservesRecordedOrderWithFamilyFilterNotFirst()
+    public void CompareTargets_AcceptsTheRecordedOrderWithTheFamilyFilterNotFirst()
     {
-        // Recorded with family filter in second position
-        var recordedNonFirst = new[] { 
-            new ModeFlipTarget(DeviceKey, true, ["mouhid", "applewirelessmouse"]), 
-            NoValue() 
+        var recorded = new[]
+        {
+            new ModeFlipTarget(DeviceKey, true, ["mouhid", FilterName]),
+            NoValue(),
         };
 
-        // Restored in same order: matches
-        Assert.True(ModeFlip.CompareTargets(recordedNonFirst,
-            [new ModeFlipTarget(DeviceKey, true, ["mouhid", "applewirelessmouse"]), NoValue()]));
-        
-        // If family filter gets moved to first position: does not match
-        Assert.False(ModeFlip.CompareTargets(recordedNonFirst,
-            [new ModeFlipTarget(DeviceKey, true, ["applewirelessmouse", "mouhid"]), NoValue()]));
+        // Put back exactly as recorded: verified.
+        Assert.True(ModeFlip.CompareTargets(recorded,
+            [new ModeFlipTarget(DeviceKey, true, ["mouhid", FilterName]), NoValue()]));
+        // Same two names, family name hoisted to the head. Windows loads
+        // LowerFilters in order, so that is a different value and not a
+        // restore.
+        Assert.False(ModeFlip.CompareTargets(recorded,
+            [new ModeFlipTarget(DeviceKey, true, [FilterName, "mouhid"]), NoValue()]));
     }
-
 
     [Fact]
     public void CompareTargets_MissingKeyOrUnreadableHiveIsNoEvidence()
