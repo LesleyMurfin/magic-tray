@@ -19,6 +19,45 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin",
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/devices.html#webpage",
         "url": "https://magictray.app/devices.html",
@@ -26,18 +65,26 @@
         "description": "Turn the device over and match it to a photo. A battery door means the 2009 Magic Mouse, a narrow Lightning slot means the 2015 one, and a small oval USB-C hole means the 2024 one.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "breadcrumb": { "@id": "https://magictray.app/devices.html#breadcrumb" },
         "mainEntity": { "@id": "https://magictray.app/devices.html#faq" },
         "hasPart": { "@id": "https://magictray.app/devices.html#faq" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "FAQPage",
         "@id": "https://magictray.app/devices.html#faq",
         "isPartOf": { "@id": "https://magictray.app/devices.html#webpage" },
         "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Which Apple Magic Mouse do I have?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Three Magic Mouse models exist. A door over two AA batteries is the v1, model A1296. No door and a narrow Lightning slot is the v2, model A1657. No door and a small oval USB-C hole is the 2024 mouse, model A3204. The model number is etched underneath."
+            }
+          },
           {
             "@type": "Question",
             "name": "How do I tell which Magic Mouse I have?",
@@ -313,6 +360,8 @@
 
       <h2 id="faq">Common questions</h2>
       <dl class="faq">
+        <dt>Which Apple Magic Mouse do I have?</dt>
+        <dd>Three Magic Mouse models exist. A door over two AA batteries is the v1, model <code>A1296</code>. No door and a narrow Lightning slot is the v2, model <code>A1657</code>. No door and a small oval USB-C hole is the 2024 mouse, model <code>A3204</code>. The <a href="#model">model number is etched underneath</a>.</dd>
         <dt>How do I tell which Magic Mouse I have?</dt>
         <dd>Turn it over. A battery door means 2009. A narrow Lightning port means 2015. A small oval USB-C port means 2024.</dd>
         <dt>Why does the 2024 mouse need a different driver?</dt>
@@ -335,7 +384,7 @@
       <div class="rail-card">
         <h2>Get it</h2>
         <p class="cta">
-          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download 1.1.0</a>
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
         </p>
       </div>
     </aside>

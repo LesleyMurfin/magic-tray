@@ -1,0 +1,105 @@
+name: IndexNow
+
+# Tells Bing (and through it Copilot, DuckDuckGo and the answer engines that
+# reuse the Bing index) that docs/ changed, instead of waiting weeks for the
+# next natural recrawl. GitHub Pages serves docs/ verbatim from main, so a push
+# that touches docs/ is the same event as "the published site changed".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexnow-${{ github.ref }}
+  # Not cancel-in-progress: a submission is one cheap request, and cancelling
+  # the older run could drop the ping for the content that is already live.
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Submit URLs to IndexNow
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          # Nothing here pushes; leaving the token in .git/config would only
+          # widen what a compromised step could reach.
+          persist-credentials: false
+
+      - name: Submit changed site to IndexNow
+        shell: pwsh
+        run: |
+          # The key is read off disk, never hardcoded here. IndexNow only
+          # accepts a key that is also downloadable at keyLocation, so the file
+          # under docs/ is the authority: hardcoding a second copy in this
+          # workflow would let the two drift and turn every submission into a
+          # silent 403. An IndexNow key file is named <key>.txt and contains
+          # exactly that key, so the key file is the one docs/*.txt whose base
+          # name equals its own trimmed contents.
+          $keyFiles = @(
+            Get-ChildItem -LiteralPath docs -Filter '*.txt' -File |
+              Where-Object { (Get-Content -LiteralPath $_.FullName -Raw).Trim() -eq $_.BaseName }
+          )
+          if ($keyFiles.Count -ne 1) {
+            throw "Expected exactly one IndexNow key file in docs/ (a *.txt whose name matches its contents), found $($keyFiles.Count): $($keyFiles.Name -join ', ')"
+          }
+          $key = $keyFiles[0].BaseName
+          Write-Host "Key file: docs/$($keyFiles[0].Name)"
+
+          # docs/sitemap.xml is the single place the canonical URL list lives.
+          # Reading it here means a page added to the site is submitted without
+          # anyone remembering to edit this workflow, and there is no second
+          # list to fall out of sync.
+          $sitemap = 'docs/sitemap.xml'
+          if (-not (Test-Path -LiteralPath $sitemap)) { throw "$sitemap not found" }
+          $ns = @{ sm = 'http://www.sitemaps.org/schemas/sitemap/0.9' }
+          $urls = @(
+            Select-Xml -Path $sitemap -Namespace $ns -XPath '//sm:url/sm:loc' |
+              ForEach-Object { $_.Node.InnerText.Trim() } |
+              Where-Object { $_ }
+          )
+          if ($urls.Count -eq 0) { throw "No <loc> values found in $sitemap" }
+
+          # Every URL must sit on the host being submitted, and that host also
+          # has to match keyLocation, or IndexNow rejects the whole batch.
+          $siteHost = ([uri]$urls[0]).Host
+          $offHost = @($urls | Where-Object { ([uri]$_).Host -ne $siteHost })
+          if ($offHost) { throw "Sitemap mixes hosts; expected $siteHost but also found: $($offHost -join ', ')" }
+
+          $payload = [ordered]@{
+            host        = $siteHost
+            key         = $key
+            keyLocation = "https://$siteHost/$($keyFiles[0].Name)"
+            urlList     = $urls
+          }
+          $json = $payload | ConvertTo-Json -Depth 3
+          Write-Host "Submitting $($urls.Count) URL(s) for $siteHost :"
+          $urls | ForEach-Object { Write-Host "  $_" }
+
+          # Body is sent as UTF-8 bytes so the declared charset is the truth.
+          $response = Invoke-WebRequest -Uri 'https://api.indexnow.org/IndexNow' `
+            -Method Post `
+            -ContentType 'application/json; charset=utf-8' `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) `
+            -SkipHttpErrorCheck
+          $status = [int]$response.StatusCode
+          $body = $response.Content
+
+          # 200 = accepted, 202 = accepted but the key is still being validated.
+          # 202 is a success: IndexNow has the URLs, and re-submitting would not
+          # speed anything up. Everything else fails loudly with the response
+          # body, because the interesting failures (403 key not reachable, 422
+          # URL does not match the host) return a perfectly normal-looking
+          # response and would otherwise pass for a working pipeline.
+          if ($status -eq 200 -or $status -eq 202) {
+            Write-Host "IndexNow accepted the submission (HTTP $status)."
+          } else {
+            throw "IndexNow rejected the submission: HTTP $status`n$body"
+          }

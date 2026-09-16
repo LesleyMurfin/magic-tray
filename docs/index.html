@@ -29,6 +29,17 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin",
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ]
+      },
+      {
         "@type": "SoftwareApplication",
         "@id": "https://magictray.app/#app",
         "name": "Magic Tray",
@@ -36,11 +47,19 @@
         "applicationCategory": "UtilitiesApplication",
         "applicationSubCategory": "Windows system tray utility",
         "operatingSystem": "Windows 10, Windows 11",
+        "softwareRequirements": "64-bit Windows 10 version 1809 (build 17763) or newer, or Windows 11",
+        "processorRequirements": "x64",
         "softwareVersion": "1.1.0",
+        "datePublished": "2026-09-02",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
         "installUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
-        "sameAs": "https://github.com/LesleyMurfin/magic-tray",
+        "releaseNotes": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ],
         "license": "https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE",
         "isAccessibleForFree": true,
         "screenshot": {
@@ -49,9 +68,10 @@
           "width": 576,
           "height": 503
         },
-        "author": { "@type": "Person", "name": "Lesley Murfin" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock. It never changes a driver on its own: for some devices it installs one after you confirm, and for others it opens the download page so you can run it yourself.",
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
         "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads.",
         "featureList": [
           "Battery percent for Apple Magic Mouse, Magic Keyboard and Magic Trackpad on Windows 10 and Windows 11",
@@ -67,9 +87,10 @@
         "@id": "https://magictray.app/#site",
         "url": "https://magictray.app/",
         "name": "Magic Tray",
+        "alternateName": "magictray.app",
         "inLanguage": "en",
         "about": { "@id": "https://magictray.app/#app" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" }
+        "publisher": { "@id": "https://magictray.app/#person" }
       },
       {
         "@type": "FAQPage",
@@ -81,7 +102,7 @@
             "name": "What does Magic Tray do?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Magic Tray is a free Windows 10 and Windows 11 tray app. It shows the battery percent of your Apple Magic Mouse, Magic Keyboard and Magic Trackpad next to the clock, warns you at 10, 5 and 1 percent, and helps an Apple mouse scroll again after you confirm."
+              "text": "Magic Tray shows how much battery your Apple Magic Mouse, Magic Keyboard or Magic Trackpad has left, next to the Windows 10 or Windows 11 clock. It warns you at 10, 5 and 1 percent. It can also help an Apple mouse scroll again, after you confirm."
             }
           },
           {
@@ -89,7 +110,23 @@
             "name": "Is Magic Tray free?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Magic Tray costs nothing and always will. It is MIT licensed, every line is public on GitHub, and there is no subscription, no trial, no account and no email address to hand over. Scrolling will not stop working if nobody ever donates a penny."
+              "text": "Yes. It is MIT licensed and every line is public on GitHub. There is no subscription, no trial, no account and no email address to hand over."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is Magic Tray a free alternative to Magic Utilities?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Partly. Magic Tray is free, shows battery percent, and can help a Magic Mouse scroll after you confirm. It has no gestures and no media-key remapping, so it is not a Magic Utilities clone. Magic Utilities is paid and does gestures. If you want gestures, buy it."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I check my Apple Magic Mouse battery on Windows 10 or 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Pair the mouse in Windows Bluetooth settings, then download MagicMouseTray.exe and run it. A tray icon appears next to the clock with the percent beside it. Windows may hide it behind the ^ arrow, so drag it out. Full steps are on the battery page."
             }
           },
           {
@@ -153,9 +190,9 @@
         "hasPart": { "@id": "https://magictray.app/#faq" },
         "primaryImageOfPage": "https://magictray.app/screenshot-menu.png",
         "breadcrumb": { "@id": "https://magictray.app/#breadcrumb" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "BreadcrumbList",
@@ -195,8 +232,8 @@
     <div class="hero">
       <div class="hero-copy">
         <p class="kicker">Free · Windows 10 and Windows 11</p>
-        <h1>Apple Magic Mouse and Keyboard battery on Windows 10 and 11, plus the scroll fix</h1>
-        <p class="lead">Magic Tray sits next to your Windows clock and shows how much battery your Apple mouse, keyboard and trackpad have left.</p>
+        <h1>Magic Tray: Apple Magic Mouse and Keyboard battery on Windows 10 and 11</h1>
+        <p class="lead">Magic Tray sits next to your Windows clock and shows how much battery your Apple mouse, keyboard and trackpad have left. It can also help a Magic Mouse scroll again, after you confirm.</p>
         <p class="cta">
           <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
           <a class="ghost" href="battery.html#read">See my battery</a>
@@ -237,8 +274,20 @@
       <p>Magic Tray costs nothing and always will. It is MIT licensed, every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, and there is no subscription, no trial, no account and no email address to hand over. Scrolling will not stop working if nobody ever donates a penny.</p>
       <p><a href="funding.html">Other ways to help</a>.</p>
 
+      <h2 id="mu">Is Magic Tray a free alternative to Magic Utilities?</h2>
+      <p>Partly, and it is worth being straight about it. Magic Tray is free and MIT licensed. It shows the battery percent of your Apple mouse, keyboard and trackpad, and for some mice it helps with the driver after you confirm. That is the whole app.</p>
+      <p>Magic Utilities is paid software and does much more: gestures on the mouse and trackpad, and remapping the keys along the top of a Magic Keyboard. Magic Tray has no gestures and no media-key remapping, and it is not a copy of it. If you need gestures, buy Magic Utilities.</p>
+
       <h2 id="faq">Questions</h2>
       <dl class="faq">
+        <dt>What does Magic Tray do?</dt>
+        <dd>Magic Tray shows how much battery your Apple Magic Mouse, Magic Keyboard or Magic Trackpad has left, next to the Windows 10 or Windows 11 clock. It warns you at 10, 5 and 1 percent. It can also help an Apple mouse scroll again, after you confirm.</dd>
+        <dt>Is Magic Tray free?</dt>
+        <dd>Yes. It is MIT licensed and every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>. There is no subscription, no trial, no account and no email address to hand over.</dd>
+        <dt>Is Magic Tray a free alternative to Magic Utilities?</dt>
+        <dd>Partly. Magic Tray is free, shows battery percent, and can help a Magic Mouse scroll after you confirm. It has no gestures and no media-key remapping, so it is not a Magic Utilities clone. Magic Utilities is paid and does gestures. If you want gestures, buy it.</dd>
+        <dt>How do I check my Apple Magic Mouse battery on Windows 10 or 11?</dt>
+        <dd>Pair the mouse in Windows Bluetooth settings, then download <code>MagicMouseTray.exe</code> and run it. A tray icon appears next to the clock with the percent beside it. Windows may hide it behind the ^ arrow, so drag it out. Full steps are on the <a href="battery.html#read">battery page</a>.</dd>
         <dt>Is Magic Tray a desk stand?</dt>
         <dd>No. Magic Tray is downloadable Windows software that sits beside your Windows 10 or 11 clock. It is not a desk tray, riser or cradle for an Apple keyboard.</dd>
         <dt>Does Magic Tray work on Windows 10?</dt>

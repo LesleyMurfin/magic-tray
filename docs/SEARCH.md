@@ -149,6 +149,68 @@ released CC0, from anyone with the 2024 mouse. Worth asking for in the v3 driver
 in the TESTED.md reports thread, and in the Reddit and Hacker News posts listed below. Upload it
 to Wikimedia Commons under CC0 so it is reusable, then drop it in beside the others.
 
+## The entity graph, and why the first structured-data pass was not enough
+
+Two weeks after the markup above shipped, Gemini was asked for a "magic tray windows app" and
+answered with **MagicWindow**, an unrelated window manager in the Microsoft Store. The markup was
+not the problem in the way it looked: the audit found the graph was only whole on the homepage.
+
+Structured data is parsed per page. `battery.html`, `keyboard.html`, `drivers.html`, `devices.html`
+and `v3.html` each *referenced* `https://magictray.app/#app` and `#site` through `about` and
+`isPartOf`, but never *declared* those nodes, so a crawler that landed on any page except the
+homepage — which is most of them, because the subpages are the ones that answer real questions —
+read a page about an entity with no type, no name and no operating system. `funding.html` declared
+a third, slightly different `#app`. Author was an anonymous inline `Person` repeated on every node,
+so nothing tied the site to one identity and there was nowhere for `sameAs` to point.
+
+What changed:
+
+- **Every page declares the same three nodes** — `#person`, `#app`, `#site` — character for
+  character, ahead of its own `WebPage`. Any page read alone now names the product, the platform,
+  the price and the author.
+- **One `Person` node** (`#person`) with `sameAs` to the GitHub profile, this repo and the v3 driver
+  repo, referenced by `@id` from every `author` and `publisher`. No anonymous `Person` is left.
+- **`#app` gained** `softwareRequirements`, `processorRequirements`, `datePublished`,
+  `releaseNotes`, and a `sameAs` array instead of a single string.
+- **The homepage H1 names the product.** It read "Apple Magic Mouse and Keyboard battery on Windows
+  10 and 11" — the brand query that failed was the one string the page never contained.
+- **Magic Utilities is answered, not avoided** (`#mu`). The comparison is honest: no gestures, no
+  media-key remapping, buy Magic Utilities if you need them. Answer engines get asked this
+  constantly, and the site previously only denied being a clone.
+- **FAQ parity is now real.** `battery.html` and `v3.html` had `FAQPage` questions that existed
+  nowhere on the page as a question; `index.html` had eight in schema and six on the page. Schema
+  that quotes text a reader cannot find is the failure mode Google penalises. Every page now has one
+  `dl.faq`, and each answer is condensed rather than a second copy of the body prose.
+- **New questions in the words people actually type**: how do I check my Magic Mouse battery on
+  Windows 10 or 11, how do I check the trackpad, how do I see keyboard percent on Windows 11, why
+  won't my Magic Mouse scroll on Windows 11, does the 2024 USB-C mouse work on Windows 11.
+- **`llms.txt` now disambiguates MagicWindow by name**, next to the existing Etsy and Magic
+  Utilities lines, and says which queries belong to this project.
+- **`SEARCH.md` is `Disallow`ed in `robots.txt`.** This file is the strategy, not the product; it
+  was crawlable and absent from the sitemap.
+
+### The gate that keeps it true
+
+`scripts/check-aeo.ps1` (CI job `aeo-checks`) parses every page's graph and fails the build on: a
+missing or unparseable `ld+json` block, an `@id` reference with no declaration on the same page,
+two pages disagreeing about a shared `@id`, a `WebPage` url that contradicts the canonical link or
+the file path, a missing `dateModified`, FAQ text that differs between schema and page, and a
+`softwareVersion` that has drifted from the visible download links. It is read-only and runs on
+`ubuntu-latest`. It deliberately does not repeat the link, sitemap, robots and CNAME checks in
+`scripts/check-site.ps1`.
+
+Validate the rendered result against Google as well — the gate checks the graph, not Google's
+eligibility rules:
+<https://search.google.com/test/rich-results?url=https%3A%2F%2Fmagictray.app%2F>
+
+### Telling the engines a page changed
+
+`docs/862b894a281ea8cdca5c46c788285279.txt` is an IndexNow key that nothing had ever used.
+`.github/workflows/indexnow.yml` now submits every `<loc>` in `sitemap.xml` to
+`api.indexnow.org` on any push to `main` that touches `docs/**`. That reaches Bing, which feeds
+Copilot and several answer engines, in minutes rather than weeks. Google ignores IndexNow; for
+Google, Search Console → URL Inspection → Request indexing is still the manual lever.
+
 ## Still the biggest lever
 
 Structured data tells Google *what* a page is. Links decide whether the site or the repo ranks. The

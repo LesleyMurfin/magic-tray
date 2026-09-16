@@ -29,16 +29,66 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin",
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ]
+      },
+      {
         "@type": "SoftwareApplication",
         "@id": "https://magictray.app/#app",
         "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
         "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
         "operatingSystem": "Windows 10, Windows 11",
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
-        "license": "https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
         "isAccessibleForFree": true,
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "availability": "https://schema.org/InStock" }
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://magictray.app/funding.html#faq",
+        "isPartOf": { "@id": "https://magictray.app/funding.html#webpage" },
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is Magic Tray free?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Magic Tray costs nothing and always will. It is MIT licensed, every line is public on GitHub, and there is no subscription, no trial and no account. Money donated here pays for Microsoft's check on the Magic Mouse driver, and nothing is held back if nobody ever donates a penny."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does Windows warn me when I run Magic Tray?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Nobody has paid for Microsoft's check on the file, so Windows says it does not recognise the publisher. The warning is about who paid for the check, not about what the app does. Every line is public on GitHub, so you can read it before you run it."
+            }
+          }
+        ]
       },
       {
         "@type": "WebPage",
@@ -49,11 +99,12 @@
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "mainEntity": { "@id": "https://magictray.app/#app" },
+        "hasPart": { "@id": "https://magictray.app/funding.html#faq" },
         "isAccessibleForFree": true,
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "breadcrumb": { "@id": "https://magictray.app/funding.html#breadcrumb" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "BreadcrumbList",
@@ -126,6 +177,14 @@
 
       <h2 id="pay">Paid ways to help</h2>
       <p>Magic Tray has no sponsor button yet. GitHub hasn't approved the page.</p>
+
+      <h2 id="faq">Questions</h2>
+      <dl class="faq">
+        <dt>Is Magic Tray free?</dt>
+        <dd>Yes. Magic Tray costs nothing and always will. It is MIT licensed, every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, and there is no subscription, no trial and no account. Money donated here pays for Microsoft's check on the Magic Mouse driver, and nothing is held back if nobody ever donates a penny.</dd>
+        <dt>Why does Windows warn me when I run Magic Tray?</dt>
+        <dd>Nobody has paid for Microsoft's check on the file, so Windows says it does not recognise the publisher. The warning is about who paid for the check, not about what the app does. Every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, so you can read it before you run it.</dd>
+      </dl>
     </article>
 
     <aside class="rail">

@@ -26,6 +26,45 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin",
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/drivers.html#webpage",
         "name": "Windows 10 and 11 drivers for Apple Magic Mouse scrolling",
@@ -37,9 +76,9 @@
         "hasPart": [
           { "@id": "https://magictray.app/drivers.html#faq" }
         ],
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "BreadcrumbList",
@@ -121,6 +160,14 @@
         "@id": "https://magictray.app/drivers.html#faq",
         "isPartOf": { "@id": "https://magictray.app/drivers.html#webpage" },
         "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Why won't my Apple Magic Mouse scroll on Windows 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The v1 (030D), v2 (0269) and Apple Wireless Mouse (0310) take Apple's own driver; Magic Tray only opens the download page and you run the file. The 2024 USB-C mouse (0323) has no finished scroll fix yet."
+            }
+          },
           {
             "@type": "Question",
             "name": "Which driver does my Apple Magic Mouse need on Windows 10 or 11?",
@@ -262,6 +309,8 @@
 
       <h2 id="faq">Questions</h2>
       <dl class="faq">
+        <dt>Why won't my Apple Magic Mouse scroll on Windows 11?</dt>
+        <dd>Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The v1 (<code>030D</code>), v2 (<code>0269</code>) and Apple Wireless Mouse (<code>0310</code>) take <a href="#v1v2">Apple's own driver</a>; Magic Tray only opens the download page and you run the file. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix yet.</dd>
         <dt>Which driver does my Apple Magic Mouse need on Windows 10 or 11?</dt>
         <dd>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</dd>
         <dt>Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?</dt>
@@ -303,7 +352,7 @@
       <div class="rail-card">
         <h2>Download</h2>
         <p class="cta">
-          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Get Magic Tray 1.1.0</a>
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Get Magic Tray v1.1.0</a>
         </p>
       </div>
     </aside>

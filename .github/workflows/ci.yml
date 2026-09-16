@@ -76,3 +76,16 @@ jobs:
 
     - name: Verify release artifacts
       run: pwsh -File scripts/verify-release.ps1 -PublishDir publish
+
+  # docs/ is published by Pages with no build step, so CI is the only place the
+  # JSON-LD graph gets parsed before a crawler reads it. A dangling @id or a
+  # FAQ answer that is not on the page costs entity resolution silently.
+  aeo-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check structured data
+      run: pwsh -File scripts/check-aeo.ps1

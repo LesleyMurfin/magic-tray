@@ -29,6 +29,45 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin",
+          "https://github.com/LesleyMurfin/magic-tray",
+          "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/battery.html#webpage",
         "url": "https://magictray.app/battery.html",
@@ -36,12 +75,12 @@
         "description": "See Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent beside your clock on Windows 10 and 11, with fixes when nothing shows.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "breadcrumb": { "@id": "https://magictray.app/battery.html#breadcrumb" },
         "mainEntity": { "@id": "https://magictray.app/battery.html#howto" },
         "hasPart": { "@id": "https://magictray.app/battery.html#faq" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "BreadcrumbList",
@@ -123,7 +162,7 @@
             "name": "Which Apple devices show a battery percent?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Magic Tray reports a battery percent for every Apple Magic Mouse, Magic Keyboard and Magic Trackpad it recognises on Windows 10 and 11. Mice and trackpads need nothing extra. A keyboard needs a one-time unlock first. Only three devices have been confirmed by a tester so far."
+              "text": "Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock."
             }
           },
           {
@@ -131,7 +170,7 @@
             "name": "Can I see my Apple keyboard's battery percent on Windows?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Windows shows no percent for an Apple keyboard on its own, but Magic Tray does after a one-time unlock you run from its menu. Your keyboard keeps the standard Windows Bluetooth driver. The 2011 Apple Wireless Keyboard is confirmed, and every rechargeable Magic Keyboard should work, though nobody has confirmed one yet."
+              "text": "Yes, once you run the one-time unlock from the Magic Tray menu. Windows keeps its own keyboard driver, and so far only the 2011 Apple Wireless Keyboard has been confirmed by a tester."
             }
           },
           {
@@ -139,7 +178,7 @@
             "name": "Why is no battery percent showing?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Four things stop a percent appearing on Windows. The device is asleep, so wake it and pick Refresh Now. The tray icon is hidden behind the taskbar's ^ arrow. It's a keyboard that hasn't had its one-time unlock yet. Or Magic Tray doesn't recognise that model."
+              "text": "Usually the device is asleep, or the icon is hiding behind the taskbar's ^ arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows."
             }
           },
           {
@@ -147,7 +186,15 @@
             "name": "Which Apple devices has a tester confirmed?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Three. The Magic Mouse 2024 (0323), the Magic Mouse v1 with AA batteries (030D), and the 2011 Apple Wireless Keyboard (0239). Every other Apple mouse, keyboard and trackpad Magic Tray recognises should work, but nobody has sent a report yet. Send one and yours joins the list."
+              "text": "Three so far: the 2024 Magic Mouse (0323), the AA-battery Magic Mouse v1 (030D) and the 2011 Apple Wireless Keyboard (0239). The rest should work, but nobody has reported back yet."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I check my Apple Magic Trackpad battery on Windows?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Run Magic Tray and hover the battery icon beside your clock. No driver changes, and no extra step like the keyboard's unlock. Magic Trackpad 2 (0265), the 2024 trackpad (0324) and the AA-battery one (030E) should all report a percent, but nobody has confirmed one yet, so send a report if yours works."
             }
           }
         ]
@@ -230,6 +277,20 @@
       <h2 id="confirmed">Which Apple devices has a tester confirmed?</h2>
       <p>Three. The Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>), and the 2011 Apple Wireless Keyboard (<code>0239</code>). Every other Apple mouse, keyboard and trackpad Magic Tray recognises should work, but nobody has sent a report yet. Send one and yours joins the list.</p>
       <p><a href="funding.html#test-devices">Send a report</a> · <a href="TESTED.md">the reports so far</a></p>
+
+      <h2 id="faq">Common questions</h2>
+      <dl class="faq">
+        <dt>Which Apple devices show a battery percent?</dt>
+        <dd>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock.</dd>
+        <dt>Can I see my Apple keyboard's battery percent on Windows?</dt>
+        <dd>Yes, once you run the one-time unlock from the Magic Tray menu. Windows keeps its own keyboard driver, and so far only the 2011 Apple Wireless Keyboard has been confirmed by a tester.</dd>
+        <dt>Why is no battery percent showing?</dt>
+        <dd>Usually the device is asleep, or the icon is hiding behind the taskbar's <code>^</code> arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows.</dd>
+        <dt>Which Apple devices has a tester confirmed?</dt>
+        <dd>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The rest should work, but nobody has reported back yet.</dd>
+        <dt>How do I check my Apple Magic Trackpad battery on Windows?</dt>
+        <dd>Run Magic Tray and hover the battery icon beside your clock. No driver changes, and no extra step like the keyboard's unlock. Magic Trackpad 2 (<code>0265</code>), the 2024 trackpad (<code>0324</code>) and the AA-battery one (<code>030E</code>) should all report a percent, but nobody has confirmed one yet, so <a href="funding.html#test-devices">send a report</a> if yours works.</dd>
+      </dl>
     </article>
 
     <aside class="rail">
