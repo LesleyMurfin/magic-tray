@@ -335,8 +335,15 @@ internal static class DriverHealthChecker
             using var p = System.Diagnostics.Process.Start(psi);
             if (p is null)
                 return false;
-            var text = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(2000);
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(2000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                return false;
+            }
+            var text = stdout.GetAwaiter().GetResult();
+            _ = stderr.GetAwaiter().GetResult();
             return text.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0;
         }
         catch

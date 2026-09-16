@@ -471,14 +471,14 @@ internal static class DriverClaimReader
     }
 
     // oemNN.inf: no separators at all.
-    static bool IsSafeInfName(string? infName)
+    static bool IsSafeName(string? name, int maxLength)
     {
-        if (string.IsNullOrEmpty(infName) || infName.Length > 64)
+        if (string.IsNullOrEmpty(name) || name.Length > maxLength)
             return false;
-        if (infName.Contains("..", StringComparison.Ordinal))
+        if (name.Contains("..", StringComparison.Ordinal))
             return false;
 
-        foreach (var c in infName)
+        foreach (var c in name)
         {
             if (!char.IsAsciiLetterOrDigit(c) && c is not ('.' or '_' or '-'))
                 return false;
@@ -486,9 +486,11 @@ internal static class DriverClaimReader
         return true;
     }
 
+    static bool IsSafeInfName(string? infName) => IsSafeName(infName, maxLength: 64);
+
     // <inf name>_<arch>_<hash>, e.g.
     // magicmousedriver-kmdf-204-scroll.inf_amd64_98a8ba44bfbeebba.
-    static bool IsSafePackageKeyName(string? name) => IsSafeInfName(name);
+    static bool IsSafePackageKeyName(string? name) => IsSafeName(name, maxLength: 160);
 
     // {class guid}\NNNN - exactly one backslash, nothing else path-like.
     static bool IsSafeDriverRef(string? driverRef)

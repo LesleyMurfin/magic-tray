@@ -236,6 +236,7 @@ try {
     'scripts/Install-KeyboardBattery.cmd',
     'scripts/capture-state.ps1',
     'scripts/diagnose-driver.ps1',
+    'scripts/diagnose-and-recover.ps1',
     'scripts/kbd-patch-cachedservices.ps1',
     'scripts/mm-bt-stack-snapshot.ps1'
   )

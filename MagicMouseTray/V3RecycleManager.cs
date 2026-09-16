@@ -33,10 +33,11 @@ internal static class V3RecycleManager
             IsV3Path(p) &&
             p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
-    // True if a v3 Magic Mouse is in Mode B: unified HID path exists (no col0x splits)
-    // AND applewirelessmouse.sys is in the active kernel stack (DEVPKEY_Device_Stack).
-    // DEVPKEY_Device_Stack is the authoritative Mode B discriminator - the entry only
-    // appears after the filter driver loads following the Mode B flip + enable.
+    // True if a v3 Magic Mouse is in Mode B, measured from the present HID interface
+    // paths ONLY: at least one v3 path exists and none of them carries a col0x split.
+    // No kernel-stack property is read here, so this does not prove the Apple filter is
+    // loaded - it proves the path shape scroll depends on. The same definition is used
+    // by the elevated script's Test-ModeB, so both sides agree.
     // mouhid.sys DN_STARTED (Mouse class device) is a false positive in Mode A: mouhid
     // stays bound to col01 and DN_STARTED remains True even when the device is in Mode A.
     // Empirical: real Mode B confirm latency ~563ms (confirmed 2026-05-07).

@@ -843,12 +843,22 @@ internal static class SystemConfigChecker
             using var p = System.Diagnostics.Process.Start(psi);
             if (p is null)
                 return null;
-            var text = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3000);
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(3000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.WaitForExit(1000); } catch { }
+                Logger.Log("SYSTEM_CONFIG_BCDEDIT_TIMEOUT");
+                return null;
+            }
+
+            var text = stdout.GetAwaiter().GetResult();
+            _ = stderr.GetAwaiter().GetResult();
 
             // "Access is denied" / "could not be opened" leave no identifier
             // line, and an exit code we cannot trust.
-            if (p.HasExited && p.ExitCode != 0)
+            if (p.ExitCode != 0)
                 return null;
             if (text.IndexOf("identifier", StringComparison.OrdinalIgnoreCase) < 0)
                 return null;
