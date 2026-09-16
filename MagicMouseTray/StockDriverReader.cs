@@ -361,12 +361,12 @@ internal static class StockDriverReader
 
     // EVERY collection of the live Bluetooth HID stack, which is why this is not
     // DeviceDiagReader.ClassifyPointerKey: that one answers "is this the POINTER
-    // child" and returns None for COL02 and above (DeviceDiagReader.cs:540-542).
-    // Here COL02/COL03 are legitimate nodes to report on.
+    // child" and returns None for COL02 and above. Here COL02/COL03 are
+    // legitimate nodes to report on.
     //
     // The VID_ / &MI_ / USB\ forms are the USB charge-cable phantoms and are
-    // rejected outright, same as DeviceDiagReader.cs:521-524: a phantom COL01
-    // exists on the reference PC after any USB-C charge.
+    // rejected outright, by the same transport gate ClassifyPointerKey opens
+    // with: a phantom COL01 exists on the reference PC after any USB-C charge.
     internal static bool IsBluetoothHidChildKey(string? deviceKeyName, string pid)
     {
         if (string.IsNullOrEmpty(deviceKeyName) || string.IsNullOrEmpty(pid))
@@ -395,7 +395,7 @@ internal static class StockDriverReader
     //
     // (private there, so this is a second copy rather than an edit to a file
     // this change does not own; the P/Invoke declarations below are duplicated
-    // for the same reason DeviceDiagReader.cs:615-618 duplicates its own.)
+    // for the same reason DeviceDiagReader duplicates its own CM_Locate_DevNodeW.)
     static (string? InfPath, string? Provider, string? Version) ReadSoftwareKey(
         RegistryKey instanceKey)
     {

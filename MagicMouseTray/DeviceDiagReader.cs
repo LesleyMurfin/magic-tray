@@ -535,8 +535,8 @@ internal static class DeviceDiagReader
 
     // Two gates before a caller-supplied string is ever concatenated into a key
     // path: it must be one of the driver families the planner knows
-    // (RepairPlanner.cs:363-371), and it must look like a service name -
-    // no separators, no dots, nothing that could climb out of Services\.
+    // (RepairPlanner.IsKmdfFamily / IsAppleFamily), and it must look like a
+    // service name - no separators, no dots, nothing that could climb out of Services\.
     static bool IsSafeFamilyServiceName(string? service)
     {
         if (string.IsNullOrEmpty(service))

@@ -190,10 +190,11 @@ public class StockDriverReaderTests
     {
         // The v3 mouse shape, measured on the reference PC 2026-09-16: five
         // nodes of which only FOUR resolve - the collection-less HID aggregate
-        // reads Status Unknown and does NOT resolve as present
-        // (DeviceDiagReader.cs:471-478), beside a live Col01 pointer child and a
-        // live Col02 vendor collection. That aggregate is not the mouse's driver
-        // and must not make a healthy mouse read as unconfirmed.
+        // reads Status Unknown and does NOT resolve as present (the v3 layout
+        // documented at DeviceDiagReader.PointerKeyKind; SelectPointerKeys drops
+        // that aggregate whenever a Col01 key exists), beside a live Col01
+        // pointer child and a live Col02 vendor collection. That aggregate is not the mouse's
+        // driver and must not make a healthy mouse read as unconfirmed.
         var v3 = @"{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323";
         var info = StockDriverReader.Select(
         [
