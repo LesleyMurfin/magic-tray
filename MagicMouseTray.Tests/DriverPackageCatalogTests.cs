@@ -503,4 +503,27 @@ public class DriverPackageCatalogTests
         Assert.Contains("not on stock HidBth yet", text, StringComparison.Ordinal);
         Assert.Contains("Run Stock again", text, StringComparison.Ordinal);
     }
+
+    // Step 2 failing for a non-UAC reason leaves the same half-changed machine
+    // as the declined prompt, so the message must still name the half that ran
+    // and must carry the thrown reason: a 15-minute timeout and "exited 1" are
+    // different problems and the reason is the only thing separating them.
+    [Fact]
+    public void V3StockRestore_PostStepOneFailureCarriesTheReasonWithThePartialState()
+    {
+        // RunElevated's own non-zero-exit text: it throws
+        // $"{Path.GetFileName(fileName)} exited {p.ExitCode}.", and step 2 of
+        // the Stock restore runs through powershell.exe.
+        const string reason = "powershell.exe exited 1.";
+        var text = DriverInstaller.V3StockPartialRestoreMessage(reason);
+
+        Assert.Contains(DriverPackageCatalog.KmdfUninstallCmdRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains(DriverPackageCatalog.PathAUninstallScriptRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains("not on stock HidBth yet", text, StringComparison.Ordinal);
+        Assert.Contains(reason, text, StringComparison.Ordinal);
+        // It did not claim a decline it never observed.
+        Assert.DoesNotContain("was declined", text, StringComparison.Ordinal);
+    }
 }

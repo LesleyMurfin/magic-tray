@@ -611,6 +611,19 @@ foreach ($id in $restart) {
             ShowBlocked(V3StockPartialRestoreMessage());
             return InstallOutcome.Failed;
         }
+        catch (Exception ex) when (completedSteps == 1)
+        {
+            // Same half-changed machine state as the declined second prompt -
+            // KMDF uninstalled, patched Apple filter still bound - reached by a
+            // different exception: RunElevated's 15-minute timeout, or its
+            // non-zero exit ("powershell.exe exited 1."), or a start failure.
+            // The state and the reason are both needed, so neither
+            // replaces the other: a timeout and a non-zero exit are different
+            // problems, and ex.Message is the only thing that tells them apart.
+            Logger.Log($"DRIVER_STOCK_PARTIAL failed step=2 err={ex.Message}");
+            ShowBlocked(V3StockPartialRestoreMessage(ex.Message));
+            return InstallOutcome.Failed;
+        }
         catch (Exception ex)
         {
             ShowBlocked(ex.Message);
@@ -625,6 +638,20 @@ foreach ($id in $restart) {
     internal static string V3StockPartialRestoreMessage() =>
         $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} ran, then the administrator prompt " +
         $"for {DriverPackageCatalog.PathAUninstallScriptRelativePath} was declined. " +
+        V3StockPartialRestoreState();
+
+    // Step 2 failed after step 1 returned, and not by a declined prompt. The
+    // reason goes on its own line rather than inside the sentence: it is a
+    // thrown message, so its punctuation and length are not ours to assume.
+    internal static string V3StockPartialRestoreMessage(string reason) =>
+        $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} ran, then " +
+        $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} stopped before it finished. " +
+        V3StockPartialRestoreState() +
+        $"\n\n{reason}";
+
+    // The state is identical whichever exception reported it, so both messages
+    // share this half rather than drifting apart as two near-copies.
+    static string V3StockPartialRestoreState() =>
         "The KMDF uninstall is done and the patched Apple filter is still in place, " +
         "so this Magic Mouse is not on stock HidBth yet. " +
         "Run Stock again and approve both prompts to finish it.";
