@@ -64,9 +64,9 @@ Say "should work, nobody has confirmed it yet" for these. Never "supported". Blu
 
 ## Device photographs on the site
 
-- The identification cards on https://magictray.app/devices.html show real licensed photographs of the actual hardware (Wikimedia Commons, CC0 / CC BY / CC BY-SA), not drawings or renders.
+- The identification cards on https://magictray.app/devices.html show real photographs of the actual hardware, not drawings or renders. All but one are freely licensed Wikimedia Commons files (CC0 / CC BY / CC BY-SA).
 - Full per-file attribution: https://github.com/LesleyMurfin/magic-tray/blob/main/THIRD-PARTY-NOTICES.md
-- **Honest gap:** there is no free-licensed photograph of the **Magic Mouse v3 (2024, USB-C) underside** anywhere on Wikimedia Commons, so that one slot shows a labelled placeholder. No v1 or v2 photo is ever passed off as a v3, and Apple's product renders are all-rights-reserved and unusable.
+- **The one exception:** there is no free-licensed photograph of the **Magic Mouse v3 (2024, USB-C) underside** anywhere on Wikimedia Commons, so that slot shows Apple's own product image instead. It is credited on the page as an Apple product image, it is all-rights-reserved, and it carries no Creative Commons or other free licence — do not describe it as CC-licensed or as reusable. A CC0 replacement from an owner is wanted so it can be swapped out. No v1 or v2 photo is ever passed off as a v3.
 - The Magic Mouse v2 photo has a charging cable in it, so the port shape is hidden. It is captioned by the readable etched `Model: A1657`, never by port shape.
 
 ## Not this

@@ -121,9 +121,10 @@ Validate after any edit:
 
 The identification cards on `docs/drivers.html` and `docs/devices.html`, and the model cards on
 `docs/index.html`, used to be CSS-drawn grey rectangles labelled BOTTOM, which told a reader
-nothing. They are now **real licensed photographs of the actual hardware**, shipped under
-`docs/img/` (nine files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. Sources are
-Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0.
+nothing. They are now **real photographs of the actual hardware**, shipped under `docs/img/`
+(ten files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. All but one come from
+Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0; the exception is the 2024 Magic Mouse
+underside, which is an Apple product image and is not freely licensed.
 
 - **Attribution lives in `THIRD-PARTY-NOTICES.md`** — one entry per file with the author, the
   licence, the licence URL and the Commons source page. Two authors mandate a verbatim credit
@@ -137,17 +138,23 @@ Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0.
   Every `<img>` carries a descriptive `alt` and explicit `width`/`height`, so identification is
   possible from the alt text alone and the images cost no layout shift (CLS).
 
-**The one outstanding gap: no free photo of the Magic Mouse v3 (2024, USB-C) underside.**
+**The one outstanding gap: no *free* photo of the Magic Mouse v3 (2024, USB-C) underside.**
 `Category:Magic Mouse` on Wikimedia Commons was enumerated in full and every file checked;
-searches for A3204, "Magic Mouse USB-C" and "Magic Mouse 2024" returned nothing usable. Apple's
-own renders are all-rights-reserved. That slot therefore shows a labelled placeholder, and a v1
-or v2 photo must never be captioned as a v3 — the page that tells people how to identify their
-mouse cannot afford a wrong picture.
+searches for A3204, "Magic Mouse USB-C" and "Magic Mouse 2024" returned nothing usable. That is
+still true — no freely licensed photograph of this device has been found.
 
-The cheapest fix is to **ask an owner for one**: a single overhead shot of the underside,
-released CC0, from anyone with the 2024 mouse. Worth asking for in the v3 driver repo's issues,
-in the TESTED.md reports thread, and in the Reddit and Hacker News posts listed below. Upload it
-to Wikimedia Commons under CC0 so it is reusable, then drop it in beside the others.
+The slot is no longer a placeholder: it now carries **Apple's own product image** of the A3204
+underside, credited on the page as an Apple product image and recorded in
+`THIRD-PARTY-NOTICES.md` as all-rights-reserved with no Creative Commons or other free licence.
+That is a deliberate decision to ship an unfree file, not a licensing win, and nothing on the
+site may describe it as Creative Commons. A v1 or v2 photo must never be captioned as a v3
+either — the page that tells people how to identify their mouse cannot afford a wrong picture.
+
+A CC0 replacement is still wanted, so the Apple file can be swapped out. The cheapest route is
+to **ask an owner for one**: a single overhead shot of the underside, released CC0, from anyone
+with the 2024 mouse. Worth asking for in the v3 driver repo's issues, in the TESTED.md reports
+thread, and in the Reddit and Hacker News posts listed below. Upload it to Wikimedia Commons
+under CC0 so it is reusable, then drop it in beside the others and delete the Apple image.
 
 ## The entity graph, and why the first structured-data pass was not enough
 
