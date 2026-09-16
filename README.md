@@ -349,9 +349,9 @@ Signing secrets are empty, so v1.1.0 shipped without the Microsoft check and Win
 | Level | What it takes | What it removes |
 |---|---|---|
 | Unsigned (today) | nothing | nothing. SmartScreen warns on the app; the 2024-mouse driver needs test signing on and HVCI off |
-| Authenticode OV or EV | a code-signing certificate from a public CA in a verified name, renewed yearly | the app's SmartScreen warning. EV clears it immediately, OV needs reputation to build |
-| Driver attestation | an EV certificate plus a Microsoft Partner Center account | lets the driver load with no test signing and no HVCI change |
-| WHQL | attestation plus passing the Hardware Lab Kit test suite | Windows Update distribution |
+| Authenticode OV or EV | a code-signing certificate from a public CA in a verified name, renewed yearly | names the publisher in the warning, and nothing more on its own. Neither OV nor EV clears SmartScreen: a newly signed binary starts at neutral reputation and the warning persists until file or publisher reputation accumulates, and renewing the certificate changes its thumbprint, which can reset that reputation ([SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)) |
+| Driver attestation signing | an EV certificate plus a Microsoft Partner Center account. No Hardware Lab Kit run | lets the driver load with no test signing and no HVCI change, on Windows 10/11 desktop only — Windows Server blocks attestation-signed device and filter drivers. It does not confer "Certified" and is not eligible for retail Windows Update ([driver signing offerings](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/driver-signing-offerings)) |
+| WHCP certification (historically "WHQL") | an EV certificate, Partner Center, and a passing Hardware Lab Kit test run. A separate offering, not a step above attestation | retail Windows Update distribution, which attestation cannot give ([driver signing offerings](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/driver-signing-offerings)) |
 
 The pipeline is already wired: `scripts/sign-app.ps1` runs on `v*` tags when `SIGN_PFX_BASE64` and `SIGN_PFX_PASSWORD` exist. A self-signed PFX is not enough; it must be a real CA-issued certificate in a verified name, or Windows treats it as untrusted.
 
