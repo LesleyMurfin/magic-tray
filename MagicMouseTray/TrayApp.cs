@@ -24,6 +24,15 @@ internal static class TrayMenu
     internal const string RepositoryLabel = "Repository";
     internal const string ReportBugLabel = "Report a bug";
     internal const string RequestFeatureLabel = "Request a feature";
+    // Root-level, not inside Help: a star ask nobody finds is a star ask nobody acts on.
+    // GitHub has no URL that stars a repo, and Magic Tray holds no GitHub
+    // credentials, so the click opens the repo and the user presses Star there.
+    // The flip records that they took the trip, not that GitHub recorded a star.
+    internal const string StarOnGitHubLabel = "★ Star on GitHub";
+    internal const string StarThanksLabel = "★ Thanks for the support!";
+
+    internal static string StarLabel(bool starClicked) =>
+        starClicked ? StarThanksLabel : StarOnGitHubLabel;
     internal const string ReportBugConfirm =
         "Magic Tray will collect version, driver badges, battery readings, and the last log lines (Bluetooth MAC redacted), copy them, and open a GitHub issue draft. You submit it while logged in.\n\nContinue?";
     internal const string RequestFeatureConfirm =
@@ -447,6 +456,18 @@ internal sealed class TrayApp : IDisposable
         featItem.Click += (_, _) => OpenGitHubDraft(feature: true);
         help.DropDownItems.Add(featItem);
         menu.Items.Add(help);
+
+        var starItem = new ToolStripMenuItem(TrayMenu.StarLabel(_config.StarClicked));
+        starItem.Click += (_, _) =>
+        {
+            Logger.Log("STAR_CLICK");
+            // Only flip once the browser actually launched — a failed handoff
+            // must leave the ask in place.
+            if (!OpenHelpUrl(TrayMenu.RepoUrl)) return;
+            _config.SetStarClicked(true);
+            starItem.Text = TrayMenu.StarLabel(true);
+        };
+        menu.Items.Add(starItem);
 
         menu.Items.Add(new ToolStripSeparator());
 

@@ -374,6 +374,17 @@ public class TrayMenuTests
         Assert.Equal("https://github.com/LesleyMurfin/magic-tray/releases", TrayMenu.ReleasesUrl);
     }
 
+    /// <summary>
+    /// The star row is the ask before the trip to GitHub and the thank-you
+    /// after it — one item, two states, no third wording.
+    /// </summary>
+    [Fact]
+    public void StarLabel_FlipsToThanks_AfterClick()
+    {
+        Assert.Equal("★ Star on GitHub", TrayMenu.StarLabel(starClicked: false));
+        Assert.Equal("★ Thanks for the support!", TrayMenu.StarLabel(starClicked: true));
+    }
+
     [Fact]
     public void FindLocalAlertsDoc_WalksUpToDocs()
     {
