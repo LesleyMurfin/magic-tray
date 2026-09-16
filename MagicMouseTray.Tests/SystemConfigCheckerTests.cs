@@ -88,7 +88,7 @@ public class SystemConfigCheckerTests
     public void SelfSignedBound_WithTestSigningOff_IsExactlyOneBlockingTestModeFact()
     {
         // Measured cause of a dead wheel on a bound self-signed filter
-        // (DeviceRepair.cs:211-236): test signing off means Windows refuses to
+        // (DeviceRepair.cs:232-257): test signing off means Windows refuses to
         // load it. Only Test Mode blocks - HVCI is off and the package is there.
         var facts = SystemConfigChecker.Evaluate(
             DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,

@@ -46,11 +46,22 @@ internal static class DeviceRepair
     internal const int NoInstancesExitCode = 2;
     internal const int FilterBlockedExitCode = 3;
 
-    internal static string StatusSidecarPath(string pid) =>
-        Path.Combine(Path.GetTempPath(), $"mm-repair-{pid.ToLowerInvariant()}.status");
+    // Named after the ATTEMPT, not just the device. Both repairs can be in
+    // flight for the same PID at once: TrayApp's StartRepairApply and
+    // StartStaleFilterRemoval each launch straight into Task.Run, and
+    // RunDriverActionAsync does not serialize driver actions - so a second
+    // Apply (or a second ApplyRemoveStaleFilters) can overlap the first.
+    // Under a PID-only name the poller in LaunchElevated cannot tell whose
+    // report it read - it accepts the first recognised token at that path - so
+    // it would map another elevated process's result onto this attempt, and
+    // the File.Delete in LaunchElevated cannot close that hole because the
+    // other attempt is free to write the path after the delete succeeds. Same
+    // collision and the same fix as ModeFlip's cycle nonce (ModeFlip.cs:225-237).
+    internal static string StatusSidecarPath(string pid, long nonce) =>
+        Path.Combine(Path.GetTempPath(), $"mm-repair-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
 
-    internal static string FiltersStatusSidecarPath(string pid) =>
-        Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid.ToLowerInvariant()}.status");
+    internal static string FiltersStatusSidecarPath(string pid, long nonce) =>
+        Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
 
     // The bound filter name is whatever LowerFilters actually holds on the
     // device - e.g. "MagicMouseDriver204Scroll", a KMDF-family variant of the
@@ -89,6 +100,15 @@ internal static class DeviceRepair
         return pid.ToLowerInvariant();
     }
 
+    // The nonce crosses the elevation boundary as part of a file name on both
+    // sides, so it is rendered as plain digits and nothing else.
+    static string ValidateNonce(long nonce)
+    {
+        if (nonce <= 0)
+            throw new InvalidOperationException($"DeviceRepair needs a positive attempt nonce, got {nonce}.");
+        return nonce.ToString();
+    }
+
     // The names to unregister. Every one has to pass the same family + charset
     // gate as the filter that stays, must not be the filter that stays, and
     // must not repeat - a duplicate would mean the caller built the list from
@@ -115,7 +135,7 @@ internal static class DeviceRepair
     static string PowerShellArrayLiteral(IEnumerable<string> values) =>
         string.Join(", ", values.Select(v => "'" + v.Replace("'", "''", StringComparison.Ordinal) + "'"));
 
-    internal static string BuildScript(string pid, string filterServiceName)
+    internal static string BuildScript(string pid, long nonce, string filterServiceName)
     {
         pid = ValidatePid(pid);
         var svc = ValidateFilterServiceName(filterServiceName);
@@ -129,12 +149,13 @@ internal static class DeviceRepair
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$nonce = '__NONCE__'
 $svc = '__SVC__'
 $pidA = 'PID_' + $targetPid
 $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
-$statusFile = Join-Path $env:TEMP ('mm-repair-' + $targetPid + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-repair-' + $targetPid + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 function Test-Vid([string]$n) {
@@ -240,6 +261,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__SVC__", svc, StringComparison.Ordinal)
             .Replace("__VIDS__", vidLiteral, StringComparison.Ordinal);
         foreach (var name in DeviceEnable.ForbiddenNames)
@@ -267,7 +289,8 @@ exit 1
     // MultiString, and prints every previous value verbatim before writing so
     // the edit is reversible by hand from the transcript. No unpair, no radio,
     // no FLIP, no /enable-device or /disable-device, no service key, no .sys.
-    internal static string BuildRemoveStaleFiltersScript(string pid, string keepService, string[] removeServices)
+    internal static string BuildRemoveStaleFiltersScript(
+        string pid, long nonce, string keepService, string[] removeServices)
     {
         pid = ValidatePid(pid);
         var keep = ValidateFilterServiceName(keepService);
@@ -282,13 +305,14 @@ exit 1
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$nonce = '__NONCE__'
 $keep = '__KEEP__'
 $remove = @(__REMOVE__)
 $pidA = 'PID_' + $targetPid
 $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $enumPath = 'SYSTEM\CurrentControlSet\Enum\BTHENUM'
-$statusFile = Join-Path $env:TEMP ('mm-repair-filters-' + $targetPid + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-repair-filters-' + $targetPid + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 function Test-Vid([string]$n) {
@@ -517,6 +541,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__KEEP__", keep, StringComparison.Ordinal)
             .Replace("__REMOVE__", removeLiteral, StringComparison.Ordinal)
             .Replace("__VIDS__", vidLiteral, StringComparison.Ordinal);
@@ -609,10 +634,16 @@ exit 1
     {
         pid = ValidatePid(pid);
         var svc = ValidateFilterServiceName(filterServiceName);
-        var script = BuildScript(pid, svc);
-        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-{pid}.ps1");
-        Logger.Log($"DEVICE_REPAIR pid={pid} svc={svc}");
-        var run = LaunchElevated(temp, script, StatusSidecarPath(pid));
+        // One nonce per attempt, minted here because Apply IS the attempt: it
+        // names this attempt's script and its status sidecar on both sides of
+        // the elevation boundary - see StatusSidecarPath for what a PID-only
+        // name lets the poller believe. Logged so two overlapping attempts can
+        // be told apart in a support log.
+        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var script = BuildScript(pid, nonce, svc);
+        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-{pid}-{ValidateNonce(nonce)}.ps1");
+        Logger.Log($"DEVICE_REPAIR pid={pid} nonce={nonce} svc={svc}");
+        var run = LaunchElevated(temp, script, StatusSidecarPath(pid, nonce));
         if (!run.Started)
         {
             Logger.Log($"DEVICE_REPAIR pid={pid} outcome=failed reason=no-process");
@@ -631,11 +662,14 @@ exit 1
         pid = ValidatePid(pid);
         var keep = ValidateFilterServiceName(keepService);
         var remove = ValidateRemoveList(keep, removeServices);
-        var script = BuildRemoveStaleFiltersScript(pid, keep, remove);
-        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid}.ps1");
+        // Its own attempt, so its own nonce - this repair can be running while
+        // an Apply for the same PID is, and neither may poll the other's file.
+        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var script = BuildRemoveStaleFiltersScript(pid, nonce, keep, remove);
+        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid}-{ValidateNonce(nonce)}.ps1");
         var removed = string.Join(",", remove);
-        Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} keep={keep} remove={removed}");
-        var run = LaunchElevated(temp, script, FiltersStatusSidecarPath(pid));
+        Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} nonce={nonce} keep={keep} remove={removed}");
+        var run = LaunchElevated(temp, script, FiltersStatusSidecarPath(pid, nonce));
         if (!run.Started)
         {
             Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} keep={keep} remove={removed} outcome=failed reason=no-process");

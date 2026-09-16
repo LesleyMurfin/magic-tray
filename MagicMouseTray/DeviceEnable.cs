@@ -136,10 +136,34 @@ internal static class DeviceEnable
         "The elevated step could not read the Windows device list, so nothing "
         + "was changed.";
 
-    internal static string StatusSidecarPath(string pid) =>
-        Path.Combine(Path.GetTempPath(), $"mm-enable-{pid.ToLowerInvariant()}.status");
+    // Named after the ATTEMPT, not just the device. Two elevated attempts can
+    // be in flight for the same PID at once: TrayApp's StartRepairApply and
+    // StartStaleFilterRemoval each launch straight into Task.Run, and
+    // RunDriverActionAsync does not serialize driver actions. Under a PID-only
+    // name the poller in LaunchElevated cannot tell whose report it parsed -
+    // it accepts the first COMPLETE report at that path - so it would hand
+    // back an end state some other elevated process measured, and the
+    // File.Delete in Apply cannot close that hole because the other attempt is
+    // free to write the path after the delete succeeds. Same collision and the
+    // same fix as ModeFlip's cycle nonce (ModeFlip.cs:225-237).
+    internal static string StatusSidecarPath(string pid, long nonce) =>
+        Path.Combine(Path.GetTempPath(), $"mm-enable-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
 
-    internal static string BuildScript(string pid, bool enable)
+    // The generated .ps1 was PID-derived too, so two overlapping attempts also
+    // took turns overwriting the file the other one was about to run.
+    internal static string ScriptPath(string pid, long nonce) =>
+        Path.Combine(Path.GetTempPath(), $"mm-enable-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.ps1");
+
+    // The nonce crosses the elevation boundary as part of a file name on both
+    // sides, so it is rendered as plain digits and nothing else.
+    static string ValidateNonce(long nonce)
+    {
+        if (nonce <= 0)
+            throw new InvalidOperationException($"DeviceEnable needs a positive attempt nonce, got {nonce}.");
+        return nonce.ToString();
+    }
+
+    internal static string BuildScript(string pid, long nonce, bool enable)
     {
         pid = pid.ToLowerInvariant();
         var needles = VidNeedlesForPid(pid);
@@ -155,6 +179,7 @@ internal static class DeviceEnable
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$nonce = '__NONCE__'
 $verb = '__VERB__'
 $wantEnabled = ($verb -eq 'enable-device')
 $pidA = 'PID_' + $targetPid
@@ -163,7 +188,7 @@ $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
 $containers = @{}
 $enumBase = 'SYSTEM\CurrentControlSet\Enum'
-$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 # The tray decides success from these numbers, so they are the device state as
@@ -316,6 +341,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__VERB__", verb, StringComparison.Ordinal)
             .Replace("__VIDS__", vidLiteral, StringComparison.Ordinal);
         foreach (var name in ForbiddenNames)
@@ -499,11 +525,17 @@ exit 1
         pid = pid.ToLowerInvariant();
         if (VidNeedlesForPid(pid).Length == 0)
             throw new InvalidOperationException($"No catalog VID for pid={pid}.");
-        var temp = Path.Combine(Path.GetTempPath(), $"mm-enable-{pid}.ps1");
-        var statusPath = StatusSidecarPath(pid);
+        // One nonce per attempt, minted here because Apply IS the attempt. It
+        // names this attempt's script and its status sidecar on both sides of
+        // the elevation boundary - see StatusSidecarPath for what a PID-only
+        // name lets the poller believe. Logged so two overlapping attempts can
+        // be told apart in a support log.
+        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var temp = ScriptPath(pid, nonce);
+        var statusPath = StatusSidecarPath(pid, nonce);
         try { File.Delete(statusPath); } catch { /* ignore */ }
-        File.WriteAllText(temp, BuildScript(pid, enable));
-        Logger.Log($"DEVICE_ENABLE pid={pid} val={enable.ToString().ToLowerInvariant()}");
+        File.WriteAllText(temp, BuildScript(pid, nonce, enable));
+        Logger.Log($"DEVICE_ENABLE pid={pid} nonce={nonce.ToString(CultureInfo.InvariantCulture)} val={enable.ToString().ToLowerInvariant()}");
         var run = LaunchElevated(temp, statusPath);
         var reading = ParseSidecar(run.Sidecar);
         var result = Decide(new DeviceEnableEvidence(run.Started, reading, run.Exit), enable);

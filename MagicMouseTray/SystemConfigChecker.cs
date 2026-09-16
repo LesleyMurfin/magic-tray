@@ -29,7 +29,7 @@ namespace MagicMouseTray;
 //     either way") and NEVER Blocking;
 //   - Blocking is reserved for a state this repo has measured to break the
 //     driver that is actually in use - a bound driver whose file is SELF-SIGNED
-//     while test signing is off, or while HVCI is on (DeviceRepair.cs:211-236,
+//     while test signing is off, or while HVCI is on (DeviceRepair.cs:232-257,
 //     docs/ENABLE-DISABLE.md:182). Both of those need a POSITIVE reading.
 //
 // A correctly configured PC must produce an empty list or all-Ok facts.
@@ -797,7 +797,7 @@ internal static class SystemConfigChecker
     // with no elevation at all: the loader publishes the active boot options as
     // Control\SystemStartOptions, and TESTSIGNING appears there when test
     // signing is on. That is the same value DeviceRepair's blocked-filter check
-    // reads (DeviceRepair.cs:215-219, docs/ENABLE-DISABLE.md:182).
+    // reads (DeviceRepair.cs:236-240, docs/ENABLE-DISABLE.md:182).
     //
     // Only when that value is absent or empty - which is ambiguous, because a PC
     // with no boot options at all looks identical to one we could not read - do

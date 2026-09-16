@@ -72,10 +72,14 @@ public class DeviceEnableTests
             "0239"));
     }
 
+    // One attempt, one nonce. It names the generated script and the status
+    // sidecar on both sides of the elevation boundary.
+    const long Nonce = 1_757_900_000_000;
+
     [Fact]
     public void DisableScript_QuotesInstanceId_WalksEnum_CatalogVids()
     {
-        var script = DeviceEnable.BuildScript("030d", enable: false);
+        var script = DeviceEnable.BuildScript("030d", Nonce, enable: false);
         Assert.Contains("pnputil.exe", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"/$verb\" \"$id\"", script, StringComparison.Ordinal);
         Assert.DoesNotContain("/$verb $id", script, StringComparison.Ordinal);
@@ -95,7 +99,7 @@ public class DeviceEnableTests
     {
         foreach (var enable in new[] { false, true })
         {
-            var script = DeviceEnable.BuildScript("030d", enable);
+            var script = DeviceEnable.BuildScript("030d", Nonce, enable);
             Assert.Contains("if ($enumerator -eq 'USB') { return }", script, StringComparison.Ordinal);
             Assert.Contains("StartsWith('usb\\')", script, StringComparison.Ordinal);
             Assert.Contains("StartsWith('hid\\vid_')", script, StringComparison.Ordinal);
@@ -110,7 +114,7 @@ public class DeviceEnableTests
     {
         foreach (var enable in new[] { false, true })
         {
-            var script = DeviceEnable.BuildScript("030d", enable);
+            var script = DeviceEnable.BuildScript("030d", Nonce, enable);
             // ContainerID is read off each matched instance key...
             Assert.Contains("GetValue('ContainerID')", script, StringComparison.Ordinal);
             // ...recorded per instance id...
@@ -132,7 +136,7 @@ public class DeviceEnableTests
     [Fact]
     public void DisableScript_SortsBthenumLast()
     {
-        var script = DeviceEnable.BuildScript("030d", enable: false);
+        var script = DeviceEnable.BuildScript("030d", Nonce, enable: false);
         Assert.Contains("StartsWith('BTHENUM\\'", script, StringComparison.Ordinal);
         Assert.Contains("Sort-Object $rank)", script, StringComparison.Ordinal);
     }
@@ -140,7 +144,7 @@ public class DeviceEnableTests
     [Fact]
     public void EnableScript_UsesEnableDevice_BthenumFirst()
     {
-        var script = DeviceEnable.BuildScript("030d", enable: true);
+        var script = DeviceEnable.BuildScript("030d", Nonce, enable: true);
         Assert.Contains("$verb = 'enable-device'", script, StringComparison.Ordinal);
         Assert.DoesNotContain("$verb = 'disable-device'", script, StringComparison.Ordinal);
         Assert.Contains("Sort-Object $rank -Descending", script, StringComparison.Ordinal);
@@ -150,8 +154,33 @@ public class DeviceEnableTests
     public void BuildScript_UnknownPid_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            DeviceEnable.BuildScript("abcd", enable: false));
+            DeviceEnable.BuildScript("abcd", Nonce, enable: false));
         Assert.Contains("No catalog VID", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StatusSidecar_IsNamedAfterTheAttemptNotJustTheDevice()
+    {
+        var mine = DeviceEnable.StatusSidecarPath("030d", Nonce);
+
+        // Nothing serializes elevated attempts - StartRepairApply and
+        // StartStaleFilterRemoval go straight to Task.Run, and
+        // RunDriverActionAsync does not queue driver actions - while the poller
+        // accepts the first COMPLETE report at the path it watches. So a second
+        // attempt for the same PID must not land on this attempt's file, or the
+        // tray reports an end state that a different process measured.
+        Assert.NotEqual(mine, DeviceEnable.StatusSidecarPath("030d", Nonce + 1));
+        Assert.NotEqual(
+            DeviceEnable.ScriptPath("030d", Nonce),
+            DeviceEnable.ScriptPath("030d", Nonce + 1));
+
+        // Both sides of the elevation boundary derive the name the same way, so
+        // the script writes the file the tray is polling.
+        var script = DeviceEnable.BuildScript("030d", Nonce, enable: true);
+        Assert.Contains($"$nonce = '{Nonce}'", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $nonce + '.status')",
+            script, StringComparison.Ordinal);
     }
 
     // --- idempotency and end-state verification --------------------------
@@ -166,7 +195,7 @@ public class DeviceEnableTests
     {
         foreach (var enable in new[] { false, true })
         {
-            var script = DeviceEnable.BuildScript("030d", enable);
+            var script = DeviceEnable.BuildScript("030d", Nonce, enable);
             // State is read off CONFIGFLAG_DISABLED, per instance.
             Assert.Contains("$flags = $k.GetValue('ConfigFlags')", script, StringComparison.Ordinal);
             Assert.Contains("-band 0x20", script, StringComparison.Ordinal);

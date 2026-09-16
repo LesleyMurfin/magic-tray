@@ -133,7 +133,7 @@ internal static class DeviceStackReader
     // same PID matcher DeviceSnapshotReader.ReadBthenumLayer uses - there is one
     // PID-matching convention, not two. An instance id is
     // BTHENUM\<device key>\<instance key>; the usb\ / hid\vid_ phantom prefixes
-    // DeviceRepair skips (DeviceRepair.cs:148-153) cannot occur here because only
+    // DeviceRepair skips (DeviceRepair.cs:169-174) cannot occur here because only
     // Enum\BTHENUM is enumerated.
     static List<string> LiveInstanceIds(string pid)
     {

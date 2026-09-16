@@ -261,7 +261,7 @@ Rows are per **model PID**, not per physical mouse. Two Magic Mouse v1 share one
 
 USB charge-cable leftovers (`USB\VID_05AC&PID_...`, `HID\VID_...`, `CM_PROB_PHANTOM`) are **not** toggled. Those are not the Bluetooth mouse.
 
-The verdict is the end state, never an exit code: the elevated script reads the device state first, skips `pnputil` entirely when there is nothing to do, and re-reads after any call. Log: `DEVICE_WINDOWS_STATE pid=... enable=... outcome=Changed|AlreadyInState|UacDeclined|Failed|NoInstances` from the tray, and `DEVICE_ENABLE pid=... val=...` then `DEVICE_ENABLE pid=... exit=... verified=... sidecar=ok|already|not-verified|no-instances|script-error|none|not-started` from the elevated step. Sidecar is `%TEMP%\mm-enable-<pid>.status`, so the result does not depend on UAC `ExitCode`.
+The verdict is the end state, never an exit code: the elevated script reads the device state first, skips `pnputil` entirely when there is nothing to do, and re-reads after any call. Log: `DEVICE_WINDOWS_STATE pid=... enable=... outcome=Changed|AlreadyInState|UacDeclined|Failed|NoInstances` from the tray, and `DEVICE_ENABLE pid=... nonce=... val=...` then `DEVICE_ENABLE pid=... exit=... verified=... sidecar=ok|already|not-verified|no-instances|script-error|none|not-started` from the elevated step. Sidecar is `%TEMP%\mm-enable-<pid>-<nonce>.status`, so the result does not depend on UAC `ExitCode`. The nonce is per attempt, not per device: two overlapping elevated attempts for the same PID would otherwise share one status file, and the poller could read the other attempt's verdict as its own.
 
 ## Windows Settings
 

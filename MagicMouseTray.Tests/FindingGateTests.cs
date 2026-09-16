@@ -95,7 +95,7 @@ public class FindingGateTests
         // The driver-rebuild case exactly: the filter drops out of
         // DEVPKEY_Device_Stack while pnputil is restarting the device, the next
         // PnP step puts it back, and the whole excursion is over inside the
-        // repair script's own 10 s poll (DeviceRepair.cs:195).
+        // repair script's own 10 s poll (DeviceRepair.cs:216).
         var fault = Finding("0323", RepairProblem.FilterNotInStack);
 
         gate.Confirm(Raw(fault), T0);
