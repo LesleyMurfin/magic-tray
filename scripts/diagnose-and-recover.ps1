@@ -73,10 +73,17 @@ function Test-InstanceMatchesPid {
     param([string]$InstanceId, [string]$Hex)
     $n = Get-PidNeedle $Hex
     $low = $InstanceId.ToLowerInvariant()
-    # A PID alone is not unique across vendors, so a match needs an Apple
-    # vendor ID as well: VID_05AC on USB/HID, and _VID&0001004c_ or
-    # _VID&000205ac_ on BTHENUM. A candidate with no vendor ID, or with
-    # another vendor's, is never a target even when the PID token collides.
+    # A PID alone is not unique across vendors: BTHENUM\{00001124-...}_VID&0000045e_
+    # PID&030d is a Microsoft mouse carrying the Magic Mouse v1 PID, and the app
+    # rejects it too (DeviceEnable.MatchesInstance, DeviceEnable.cs:100-121;
+    # fixture DeviceEnableTests.cs:58-60). So a match needs an Apple vendor id
+    # PRESENT, not merely no other vendor's - VID_05AC on USB/HID, _VID&0001004c_
+    # or _VID&000205ac_ on BTHENUM, which are the only three VidPattern values in
+    # the whole catalog (MouseBatteryDevice.KnownMice, KnownKeyboards). Requiring
+    # presence loses nothing: Windows emits the PID token only in the joint
+    # VID_xxxx&PID_xxxx / _VID&xxxxxxxx_PID&xxxx form, so every id that reaches
+    # the vendor test already carries a vendor id. The VID-less BTHENUM forms
+    # (Dev_<MAC>, _LOCALMFG&000f) carry no PID either and never matched.
     $vid = [regex]::Match(
         $low,
         '(?:^|[^a-z0-9])vid(?:_|&)([0-9a-f]+)(?=[^0-9a-f]|$)')
