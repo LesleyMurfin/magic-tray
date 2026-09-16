@@ -26,6 +26,9 @@ internal sealed class Config
     internal bool EnableV3Recycle { get; private set; } = false;
     internal bool EnableThirdParty { get; private set; } = false;
     internal bool UpdateCheck { get; private set; } = true;
+    // Set once the user has been sent to the repo to star it. Only drives the
+    // tray label; the app never contacts GitHub to confirm the star.
+    internal bool StarClicked { get; private set; } = false;
     // Lasting 0323 radio: kmdf | pathA | stock. PathA survives Mode A (no Apple LowerFilters).
     internal const string Driver0323Kmdf = "kmdf";
     internal const string Driver0323PathA = "pathA";
@@ -66,6 +69,8 @@ internal sealed class Config
                     cfg.EnableThirdParty = tp;
                 else if (key == "update_check" && bool.TryParse(val, out bool uc))
                     cfg.UpdateCheck = uc;
+                else if (key == "star_clicked" && bool.TryParse(val, out bool sc))
+                    cfg.StarClicked = sc;
                 else if (key == "driver_0323")
                 {
                     var choice = ParseDriver0323(val);
@@ -131,6 +136,14 @@ internal sealed class Config
         Logger.Log($"CONFIG enable_third_party={value}");
     }
 
+    internal void SetStarClicked(bool value)
+    {
+        if (StarClicked == value) return;
+        StarClicked = value;
+        Persist();
+        Logger.Log($"CONFIG star_clicked={value.ToString().ToLower()}");
+    }
+
     internal void SetDriver0323(string value)
     {
         var choice = ParseDriver0323(value);
@@ -165,7 +178,8 @@ internal sealed class Config
                 $"start_with_windows={StartWithWindows.ToString().ToLower()}",
                 $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
                 $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
-                $"update_check={UpdateCheck.ToString().ToLower()}"
+                $"update_check={UpdateCheck.ToString().ToLower()}",
+                $"star_clicked={StarClicked.ToString().ToLower()}"
             };
             if (!string.IsNullOrEmpty(Driver0323))
                 lines.Add($"driver_0323={Driver0323}");

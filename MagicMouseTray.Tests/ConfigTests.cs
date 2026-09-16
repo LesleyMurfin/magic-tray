@@ -31,6 +31,22 @@ public class ConfigTests : IDisposable
         Assert.False(File.Exists(_path));
     }
 
+    /// <summary>
+    /// The thank-you label must survive a restart: a user who already went to
+    /// star the repo should never be asked again.
+    /// </summary>
+    [Fact]
+    public void StarClicked_DefaultsFalse_AndSurvivesReload()
+    {
+        var cfg = Config.Load(_path);
+        Assert.False(cfg.StarClicked);
+
+        cfg.SetStarClicked(true);
+        Assert.True(cfg.StarClicked);
+
+        Assert.True(Config.Load(_path).StarClicked);
+    }
+
     [Fact]
     public void SetDeviceEnabled_030dFalse_IndependentOf0323()
     {
