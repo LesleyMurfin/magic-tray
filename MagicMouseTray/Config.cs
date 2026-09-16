@@ -141,7 +141,7 @@ internal sealed class Config
         if (StarClicked == value) return;
         StarClicked = value;
         Persist();
-        Logger.Log($"CONFIG star_clicked={value.ToString().ToLower()}");
+        Logger.Log($"CONFIG star_clicked={value}");
     }
 
     internal void SetDriver0323(string value)
