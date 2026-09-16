@@ -123,4 +123,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ZIP_PATH: ${{ steps.package.outputs.zip }}
           SUMS_PATH: ${{ steps.package.outputs.sums }}
-        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/mm-bt-stack-snapshot.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes
+        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/diagnose-and-recover.ps1" "publish/mm-bt-stack-snapshot.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes
