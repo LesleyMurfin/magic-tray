@@ -30,13 +30,13 @@ internal static class TrayMenu
     // The flip records that they took the trip, not that GitHub recorded a star.
     internal const string StarOnGitHubLabel = "★ Star on GitHub";
     internal const string StarThanksLabel = "★ Thanks for the support!";
-
-    internal static string StarLabel(bool starClicked) =>
-        starClicked ? StarThanksLabel : StarOnGitHubLabel;
     internal const string ReportBugConfirm =
         "Magic Tray will collect version, driver badges, battery readings, and the last log lines (Bluetooth MAC redacted), copy them, and open a GitHub issue draft. You submit it while logged in.\n\nContinue?";
     internal const string RequestFeatureConfirm =
         "Magic Tray will open a GitHub feature-request draft with the app version. The text is also on the clipboard. You submit it while logged in.\n\nContinue?";
+
+    internal static string StarLabel(bool starClicked) =>
+        starClicked ? StarThanksLabel : StarOnGitHubLabel;
 
     // Global picker: percent floor, then time alerts. No invented hours.
     internal static string GlobalThresholdLabel(int pct) => $"{pct}%  then time alerts";
@@ -460,7 +460,6 @@ internal sealed class TrayApp : IDisposable
         var starItem = new ToolStripMenuItem(TrayMenu.StarLabel(_config.StarClicked));
         starItem.Click += (_, _) =>
         {
-            Logger.Log("STAR_CLICK");
             // Only flip once the browser actually launched — a failed handoff
             // must leave the ask in place.
             if (!OpenHelpUrl(TrayMenu.RepoUrl)) return;

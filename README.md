@@ -129,7 +129,7 @@ Right-click the tray icon.
 | Refresh Now | Immediate battery read |
 | Diagnostics | Logs, test notification, capture scripts |
 | Help/Documentation | Alerts doc, this repo, report a bug (pre-filled diagnostics), request a feature |
-| ★ Star on GitHub | Opens this repo so you can press Star. The row then reads **★ Thanks for the support!** and stays that way. No GitHub sign-in inside the app, no token, no telemetry — the app never contacts GitHub to check. |
+| ★ Star on GitHub | Opens this repo so you can press Star there. The row then reads ★ Thanks for the support! and stays that way. No sign-in, no token, and the app never asks GitHub whether you starred it. |
 | Quit | Exit |
 
 Footer: **Magic Tray 1.1.0**.
