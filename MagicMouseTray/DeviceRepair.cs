@@ -548,9 +548,13 @@ exit 1
             WindowStyle = ProcessWindowStyle.Normal,
             WorkingDirectory = Path.GetTempPath(),
         };
-        using var p = Process.Start(psi);
+        Process? p;
+        try { p = Process.Start(psi); }
+        catch (System.ComponentModel.Win32Exception) { return (false, "", null); }
         if (p is null)
             return (false, "", null);
+        using (p)
+        {
         var started = DateTime.UtcNow;
         var until = started + TimeSpan.FromMinutes(2);
         var sidecar = "";
@@ -580,6 +584,7 @@ exit 1
         }
         int? exit = null;
         try { if (p.HasExited) exit = p.ExitCode; } catch { /* UseShellExecute */ }
+        }
         return (true, sidecar, exit);
     }
 

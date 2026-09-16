@@ -499,7 +499,7 @@ foreach ($id in $restart) {
     // a real possibility with its mechanism, not as a certainty, and with the
     // way back.
     internal static string KmdfDisplacementWarning() =>
-        "You are on the KMDF driver right now, and this install can move this mouse off it. " +
+        "If this mouse is on the KMDF driver right now, this install can move it off. " +
         "Apple's own INF now also claims the Magic Mouse 2024 (0323), and Apple's package is WHQL-signed. " +
         "Windows ranks a WHQL-signed package above the test-signed KMDF package, " +
         "so installing this route can win that ranking and displace KMDF. " +

@@ -487,6 +487,24 @@ public class ModeFlipTests
         Assert.False(ModeFlip.CompareTargets(recorded,
             [Carrier(), new ModeFlipTarget(InstanceKey, true, ["applewirelessmouse"])]));
     }
+    [Fact]
+    public void CompareTargets_PreservesRecordedOrderWithFamilyFilterNotFirst()
+    {
+        // Recorded with family filter in second position
+        var recordedNonFirst = new[] { 
+            new ModeFlipTarget(DeviceKey, true, ["mouhid", "applewirelessmouse"]), 
+            NoValue() 
+        };
+
+        // Restored in same order: matches
+        Assert.True(ModeFlip.CompareTargets(recordedNonFirst,
+            [new ModeFlipTarget(DeviceKey, true, ["mouhid", "applewirelessmouse"]), NoValue()]));
+        
+        // If family filter gets moved to first position: does not match
+        Assert.False(ModeFlip.CompareTargets(recordedNonFirst,
+            [new ModeFlipTarget(DeviceKey, true, ["applewirelessmouse", "mouhid"]), NoValue()]));
+    }
+
 
     [Fact]
     public void CompareTargets_MissingKeyOrUnreadableHiveIsNoEvidence()

@@ -119,7 +119,7 @@ internal static class StockDriverReader
     // record must never be allowed to answer a question about the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
     const uint CR_SUCCESS = 0x00000000;
-    const uint CR_BUFFER_SMALL = 0x0000001A;
+    const uint CR_NO_SUCH_DEVNODE = 0x0000000D;
 
     // cfgmgr32.h: the devnode is flagged as having a problem. See NodeOk for
     // why this, and not DN_STARTED (0x00000008), is the health test.
@@ -415,11 +415,15 @@ internal static class StockDriverReader
     {
         try
         {
-            if (CM_Locate_DevNodeW(out var devInst, instanceId, CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS)
+            var cr = CM_Locate_DevNodeW(out var devInst, instanceId, CM_LOCATE_DEVNODE_NORMAL);
+            if (cr == CR_NO_SUCH_DEVNODE)
                 // The key is there and PnP has no live devnode for it. Proven
                 // absent, so it is not a node this reader may speak for - and Ok
                 // stays unknown rather than being reported as broken.
                 return (false, null, []);
+            if (cr != CR_SUCCESS)
+                // We could not ask. No evidence either way.
+                return (null, null, []);
 
             return (true, NodeOk(devInst), ReadDriverStack(devInst) ?? []);
         }

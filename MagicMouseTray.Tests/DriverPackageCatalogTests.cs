@@ -452,7 +452,7 @@ public class DriverPackageCatalogTests
             text, StringComparison.Ordinal);
         Assert.Contains("0323", text, StringComparison.Ordinal);
         // a real possibility, never a promise
-        Assert.Contains("can move this mouse off it", text, StringComparison.Ordinal);
+        Assert.Contains("can move it off", text, StringComparison.Ordinal);
         Assert.DoesNotContain("will move", text, StringComparison.Ordinal);
         // the concrete loss and the way back
         Assert.Contains("tunable scroll", text, StringComparison.Ordinal);

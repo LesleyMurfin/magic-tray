@@ -1373,14 +1373,26 @@ foreach ($n in $nodes) {
         continue
     }
     $want = New-Object System.Collections.Generic.List[string]
-    [void]$want.Add($restoreName)
-    # @($null) is a one-element array holding $null, so an ABSENT value would
-    # otherwise contribute an empty string and the key would come back as
-    # REG_MULTI_SZ { applewirelessmouse, "" } - a value the flip never wrote.
+    $foundFamily = $false
+    # Preserve the recorded order: replace family filters in-place, keep others.
     foreach ($m in @($n.Names)) {
         $s = [string]$m
         if ($s.Length -eq 0) { continue }
+        # Family filter: replace with the one we're restoring to
+        if ($s -imatch '^(MagicMouseDriver|mouhid|applewirelessmouse)') {
+            if (-not $foundFamily) {
+                [void]$want.Add($restoreName)
+                $foundFamily = $true
+            }
+            # Skip the old family filter; we already added the new one
+            continue
+        }
+        # Non-family filter: keep it
         [void]$want.Add($s)
+    }
+    # If no family filter was in the recorded list, add it at the end
+    if (-not $foundFamily) {
+        [void]$want.Add($restoreName)
     }
     [void]$expect.Add($n)
     [void]$pending.Add([pscustomobject]@{ Path = $n.Path; Want = $want })
