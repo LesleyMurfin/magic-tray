@@ -7,7 +7,12 @@
 # validators must be tracked here. See .ai/validators/README.md.
 .ai/*
 !.ai/validators/
-.ai/validators/__pycache__/
+# Bytecode from the PR gates: github.py loads every validator and
+# scripts/pr_diagram.py through importlib, which writes __pycache__/ next to
+# each source file — under .ai/validators/ AND under scripts/. Repo-wide so
+# both are covered at any depth; it sits after the negation above, so it still
+# applies inside the re-included .ai/validators/.
+__pycache__/
 .orca/
 .riley-session
 

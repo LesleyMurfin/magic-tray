@@ -1,8 +1,8 @@
-# Vendored PR gates (copies — RILEY is canonical)
+# Vendored PR gates (copies — upstream is canonical)
 
-Every file in this directory is a **byte-for-byte copy** of a RILEY-canonical
-validator. Do **not** edit them here. Fix the canonical copy in RILEY, then
-re-vendor (see *Refreshing* below).
+Every file in this directory, plus `scripts/pr_diagram.py` and
+`templates/diagrams/*`, is a **byte-for-byte copy** of upstream gate tooling.
+Do **not** edit them here. Fix upstream, then re-vendor (see *Refreshing* below).
 
 ## What is vendored, and from where
 
@@ -15,14 +15,17 @@ re-vendor (see *Refreshing* below).
 | `templates/diagrams/*`                | `~/projects/RILEY/templates/diagrams/*`                |
 
 - Copied: **2026-09-15**
-- RILEY `HEAD` at copy time: **`c5cbcd63f`**
-- All five are standard-library only (`argparse`, `re`, `sys`, `subprocess`,
-  `pathlib`, `collections`). None import a RILEY-internal module. Both paths
-  they resolve are repo-relative, so they work unmodified here:
+- Source mirror: `~/projects/RILEY` @ **`c5cbcd63f`** (canonical origin: `LesleyMurfin/revive_ai-dev` per RILEY's `.ai/governance/sync-manifest.yml:13`)
+- All four Python files are standard-library only (`argparse`, `re`, `sys`,
+  `subprocess`, `pathlib`, `collections`). None import an internal module. Both
+  paths they resolve are repo-relative, so they work unmodified here:
   `scripts/pr_diagram.py` reads `<repo>/templates/diagrams/`, and
   `adr-number-check.py` reads `<repo>/design/adr/` (absent in this repo, so
-  `github.py` skips that gate entirely).
-
+  `github.py` skips that gate entirely; the validator is pre-provisioned).
+- `templates/diagrams/` carries 6 archetype skeletons (`.txt`), plus `none`
+  which intentionally has no skeleton file. Note: path references in
+  `templates/diagrams/README.md` (`design/`, `scripts/tests/`, `.ai/skills/`)
+  resolve in upstream RILEY, not in this consumer repo.
 ## Why this repo needs its own copy
 
 `~/projects/scripts/github.py` resolves each gate **relative to the repo being
@@ -49,9 +52,10 @@ change to RILEY-canonical scripts and must go through `/change-management`
 `.gitignore` had to be reworked for this to be possible: a blanket `.ai/` entry
 excludes the parent directory, and git cannot re-include a path whose parent is
 excluded, so `!.ai/validators/` alone does nothing. The rules are now
-`.ai/*` + `!.ai/validators/` + `.ai/validators/__pycache__/`; the rest of
+`.ai/*` + `!.ai/validators/` + `__pycache__/`; the rest of
 `.ai/` (`learning/`, `telemetry/`, `test-runs/`, snapshots, scratch) stays
-ignored.
+ignored, while `__pycache__/` covers bytecode under `.ai/validators/` AND
+`scripts/` at any depth.
 
 ## Refreshing
 
@@ -72,4 +76,21 @@ python3 .ai/validators/pr-admission-check.py --help
 python3 scripts/pr_diagram.py classify
 ```
 
-Never diverge from RILEY. If a gate is wrong, it is wrong in RILEY.
+Never diverge from upstream. If a gate is wrong, it is wrong upstream.
+
+## Known upstream issues (tracked, not forked)
+
+Three defects were identified and reproduced during PR #142 review, then filed
+upstream at `LesleyMurfin/revive_ai-dev#1112` rather than patched locally:
+
+1. `scripts/pr_diagram.py`: `_git` converts non-zero exits to `""`, causing
+   an unresolvable `--base` to silently classify as `generic` with exit 0
+   (fails open instead of closed).
+2. `scripts/pr_diagram.py`: `changed_paths` drops source paths on rename rows
+   (`R100\told\tnew`), so moving a validator to a docs path drops the
+   enforcement diagram requirement and drops the file from `_snapshot`.
+3. `.ai/validators/pr-admission-check.py`: `_strip_fences` only strips
+   backtick fences, so `~~~` CommonMark blocks leak text (e.g. `TODO`) into
+   the admission detector and cause false-positive blocks.
+
+These will be incorporated on the next upstream re-vendor once merged there.
