@@ -71,7 +71,7 @@
        the previous version while the graph advertises the new one, and answer
        engines quote the stale number.
 
-    7. Preview metadata completeness (Test-PreviewMetadata)
+    7. Preview metadata completeness (Test-PreviewMeta)
        Every indexable page carries the whole og:/twitter: set the site has
        settled on - type, site_name, title, description, url, image, image
        width, height and alt, twitter card, title, description and image - no
@@ -1088,7 +1088,7 @@ function Test-VersionCoherence {
     }
 }
 
-function Test-PreviewMetadata {
+function Test-PreviewMeta {
     <#
     .SYNOPSIS
         Check 7: every indexable page carries the whole og:/twitter: preview
@@ -1465,7 +1465,7 @@ $findings.AddRange([pscustomobject[]]@(Test-EntityConsistency -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-PageIdentity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-FaqParity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-VersionCoherence -Page $pages))
-$findings.AddRange([pscustomobject[]]@(Test-PreviewMetadata -Page $pages -SiteRoot $siteRoot))
+$findings.AddRange([pscustomobject[]]@(Test-PreviewMeta -Page $pages -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-FreshnessLine -Page $pages -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-MarkdownLink -Page $pages -SiteRoot $siteRoot))
 $findings.AddRange([pscustomobject[]]@(Test-PictureFallback -Page $pages -SiteRoot $siteRoot))
