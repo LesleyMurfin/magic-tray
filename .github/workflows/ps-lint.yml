@@ -13,12 +13,11 @@ on:
       - '**.ps1'
       - 'PSScriptAnalyzerSettings.psd1'
       - '.github/workflows/ps-lint.yml'
+  # No paths filter on pull_request: `PowerShell lint` is a required check, and
+  # a check skipped by a path filter never reports, which blocks the PR forever.
+  # The push filter above stays - main only needs a re-lint when a script changes.
   pull_request:
     branches: [main]
-    paths:
-      - '**.ps1'
-      - 'PSScriptAnalyzerSettings.psd1'
-      - '.github/workflows/ps-lint.yml'
   workflow_dispatch:
 
 permissions:

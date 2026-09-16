@@ -1,11 +1,11 @@
 name: Site
 
 on:
+  # No paths filter on pull_request: `Site checks` is a required check, and a
+  # check skipped by a path filter never reports, which blocks the PR forever.
+  # The push filter stays - main only needs a re-check when docs/ changes.
   pull_request:
-    paths:
-      - 'docs/**'
-      - 'scripts/check-site.ps1'
-      - '.github/workflows/site.yml'
+    branches: [main]
   push:
     branches: [main]
     paths:

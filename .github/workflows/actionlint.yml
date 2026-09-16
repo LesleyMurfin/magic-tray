@@ -6,10 +6,11 @@ name: Workflow lint
 # pinned below, so no third-party action is required.
 
 on:
+  # No paths filter on pull_request: `Workflow lint` is a required check, and a
+  # check skipped by a path filter never reports, which blocks the PR forever.
+  # The push filter stays - main only needs a re-lint when a workflow changes.
   pull_request:
     branches: [main]
-    paths:
-      - ".github/workflows/**"
   push:
     branches: [main]
     paths:
