@@ -29,12 +29,15 @@ Build a standalone, disposable Python package `tests/coderabbit_eval/` containin
   `verdict: buy | skip` recommendation based on a recall threshold (default: recall >= 0.8 on
   must-catch fixtures and zero false positives on controls => `buy`; otherwise `skip`).
 
-This spec covers fixture design, labeling schema, and the scoring script's contract only. It
-does NOT implement the fixtures or the script — that is follow-up work for the next agent.
+This spec covers fixture design, labeling schema, and the scoring script's contract. The
+fixtures, `gold/labels.json` and `scripts/score.py` described below are implemented on this
+branch; the Step-by-Step section records the design they were built to, and the Verification
+section is the contract they are checked against.
 
 ## Files to Touch
 
-New files only (nothing existing is modified):
+New files, plus one `.gitignore` hunk ignoring `__pycache__/` and `*.pyc` because the harness is
+a Python package:
 
 - `tests/coderabbit_eval/__init__.py` — empty, marks the package.
 - `tests/coderabbit_eval/security/sql_injection.py` — planted SQLi via string concatenation.
@@ -100,7 +103,9 @@ New files only (nothing existing is modified):
      tests/coderabbit_eval/gold/labels.json [--threshold 0.8]`.
    - `--comments` accepts a JSON file shaped like a CodeRabbit PR review comments export: a list
      of objects each with at least `path`, `line`, and `body` (adapt to CodeRabbit's actual export
-     shape if available; otherwise document the assumed shape inline in a module docstring).
+     shape if available; otherwise document the assumed shape inline in a module docstring). A
+     top-level object is accepted only as a wrapper carrying that list under `comments`; any
+     other object shape is a fatal input error rather than a silent zero-comment report.
    - Reading `/dev/null` (empty input) MUST parse as zero comments, not error.
    - Matching logic: a `must_flag` fixture counts as a true positive if any comment's `path`
      names the fixture's `file` by its complete repository-relative path (a longer candidate
@@ -129,15 +134,16 @@ New files only (nothing existing is modified):
      `"skip"`.
    - Exit codes: `0` for any successfully produced report, whatever the verdict — including an
      empty comments input such as `/dev/null`. `2` for a genuinely invalid input: malformed JSON
-     in either file, an unreadable file, a comments payload that is not a JSON array, or a
-     labels manifest that fails the validation above. This is a reporting tool rather than a
-     test-suite gate, so a `skip` verdict is still exit `0`.
+     in either file, an unreadable file, a comments payload that is neither a JSON array nor an
+     object wrapping one under `comments`, or a labels manifest that fails the validation above.
+     This is a reporting tool rather than a test-suite gate, so a `skip` verdict is still exit
+     `0`.
 5. Do not wire this into CI, PR templates, or any existing test runner in this pass — it is a
    standalone package meant to be run manually against an exported CodeRabbit comments dump.
 
 ## Verification
 
-Run from the worktree root once `scripts/score.py` exists:
+Run from the worktree root:
 
 ```bash
 python -m py_compile tests/coderabbit_eval/scripts/score.py
@@ -157,24 +163,24 @@ threshold on any must-catch fixture).
 
 No linters, formatters, or project-wide test suites should be run for this spec's scope.
 
-## Notes for Next Agent
+## Notes
 
-- This spec intentionally stops short of writing the fixtures and `score.py` — that is the next
-  agent's job, following the Step-by-Step section exactly.
-- The `hardcoded_secret.py` fixture's secret MUST be obviously fake (e.g. prefixed `sk-fake-` or
-  similar) and MUST be documented as fake in a comment directly above it, so no secret-scanning
-  tool or human reviewer mistakes it for a live credential. Do not reuse any real-looking key
-  format tied to a real vendor's production key format if avoidable; if a realistic-looking
-  format is needed to trigger CodeRabbit's own secret detector, keep the value clearly
-  non-functional (e.g. all-same-character suffix) and call this out again in the fixture file's
-  docstring.
-- The exact shape of a CodeRabbit PR-comments JSON export was not confirmed against a live
-  export in this pass — the next agent should pull one real export (via GitHub API or CodeRabbit
-  dashboard) before finalizing `score.py`'s parsing logic, and adjust the assumed schema in the
-  module docstring if it differs from `{path, line, body}`.
+- The `hardcoded_secret.py` fixture's secret MUST stay obviously fake (it is prefixed `sk-fake-`)
+  and MUST stay documented as fake in a comment directly above it, so no secret-scanning tool or
+  human reviewer mistakes it for a live credential. Do not swap in a real vendor's production key
+  format; if a realistic-looking format is ever needed to trigger CodeRabbit's own secret
+  detector, keep the value clearly non-functional (e.g. an all-same-character suffix) and call
+  that out again in the fixture file's docstring.
+- The planted bugs in `security/` and `correctness/` are deliberate test data. Static-analysis
+  findings on those five files are the expected outcome, not defects to fix — "fixing" them
+  destroys the measurement. `gold/labels.json` is the record of what each one is.
+- The exact shape of a CodeRabbit PR-comments JSON export is still assumed rather than confirmed
+  against a live export: `score.py` parses the GitHub review-comments shape documented in its
+  module docstring. Pull one real export before trusting absolute recall numbers, and adjust the
+  docstring if it differs from `{path, line, body}`.
 - Keyword-per-category matching in `score.py` is a heuristic; if it produces too many
   false-negative matches against a real export, consider matching on file+line proximity alone
   (drop the keyword requirement) as a fallback strategy, and note the change in the script's
   docstring.
-- No commit was made beyond what `git worktree add` produces; the next agent should commit the
-  fixtures/script/manifest together as a single logical change.
+- The harness records no run output. Results from a scoring run belong in the PR or issue that
+  motivated the run, not in this tree.
