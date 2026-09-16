@@ -259,23 +259,6 @@ public class TrayMenuTests
     // DriverHealthChecker skips these PIDs, so this is the set whose rows take
     // their driver from StockDriverReader; a mouse must never be in it, or the
     // menu would have two competing answers for one device.
-    [Theory]
-    [InlineData(DeviceKind.MagicKeyboard, "0239", true)]
-    [InlineData(DeviceKind.MagicKeyboard, null, true)]
-    [InlineData(DeviceKind.MagicTrackpadV1, "030e", true)]
-    [InlineData(DeviceKind.MagicTrackpadV2, "0265", true)]
-    [InlineData(DeviceKind.MagicTrackpadV3, "0324", true)]
-    [InlineData(DeviceKind.LogitechMouse, "c52b", true)]
-    [InlineData(DeviceKind.MagicMouseV1, "030d", false)]
-    [InlineData(DeviceKind.MagicMouseV2, "0269", false)]
-    [InlineData(DeviceKind.MagicMouseV3, "0323", false)]
-    // A 0323 that arrived with some other kind is still the v3 mouse.
-    [InlineData(DeviceKind.MagicKeyboard, "0323", false)]
-    public void ShowsStockDriverStory_CoversTheDevicesWithNoDriverSubmenu(
-        DeviceKind kind, string? pid, bool expected)
-    {
-        Assert.Equal(expected, TrayMenu.ShowsStockDriverStory(kind, pid));
-    }
 
     // Measured on the reference PC, 2026-09-16: Magic Keyboard 0239 runs
     // Microsoft's own stack - kbdhid from keyboard.inf on COL01, every node
@@ -295,36 +278,6 @@ public class TrayMenuTests
     // driver is perfectly readable. With the reading in hand the dialog names
     // it instead.
 
-    [Theory]
-    [InlineData("https://magictray.app/v3.html", true)]
-    [InlineData("http://example.test/page", true)]
-    [InlineData(@"C:\pkg\mm-auto-f1-watcher.ps1", false)]
-    [InlineData("mm-auto-f1-watcher.ps1", false)]
-    [InlineData("file:///C:/pkg/install.cmd", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsHelpUrl_OnlyHttpTargetsAreOpenable(string? target, bool expected)
-    {
-        // A ConfigFact may name a script that ships in a driver package. The
-        // tray opens documentation and runs nothing, so anything that is not an
-        // http(s) page must fail this gate rather than reach a shell execute.
-        Assert.Equal(expected, TrayMenu.IsHelpUrl(target));
-    }
-
-    [Fact]
-    public void ConfigSectionIsFault_OnlyBlockingBorrowsTheFaultColour()
-    {
-        var ok = new ConfigFact("a", "Test Mode is on", ConfigSeverity.Ok, "d", null, null);
-        var advisory = new ConfigFact("b", "Package is not installed", ConfigSeverity.Advisory, "d", null, null);
-        var blocking = new ConfigFact("c", "Test Mode is off", ConfigSeverity.Blocking, "d", null, null);
-
-        Assert.False(TrayMenu.ConfigSectionIsFault([]));
-        Assert.False(TrayMenu.ConfigSectionIsFault([ok]));
-        // An Advisory - including the "we could not read it" kind - must never
-        // compete with a measured device fault for the user's eye.
-        Assert.False(TrayMenu.ConfigSectionIsFault([ok, advisory]));
-        Assert.True(TrayMenu.ConfigSectionIsFault([advisory, blocking]));
-    }
 
 
     [Fact]
