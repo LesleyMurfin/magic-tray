@@ -8,16 +8,61 @@
   <link rel="canonical" href="https://magictray.app/devices.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Which Apple Magic Mouse, keyboard or trackpad? Windows 10/11">
   <meta property="og:description" content="Turn the device over. A battery door means the 2009 mouse, a narrow Lightning slot means 2015, a small oval hole means the 2024 USB-C mouse.">
   <meta property="og:url" content="https://magictray.app/devices.html">
   <meta property="og:image" content="https://magictray.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Magic Tray menu on Windows 11 showing Magic Keyboard, Magic Mouse 2024, and Magic Mouse v1 battery percent">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Which Apple mouse or keyboard do I have?">
+  <meta name="twitter:description" content="Turn the device over. A battery door means 2009, a Lightning slot means 2015, a USB-C hole means 2024.">
+  <meta name="twitter:image" content="https://magictray.app/og.png">
   <link rel="stylesheet" href="site.css">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@graph": [
+      {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
       {
         "@type": "WebPage",
         "@id": "https://magictray.app/devices.html#webpage",
@@ -26,18 +71,26 @@
         "description": "Turn the device over and match it to a photo. A battery door means the 2009 Magic Mouse, a narrow Lightning slot means the 2015 one, and a small oval USB-C hole means the 2024 one.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "breadcrumb": { "@id": "https://magictray.app/devices.html#breadcrumb" },
         "mainEntity": { "@id": "https://magictray.app/devices.html#faq" },
         "hasPart": { "@id": "https://magictray.app/devices.html#faq" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "FAQPage",
         "@id": "https://magictray.app/devices.html#faq",
         "isPartOf": { "@id": "https://magictray.app/devices.html#webpage" },
         "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Which Apple Magic Mouse do I have?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Three Magic Mouse models exist. A door over two AA batteries is the v1, model A1296. No door and a narrow Lightning slot is the v2, model A1657. No door and a small oval USB-C hole is the 2024 mouse, model A3204. The model number is etched underneath."
+            }
+          },
           {
             "@type": "Question",
             "name": "How do I tell which Magic Mouse I have?",
@@ -119,7 +172,10 @@
           <article class="ident-card">
             <div class="ident-visual">
               <figure class="photo pos-center">
-                <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-mouse-v1-cover-off-aa.webp" type="image/webp">
+                  <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -132,7 +188,10 @@
           <article class="ident-card">
             <div class="ident-visual">
               <figure class="photo pos-center">
-                <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-mouse-v2-underside-lightning-alt.webp" type="image/webp">
+                  <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -144,9 +203,12 @@
           </article>
           <article class="ident-card">
             <div class="ident-visual">
-              <div class="no-photo">
-                <span class="no-photo-label">No photo yet</span>
-              </div>
+              <figure class="photo pos-bottom">
+                <picture>
+                  <source srcset="img/magic-mouse-v3-underside-usbc.webp" type="image/webp">
+                  <img src="img/magic-mouse-v3-underside-usbc.jpg" width="1144" height="1144" alt="Underside of the 2024 Magic Mouse. There is no battery door. A small oval USB-C port sits on the bottom edge between the two skid strips, and the etched text reads Model A3204." loading="lazy" decoding="async">
+                </picture>
+              </figure>
             </div>
             <div class="ident-body">
               <p class="pid-line">0323 · 2024 · USB-C</p>
@@ -169,7 +231,7 @@
             </div>
           </article>
         </div>
-        <p class="credit">Photos via Wikimedia Commons: FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.</p>
+        <p class="credit">Photos via Wikimedia Commons: FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>. 2024 Magic Mouse underside: Apple product image, © Apple Inc., used unmodified apart from resizing; not Creative Commons licensed.</p>
 
         <h3 id="kbtrackpad">Keyboards and trackpads: check the back edge</h3>
         <p>A tube with a screw cap means AA batteries. A socket means it charges.</p>
@@ -177,7 +239,10 @@
           <article class="ident-card">
             <div class="ident-visual kb-visual">
               <figure class="photo pos-center">
-                <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-keyboard-rechargeable-top.webp" type="image/webp">
+                  <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -190,7 +255,10 @@
           <article class="ident-card">
             <div class="ident-visual">
               <figure class="photo pos-bottom">
-                <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
+                  <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -203,7 +271,10 @@
           <article class="ident-card">
             <div class="ident-visual kb-visual">
               <figure class="photo pos-top">
-                <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="An Apple Wireless Keyboard from 2011. A cylindrical battery tube runs along the top edge." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-keyboard-2011-aa-top.webp" type="image/webp">
+                  <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="An Apple Wireless Keyboard from 2011. A cylindrical battery tube runs along the top edge." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -214,7 +285,10 @@
           <article class="ident-card">
             <div class="ident-visual">
               <figure class="photo pos-center">
-                <img src="img/magic-keyboard-2011-aa-battery-tube.jpg" width="1600" height="595" alt="The end of an Apple Wireless Keyboard. A round slotted cap unscrews to reach the AA batteries." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-keyboard-2011-aa-battery-tube.webp" type="image/webp">
+                  <img src="img/magic-keyboard-2011-aa-battery-tube.jpg" width="1600" height="595" alt="The end of an Apple Wireless Keyboard. A round slotted cap unscrews to reach the AA batteries." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -225,7 +299,10 @@
           <article class="ident-card">
             <div class="ident-visual">
               <figure class="photo pos-center">
-                <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries." loading="lazy" decoding="async">
+                <picture>
+                  <source srcset="img/magic-trackpad-2010-aa-battery-tube.webp" type="image/webp">
+                  <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries." loading="lazy" decoding="async">
+                </picture>
               </figure>
             </div>
             <div class="ident-body">
@@ -276,7 +353,10 @@
         <article class="ident-card">
           <div class="ident-visual">
             <figure class="photo pos-bottom">
-              <img src="img/magic-mouse-v2-model-number-a1657.jpg" width="886" height="1400" alt="Close-up of the etched text on the bottom of a Magic Mouse v2, reading Model: A1657." loading="lazy" decoding="async">
+              <picture>
+                <source srcset="img/magic-mouse-v2-model-number-a1657.webp" type="image/webp">
+                <img src="img/magic-mouse-v2-model-number-a1657.jpg" width="886" height="1400" alt="Close-up of the etched text on the bottom of a Magic Mouse v2, reading Model: A1657." loading="lazy" decoding="async">
+              </picture>
             </figure>
           </div>
           <div class="ident-body">
@@ -288,7 +368,10 @@
         <article class="ident-card">
           <div class="ident-visual">
             <figure class="photo pos-bottom">
-              <img src="img/magic-mouse-v1-underside-aa-door.jpg" width="1200" height="1600" alt="Underside of a Magic Mouse v1. A wide silver battery door with a release latch covers the whole middle of the bottom. There is no charging port." loading="lazy" decoding="async">
+              <picture>
+                <source srcset="img/magic-mouse-v1-underside-aa-door.webp" type="image/webp">
+                <img src="img/magic-mouse-v1-underside-aa-door.jpg" width="1200" height="1600" alt="Underside of a Magic Mouse v1. A wide silver battery door with a release latch covers the whole middle of the bottom. There is no charging port." loading="lazy" decoding="async">
+              </picture>
             </figure>
           </div>
           <div class="ident-body">
@@ -300,7 +383,10 @@
         <article class="ident-card">
           <div class="ident-visual">
             <figure class="photo pos-bottom">
-              <img src="img/magic-trackpad-2010-underside-model-a1339.jpg" width="1600" height="1600" alt="Underside of a Magic Trackpad from 2010, beside its aluminium battery tube. The small print reads Model No.: A1339." loading="lazy" decoding="async">
+              <picture>
+                <source srcset="img/magic-trackpad-2010-underside-model-a1339.webp" type="image/webp">
+                <img src="img/magic-trackpad-2010-underside-model-a1339.jpg" width="1600" height="1600" alt="Underside of a Magic Trackpad from 2010, beside its aluminium battery tube. The small print reads Model No.: A1339." loading="lazy" decoding="async">
+              </picture>
             </figure>
           </div>
           <div class="ident-body">
@@ -313,6 +399,8 @@
 
       <h2 id="faq">Common questions</h2>
       <dl class="faq">
+        <dt>Which Apple Magic Mouse do I have?</dt>
+        <dd>Three Magic Mouse models exist. A door over two AA batteries is the v1, model <code>A1296</code>. No door and a narrow Lightning slot is the v2, model <code>A1657</code>. No door and a small oval USB-C hole is the 2024 mouse, model <code>A3204</code>. The <a href="#model">model number is etched underneath</a>.</dd>
         <dt>How do I tell which Magic Mouse I have?</dt>
         <dd>Turn it over. A battery door means 2009. A narrow Lightning port means 2015. A small oval USB-C port means 2024.</dd>
         <dt>Why does the 2024 mouse need a different driver?</dt>
@@ -335,7 +423,7 @@
       <div class="rail-card">
         <h2>Get it</h2>
         <p class="cta">
-          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download 1.1.0</a>
+          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray/releases/latest">Download v1.1.0</a>
         </p>
       </div>
     </aside>
@@ -349,6 +437,7 @@
         ·
         <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 mouse driver</a>
       </p>
+      <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>
   </footer>
 </body>

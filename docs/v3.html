@@ -8,7 +8,7 @@
   <link rel="canonical" href="https://magictray.app/v3.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11">
   <meta property="og:description" content="The battery percent already works with no driver. Finger scrolling doesn't, because Apple's Windows software has no entry for device code 0323.">
@@ -29,6 +29,43 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
+      {
         "@type": "WebPage",
         "@id": "https://magictray.app/v3.html#webpage",
         "name": "Magic Mouse 2024 (USB-C) will not scroll on Windows 10 or 11",
@@ -38,15 +75,23 @@
         "url": "https://magictray.app/v3.html",
         "breadcrumb": { "@id": "https://magictray.app/v3.html#breadcrumb" },
         "hasPart": { "@id": "https://magictray.app/v3.html#faq" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "FAQPage",
         "@id": "https://magictray.app/v3.html#faq",
         "isPartOf": { "@id": "https://magictray.app/v3.html#webpage" },
         "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does the Magic Mouse 2024 (USB-C) work on Windows 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Mostly. It pairs over Bluetooth, clicks and moves the pointer, and Magic Tray shows its battery percent with no driver at all. Finger scrolling is the one missing piece: it needs the community KMDF driver, which isn't published yet. When it ships, Magic Tray installs it only after you confirm."
+            }
+          },
           {
             "@type": "Question",
             "name": "Why doesn't Apple's Windows software fix the 2024 Magic Mouse?",
@@ -133,16 +178,25 @@
         </p>
       </header>
 
-      <h2 id="apple">Why doesn't Apple's Windows software fix the 2024 Magic Mouse?</h2>
-      <p>Windows gives every mouse model a four-character device code, and the 2024 USB-C Magic Mouse reports <code>0323</code>. Apple's own Windows software lists the older Magic Mouse codes and never listed <code>0323</code>. Windows finds no match, so it never loads a scroll driver for this mouse.</p>
+      <h2 id="faq">Questions</h2>
+      <dl class="faq">
+        <dt id="works">Does the Magic Mouse 2024 (USB-C) work on Windows 11?</dt>
+        <dd>Mostly. It pairs over Bluetooth, clicks and moves the pointer, and Magic Tray shows its battery percent with no driver at all. Finger scrolling is the one missing piece: it needs the <a href="#community">community KMDF driver</a>, which isn't published yet. When it ships, Magic Tray installs it only after you confirm.</dd>
+        <dt id="apple">Why doesn't Apple's Windows software fix the 2024 Magic Mouse?</dt>
+        <dd>Windows gives every mouse model a four-character device code, and the 2024 USB-C Magic Mouse reports <code>0323</code>. Apple's own Windows software lists the older Magic Mouse codes and never listed <code>0323</code>. Windows finds no match, so it never loads a scroll driver for this mouse.</dd>
+        <dt id="community">What does the community driver for the 2024 Magic Mouse do?</dt>
+        <dd>The community driver for the 2024 USB-C Magic Mouse is meant to sit between the mouse and Windows, watch your fingers move across the top surface, and turn that movement into ordinary scrolling. You can't get it yet. Its own files still say work in progress, and no installer is published.</dd>
+        <dt id="paths">Which routes give the 2024 Magic Mouse scrolling on Windows?</dt>
+        <dd>Two routes were designed for the 2024 USB-C Magic Mouse, and only one exists today. The community driver would give scrolling and battery percent together, but it isn't published. The patched Apple driver is real today, and on that route you get scrolling or battery percent, never both.</dd>
+        <dt id="battery">Does the 2024 Magic Mouse battery percent need a driver?</dt>
+        <dd>No. The battery percent on the 2024 USB-C Magic Mouse works with no driver at all, on Windows 10 and Windows 11. Only finger scrolling needs one. The scroll-or-battery trade-off belongs to the patched Apple driver route, and to nothing else on this mouse.</dd>
+      </dl>
 
-      <h2 id="community">What does the community driver for the 2024 Magic Mouse do?</h2>
-      <p>The community driver for the 2024 USB-C Magic Mouse is meant to sit between the mouse and Windows, watch your fingers move across the top surface, and turn that movement into ordinary scrolling. You can't get it yet. Its own files still say work in progress, and no installer is published.</p>
-      <p>When it does ship, Microsoft won't have checked it. Windows will refuse to load it until you change a Windows startup setting yourself, and that lowers one of its security protections.</p>
+      <h2>When the community driver ships</h2>
+      <p>Microsoft won't have checked it. Windows will refuse to load it until you change a Windows startup setting yourself, and that lowers one of its security protections.</p>
       <p>A check by Microsoft costs money. <a href="funding.html">Here's how you can help</a>.</p>
 
-      <h2 id="paths">Which routes give the 2024 Magic Mouse scrolling on Windows?</h2>
-      <p>Two routes were designed for the 2024 USB-C Magic Mouse, and only one exists today. The community driver would give scrolling and battery percent together, but it isn't published. The patched Apple driver is real today, and on that route you get scrolling or battery percent, never both.</p>
+      <h2>The two routes side by side</h2>
       <div class="table-scroll" tabindex="0">
       <table>
         <thead>
@@ -163,9 +217,6 @@
       </table>
       </div>
       <p class="note">Magic Tray offers the patched Apple driver from its tray menu. It asks first, and it installs only when you say yes. It can't change that Windows startup setting for you.</p>
-
-      <h2 id="battery">Does the 2024 Magic Mouse battery percent need a driver?</h2>
-      <p>No. The battery percent on the 2024 USB-C Magic Mouse works with no driver at all, on Windows 10 and Windows 11. Only finger scrolling needs one. The scroll-or-battery trade-off belongs to the patched Apple driver route, and to nothing else on this mouse.</p>
 
       <details id="details">
         <summary>Show the technical details</summary>
@@ -235,6 +286,7 @@
         ·
         <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 driver</a>
       </p>
+      <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>
   </footer>
 </body>

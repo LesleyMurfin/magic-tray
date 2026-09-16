@@ -8,7 +8,7 @@
   <link rel="canonical" href="https://magictray.app/keyboard.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Apple Magic Keyboard battery on Windows 10/11: no new driver">
   <meta property="og:description" content="Your Apple Magic Keyboard keeps the standard Windows Bluetooth driver. One unlock from the Magic Tray menu turns the battery percent on.">
@@ -18,6 +18,9 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Magic Tray menu on Windows 11 showing Magic Keyboard battery percent">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Magic Keyboard battery on Windows 10 and 11">
+  <meta name="twitter:description" content="No new driver and no Apple software. One unlock from the Magic Tray menu turns the battery percent on.">
+  <meta name="twitter:image" content="https://magictray.app/og.png">
   <link rel="icon" href="screenshot-tray.png">
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
@@ -25,6 +28,43 @@
   {
     "@context": "https://schema.org",
     "@graph": [
+      {
+        "@type": "Person",
+        "@id": "https://magictray.app/#person",
+        "name": "Lesley Murfin",
+        "url": "https://github.com/LesleyMurfin",
+        "sameAs": [
+          "https://github.com/LesleyMurfin"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://magictray.app/#app",
+        "name": "Magic Tray",
+        "alternateName": ["Magic Tray for Windows", "MagicMouseTray"],
+        "applicationCategory": "UtilitiesApplication",
+        "applicationSubCategory": "Windows system tray utility",
+        "operatingSystem": "Windows 10, Windows 11",
+        "softwareVersion": "1.1.0",
+        "url": "https://magictray.app/",
+        "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://magictray.app/#person" },
+        "publisher": { "@id": "https://magictray.app/#person" },
+        "description": "Free Windows 10 and Windows 11 system tray app. It shows Apple Magic Mouse, Magic Keyboard and Magic Trackpad battery percent next to the clock.",
+        "disambiguatingDescription": "Magic Tray is downloadable Windows software. It is not a physical desk tray, stand, or 3D-printed cradle for Apple keyboards and trackpads."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://magictray.app/#site",
+        "url": "https://magictray.app/",
+        "name": "Magic Tray",
+        "alternateName": "magictray.app",
+        "inLanguage": "en",
+        "about": { "@id": "https://magictray.app/#app" },
+        "publisher": { "@id": "https://magictray.app/#person" }
+      },
       {
         "@type": "WebPage",
         "@id": "https://magictray.app/keyboard.html#webpage",
@@ -36,9 +76,9 @@
         "breadcrumb": { "@id": "https://magictray.app/keyboard.html#breadcrumb" },
         "mainEntity": { "@id": "https://magictray.app/keyboard.html#unlock-howto" },
         "hasPart": { "@id": "https://magictray.app/keyboard.html#faq" },
-        "publisher": { "@type": "Person", "name": "Lesley Murfin" },
+        "publisher": { "@id": "https://magictray.app/#person" },
         "inLanguage": "en",
-        "dateModified": "2026-09-07"
+        "dateModified": "2026-09-15"
       },
       {
         "@type": "BreadcrumbList",
@@ -119,6 +159,14 @@
         "@id": "https://magictray.app/keyboard.html#faq",
         "isPartOf": { "@id": "https://magictray.app/keyboard.html#webpage" },
         "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I see my Apple Magic Keyboard battery percent on Windows 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Install Magic Tray, click its icon beside the clock, point at your keyboard and run the one-time unlock. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu."
+            }
+          },
           {
             "@type": "Question",
             "name": "Does my Magic Keyboard need a special driver on Windows?",
@@ -227,7 +275,10 @@
       <p>Touch ID keyboards (<code>0267</code> / <code>026C</code>) have a round blank key right of F12:</p>
 
       <figure class="photo pos-top">
-        <img src="img/magic-keyboard-touchid-top.jpg" width="1600" height="840" alt="The top of a compact Magic Keyboard, Swiss layout. Right of F12 sits a plain round key with no symbol printed on it." loading="lazy" decoding="async">
+        <picture>
+          <source srcset="img/magic-keyboard-touchid-top.webp" type="image/webp">
+          <img src="img/magic-keyboard-touchid-top.jpg" width="1600" height="840" loading="lazy" decoding="async" alt="The top of a compact Magic Keyboard, Swiss layout. Right of F12 sits a plain round key with no symbol printed on it.">
+        </picture>
       </figure>
       <p class="credit">Photo via Wikimedia Commons: Dbirdz, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
 
@@ -245,6 +296,8 @@
       <h2 id="faq">Common questions</h2>
 
       <dl class="faq">
+        <dt>How do I see my Apple Magic Keyboard battery percent on Windows 11?</dt>
+        <dd>Install Magic Tray, click its icon beside the clock, point at your keyboard and run the <a href="#unlock">one-time unlock</a>. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu.</dd>
         <dt>Does my Magic Keyboard need a special driver on Windows?</dt>
         <dd>No. Your Magic Keyboard keeps the standard Windows Bluetooth driver on Windows 10 and 11. Nothing from Apple gets installed, and no driver is swapped. You run one unlock from the Magic Tray menu, and the battery percent shows up beside your clock.</dd>
         <dt>Why doesn't my Magic Keyboard battery percent show up?</dt>
@@ -288,10 +341,11 @@
       <p>
         <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
         ·
-        <a href="TESTED.md">Hardware reports</a>
+        <a href="tested.html">Hardware reports</a>
         ·
         <a href="llms.txt">llms.txt</a>
       </p>
+      <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>
   </footer>
 </body>

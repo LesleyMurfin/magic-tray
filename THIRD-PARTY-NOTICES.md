@@ -194,16 +194,50 @@ Licence texts:
   "rechargeable" is the only generation claim the pixels support. (The `-lightning` in the
   filename is inherited from the upstream file name and is **not** evidence.)
 
+### `docs/img/magic-mouse-v3-underside-usbc.jpg` (and its `.webp` derivative)
+
+- Author / copyright holder: **Apple Inc.**
+- Source: **Apple Inc. product imagery** — Apple's own studio photograph of the 2024 Magic Mouse
+  underside.
+- Licence: **none.** This file carries **no Creative Commons licence and no other free licence**.
+  All rights are reserved by Apple Inc. **This entry is different from every other photograph on
+  this site:** all the others are freely licensed Wikimedia Commons files (CC0, CC BY 4.0, CC BY-SA
+  4.0) and may be reused under those terms; this one may not. It is not covered by this project's
+  MIT `LICENSE` either.
+- Credit rendered on the page:
+  `2024 Magic Mouse underside: Apple product image, © Apple Inc., used unmodified apart from resizing; not Creative Commons licensed.`
+  It is deliberately kept out of the "via Wikimedia Commons" sentence in the same `.credit` line, so
+  that no Creative Commons term is ever read as applying to it.
+- **Modification: none beyond resizing and format conversion.** The shipped JPEG is the source file
+  unaltered at its original 1144×1144; the `.webp` is that file resized to 800px wide by ffmpeg and
+  re-encoded. No crop, no recolour, no annotation, no compositing, no change of framing.
+- Shows: the underside of the 2024 Magic Mouse (PID `0323`) — no battery door, two black skid
+  strips, the optical sensor and a status LED near the top, a small oval USB-C port on the bottom
+  edge, and the etched block `Designed by Apple in California  Assembled in China  Model A3204
+  FCC ID: BCGA3204  IC: 579C-A3204`.
+- Used on `docs/devices.html#identify`, in the `0323` identification card.
+- **If you redistribute this repository** you are redistributing Apple's photograph. It is included
+  because no freely licensed photograph of this device exists (see the section below), and it should
+  be swapped out for a CC0 contributor photo as soon as one is offered.
+
 ### Modification status, and why the site itself is not CC BY-SA
 
-Every photograph above is included **unmodified apart from resizing and EXIF stripping**, with
-the one exception noted in its own entry: `magic-mouse-v2-model-number-a1657.jpg` is a crop of a
-**CC0** original, which carries no share-alike obligation. Nothing under CC BY-SA has been
-cropped, recoloured, or composited.
+Every photograph above is included **unmodified apart from resizing, format conversion and EXIF
+stripping**, with the one exception noted in its own entry: `magic-mouse-v2-model-number-a1657.jpg`
+is a crop of a **CC0** original, which carries no share-alike obligation. Nothing under CC BY-SA
+has been cropped, recoloured, or composited.
+
+Each photograph also ships as a **WebP derivative** beside its JPEG (`<name>.webp`, offered first
+through `<picture>` so phones download roughly a fifth of the bytes). Each one is generated from
+the licensed original by ffmpeg with a width resize and a format conversion and nothing else: no
+cropping, no recolouring, no annotation, no compositing, no change of framing. Those are the
+technical modifications CC BY-SA 4.0 §2(a)(4) allows without producing Adapted Material, so a
+WebP file carries exactly the author, licence and credit of the JPEG it came from, and the credit
+lines already on the pages cover both files.
 
 All visible cropping on the site happens at display time, through CSS `object-fit` /
-`object-position` in `docs/site.css`. The stored pixels are untouched, so that is presentation,
-not adaptation.
+`object-position` in `docs/site.css`. No stored file, JPEG or WebP, is cropped or edited, so that
+is presentation, not adaptation.
 
 Publishing these photographs alongside the site's own text is a **Collection** in the sense of
 CC BY-SA 4.0 §1(f), not an **Adapted Work**. Share-alike therefore attaches to each photograph
@@ -225,12 +259,17 @@ Openverse, licence-filtered Flickr, the Smithsonian and Europeana APIs and Inter
 all searched. Every Apple mouse photograph found predates the 2024 revision, which is visually
 identical from above, so even a top view could not honestly be attributed to it. iFixit has the
 only good 2024 photography and licenses it CC BY-NC-SA 3.0, which the NonCommercial term makes
-unusable here. The site therefore shows a labelled placeholder in that slot instead of a photo of
-a different mouse. Apple's own product renders are **not** usable; they are all-rights-reserved.
-A v1 or v2 photo must never be captioned as a v3.
+unusable here. None of that search has been superseded; no free photo has turned up.
 
-A contributor photo is the only way to close this. Ask for it under **CC0 1.0**, not CC BY-SA:
-the port is small enough to need a crop, and cropping a CC BY-SA file would create an adaptation.
+What has changed is what fills the slot. Rather than a labelled placeholder, `docs/devices.html`
+now shows **Apple's own product image** of the A3204 underside, entered above and credited on the
+page as an Apple product image. That is a deliberate choice to use an all-rights-reserved file, not
+a discovery that it is free: it is not free, and it must never be described as Creative Commons.
+A v1 or v2 photo must never be captioned as a v3 either.
+
+A contributor photo is still the way to close this properly. Ask for it under **CC0 1.0**, not
+CC BY-SA: the port is small enough to need a crop, and cropping a CC BY-SA file would create an
+adaptation. When one arrives, swap it in and delete the Apple file.
 
 ## Trademarks
 
@@ -238,5 +277,7 @@ Apple, Magic Mouse, Magic Keyboard, Magic Trackpad, Boot Camp, and macOS are tra
 Apple Inc., registered in the U.S. and other countries. Windows is a trademark of the Microsoft
 group of companies. Those names are used here only to identify the hardware and the operating
 systems this software works with. **Magic Tray is an independent project. It is not affiliated
-with, authorised, sponsored, or endorsed by Apple Inc. or by Microsoft.** No Apple software,
-driver binary, artwork, or product photograph is redistributed by this project.
+with, authorised, sponsored, or endorsed by Apple Inc. or by Microsoft.** No Apple software or
+driver binary is redistributed by this project. One Apple product photograph **is** shipped, in
+`docs/img/`, solely to identify the 2024 Magic Mouse; it is credited to Apple Inc. above, carries
+no free licence, and is not covered by this project's MIT `LICENSE`.

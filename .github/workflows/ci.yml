@@ -107,3 +107,20 @@ jobs:
           dist/*.zip
           dist/*.zip.sha256
         retention-days: 14
+
+  # docs/ is published by Pages with no build step, so CI is the only place the
+  # JSON-LD graph gets parsed before a crawler reads it. A dangling @id or a
+  # FAQ answer that is not on the page costs entity resolution silently.
+  aeo-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Check structured data
+      run: pwsh -File scripts/check-aeo.ps1

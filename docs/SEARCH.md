@@ -121,9 +121,10 @@ Validate after any edit:
 
 The identification cards on `docs/drivers.html` and `docs/devices.html`, and the model cards on
 `docs/index.html`, used to be CSS-drawn grey rectangles labelled BOTTOM, which told a reader
-nothing. They are now **real licensed photographs of the actual hardware**, shipped under
-`docs/img/` (nine files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. Sources are
-Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0.
+nothing. They are now **real photographs of the actual hardware**, shipped under `docs/img/`
+(ten files) plus the pre-existing `docs/magic-mouse-v2-lightning.jpg`. All but one come from
+Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0; the exception is the 2024 Magic Mouse
+underside, which is an Apple product image and is not freely licensed.
 
 - **Attribution lives in `THIRD-PARTY-NOTICES.md`** — one entry per file with the author, the
   licence, the licence URL and the Commons source page. Two authors mandate a verbatim credit
@@ -137,17 +138,131 @@ Wikimedia Commons, under CC0, CC BY 4.0 and CC BY-SA 4.0.
   Every `<img>` carries a descriptive `alt` and explicit `width`/`height`, so identification is
   possible from the alt text alone and the images cost no layout shift (CLS).
 
-**The one outstanding gap: no free photo of the Magic Mouse v3 (2024, USB-C) underside.**
+**The one outstanding gap: no *free* photo of the Magic Mouse v3 (2024, USB-C) underside.**
 `Category:Magic Mouse` on Wikimedia Commons was enumerated in full and every file checked;
-searches for A3204, "Magic Mouse USB-C" and "Magic Mouse 2024" returned nothing usable. Apple's
-own renders are all-rights-reserved. That slot therefore shows a labelled placeholder, and a v1
-or v2 photo must never be captioned as a v3 — the page that tells people how to identify their
-mouse cannot afford a wrong picture.
+searches for A3204, "Magic Mouse USB-C" and "Magic Mouse 2024" returned nothing usable. That is
+still true — no freely licensed photograph of this device has been found.
 
-The cheapest fix is to **ask an owner for one**: a single overhead shot of the underside,
-released CC0, from anyone with the 2024 mouse. Worth asking for in the v3 driver repo's issues,
-in the TESTED.md reports thread, and in the Reddit and Hacker News posts listed below. Upload it
-to Wikimedia Commons under CC0 so it is reusable, then drop it in beside the others.
+The slot is no longer a placeholder: it now carries **Apple's own product image** of the A3204
+underside, credited on the page as an Apple product image and recorded in
+`THIRD-PARTY-NOTICES.md` as all-rights-reserved with no Creative Commons or other free licence.
+That is a deliberate decision to ship an unfree file, not a licensing win, and nothing on the
+site may describe it as Creative Commons. A v1 or v2 photo must never be captioned as a v3
+either — the page that tells people how to identify their mouse cannot afford a wrong picture.
+
+A CC0 replacement is still wanted, so the Apple file can be swapped out. The cheapest route is
+to **ask an owner for one**: a single overhead shot of the underside, released CC0, from anyone
+with the 2024 mouse. Worth asking for in the v3 driver repo's issues, in the TESTED.md reports
+thread, and in the Reddit and Hacker News posts listed below. Upload it to Wikimedia Commons
+under CC0 so it is reusable, then drop it in beside the others and delete the Apple image.
+
+## The entity graph, and why the first structured-data pass was not enough
+
+Two weeks after the markup above shipped, Gemini was asked for a "magic tray windows app" and
+answered with **MagicWindow**, an unrelated window manager in the Microsoft Store. The markup was
+not the problem in the way it looked: the audit found the graph was only whole on the homepage.
+
+Structured data is parsed per page. `battery.html`, `keyboard.html`, `drivers.html`, `devices.html`
+and `v3.html` each *referenced* `https://magictray.app/#app` and `#site` through `about` and
+`isPartOf`, but never *declared* those nodes, so a crawler that landed on any page except the
+homepage — which is most of them, because the subpages are the ones that answer real questions —
+read a page about an entity with no type, no name and no operating system. `funding.html` declared
+a third, slightly different `#app`. Author was an anonymous inline `Person` repeated on every node,
+so nothing tied the site to one identity and there was nowhere for `sameAs` to point.
+
+What changed:
+
+- **Every page declares the same three nodes** — `#person`, `#app`, `#site` — character for
+  character, ahead of its own `WebPage`. Any page read alone now names the product, the platform,
+  the price and the author.
+- **One `Person` node** (`#person`) with `sameAs` to the GitHub profile, this repo and the v3 driver
+  repo, referenced by `@id` from every `author` and `publisher`. No anonymous `Person` is left.
+- **`#app` on the homepage gained** `softwareRequirements`, `processorRequirements`, `datePublished`,
+  `releaseNotes`, `featureList`, and a `sameAs` array; subpages declare a compact `#app` (name,
+  type, OS, category, author, version, offers) so every `@id` reference resolves independently
+  without duplicating homepage-only release metadata.
+- **The homepage H1 names the product.** It read "Apple Magic Mouse and Keyboard battery on Windows
+  10 and 11" — the brand query that failed was the one string the page never contained.
+- **Magic Utilities is answered, not avoided** (`#mu`). The comparison is honest: no gestures, no
+  media-key remapping, buy Magic Utilities if you need them. Answer engines get asked this
+  constantly, and the site previously only denied being a clone.
+- **FAQ parity is now real.** `battery.html` and `v3.html` had `FAQPage` questions that existed
+  nowhere on the page as a question; `index.html` had eight in schema and six on the page. Schema
+  that quotes text a reader cannot find is the failure mode Google penalises. Every page now has one
+  `dl.faq`, and each answer is condensed rather than a second copy of the body prose.
+- **New questions in the words people actually type**: how do I check my Magic Mouse battery on
+  Windows 10 or 11, how do I check the trackpad, how do I see keyboard percent on Windows 11, why
+  won't my Magic Mouse scroll on Windows 11, does the 2024 USB-C mouse work on Windows 11.
+- **`llms.txt` now disambiguates MagicWindow by name**, next to the existing Etsy and Magic
+  Utilities lines, and says which queries belong to this project.
+- **`SEARCH.md` is `Disallow`ed in `robots.txt`.** This file is the strategy, not the product; it
+  was crawlable and absent from the sitemap.
+
+### The gate that keeps it true
+
+`scripts/check-aeo.ps1` (CI job `aeo-checks`) parses every page's graph and fails the build on: a
+missing or unparseable `ld+json` block, an `@id` reference with no declaration on the same page,
+two pages disagreeing about a shared `@id`, a `WebPage` url that contradicts the canonical link or
+the file path, a missing `dateModified`, FAQ text that differs between schema and page, and a
+`softwareVersion` that has drifted from the visible download links. It is read-only and runs on
+`ubuntu-latest`. It deliberately does not repeat the link, sitemap, robots and CNAME checks in
+`scripts/check-site.ps1`.
+
+Validate the rendered result against Google as well — the gate checks the graph, not Google's
+eligibility rules:
+<https://search.google.com/test/rich-results?url=https%3A%2F%2Fmagictray.app%2F>
+
+### Telling the engines a page changed
+
+`docs/862b894a281ea8cdca5c46c788285279.txt` is an IndexNow key that nothing had ever used.
+`.github/workflows/indexnow.yml` now submits every `<loc>` in `sitemap.xml` to
+`api.indexnow.org` on any push to `main` that touches `docs/**`. That reaches Bing, which feeds
+Copilot and several answer engines, in minutes rather than weeks. Google ignores IndexNow; for
+Google, Search Console → URL Inspection → Request indexing is still the manual lever.
+
+## Round two: the parts that are ranking inputs, not entity signals
+
+Structured data decides *how* a page can be shown. It is not a ranking factor. These are, and they
+were all measurably wrong:
+
+- **`devices.html` shipped 2.07 MB of photographs** — ten 1600 px JPEGs in cards that render at
+  400 px. It is the page a phone user lands on when they search "which magic mouse do I have", so
+  it was the worst page on the site to make heavy. Every photo now has a 800 px WebP derivative
+  served through `<picture>`, JPEG kept as the fallback: **2072 KB → 426 KB, 79% less**.
+  `keyboard.html` went 294 KB → 165 KB. Site-wide image payload is down 74%. Sizes were measured
+  in a headless browser, not guessed, and SSIM against the old render confirms the CSS crops still
+  frame the hardware feature each card is about.
+- **Preview metadata was uneven** — nine `og:` tags on some pages, four on others, one `twitter:`
+  tag on three of them. A page with no card is a page nobody reposts. All nine pages now carry the
+  same thirteen-tag set with page-specific values.
+- **`TESTED.md` was a sitemap URL served as `text/markdown`** — no title, no canonical, no nav, no
+  styling. It is also the highest-intent content here: "does my Magic Keyboard work on Windows 11"
+  is a question with buying intent and almost no good answers on the web. It is now
+  **`tested.html`**, a real page, linked from the homepage rail, `battery.html` and `drivers.html`.
+  The Markdown files stay in the repo for GitHub readers and are `Disallow`ed, so one URL owns the
+  content.
+- **There was no `404.html`** — GitHub's generic page, no way back into the site. There is one now,
+  `noindex`, out of the sitemap, linking the five real destinations.
+- **No visible freshness date.** `dateModified` lived in JSON-LD, where a reader cannot see it and
+  a crawler cannot corroborate it. Every page now shows `Last updated <time datetime="…">`, and CI
+  fails if the visible date and the graph disagree.
+
+`scripts/check-aeo.ps1` grew five checks for the new invariants: preview-metadata completeness,
+visible date equals `dateModified`, no HTML link to a `.md` inside the site, every `<picture>`
+fallback exists with dimensions, and a `noindex` page stays out of the sitemap.
+
+Repo topics gained `windows-10`, `magic-mouse-scroll`, `bootcamp-drivers` and `battery-percentage`;
+the repo page is the highest-authority URL this project has, and it was tagged `windows-11` only.
+
+### What is still not done, in order of value
+
+1. **Links.** Nothing above changes authority. See below.
+2. **Submit the winget manifest.** `packaging/winget/` holds a complete, unsubmitted 1.1.0 manifest
+   set. A merged `microsoft/winget-pkgs` PR is a citation from a Microsoft-owned repository, and
+   `winget install` output is text answer engines quote.
+3. **Search Console and Bing Webmaster Tools.** Still manual: verify the domain property, submit
+   the sitemap, request indexing for `/`, `/tested.html`, `/drivers.html`, `/v3.html`.
+4. **A photograph of the 2024 mouse underside**, still the one content gap on `devices.html`.
 
 ## Still the biggest lever
 
