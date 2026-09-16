@@ -329,6 +329,8 @@ After a dead wheel, a failed enable, or a charge/unplug: tray **Diagnostics → 
 
 CI builds on a `v*` tag: test, publish win-x64, optional Authenticode (`SIGN_PFX_*`), package, verify, then create the Release. `scripts/verify-release.ps1` must pass first, and it fails the build on a malformed archive rather than shipping one.
 
+**Cutting one: [`RELEASING.md`](RELEASING.md).** It is the whole procedure — preconditions, what each of the five version strings means, which files to promote and in what order, how to tag, how to verify the release that actually got published, and what v1.1.0 got wrong.
+
 **The primary asset is `MagicTray-<tag>-win-x64.zip`.** Download that, not the bare exe. Its layout exists to satisfy two script resolvers that disagree on order. `DriverInstaller.FindKeyboardPatchScript` tries `<exe folder>/scripts/<name>` first, then `<exe folder>/<name>`, then `scripts/<name>` in the exe folder and up to five folders above it. `DiagnosticScripts.Find` tries `<exe folder>/<name>` first and `<exe folder>/scripts/<name>` second, then walks the same six folders in that same root-before-`scripts` order. The ZIP puts every shipped script under `scripts/`, which both resolvers find — but because the diagnostic resolver looks beside the exe first, a same-named file dropped loose next to `MagicMouseTray.exe` wins over the shipped one:
 
 ```

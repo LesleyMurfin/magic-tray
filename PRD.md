@@ -56,20 +56,19 @@ Build a transparent, community-funded platform to certify Apple device drivers (
 
 ## Technical Architecture
 
-### Stack (TBD - ADW Decision Required)
+### Stack (DECIDED 2026-09-16)
 
-**Options:**
-- **Static (Recommended):** Hugo/11ty + Eleventy + GitHub Pages + Stripe webhooks
-- **Dynamic:** Next.js/Remix + Node.js + PostgreSQL + Vercel
-- **Hybrid:** GitHub Pages (frontend) + Cloudflare Workers (webhooks, API)
+**Shipped:** hand-written static HTML plus one shared stylesheet, served by GitHub Pages, with Cloudflare in front. No framework, no build step, no bundler, no Node runtime.
 
-**Decision Gate:** ADW Process - Front-end architecture (see PHASES below)
+- **Frontend — ADW-001, DECIDED:** no framework. One hand-maintained HTML file per page and a single `site.css`. A content fix is a one-file commit and the deploy is the push.
+- **Hosting — ADW-004, DECIDED:** GitHub Pages. The driver hub is `drivers.magictray.app`, served from the `magic-mouse-v3-windows-fix` repository's `docs/` with its own `CNAME`; `magictray.app` keeps its own pages in `magic-tray`. Cloudflare fronts both for DNS, caching and analytics.
+- **Anything server-side** (donation webhooks, email) runs in a Cloudflare Worker, not in a framework's API routes, so the pages stay static files.
 
 ### Core Services
 
 ```
 Frontend:
-  - drivers.magictray.app (Next.js or Static)
+  - drivers.magictray.app (static HTML on GitHub Pages, Cloudflare in front)
   - magictray.app (improvements to existing)
 
 Backend:
@@ -364,21 +363,26 @@ Every slice follows TDD pattern:
 
 For each major decision:
 
-1. **Decision Request** – What are we deciding? (e.g., "Frontend framework?")
+1. **Decision Request** – What are we deciding? (e.g., "Payment processor?")
 2. **Options** – List 3-4 concrete choices with tradeoffs
 3. **Research** – Time box to 2 hours; gather evidence
 4. **Recommendation** – Pick one; state reasoning
 5. **Record** – Document in `DECISIONS.md`
 6. **Proceed** – No re-litigating; move forward
 
+### Decided
+
+| # | Decision | Outcome | Reasoning |
+|---|----------|---------|-----------|
+| 1 | Frontend framework | None — hand-written static HTML + one stylesheet | A dozen content pages that change a few times a release. A framework or a generator would add a build step and a dependency tree to maintain, and a reader would see no difference. |
+| 4 | Hosting | GitHub Pages, Cloudflare in front | Already serving both hosts at $0 with no runtime to operate. Cloudflare covers DNS, caching and analytics. |
+
 ### Decisions Needed
 
 | # | Decision | Options | Owner | Deadline |
 |---|----------|---------|-------|----------|
-| 1 | Frontend framework | Static (Hugo), Next.js, Remix | Scout | Day 1 |
 | 2 | Payment processor | Stripe, Paddle, Gumroad | Reviewer | Day 1 |
 | 3 | Email service | Resend, SendGrid, Mailgun | Task | Day 2 |
-| 4 | Hosting | GitHub Pages, Vercel, Netlify | Scout | Day 1 |
 | 5 | Database | PostgreSQL, SQLite, Airtable | Task | Day 2 |
 | 6 | Forum platform | GitHub Discussions, Discord, Discourse | Reviewer | Day 3 |
 
@@ -517,7 +521,7 @@ downloads driver in one click.
 - [ ] Lighthouse score 90+
 ```
 
-### B. Decisions Log Template
+### B. Decisions Log — ADW-001 as recorded (use its shape for the rest)
 
 ```markdown
 ## ADW-001: Frontend Framework
@@ -527,36 +531,35 @@ downloads driver in one click.
 **Owner:** @scout
 
 ### Decision
-Use **Next.js 14** with App Router.
+No framework. Hand-written static HTML, one shared stylesheet, no build step.
 
 ### Options Considered
-1. **Static (Hugo/11ty)** – Fastest, smallest, simple. Con: Limited interactivity.
-2. **Next.js** – React SSR, incremental static regen, API routes. Pro: Flexible.
-3. **Remix** – Full-stack, great DX. Con: Smaller ecosystem.
+1. **Hand-written static HTML** – Nothing to compile; edit the page, push, done. Con: shared markup is copied by hand.
+2. **Static site generator (Hugo/11ty)** – Templates and partials. Con: a toolchain and a build step for a site this size.
+3. **Next.js** – React SSR, API routes. Con: a Node runtime, a bundler, and a dependency tree to keep patched.
 
 ### Reasoning
-Next.js provides:
-- Server-side rendering (better SEO for blog)
-- API routes (Stripe webhooks, email)
-- Static generation (homepage, driver pages - fast)
-- Incremental Static Regeneration (auto-update when GitHub changes)
-- Vercel hosting (easy deploy, built-in monitoring)
+The site is about a dozen content pages that change a few times per release.
+Hand-written HTML means:
+- No build to break, so a content fix is a one-file commit
+- No dependency tree to patch on a solo-maintainer budget
+- Pages stay fast and readable with no JavaScript at all
+- GitHub Pages serves the repository directory as it stands
 
-Blog posts warrant SSR for meta tags and caching. Stripe webhooks need serverless. 
-Static generation keeps homepage lightning-fast.
+Server-side work (donation webhooks, email) goes in a Cloudflare Worker, so it
+does not pull a framework into the pages.
 
 ### Risks
-- More overhead than pure static
-- Requires Node.js runtime (Vercel still free tier okay)
-- Learning curve for team
+- Shared markup (nav, footer, JSON-LD) is duplicated across pages by hand
+- With no templating, a site-wide change touches every page
 
 ### Mitigation
-- Performance budget (80KB JS before gzip)
-- Lighthouse CI to catch bloat
-- Starter template to accelerate dev
+- `scripts/check-site.ps1` enforces the per-page invariants templating would have guaranteed
+- Keep the page count small; add a page only when it owns a distinct question
 
 ### Decided
-Next.js 14 + Vercel. Record in codebase as `frontend-framework: next.js`.
+Static HTML on GitHub Pages, Cloudflare in front. Record in codebase as
+`frontend-framework: none`.
 ```
 
 ---
