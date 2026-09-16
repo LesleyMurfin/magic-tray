@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tested Apple devices on Windows 10 and 11: hardware reports</title>
-  <meta name="description" content="Which Apple Magic Mouse, Magic Keyboard and Magic Trackpad models a tester has confirmed on Windows 10 or 11, which still need a tester, and how to send a report.">
+  <meta name="description" content="Which Apple Magic Mouse, Magic Keyboard and Magic Trackpad models a tester has confirmed on Windows 10 or 11, which still need one, and how to send a report.">
   <link rel="canonical" href="https://magictray.app/tested.html">
   <link rel="describedby" href="https://magictray.app/llms.txt">
   <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
@@ -21,7 +21,9 @@
   <meta name="twitter:title" content="Which Apple devices are confirmed working on Windows 10 and 11">
   <meta name="twitter:description" content="The tester reports so far: three confirmed devices, and the mice, keyboards and trackpads still waiting for one.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
-  <link rel="icon" href="screenshot-tray.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
@@ -48,6 +50,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -70,7 +75,7 @@
         "@id": "https://magictray.app/tested.html#webpage",
         "url": "https://magictray.app/tested.html",
         "name": "Tested Apple devices on Windows 10 and 11: hardware reports",
-        "description": "Which Apple Magic Mouse, Magic Keyboard and Magic Trackpad models a tester has confirmed on Windows 10 or 11, which still need a tester, and how to send a report.",
+        "description": "Which Apple Magic Mouse, Magic Keyboard and Magic Trackpad models a tester has confirmed on Windows 10 or 11, which still need one, and how to send a report.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
         "publisher": { "@id": "https://magictray.app/#person" },
@@ -104,18 +109,10 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "Which Apple devices has a tester confirmed on Windows 10 or 11?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Three: the Magic Mouse 2024 (0323), the Magic Mouse v1 with AA batteries (030D) and the 2011 Apple Wireless Keyboard (0239). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth."
-            }
-          },
-          {
-            "@type": "Question",
             "name": "Does my Magic Keyboard or Magic Trackpad work on Windows 10 or 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Nobody has confirmed one yet. Magic Tray recognises the Magic Keyboard 024F 0250, the Magic Keyboard with Touch ID 0267 026C, the 2021 Magic Keyboard 029C, the AA-battery Magic Trackpad 030E, Magic Trackpad 2 0265 and the 2024 Magic Trackpad 0324, so they should work, but no tester has reported back. Send a test report if yours does."
+              "text": "Nobody has confirmed one yet. The six above should work, but no tester has reported back. Send a test report if yours does."
             }
           }
         ]
@@ -132,28 +129,25 @@
       <nav aria-label="Site">
         <a href="./">Home</a>
         <a href="battery.html">See my battery</a>
-        <a href="devices.html">Which device?</a>
+        <a href="devices.html" aria-current="true">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="v3.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · tested devices</p>
         <h1>Tested Apple devices on Windows 10 and 11</h1>
-        <p class="lead">This page is who tested what. It is not the device catalog. Only three devices have ever been confirmed by a tester; everything else Magic Tray recognises should work, but nobody has confirmed it yet.</p>
+        <p class="lead">Three devices are confirmed. Everything else Magic Tray recognises should work, but nobody has reported back.</p>
       </header>
 
-      <h2 id="reports">Reports so far</h2>
-      <p>One row per tester, per device, per transport, per Magic Tray version. Every row below is a device someone ran Magic Tray on and reported back.</p>
-      <div class="table-scroll" tabindex="0">
+      <h2 id="reports">Confirmed by a tester</h2>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Every device a tester has run Magic Tray on, scrollable table">
       <table>
+        <caption>Devices a tester has run Magic Tray on, and what they reported</caption>
         <thead>
           <tr><th>Model</th><th>PID</th><th>Transport</th><th>Tray</th><th>Windows</th><th>Battery</th><th>Driver</th><th>SDP</th><th>Tester</th><th>Date</th><th>Notes</th></tr>
         </thead>
@@ -164,86 +158,75 @@
         </tbody>
       </table>
       </div>
-      <p class="note">Scroll the table sideways on a narrow screen, or focus it and use the arrow keys.</p>
 
-      <h2 id="needed">Help us test</h2>
-      <p>Got an Apple mouse, keyboard or trackpad? <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a>. It's a short table, and "it didn't work" is just as useful as "it worked".</p>
-      <p>These are the priority. Every one is in the app and confirmed by nobody:</p>
-      <div class="table-scroll" tabindex="0">
+      <h2 id="needed">Needs a tester</h2>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Devices Magic Tray recognises that nobody has confirmed yet, scrollable table">
       <table>
+        <caption>Devices Magic Tray recognises that nobody has confirmed yet</caption>
         <thead>
-          <tr><th>Device</th><th>Code</th><th>Status</th></tr>
+          <tr><th>Device</th><th>Code</th></tr>
         </thead>
         <tbody>
-          <tr><td>Magic Keyboard</td><td><code>024F</code> / <code>0250</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Keyboard with Touch ID</td><td><code>0267</code> / <code>026C</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Keyboard (2021)</td><td><code>029C</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Trackpad (AA batteries)</td><td><code>030E</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Trackpad 2 (Lightning)</td><td><code>0265</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Trackpad 2024 (USB-C)</td><td><code>0324</code></td><td>needs a tester</td></tr>
+          <tr><td>Magic Keyboard</td><td><code>024F</code> / <code>0250</code></td></tr>
+          <tr><td>Magic Keyboard with Touch ID</td><td><code>0267</code> / <code>026C</code></td></tr>
+          <tr><td>Magic Keyboard (2021)</td><td><code>029C</code></td></tr>
+          <tr><td>Magic Trackpad (AA batteries)</td><td><code>030E</code></td></tr>
+          <tr><td>Magic Trackpad 2 (Lightning)</td><td><code>0265</code></td></tr>
+          <tr><td>Magic Trackpad 2024 (USB-C)</td><td><code>0324</code></td></tr>
         </tbody>
       </table>
       </div>
-      <p>Bluetooth Magic Keyboards matter most. For a trackpad we only need the battery percent, because Magic Tray does not offer a driver change for a trackpad.</p>
+      <div class="grid grid-2">
+        <figure class="photo pos-center">
+          <picture>
+            <source srcset="img/magic-keyboard-rechargeable-top.webp" type="image/webp">
+            <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" loading="lazy" decoding="async" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture.">
+          </picture>
+        </figure>
+        <figure class="photo pos-bottom">
+          <picture>
+            <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
+            <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" loading="lazy" decoding="async" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge.">
+          </picture>
+        </figure>
+      </div>
+      <p class="credit">Photos via Wikimedia Commons: Fletcher, <a href="https://creativecommons.org/licenses/by/4.0">CC BY 4.0</a>; Josh Kehn at English Wikipedia, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
+      <p>Bluetooth Magic Keyboards matter most. A trackpad needs only the battery percent; Magic Tray offers no trackpad driver.</p>
+      <p class="cta"><a class="primary" href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a></p>
 
-      <h2 id="catalog">The catalog</h2>
-      <p>The catalog Magic Tray actually loads is in the app, and CI fails if it drifts:</p>
-      <div class="table-scroll" tabindex="0">
-      <table>
-        <thead>
-          <tr><th>What</th><th>Where</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Mice and trackpads</td><td><a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs"><code>MouseBatteryDevice.KnownMice</code></a></td></tr>
-          <tr><td>Keyboards</td><td><a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs"><code>KeyboardBatteryDevice.KnownKeyboards</code></a></td></tr>
-          <tr><td>CI: every mouse PID has a USB row</td><td><a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/MouseBatteryDeviceTests.cs"><code>EveryKnownMousePid_HasUsbVid05acRow</code></a></td></tr>
-          <tr><td>CI: every keyboard PID has a USB row</td><td><a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs"><code>EveryKeyboardPid_HasUsbVid05acRow</code></a></td></tr>
-          <tr><td>CI: every display name resolves</td><td><a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/KindForNameTests.cs"><code>KindForNameTests</code></a></td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p>If your device is <strong>not in those tables</strong>, do not report it here. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">Open an issue</a> with the Hardware Id PID so it can be added to <code>KnownMice</code> / <code>KnownKeyboards</code> (and CI) first.</p>
-      <p>If it <strong>is</strong> in the catalog and you ran Magic Tray on it, add a report row.</p>
-
-      <h2 id="add">How to add a report</h2>
-      <div class="how">
-        <ol class="stepper">
-          <li><span class="num">1</span><div class="step-body"><strong>Confirm the PID</strong><p>exists in <code>KnownMice</code> or <code>KnownKeyboards</code>. Missing → <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">issue</a>.</p></div></li>
-          <li><span class="num">2</span><div class="step-body"><strong>Tray version</strong><p>footer, or exe Properties → Details.</p></div></li>
-          <li><span class="num">3</span><div class="step-body"><strong>Device Manager</strong><p>→ HID device → Details → <strong>Hardware Ids</strong>.</p></div></li>
-          <li><span class="num">4</span><div class="step-body"><strong>Transport</strong><p>Bluetooth, USB, or both.</p></div></li>
-          <li><span class="num">5</span><div class="step-body"><strong>After Refresh Now</strong><p>percent, or <code>No reading</code>.</p></div></li>
-          <li><span class="num">6</span><div class="step-body"><strong>Mice</strong><p>driver badge (<code>KMDF</code> / <code>Boot Camp</code> / <code>Stock</code> / <code>Patched Apple</code> / <code>Not bound</code>).</p></div></li>
-          <li><span class="num">7</span><div class="step-body"><strong>Keyboards</strong><p>SDP <code>patched</code> or <code>unpatched</code>.</p></div></li>
-        </ol>
-      </div>
-      <p>Open a pull request that adds <strong>one row</strong> to the reports file. Sign the commit (<code>git commit -s</code>).</p>
-      <div class="table-scroll" tabindex="0">
-      <table>
-        <thead>
-          <tr><th>Column</th><th>Values</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Battery</td><td><code>ok</code> / <code>no reading</code></td></tr>
-          <tr><td>Driver</td><td>badge text, or <code>n/a</code></td></tr>
-          <tr><td>SDP</td><td><code>patched</code> / <code>unpatched</code> / <code>n/a</code></td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p class="note">One row per (PID, transport, Magic Tray version). The raw file GitHub readers edit is <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md"><code>docs/TESTED.md</code></a>.</p>
+      <h2 id="add">Add a report</h2>
+      <details>
+        <summary>What to collect</summary>
+        <div class="how">
+          <ol class="stepper">
+            <li><span class="num">1</span><div class="step-body"><strong>Confirm the PID</strong><p>It must be in <code>KnownMice</code> or <code>KnownKeyboards</code>. Missing → <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">open an issue</a>.</p></div></li>
+            <li><span class="num">2</span><div class="step-body"><strong>Hardware Ids</strong><p>Device Manager → the HID device → Details → <strong>Hardware Ids</strong>.</p></div></li>
+            <li><span class="num">3</span><div class="step-body"><strong>Version and transport</strong><p>Tray version from the footer or the exe Properties. Transport: Bluetooth, USB, or both.</p></div></li>
+            <li><span class="num">4</span><div class="step-body"><strong>Press Refresh Now</strong><p>Record the percent, or <code>No reading</code>.</p></div></li>
+            <li><span class="num">5</span><div class="step-body"><strong>Badge</strong><p>Mice: <code>KMDF</code>, <code>Boot Camp</code>, <code>Stock</code>, <code>Patched Apple</code> or <code>Not bound</code>. Keyboards: SDP <code>patched</code> or <code>unpatched</code>. Otherwise <code>n/a</code>.</p></div></li>
+          </ol>
+        </div>
+        <p>Add <strong>one row</strong> — one per PID, transport and version — to <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md"><code>docs/TESTED.md</code></a> in a pull request. Sign the commit (<code>git commit -s</code>).</p>
+      </details>
+      <details id="catalog">
+        <summary>The device catalog</summary>
+        <p>CI fails if the app's catalog drifts:</p>
+        <ul class="plain">
+          <li>Mice and trackpads: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/MouseBatteryDevice.cs"><code>MouseBatteryDevice.KnownMice</code></a></li>
+          <li>Keyboards: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray/KeyboardBatteryDevice.cs"><code>KeyboardBatteryDevice.KnownKeyboards</code></a></li>
+          <li>CI: <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/MouseBatteryDeviceTests.cs"><code>EveryKnownMousePid_HasUsbVid05acRow</code></a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/KeyboardBatteryDeviceTests.cs"><code>EveryKeyboardPid_HasUsbVid05acRow</code></a>, <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/MagicMouseTray.Tests/KindForNameTests.cs"><code>KindForNameTests</code></a></li>
+        </ul>
+        <p>Not in the catalog? <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">Open an issue</a> with the Hardware Id PID.</p>
+      </details>
 
       <h2 id="faq">Common questions</h2>
       <div class="accordion two-col">
         <details>
-          <summary>Which Apple devices has a tester confirmed on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body"><p>Three: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth.</p></div>
-        </details>
-        <details>
           <summary>Does my Magic Keyboard or Magic Trackpad work on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body"><p>Nobody has confirmed one yet. Magic Tray recognises the Magic Keyboard <code>024F</code> <code>0250</code>, the Magic Keyboard with Touch ID <code>0267</code> <code>026C</code>, the 2021 Magic Keyboard <code>029C</code>, the AA-battery Magic Trackpad <code>030E</code>, Magic Trackpad 2 <code>0265</code> and the 2024 Magic Trackpad <code>0324</code>, so they should work, but no tester has reported back. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a> if yours does.</p></div>
+          <div class="a-body"><p>Nobody has confirmed one yet. The six above should work, but no tester has reported back. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a> if yours does.</p></div>
         </details>
       </div>
-    </article>
+    </main>
 
     <aside class="rail">
       <div class="rail-card">
@@ -274,14 +257,41 @@
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html">Which device?</a>
+          ·
+          <a href="drivers.html">Make it scroll</a>
+          ·
+          <a href="keyboard.html">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="tested.html" aria-current="page">Tested devices</a>
+          ·
+          <a href="funding.html">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Magic Tray is Windows software, not a desk stand.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <div class="star-links">
+        <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star Magic Tray
+        </a>
+      </div>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-        ·
-        <a href="tested.html">Hardware reports</a>
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

@@ -21,8 +21,9 @@
   <meta name="twitter:title" content="Magic Keyboard battery on Windows 10 and 11">
   <meta name="twitter:description" content="No new driver and no Apple software. One unlock from the Magic Tray menu turns the battery percent on.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
-  <link rel="icon" href="screenshot-tray.png">
-
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
@@ -49,6 +50,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -162,34 +166,10 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "How do I see my Apple Magic Keyboard battery percent on Windows 11?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Install Magic Tray, click its icon beside the clock, point at your keyboard and run the one-time unlock. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Does my Magic Keyboard need a special driver on Windows?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. Your Magic Keyboard keeps the standard Windows Bluetooth driver on Windows 10 and 11. Nothing from Apple gets installed, and no driver is swapped. You run one unlock from the Magic Tray menu, and the battery percent shows up beside your clock."
-            }
-          },
-          {
-            "@type": "Question",
             "name": "Why doesn't my Magic Keyboard battery percent show up?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Your keyboard does send its battery level. It labels that reading in a way Windows won't answer for, so the number never reaches the tray. We asked it 6,859 times in a row and got nothing back. The unlock relabels it once."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Do I need that Windows startup setting the 2024 mouse uses?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the 2024 USB-C Magic Mouse, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came."
+              "text": "Your keyboard sends its battery level, but labels it in a way Windows will not answer for, so the number never reaches the tray. The unlock relabels it once."
             }
           },
           {
@@ -197,7 +177,7 @@
             "name": "Does the unlock survive re-pairing the keyboard?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked."
+              "text": "No. Re-pairing wipes it. Run Fix battery reads again from the Magic Tray menu. Until you do, Magic Tray lists your keyboard but shows the battery as blocked."
             }
           }
         ]
@@ -214,12 +194,8 @@
       <nav aria-label="Site">
         <a href="./">Home</a>
         <a href="battery.html">See my battery</a>
-        <a href="devices.html">Which device?</a>
+        <a href="devices.html" aria-current="true">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html" aria-current="page">Keyboard battery</a>
-        <a href="trackpad.html">Trackpad</a>
-        <a href="magic-mouse-2024.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
@@ -229,115 +205,115 @@
     <main id="content" class="primary" tabindex="-1">
       <h1>Magic Keyboard battery on Windows 10 and 11</h1>
 
-      <p class="lead">Your Magic Keyboard needs no new driver, the software Windows uses to talk to your keyboard. You run one unlock instead.</p>
+      <p class="lead">No new driver, no Apple software: one unlock turns the percent on.</p>
 
-      <ul class="facts">
-        <li><strong>No new driver, no Apple software.</strong> The only download is Magic Tray itself.</li>
-        <li><strong>Windows stays as it came.</strong> No startup setting to change, unlike the 2024 mouse.</li>
-      </ul>
-
-      <h2 id="unlock">Turn the battery percent on</h2>
-
-      <p>Magic Tray finds your keyboard's Bluetooth address itself, then asks permission before changing anything.</p>
+      <h2 id="unlock">The one-time unlock, in six steps</h2>
 
       <div class="how">
         <ol class="stepper">
-          <li><span class="num">1</span><div class="step-body"><strong>Pair the keyboard.</strong><p>Pair it in Windows Bluetooth settings.</p></div></li>
-          <li><span class="num">2</span><div class="step-body"><strong>Click the Magic Tray icon.</strong><p>It sits beside the clock.</p></div></li>
-          <li><span class="num">3</span><div class="step-body"><strong>Point at your keyboard's name.</strong><p>This opens its submenu.</p></div></li>
+          <li><span class="num">1</span><div class="step-body"><strong>Pair the keyboard in Windows Bluetooth settings.</strong></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Click the Magic Tray icon beside the clock.</strong></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Point at your keyboard's name to open its submenu.</strong></div></li>
           <li><span class="num">4</span><div class="step-body"><strong>Click Fix battery reads.</strong></div></li>
-          <li><span class="num">5</span><div class="step-body"><strong>Click Yes.</strong><p>Windows asks for admin permission.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Click Yes when Windows asks for admin permission.</strong></div></li>
           <li><span class="num">6</span><div class="step-body"><strong>Turn Bluetooth off and on again.</strong></div></li>
         </ol>
       </div>
 
-      <p>The percent shows in the menu: <a href="battery.html#read">where to look</a> and <a href="battery.html#alerts">low battery warnings</a>.</p>
+      <details>
+        <summary>Where the percent shows, what changes, and how to help test</summary>
+        <p>The percent then shows in the tray menu: <a href="battery.html#read">where to look</a> · <a href="battery.html#alerts">low battery warnings</a></p>
+        <p>Windows keeps its own Bluetooth driver, nothing from Apple is installed, and no Test Mode is involved, unlike the <a href="magic-mouse-2024.html">2024 mouse</a>. Re-pairing the keyboard wipes the unlock, so run it again after you re-pair.</p>
+        <p>To run it yourself instead: grab <code>Install-KeyboardBattery.cmd</code> from the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">release page</a>, right-click it and pick Run as administrator.</p>
+        <p>On col02 the keyboard declares Battery Strength at RID <code>0x47</code> as Input-only, so <code>FeatureReportByteLength</code> is 0 and <code>HidD_GetFeature</code> returns nothing. Measured: 6,859 consecutive read timeouts, and a 255-RID sweep with zero hits.</p>
+        <p>The patch relabels <code>0x47</code> as a Feature report in the BTHPORT <code>CachedServices</code> SDP cache, and re-pairing rebuilds that cache. Source: <code>MagicMouseTray/KeyboardBatteryDevice.cs</code> and <code>scripts/kbd-patch-cachedservices.ps1</code>.</p>
+        <p>Only the 2011 Apple Wireless Keyboard (<code>0239</code>) is confirmed. The rest of the family (<code>024F</code>, <code>0250</code>, <code>0267</code>, <code>026C</code>, <code>029C</code>) should work, but nobody has reported one yet. Send your keyboard, its <a href="devices.html#identify">four-character code</a>, your Windows version, and whether the percent showed before and after: <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">send a report</a>.</p>
+      </details>
 
-      <h3>If you'd rather run the script yourself</h3>
+      <h2 id="test">Which keyboard do you have, and is it tested?</h2>
 
-      <p>Grab <code>Install-KeyboardBattery.cmd</code> from the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">release page</a>. Right-click it and pick Run as administrator.</p>
-
-      <h2 id="test">Can you help test a Magic Keyboard?</h2>
-
-      <p>One keyboard has been tested by the author: the Apple Wireless Keyboard from 2011. Every other keyboard below should work, but nobody has confirmed it yet.</p>
-
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Magic Keyboards and their test status, scrollable table">
-      <table>
-        <caption>Each Magic Keyboard, the device code Windows shows for it, and whether anyone has tested it yet</caption>
-        <thead>
-          <tr><th>Keyboard</th><th>Device code</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Magic Keyboard</td><td><code>024F</code> / <code>0250</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Keyboard with Touch ID</td><td><code>0267</code> / <code>026C</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Keyboard (2021)</td><td><code>029C</code></td><td>needs a tester</td></tr>
-        </tbody>
-      </table>
+      <div class="picker">
+        <nav class="picker-tabs" aria-label="Choose your device">
+          <a href="#pp-k1">Magic Keyboard</a>
+          <a href="#pp-k2">Wireless Keyboard 2011</a>
+          <a href="#pp-k3">Touch ID</a>
+        </nav>
+        <div class="picker-panels">
+          <section class="picker-panel" id="pp-k1">
+            <article class="ident-card">
+              <div class="ident-visual kb-visual">
+                <figure class="photo pos-center">
+                  <picture>
+                    <source srcset="img/magic-keyboard-rechargeable-top.webp" type="image/webp">
+                    <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture." loading="lazy" decoding="async">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">024F · 0250 · 029C</p>
+                <h3>Magic Keyboard</h3>
+                <p>Rechargeable, no Touch ID key; <code>029C</code> is the 2021 model. Needs a tester.</p>
+                <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a>
+              </div>
+            </article>
+          </section>
+          <section class="picker-panel" id="pp-k2">
+            <article class="ident-card">
+              <div class="ident-visual kb-visual">
+                <figure class="photo pos-top">
+                  <picture>
+                    <source srcset="img/magic-keyboard-2011-aa-top.webp" type="image/webp">
+                    <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="An Apple Wireless Keyboard from 2011. A cylindrical battery tube runs along the top edge." loading="lazy" decoding="async">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">0239</p>
+                <h3>Apple Wireless Keyboard, 2011</h3>
+                <p>AA batteries in a tube along the top edge. The only keyboard a tester has confirmed.</p>
+                <a href="tested.html">Hardware reports</a>
+              </div>
+            </article>
+          </section>
+          <section class="picker-panel" id="pp-k3">
+            <article class="ident-card">
+              <div class="ident-visual kb-visual">
+                <figure class="photo pos-top">
+                  <picture>
+                    <source srcset="img/magic-keyboard-touchid-top.webp" type="image/webp">
+                    <img src="img/magic-keyboard-touchid-top.jpg" width="1600" height="840" loading="lazy" decoding="async" alt="The top of a compact Magic Keyboard, Swiss layout. Right of F12 sits a plain round key with no symbol printed on it.">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">0267 · 026C</p>
+                <h3>Magic Keyboard with Touch ID</h3>
+                <p>A round blank key sits right of F12. Needs a tester.</p>
+                <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a>
+              </div>
+            </article>
+          </section>
+        </div>
       </div>
 
-      <p>Touch ID keyboards (<code>0267</code> / <code>026C</code>) have a round blank key right of F12:</p>
-
-      <figure class="photo pos-top">
-        <picture>
-          <source srcset="img/magic-keyboard-touchid-top.webp" type="image/webp">
-          <img src="img/magic-keyboard-touchid-top.jpg" width="1600" height="840" loading="lazy" decoding="async" alt="The top of a compact Magic Keyboard, Swiss layout. Right of F12 sits a plain round key with no symbol printed on it.">
-        </picture>
-
-      </figure>
-      <p class="credit">Photo via Wikimedia Commons: Dbirdz, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
-
-      <p>We need Bluetooth Magic Keyboards. Tell us:</p>
-
-      <ul>
-        <li>Which keyboard you have</li>
-        <li>Its four-character device code (<a href="devices.html#identify">where to find that</a>)</li>
-        <li>Your Windows version</li>
-        <li>Whether the percent appeared before the unlock, and after it</li>
-      </ul>
-
-      <p><a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a report</a>. <a href="funding.html#test-devices">Other devices need testers too</a>.</p>
+      <p class="credit">Photos via Wikimedia Commons: Fletcher, <a href="https://creativecommons.org/licenses/by/4.0">CC BY 4.0</a>; Dbirdz, Karl432, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
 
       <h2 id="faq">Common questions</h2>
 
       <div class="accordion two-col">
         <details>
-          <summary>How do I see my Apple Magic Keyboard battery percent on Windows 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body">
-            <p>Install Magic Tray, click its icon beside the clock, point at your keyboard and run the <a href="#unlock">one-time unlock</a>. Approve the admin prompt, then turn Bluetooth off and on. No new driver: Windows keeps its own. The percent then shows in the menu.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Does my Magic Keyboard need a special driver on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body">
-            <p>No. Your Magic Keyboard keeps the standard Windows Bluetooth driver on Windows 10 and 11. Nothing from Apple gets installed, and no driver is swapped. You run one unlock from the Magic Tray menu, and the battery percent shows up beside your clock.</p>
-          </div>
-        </details>
-        <details>
           <summary>Why doesn't my Magic Keyboard battery percent show up? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
-            <p>Your keyboard does send its battery level. It labels that reading in a way Windows won't answer for, so the number never reaches the tray. We asked it 6,859 times in a row and got nothing back. The unlock relabels it once.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Do I need that Windows startup setting the 2024 mouse uses? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body">
-            <p>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="magic-mouse-2024.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</p>
+            <p>Your keyboard sends its battery level, but labels it in a way Windows will not answer for, so the number never reaches the tray. The <a href="#unlock">unlock</a> relabels it once.</p>
           </div>
         </details>
         <details>
           <summary>Does the unlock survive re-pairing the keyboard? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
-            <p>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</p>
+            <p>No. Re-pairing wipes it. Run Fix battery reads again from the Magic Tray menu. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</p>
           </div>
         </details>
       </div>
-
-      <details>
-        <summary>Show the technical details</summary>
-        <p>On col02 the keyboard exposes Battery Strength at RID <code>0x47</code>, declared Input-only, so <code>FeatureReportByteLength</code> is 0 and <code>HidD_GetFeature</code> returns nothing. Measured: 6,859 consecutive read timeouts and a 255-RID sweep with zero hits.</p>
-        <p>The patch relabels <code>0x47</code> as a Feature report in the BTHPORT <code>CachedServices</code> SDP cache, and re-pairing rebuilds that cache.</p>
-        <p>Source: <code>MagicMouseTray/KeyboardBatteryDevice.cs</code> and <code>scripts/kbd-patch-cachedservices.ps1</code>.</p>
-      </details>
     </main>
 
     <aside class="rail">
@@ -378,6 +354,8 @@
           ·
           <a href="magic-mouse-2024.html">The 2024 mouse</a>
           ·
+          <a href="tested.html">Tested devices</a>
+          ·
           <a href="funding.html">Support</a>
           ·
           <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
@@ -385,13 +363,16 @@
       </nav>
       <p>Magic Tray is Windows software, not a desk stand.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <div class="star-links">
+        <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star Magic Tray
+        </a>
+      </div>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-        ·
-        <a href="tested.html">Hardware reports</a>
-
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

@@ -21,6 +21,9 @@
   <meta name="twitter:title" content="Which Apple mouse or keyboard do I have?">
   <meta name="twitter:description" content="Turn the device over. A battery door means 2009, a Lightning slot means 2015, a USB-C hole means 2024.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <script type="application/ld+json">
   {
@@ -46,6 +49,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -88,15 +94,7 @@
             "name": "Which Apple Magic Mouse do I have?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Three Magic Mouse models exist. A door over two AA batteries is the v1, model A1296. No door and a narrow Lightning slot is the v2, model A1657. No door and a small oval USB-C hole is the 2024 mouse, model A3204. The model number is etched underneath."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "How do I tell which Magic Mouse I have?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Turn it over. A battery door means 2009. A narrow Lightning port means 2015. A small oval USB-C port means 2024."
+              "text": "Turn it over. A door over two AA batteries is the v1, A1296. A Lightning slot is the v2, A1657. A USB-C hole is the 2024 mouse, A3204."
             }
           },
           {
@@ -104,7 +102,7 @@
             "name": "Why does the 2024 mouse need a different driver?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Apple's own Windows software never listed the code 0323, so Windows loads no scroll driver for it. The community driver for that model isn't published yet."
+              "text": "Apple's Windows driver has no entry for the code 0323, and no community driver is published yet."
             }
           },
           {
@@ -112,7 +110,7 @@
             "name": "Do keyboards and trackpads scroll too?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Only mice scroll. On a keyboard or trackpad, Magic Tray shows the battery percent."
+              "text": "No. Only mice scroll. Magic Tray shows battery percent for keyboards and trackpads."
             }
           }
         ]
@@ -149,293 +147,207 @@
         <a href="battery.html">See my battery</a>
         <a href="devices.html" aria-current="page">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="v3.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a></p>
         <h1>Which Apple mouse, keyboard or trackpad do I have on Windows?</h1>
-        <p class="lead">Turn your Apple device over. How it takes power names the model.</p>
-        <p>A battery door means the 2009 Magic Mouse. A narrow Lightning slot means 2015, a small oval USB-C hole means 2024.</p>
+        <p class="lead">Turn it over. How it takes power names the model.</p>
       </header>
 
       <section id="identify">
-        <h2>Mice, oldest to newest</h2>
-        <div class="ident-grid">
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-center">
-                <picture>
-                  <source srcset="img/magic-mouse-v1-cover-off-aa.webp" type="image/webp">
-                  <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">030D · 2009 · AA batteries</p>
-              <h3>Magic Mouse v1</h3>
-              <p>A door on the bottom holds two AA batteries.</p>
-              <a href="drivers.html#v1v2">Make it scroll</a>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-center">
-                <picture>
-                  <source srcset="img/magic-mouse-v2-underside-lightning-alt.webp" type="image/webp">
-                  <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0269 · 2015 · Lightning</p>
-              <h3>Magic Mouse v2, sold by Apple as Magic Mouse 2</h3>
-              <p>A narrow slot, the plug older iPhones used.</p>
-              <a href="drivers.html#v1v2">Make it scroll</a>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-bottom">
-                <picture>
-                  <source srcset="img/magic-mouse-v3-underside-usbc.webp" type="image/webp">
-                  <img src="img/magic-mouse-v3-underside-usbc.jpg" width="1144" height="1144" alt="Underside of the 2024 Magic Mouse. There is no battery door. A small oval USB-C port sits on the bottom edge between the two skid strips, and the etched text reads Model A3204." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0323 · 2024 · USB-C</p>
-              <h3>Magic Mouse (2024)</h3>
-              <p>A small oval USB-C hole, like a new phone.</p>
-              <a href="v3.html">Why this one is hard</a>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <div class="no-photo">
-                <span class="no-photo-label">No photo yet</span>
-              </div>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0310 · AA batteries</p>
-              <h3>Apple Wireless Mouse</h3>
-              <p>Flat top, no touch surface, two AA batteries.</p>
-              <a href="drivers.html#v1v2">Make it scroll</a>
-            </div>
-          </article>
-        </div>
-        <p class="credit">Photos via Wikimedia Commons: FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>. 2024 Magic Mouse underside: Apple product image, © Apple Inc., used unmodified apart from resizing; not Creative Commons licensed.</p>
+        <h2>Pick your device</h2>
+        <div class="picker">
+          <nav class="picker-tabs" aria-label="Choose your device">
+            <a href="#pp-v1">Magic Mouse v1</a>
+            <a href="#pp-v2">Magic Mouse v2</a>
+            <a href="#pp-v3">Magic Mouse 2024</a>
+            <a href="#pp-awm">Wireless Mouse</a>
+            <a href="#pp-kbd">Magic Keyboard</a>
+            <a href="#pp-kb11">Wireless Keyboard 2011</a>
+            <a href="#pp-tp">Magic Trackpad</a>
+          </nav>
 
-        <h3 id="kbtrackpad">Keyboards and trackpads: check the back edge</h3>
-        <p>A tube with a screw cap means AA batteries. A socket means it charges.</p>
-        <div class="ident-grid">
-          <article class="ident-card">
-            <div class="ident-visual kb-visual">
-              <figure class="photo pos-center">
-                <picture>
-                  <source srcset="img/magic-keyboard-rechargeable-top.webp" type="image/webp">
-                  <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="An Apple wireless keyboard seen straight down from above: low-profile white keys, no numeric keypad, and no port or cable in the picture." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">024F · 0250 · 0267 · 026C · 029C</p>
-              <h3>Magic Keyboard</h3>
-              <p>Flat back edge with a socket in it.</p>
-              <a href="keyboard.html#unlock">Keyboard battery</a>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-bottom">
-                <picture>
-                  <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
-                  <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0265 · 0324 · charges</p>
-              <h3>Magic Trackpad</h3>
-              <p>A socket in the middle of the back edge.</p>
-              <a href="battery.html#read">See my battery</a>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual kb-visual">
-              <figure class="photo pos-top">
-                <picture>
-                  <source srcset="img/magic-keyboard-2011-aa-top.webp" type="image/webp">
-                  <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="An Apple Wireless Keyboard from 2011. A cylindrical battery tube runs along the top edge." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0239 · 2011 · AA batteries</p>
-              <h3>Apple Wireless Keyboard, 2011</h3>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-center">
-                <picture>
-                  <source srcset="img/magic-keyboard-2011-aa-battery-tube.webp" type="image/webp">
-                  <img src="img/magic-keyboard-2011-aa-battery-tube.jpg" width="1600" height="595" alt="The end of an Apple Wireless Keyboard. A round slotted cap unscrews to reach the AA batteries." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0239 · end of the tube</p>
-              <h3>The cap you unscrew</h3>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <figure class="photo pos-center">
-                <picture>
-                  <source srcset="img/magic-trackpad-2010-aa-battery-tube.webp" type="image/webp">
-                  <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries." loading="lazy" decoding="async">
-                </picture>
-              </figure>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">030E · 2010 · AA batteries</p>
-              <h3>Trackpad with a tube</h3>
-            </div>
-          </article>
-          <article class="ident-card">
-            <div class="ident-visual">
-              <div class="no-photo">
-                <span class="no-photo-label">No photo yet</span>
-              </div>
-            </div>
-            <div class="ident-body">
-              <p class="pid-line">0324 · 2024 · USB-C</p>
-              <h3>Trackpad (2024)</h3>
-              <p>Flat back edge, small oval USB-C socket.</p>
-              <a href="battery.html#read">See my battery</a>
-            </div>
-          </article>
+          <div class="picker-panels">
+            <section class="picker-panel" id="pp-v1">
+              <article class="ident-card">
+                <div class="ident-visual">
+                  <figure class="photo pos-center">
+                    <picture>
+                      <source srcset="img/magic-mouse-v1-cover-off-aa.webp" type="image/webp">
+                      <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="Magic Mouse v1, battery door lifted off, two AA bays exposed." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">030D · A1296 · 2009 · AA batteries</p>
+                  <h3>Magic Mouse v1</h3>
+                  <p>A door over two AA batteries.</p>
+                  <a href="drivers.html#v1v2">Make it scroll</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-v2">
+              <article class="ident-card">
+                <div class="ident-visual">
+                  <figure class="photo pos-center">
+                    <picture>
+                      <source srcset="img/magic-mouse-v2-underside-lightning-alt.webp" type="image/webp">
+                      <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2: no battery door, a cable in the port, etched Model A1657." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">0269 · A1657 · 2015 · Lightning</p>
+                  <h3>Magic Mouse v2, or Magic Mouse 2</h3>
+                  <p>A narrow slot, the plug older iPhones used.</p>
+                  <a href="drivers.html#v1v2">Make it scroll</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-v3">
+              <article class="ident-card">
+                <div class="ident-visual">
+                  <figure class="photo pos-bottom">
+                    <picture>
+                      <source srcset="img/magic-mouse-v3-underside-usbc.webp" type="image/webp">
+                      <img src="img/magic-mouse-v3-underside-usbc.jpg" width="1144" height="1144" alt="Underside of the 2024 Magic Mouse: small oval USB-C port, etched Model A3204." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">0323 · A3204 · 2024 · USB-C</p>
+                  <h3>Magic Mouse (2024)</h3>
+                  <p>A small oval USB-C hole.</p>
+                  <a href="magic-mouse-2024.html">Read why</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-awm">
+              <article class="ident-card">
+                <div class="ident-visual">
+                  <div class="no-photo">
+                    <span class="no-photo-label">No photo yet</span>
+                  </div>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">0310 · AA batteries</p>
+                  <h3>Apple Wireless Mouse</h3>
+                  <p>Flat top, no touch surface, two AA batteries.</p>
+                  <a href="drivers.html#v1v2">Make it scroll</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-kbd">
+              <article class="ident-card">
+                <div class="ident-visual kb-visual">
+                  <figure class="photo pos-center">
+                    <picture>
+                      <source srcset="img/magic-keyboard-rechargeable-top.webp" type="image/webp">
+                      <img src="img/magic-keyboard-rechargeable-top.jpg" width="1600" height="674" alt="Apple wireless keyboard from above: low-profile keys, no numeric keypad." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">024F · 0250 · 0267 · 026C · 029C</p>
+                  <h3>Magic Keyboard</h3>
+                  <p>Flat back edge with a socket.</p>
+                  <a href="keyboard.html#unlock">Keyboard battery</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-kb11">
+              <article class="ident-card">
+                <div class="ident-visual kb-visual">
+                  <figure class="photo pos-top">
+                    <picture>
+                      <source srcset="img/magic-keyboard-2011-aa-top.webp" type="image/webp">
+                      <img src="img/magic-keyboard-2011-aa-top.jpg" width="1600" height="1014" alt="Apple Wireless Keyboard, 2011: a battery tube along the top edge." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">0239 · 2011 · AA batteries</p>
+                  <h3>Apple Wireless Keyboard (2011)</h3>
+                  <p>A screw-cap tube along the top edge.</p>
+                  <a href="keyboard.html#unlock">Keyboard battery</a>
+                </div>
+              </article>
+            </section>
+            <section class="picker-panel" id="pp-tp">
+              <article class="ident-card">
+                <div class="ident-visual">
+                  <figure class="photo pos-bottom">
+                    <picture>
+                      <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
+                      <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="Rechargeable Magic Trackpad from the front: a small port in the near edge." loading="lazy" decoding="async">
+                    </picture>
+                  </figure>
+                </div>
+                <div class="ident-body">
+                  <p class="pid-line">0265 · 0324 · charges</p>
+                  <h3>Magic Trackpad</h3>
+                  <p>A socket in the back edge. A screw cap means the 2010 model: <code>030E</code>, <code>A1339</code>, AA batteries.</p>
+                  <a href="trackpad.html">Trackpad battery</a>
+                </div>
+              </article>
+            </section>
+          </div>
         </div>
-        <p class="credit">Photos via Wikimedia Commons: Fletcher, <a href="https://creativecommons.org/licenses/by/4.0">CC BY 4.0</a>; Josh Kehn at English Wikipedia, Karl432, Roadmr, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; © Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons).</p>
+        <p class="credit">Photos via Wikimedia Commons: FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>; Fletcher, <a href="https://creativecommons.org/licenses/by/4.0">CC BY 4.0</a>; Karl432, Josh Kehn at English Wikipedia, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>. 2024 Magic Mouse underside: Apple product image, © Apple Inc., used unmodified apart from resizing; not Creative Commons licensed.</p>
+
+        <details id="compare">
+          <summary>Compare all seven devices in a table</summary>
+          <div class="table-scroll table-stack" tabindex="0" role="region" aria-label="All seven devices compared">
+          <table>
+            <caption>Every device, its code, battery percent, scroll help and test status</caption>
+            <thead>
+              <tr><th>Device</th><th>Code</th><th>Battery percent</th><th>Scroll help</th><th>Tested</th></tr>
+            </thead>
+            <tbody>
+              <tr><td data-label="Device">Magic Mouse v1</td><td data-label="Code"><code>030D</code></td><td data-label="Battery percent">Yes</td><td data-label="Scroll help">Apple's driver</td><td data-label="Tested">Yes</td></tr>
+              <tr><td data-label="Device">Magic Mouse v2</td><td data-label="Code"><code>0269</code></td><td data-label="Battery percent">Unconfirmed</td><td data-label="Scroll help">Apple's driver</td><td data-label="Tested">Not yet</td></tr>
+              <tr><td data-label="Device">Magic Mouse (2024)</td><td data-label="Code"><code>0323</code></td><td data-label="Battery percent">Yes</td><td data-label="Scroll help"><a href="drivers.html#v3">None finished yet</a></td><td data-label="Tested">Yes</td></tr>
+              <tr><td data-label="Device">Apple Wireless Mouse</td><td data-label="Code"><code>0310</code></td><td data-label="Battery percent">Unconfirmed</td><td data-label="Scroll help">Apple's driver</td><td data-label="Tested">Not yet</td></tr>
+              <tr><td data-label="Device">Apple Wireless Keyboard (2011)</td><td data-label="Code"><code>0239</code></td><td data-label="Battery percent">Yes, after an <a href="keyboard.html#unlock">unlock</a></td><td data-label="Scroll help">None needed</td><td data-label="Tested">Yes</td></tr>
+              <tr><td data-label="Device">Magic Keyboard</td><td data-label="Code"><code>024F</code> <code>0250</code> <code>0267</code> <code>026C</code> <code>029C</code></td><td data-label="Battery percent">Unconfirmed, same unlock</td><td data-label="Scroll help">None needed</td><td data-label="Tested">Not yet</td></tr>
+              <tr><td data-label="Device">Magic Trackpad</td><td data-label="Code"><code>030E</code> <code>0265</code> <code>0324</code></td><td data-label="Battery percent">Unconfirmed</td><td data-label="Scroll help">None from us</td><td data-label="Tested">Not yet</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <p class="note">"Not yet" means no report yet. <a href="funding.html#test-devices">Send one</a>.</p>
+        </details>
       </section>
-
-      <h2 id="compare">Every device side by side</h2>
-      <p class="lead">A driver is the software Windows uses to talk to your mouse.</p>
-      <div class="table-scroll" tabindex="0">
-      <table>
-        <thead>
-          <tr><th>Device</th><th>Code Windows shows</th><th>Battery percent</th><th>Needs help to scroll</th><th>Tested</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Magic Mouse v1 (2009)</td><td><code>030D</code></td><td>Yes</td><td>Yes, Apple's driver</td><td>Yes</td></tr>
-          <tr><td>Magic Mouse v2 (2015)</td><td><code>0269</code></td><td>Should work, nobody has confirmed it yet</td><td>Yes, Apple's driver</td><td>Not yet</td></tr>
-          <tr><td>Magic Mouse (2024)</td><td><code>0323</code></td><td>Yes, no driver needed</td><td>Yes, and no finished driver exists yet. <a href="drivers.html#v3">What works today</a></td><td>Yes</td></tr>
-          <tr><td>Apple Wireless Mouse</td><td><code>0310</code></td><td>Should work, nobody has confirmed it yet</td><td>Yes, Apple's driver</td><td>Not yet</td></tr>
-          <tr><td>Apple Wireless Keyboard (2011)</td><td><code>0239</code></td><td>Yes, after a <a href="keyboard.html#unlock">one-time unlock</a></td><td>Keyboards don't scroll</td><td>Yes</td></tr>
-          <tr><td>Magic Keyboard</td><td><code>024F</code> <code>0250</code> <code>0267</code> <code>026C</code> <code>029C</code></td><td>Should work after the same unlock, unconfirmed</td><td>Keyboards don't scroll</td><td>Not yet</td></tr>
-          <tr><td>Magic Trackpad</td><td><code>030E</code> <code>0265</code> <code>0324</code></td><td>Should work, nobody has confirmed it yet</td><td>No trackpad driver from us</td><td>Not yet</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p class="note">"Not yet" means nobody has sent a report. <a href="funding.html#test-devices">Help us test yours</a>.</p>
-
-      <h2 id="model">The sure check: the model number</h2>
-      <p><code>A1296</code> is the Magic Mouse v1 with AA batteries. <code>A1657</code> is the Magic Mouse v2. <code>A3204</code> is the USB-C Magic Mouse (2024).</p>
-      <div class="ident-grid">
-        <article class="ident-card">
-          <div class="ident-visual">
-            <figure class="photo pos-bottom">
-              <picture>
-                <source srcset="img/magic-mouse-v2-model-number-a1657.webp" type="image/webp">
-                <img src="img/magic-mouse-v2-model-number-a1657.jpg" width="886" height="1400" alt="Close-up of the etched text on the bottom of a Magic Mouse v2, reading Model: A1657." loading="lazy" decoding="async">
-              </picture>
-            </figure>
-          </div>
-          <div class="ident-body">
-            <p class="pid-line">A1657 · Magic Mouse v2</p>
-            <h3>What the small print looks like</h3>
-            <p>Tilt it under a lamp.</p>
-          </div>
-        </article>
-        <article class="ident-card">
-          <div class="ident-visual">
-            <figure class="photo pos-bottom">
-              <picture>
-                <source srcset="img/magic-mouse-v1-underside-aa-door.webp" type="image/webp">
-                <img src="img/magic-mouse-v1-underside-aa-door.jpg" width="1200" height="1600" alt="Underside of a Magic Mouse v1. A wide silver battery door with a release latch covers the whole middle of the bottom. There is no charging port." loading="lazy" decoding="async">
-              </picture>
-            </figure>
-          </div>
-          <div class="ident-body">
-            <p class="pid-line">A1296 · Magic Mouse v1</p>
-            <h3>The cover you slide off</h3>
-            <p>If a cover lifts away in your hand, it's a v1.</p>
-          </div>
-        </article>
-        <article class="ident-card">
-          <div class="ident-visual">
-            <figure class="photo pos-bottom">
-              <picture>
-                <source srcset="img/magic-trackpad-2010-underside-model-a1339.webp" type="image/webp">
-                <img src="img/magic-trackpad-2010-underside-model-a1339.jpg" width="1600" height="1600" alt="Underside of a Magic Trackpad from 2010, beside its aluminium battery tube. The small print reads Model No.: A1339." loading="lazy" decoding="async">
-              </picture>
-            </figure>
-          </div>
-          <div class="ident-body">
-            <p class="pid-line">A1339 · Magic Trackpad 2010</p>
-            <h3>Trackpads print it too</h3>
-          </div>
-        </article>
-      </div>
-      <p class="credit">Photos via Wikimedia Commons: Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>, close-up cropped by us; FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; © Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons).</p>
 
       <h2 id="faq">Common questions</h2>
       <div class="accordion two-col">
         <details>
           <summary>Which Apple Magic Mouse do I have? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
-            <p>Three Magic Mouse models exist. A door over two AA batteries is the v1, model <code>A1296</code>. No door and a narrow Lightning slot is the v2, model <code>A1657</code>. No door and a small oval USB-C hole is the 2024 mouse, model <code>A3204</code>. The <a href="#model">model number is etched underneath</a>.</p>
-          </div>
-        </details>
-        <details>
-          <summary>How do I tell which Magic Mouse I have? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body">
-            <p>Turn it over. A battery door means 2009. A narrow Lightning port means 2015. A small oval USB-C port means 2024.</p>
+            <p>Turn it over. A door over two AA batteries is the v1, <code>A1296</code>. A Lightning slot is the v2, <code>A1657</code>. A USB-C hole is the 2024 mouse, <code>A3204</code>.</p>
           </div>
         </details>
         <details>
           <summary>Why does the 2024 mouse need a different driver? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
-            <p>Apple's own Windows software never listed the code 0323, so Windows loads no scroll driver for it. The community driver for that model isn't published yet.</p>
+            <p>Apple's Windows driver has no entry for the code 0323, and no community driver is published yet.</p>
           </div>
         </details>
         <details>
           <summary>Do keyboards and trackpads scroll too? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
-            <p>No. Only mice scroll. On a keyboard or trackpad, Magic Tray shows the battery percent.</p>
+            <p>No. Only mice scroll. Magic Tray shows battery percent for keyboards and trackpads.</p>
           </div>
         </details>
       </div>
-    </article>
+    </main>
 
     <aside class="rail">
-      <div class="rail-card">
-        <h2>On this page</h2>
-        <nav class="jump">
-          <a href="#identify">Match a photo</a>
-          <a href="#compare">Side by side</a>
-          <a href="#model">Model number</a>
-          <a href="#faq">Questions</a>
-        </nav>
-      </div>
       <div class="rail-card">
         <h2>Get it</h2>
         <p class="cta">
@@ -447,11 +359,48 @@
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html" aria-current="page">Which device?</a>
+          ·
+          <a href="drivers.html">Make it scroll</a>
+          ·
+          <a href="keyboard.html">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="tested.html">Tested devices</a>
+          ·
+          <a href="funding.html">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <ul class="star-links">
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star Magic Tray
+          </a>
+        </li>
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star the 2024 mouse driver
+          </a>
+        </li>
+      </ul>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
+        <a href="llms.txt">llms.txt</a>
         ·
-        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 mouse driver</a>
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

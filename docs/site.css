@@ -139,12 +139,15 @@
   --rail: 17.25rem;
   /* The sticky header's real height, and the only place it is written down.
      `scroll-padding-top` and the rail's sticky offset both read it, so a
-     fragment target cannot drift out from under the header again. Two values
-     are enough because the nav no longer wraps: one row of links under the
-     brand below the shell breakpoint, inline with it above. Measured 107.5px
-     and 52.6px on all eight pages; both are rounded up a few px so a target
-     lands just clear of the edge rather than flush against it. */
-  --header-h: 7rem;
+     fragment target cannot drift out from under the header again. Three tiers,
+     because the nav wraps: two rows of links under the brand below 520px, one
+     row under it up to the shell breakpoint, inline with it above. Measured
+     152px, 107.5px and 52.6px; each is rounded up a few px so a target lands
+     just clear of the edge rather than flush against it. The five links stop
+     needing a second row between 475px and 479px depending on the page's
+     scrollbar, so the tier switches at 520px -- re-measure across all ten
+     pages if a link is added or renamed. */
+  --header-h: 9.75rem;
   /* The colour of whatever box the content is sitting on, so a sticky table
      cell or a scroll fade can mask what slides behind it without hardcoding
      which surface it happens to be on. Re-declared where that changes. */
@@ -166,6 +169,9 @@ html {
   scroll-padding-top: var(--header-h);
 }
 
+@media (min-width: 520px) {
+  :root { --header-h: 7rem; }
+}
 @media (min-width: 1100px) {
   :root { --header-h: 3.5rem; }
 }
@@ -261,30 +267,19 @@ code {
   vertical-align: middle;
 }
 
-/* Below the shell breakpoint the nav is its own full-width row under the brand
-   and scrolls sideways. Wrapped, nine links stacked into three rows and the
-   header ate 140px of an 844px phone screen -- and every 44px tap target the
-   links needed would have added another 44px row. One row is a fixed height at
-   every width, which is also what lets `--header-h` be a constant. The thin
-   scrollbar is left visible on purpose: it is the only thing telling a visitor
-   there are more links than fit. */
+/* Below the shell breakpoint the nav is its own full-width row under the brand.
+   It used to scroll horizontally with fade cues at both edges, because nine
+   links could not fit and a second row would have made the header height vary.
+   With five links a horizontal scroller is the wrong trade: the last link sat
+   off-screen with nothing but a 1px scrollbar hinting at it. Wrapping shows
+   every link at every width, and --header-h below is sized for the two rows
+   that wrapping can produce at the narrowest widths. */
 .site-header nav {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  gap: 0.35rem 1.05rem;
+  gap: 0 1.05rem;
   font-size: 0.92rem;
-  /* Marks the edge the links carry on past. The first two gradients scroll
-     with the links, so each one masks the fade at the end it is parked
-     against: the cue shows only while there is something more to reach. */
-  background:
-    linear-gradient(to right, var(--surface), transparent) 0 0 / 1.4rem 100% no-repeat local,
-    linear-gradient(to left, var(--surface), transparent) 100% 0 / 1.4rem 100% no-repeat local,
-    linear-gradient(to right, var(--bg-3), transparent) 0 0 / 1.6rem 100% no-repeat scroll,
-    linear-gradient(to left, var(--bg-3), transparent) 100% 0 / 1.6rem 100% no-repeat scroll;
 }
 .site-header nav a {
   color: var(--muted);
@@ -297,8 +292,10 @@ code {
 }
 .site-header nav a:hover { color: var(--fg); }
 /* Underlined rather than box-shadowed, so the mark stays on the word instead
-   of drifting to the bottom of the link's new padding. */
-.site-header nav a[aria-current="page"] {
+   of drifting to the bottom of the link's new padding. Matches aria-current
+   "true" as well as "page", so a device sub-page can mark its hub as current
+   without lying that the hub is the page you are on. */
+.site-header nav a[aria-current] {
   color: var(--fg);
   font-weight: 650;
   text-decoration: underline;
@@ -308,13 +305,12 @@ code {
 }
 
 @media (min-width: 1100px) {
-  /* Wide enough for the links to sit on the brand's row. Nothing scrolls here,
-     so the fade and the scroll port go away, and the negative margin gives the
-     links' padding back to the header. */
+  /* Wide enough for the links to sit on the brand's row, so the nav stops
+     being a full-width block and the negative margin gives the links' padding
+     back to the header. */
   .site-header nav {
     width: auto;
-    overflow: visible;
-    background: none;
+    flex-wrap: nowrap;
     margin: -0.7rem 0;
   }
 }
@@ -561,6 +557,15 @@ h3 {
 }
 .rail-card p:last-child { margin-bottom: 0; }
 
+/* The base every image needs and none had: a bare <img> with width/height
+   attributes rendered at its intrinsic pixel width and pushed the page wider
+   than the phone. `height: auto` keeps the aspect ratio once width is capped;
+   the attributes still reserve the right box before the file loads. */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
 img.shot {
   width: 100%;
   height: auto;
@@ -700,9 +705,16 @@ img.shot {
   object-position: 50% 62%;
   display: block;
 }
+/* Attribution is a legal obligation, not a design element. It has to be
+   present and legible, but at 0.75rem full-bleed it was rendering as three
+   lines directly under the card and reading louder than the device it
+   credits. Constrained and quieted: still selectable, still readable, no
+   longer competing with the content. */
 .credit {
-  margin: 0.15rem 0 0;
-  font-size: 0.75rem;
+  margin: 0.5rem 0 0;
+  max-width: 38rem;
+  font-size: 0.7rem;
+  line-height: 1.45;
   color: var(--faint);
 }
 .credit a { color: var(--faint); }
@@ -882,7 +894,10 @@ ol.stepper {
 }
 ol.stepper > li {
   display: grid;
-  grid-template-columns: 2.4rem 1fr;
+  /* minmax(0,1fr), not 1fr: a bare 1fr floors at the column's min-content
+     width, so one long unbreakable token -- a PowerShell one-liner, a file
+     name -- pushed the whole page wider than a 320px phone. */
+  grid-template-columns: 2.4rem minmax(0, 1fr);
   gap: 0.85rem;
   padding-bottom: 1.35rem;
   position: relative;
@@ -916,6 +931,9 @@ ol.stepper .num {
 ol.stepper .step-body { color: var(--muted); padding-top: 0.3rem; }
 ol.stepper .step-body strong { color: var(--fg); }
 ol.stepper .step-body p { margin: 0.2rem 0 0; }
+/* A command is the one thing in a step with no spaces to break at. Wrapping it
+   mid-token is ugly; letting it widen the page is worse. */
+ol.stepper .step-body code { overflow-wrap: anywhere; }
 
 /* ---------- Accordion: collapsible FAQ, replaces plain dl.faq ---------- */
 .accordion { display: grid; gap: 0.6rem; margin: 1rem 0 1.6rem; }
@@ -1302,3 +1320,363 @@ details > *:not(summary) {
 details > *:not(summary):first-of-type { margin-top: 0.2rem; }
 details code { font-family: var(--mono); font-size: 0.85rem; }
 
+
+/* ---------------------------------------------------------------------------
+   Device picker: one device visible at a time.
+
+   Radio inputs plus :checked sibling selectors, deliberately no JavaScript.
+   The production CSP is script-src 'none', so a scripted tab widget would be
+   dead on arrival. A radio group also gets keyboard support for free: arrow
+   keys move between devices and the browser handles the roving focus, which a
+   hand-rolled widget would have to reimplement and usually gets wrong.
+
+   Markup contract: every input is a direct child of .picker and comes BEFORE
+   .picker-tabs and .picker-panels, because ~ only reaches later siblings.
+   Panel ids mirror input ids with pk- swapped for pp-.
+   --------------------------------------------------------------------------- */
+.picker > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.picker-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+}
+.picker-tabs label {
+  display: inline-flex;
+  align-items: center;
+  /* 2.75rem keeps the chip above the 24px minimum target size even at the
+     smallest step of the type scale. */
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.picker-tabs label:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.picker-panel { display: none; }
+.picker-panel > .ident-card { margin: 0; }
+
+/* The selected chip and its panel. One selector pair per device: the :checked
+   input is matched by id, so these cannot be collapsed into a single rule. */
+#pk-v1:checked ~ .picker-tabs label[for="pk-v1"],
+#pk-v2:checked ~ .picker-tabs label[for="pk-v2"],
+#pk-v3:checked ~ .picker-tabs label[for="pk-v3"],
+#pk-awm:checked ~ .picker-tabs label[for="pk-awm"],
+#pk-kbd:checked ~ .picker-tabs label[for="pk-kbd"],
+#pk-kb11:checked ~ .picker-tabs label[for="pk-kb11"],
+#pk-tp:checked ~ .picker-tabs label[for="pk-tp"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+/* The real input is off-screen, so its focus ring has to be drawn on the
+   label the user actually sees. Without this the picker is unusable by
+   keyboard: focus would move with no visible indication of where it is. */
+#pk-v1:focus-visible ~ .picker-tabs label[for="pk-v1"],
+#pk-v2:focus-visible ~ .picker-tabs label[for="pk-v2"],
+#pk-v3:focus-visible ~ .picker-tabs label[for="pk-v3"],
+#pk-awm:focus-visible ~ .picker-tabs label[for="pk-awm"],
+#pk-kbd:focus-visible ~ .picker-tabs label[for="pk-kbd"],
+#pk-kb11:focus-visible ~ .picker-tabs label[for="pk-kb11"],
+#pk-tp:focus-visible ~ .picker-tabs label[for="pk-tp"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+#pk-v1:checked ~ .picker-panels > #pp-v1,
+#pk-v2:checked ~ .picker-panels > #pp-v2,
+#pk-v3:checked ~ .picker-panels > #pp-v3,
+#pk-awm:checked ~ .picker-panels > #pp-awm,
+#pk-kbd:checked ~ .picker-panels > #pp-kbd,
+#pk-kb11:checked ~ .picker-panels > #pp-kb11,
+#pk-tp:checked ~ .picker-panels > #pp-tp {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------------
+   Agent install callout.
+   A plain link, not a copy button: a clipboard write needs JavaScript, and
+   keeping script-src 'none' is worth more than saving the reader one action.
+   --------------------------------------------------------------------------- */
+.agent-install {
+  margin: 1.6rem 0;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.agent-install h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+.agent-install p { margin: 0 0 0.5rem; }
+.agent-install .agent-url {
+  margin: 0.7rem 0;
+  font-family: var(--mono);
+  font-size: 1rem;
+  word-break: break-all;
+}
+.agent-install .note {
+  margin-bottom: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+/* A .picker-panel card is the full width of the column, not a cell in the 3-up
+   .ident-grid the .photo height was tuned for. Left alone, a 9.2rem photo in an
+   854px-wide card renders the device as a letterbox sliver, and the two
+   .kb-visual panels disagree with the rest at 361px and 542px. Give the panel
+   card its own layout: stacked and taller on narrow screens, photo beside the
+   text once there is room for both. */
+.picker-panel .ident-card {
+  max-width: 48rem;
+}
+.picker-panel .ident-visual,
+.picker-panel .ident-visual.kb-visual {
+  min-height: 0;
+}
+.picker-panel .photo,
+.picker-panel .photo img,
+.picker-panel .ident-visual.kb-visual .photo,
+.picker-panel .ident-visual.kb-visual .photo img {
+  height: 16rem;
+}
+
+@media (min-width: 48rem) {
+  .picker-panel .ident-card {
+    display: grid;
+    grid-template-columns: 21rem 1fr;
+    align-items: stretch;
+  }
+  /* The divider moves with the layout: it separates photo from text, so it is
+     a right edge here rather than a bottom edge. */
+  .picker-panel .ident-visual {
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+  .picker-panel .photo,
+  .picker-panel .photo img,
+  .picker-panel .ident-visual.kb-visual .photo,
+  .picker-panel .ident-visual.kb-visual .photo img {
+    height: 100%;
+    min-height: 15rem;
+  }
+  /* The body is three short lines against a 15rem photo, so top-aligning it
+     left a block of dead space under the link. Centring balances the card
+     without stretching the text. The action link keeps its own spacing rather
+     than being pushed to the floor by margin-top:auto. */
+  .picker-panel .ident-body {
+    justify-content: center;
+    padding: 1.25rem 1.35rem;
+  }
+  .picker-panel .ident-body a {
+    margin-top: 0.55rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Deep-linkable picker.
+
+   The radio version could not be linked to: devices.html#pp-v3 still rendered
+   the v1 panel, so no other page could send a reader to their own device. The
+   chips are anchors now and selection lives in the URL, which also makes the
+   back button and a shared link behave the way a reader expects.
+
+   Degradation matters here. If :has() is unsupported the last rule drops out
+   and the first panel simply stays visible alongside any targeted one - more
+   than intended, never nothing. A rule that could blank the page is not worth
+   the tidiness.
+   --------------------------------------------------------------------------- */
+.picker-panel:first-child { display: block; }
+.picker-panel:target { display: block; }
+.picker-panels:has(:target) > .picker-panel:first-child:not(:target) {
+  display: none;
+}
+.picker-tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.picker-tabs a:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.picker-tabs a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* One pair per panel. CSS cannot relate a chip's href to whichever panel is
+   :target generically, so the list is explicit and every picker on the site
+   registers its panel ids here: devices.html uses the pp-v1, pp-v2, pp-v3,
+   pp-awm, pp-kbd, pp-kb11 and pp-tp set, keyboard.html uses pp-k1 to pp-k3,
+   trackpad.html uses pp-t1 to pp-t3, magic-mouse-2024.html uses pp-m1, pp-m2.
+   The final selector is the no-hash default: first chip reads as selected,
+   matching the first panel that :first-child shows. */
+.picker:has(#pp-v1:target) .picker-tabs a[href="#pp-v1"],
+.picker:has(#pp-v2:target) .picker-tabs a[href="#pp-v2"],
+.picker:has(#pp-v3:target) .picker-tabs a[href="#pp-v3"],
+.picker:has(#pp-awm:target) .picker-tabs a[href="#pp-awm"],
+.picker:has(#pp-kbd:target) .picker-tabs a[href="#pp-kbd"],
+.picker:has(#pp-kb11:target) .picker-tabs a[href="#pp-kb11"],
+.picker:has(#pp-tp:target) .picker-tabs a[href="#pp-tp"],
+.picker:has(#pp-k1:target) .picker-tabs a[href="#pp-k1"],
+.picker:has(#pp-k2:target) .picker-tabs a[href="#pp-k2"],
+.picker:has(#pp-k3:target) .picker-tabs a[href="#pp-k3"],
+.picker:has(#pp-t1:target) .picker-tabs a[href="#pp-t1"],
+.picker:has(#pp-t2:target) .picker-tabs a[href="#pp-t2"],
+.picker:has(#pp-t3:target) .picker-tabs a[href="#pp-t3"],
+.picker:has(#pp-m1:target) .picker-tabs a[href="#pp-m1"],
+.picker:has(#pp-m2:target) .picker-tabs a[href="#pp-m2"],
+.picker:not(:has(:target)) .picker-tabs a:first-child {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Narrow-screen tables.
+
+   A five-column table in a 311px wrapper still scrolled sideways, which is the
+   one interaction a thumb does worst. Below 34rem each row becomes its own
+   small card and each cell carries its column name from data-label, so the
+   data reads top to bottom with no horizontal movement at all.
+   --------------------------------------------------------------------------- */
+@media (max-width: 34rem) {
+  .table-stack table,
+  .table-stack thead,
+  .table-stack tbody,
+  .table-stack tr,
+  .table-stack td,
+  /* The caption must be listed too. Once the table is display:block the
+     caption keeps display:table-caption, loses its anonymous table box and
+     collapses to min-content: measured 58px wide by 195px tall at 390px,
+     one word per line. */
+  .table-stack caption {
+    display: block;
+    width: 100%;
+  }
+  /* Hidden, not removed: the header text is still what data-label echoes, and
+     screen readers keep the association through the cell labels. */
+  .table-stack thead { position: absolute; left: -9999px; }
+  .table-stack tr {
+    margin: 0 0 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-3);
+    padding: 0.2rem 0.75rem 0.5rem;
+  }
+  .table-stack td {
+    border: 0;
+    padding: 0.35rem 0;
+  }
+  .table-stack td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--faint);
+  }
+  .table-stack td:empty { display: none; }
+  /* The wrapper has nothing left to scroll, so it must stop being a focus
+     stop: a keyboard user should not land on an element that cannot move. */
+  .table-stack.table-scroll {
+    overflow: visible;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Star links.
+
+   The real GitHub star octicon, inlined as SVG. It cannot be an <img>: the
+   CSP is img-src 'self' data:, so GitHub's own asset host and every badge
+   service are blocked, and a badge image would also leak the reader's IP to a
+   third party on every page load. Inline SVG is same-document, so it renders
+   under the strictest policy and costs no request.
+
+   Star COUNTS are deliberately absent. They need a runtime API call, and
+   script-src 'none' means there is no honest way to show a live number. A
+   hardcoded count would be wrong within a day.
+   --------------------------------------------------------------------------- */
+.star-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.star-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+/* `.site-footer a` is (0,1,1) and beats `.star-link` (0,1,0), so inside a
+   footer the pill inherited `padding: 0.78rem 0` and the muted link colour:
+   the border hugged the text with zero horizontal padding. Restated at
+   matching specificity rather than reached for !important. */
+.site-footer .star-link {
+  padding: 0.5rem 0.95rem;
+  color: var(--fg);
+}
+.star-link:hover {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+.star-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.star-link .octicon-star {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+  /* The star is the affordance, so it carries the colour rather than the
+     text; on hover the whole control reads as one target. */
+  color: var(--accent-2);
+}
+.star-link:hover .octicon-star { color: var(--accent); }
+.star-link .repo {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+}
