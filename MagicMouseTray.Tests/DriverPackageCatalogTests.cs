@@ -426,4 +426,44 @@ public class DriverPackageCatalogTests
             () => DriverInstaller.ExecuteV1V2StockRestore(withKmdf));
         Assert.Contains("Uninstall-KMDF.cmd", kmdfEx.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void KeyboardSdpPatch_PromptStatesEveryCostBeforeTheUserAgrees()
+    {
+        var text = DriverInstaller.KeyboardSdpPatchPrompt("e806884b0741");
+
+        Assert.Contains("scripts/kbd-patch-cachedservices.ps1 -Mac e806884b0741", text,
+            StringComparison.Ordinal);
+        Assert.Contains("Bluetooth SDP cache entry", text, StringComparison.Ordinal);
+        Assert.Contains("battery", text, StringComparison.Ordinal);
+        Assert.Contains("one administrator approval", text, StringComparison.Ordinal);
+        Assert.Contains("changes nothing else", text, StringComparison.Ordinal);
+        Assert.Contains("Re-pairing the keyboard can undo it", text, StringComparison.Ordinal);
+        Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PathAOnKmdf_WarnsThatWhqlAppleInfCanOutrankTheTestSignedKmdfPackage()
+    {
+        var text = DriverInstaller.KmdfDisplacementWarning();
+
+        // the ranking mechanism, not just "this is risky"
+        Assert.Contains("Windows ranks a WHQL-signed package above the test-signed KMDF package",
+            text, StringComparison.Ordinal);
+        Assert.Contains("0323", text, StringComparison.Ordinal);
+        // a real possibility, never a promise
+        Assert.Contains("can move this mouse off it", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("will move", text, StringComparison.Ordinal);
+        // the concrete loss and the way back
+        Assert.Contains("tunable scroll", text, StringComparison.Ordinal);
+        Assert.Contains("battery", text, StringComparison.Ordinal);
+        Assert.Contains("pick KMDF again in the tray", text, StringComparison.Ordinal);
+
+        // shown to a user who has KMDF to lose, and to a caller that did not
+        // say; never to a user already off KMDF
+        Assert.True(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.PatchedKmdf));
+        Assert.True(DriverInstaller.WarnsKmdfDisplacement(null));
+        Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.PathAPatched));
+        Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.StockKmdf));
+    }
 }

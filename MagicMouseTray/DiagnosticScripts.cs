@@ -10,11 +10,13 @@ internal static class DiagnosticScripts
 {
     internal const string CaptureState = "capture-state.ps1";
     internal const string DiagnoseDriver = "diagnose-driver.ps1";
+    internal const string DiagnoseAndRecover = "diagnose-and-recover.ps1";
     internal const string BtStackSnapshot = "mm-bt-stack-snapshot.ps1";
     internal const string DevMgrDump = "mm-devmgr-dump.ps1";
 
     internal const string CaptureStateLabel = "Run capture-state.ps1";
     internal const string DiagnoseDriverLabel = "Run diagnose-driver.ps1";
+    internal const string DiagnoseAndRecoverLabel = "Run diagnose-and-recover.ps1";
     internal const string BtStackSnapshotLabel = "Run mm-bt-stack-snapshot.ps1";
     internal const string DevMgrDumpLabel = "Run mm-devmgr-dump.ps1";
 
@@ -22,6 +24,7 @@ internal static class DiagnosticScripts
     [
         CaptureState,
         DiagnoseDriver,
+        DiagnoseAndRecover,
         BtStackSnapshot,
         DevMgrDump,
     ];

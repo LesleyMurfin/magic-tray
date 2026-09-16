@@ -48,6 +48,30 @@ public class ConfigTests : IDisposable
     }
 
     [Fact]
+    public void HasDeviceEnabledEntry_OnlyTrueForAPidThatWasActuallyToggled()
+    {
+        // The repair planner treats "no entry" as "this PC does not own the
+        // device", so an untouched PID must never look like a written one -
+        // including the enabled_<pid>=true case, which IsDeviceEnabled cannot
+        // tell apart from a missing key.
+        var cfg = Config.Load(_path);
+        Assert.False(cfg.HasDeviceEnabledEntry("030d"));
+        Assert.False(cfg.HasDeviceEnabledEntry("0323"));
+
+        cfg.SetDeviceEnabled("030d", false);
+        cfg.SetDeviceEnabled("0323", true);
+
+        Assert.True(cfg.HasDeviceEnabledEntry("030d"));
+        Assert.True(cfg.HasDeviceEnabledEntry("0323"));
+        Assert.False(cfg.HasDeviceEnabledEntry("0269"));
+
+        var reloaded = Config.Load(_path);
+        Assert.True(reloaded.HasDeviceEnabledEntry("030d"));
+        Assert.True(reloaded.HasDeviceEnabledEntry("0323"));
+        Assert.False(reloaded.HasDeviceEnabledEntry("0269"));
+    }
+
+    [Fact]
     public void SetDeviceEnabled_030dFalse_IndependentOf0323()
     {
         var cfg = Config.Load(_path);
