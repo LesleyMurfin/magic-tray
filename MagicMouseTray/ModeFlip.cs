@@ -318,8 +318,10 @@ internal static class ModeFlip
         Logger.Log($"{LogPrefix} phase=restore recorded={Render(recorded)}");
 
         // A restore is its own cycle and gets its own nonce: two restores from
-        // the same sentinel must not share a transcript either.
-        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // the same sentinel must not share a transcript either. Minted by
+        // AttemptNonce so two cycles that start inside one millisecond cannot
+        // land on the same value - the file names are all this nonce carries.
+        var nonce = AttemptNonce.Next();
 
         string script;
         try
@@ -445,8 +447,10 @@ internal static class ModeFlip
 
         // StartedUnixMs is this cycle's nonce: it names the handshake files and
         // the generated script, so nothing an earlier or concurrent cycle left
-        // behind can answer for this one.
-        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // behind can answer for this one. AttemptNonce keeps it a Unix
+        // millisecond reading while making it unique in this process, which the
+        // bare clock was not.
+        var nonce = AttemptNonce.Next();
         var sentinel = new ModeFlipSentinel(SentinelVersion, nonce, pid, targets);
 
         var statusPath = StatusSidecarPath(pid, nonce);

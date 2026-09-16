@@ -46,22 +46,32 @@ internal static class DeviceRepair
     internal const int NoInstancesExitCode = 2;
     internal const int FilterBlockedExitCode = 3;
 
-    // Named after the ATTEMPT, not just the device. Both repairs can be in
-    // flight for the same PID at once: TrayApp's StartRepairApply and
-    // StartStaleFilterRemoval each launch straight into Task.Run, and
-    // RunDriverActionAsync does not serialize driver actions - so a second
-    // Apply (or a second ApplyRemoveStaleFilters) can overlap the first.
-    // Under a PID-only name the poller in LaunchElevated cannot tell whose
-    // report it read - it accepts the first recognised token at that path - so
-    // it would map another elevated process's result onto this attempt, and
-    // the File.Delete in LaunchElevated cannot close that hole because the
-    // other attempt is free to write the path after the delete succeeds. Same
-    // collision and the same fix as ModeFlip's cycle nonce (ModeFlip.cs:225-237).
+    // Named after the ATTEMPT and the PROCESS, not just the device. Both
+    // repairs can be in flight for the same PID at once: TrayApp's
+    // StartRepairApply and StartStaleFilterRemoval each launch straight into
+    // Task.Run, and RunDriverActionAsync does not serialize driver actions -
+    // so a second Apply (or a second ApplyRemoveStaleFilters) can overlap the
+    // first. Under a PID-only name the poller in LaunchElevated cannot tell
+    // whose report it read - it accepts the first recognised token at that
+    // path - so it would map another elevated process's result onto this
+    // attempt, and the File.Delete in LaunchElevated cannot close that hole
+    // because the other attempt is free to write the path after the delete
+    // succeeds. Same collision and the same fix as ModeFlip's cycle nonce
+    // (ModeFlip.cs:225-237).
+    //
+    // Two segments, two independent guarantees: AttemptNonce.Next() is
+    // monotonic within one process and separates attempts inside this tray,
+    // Environment.ProcessId separates two trays that mint in the same
+    // millisecond (ModeFlip.cs:253-257 records that race).
     internal static string StatusSidecarPath(string pid, long nonce) =>
-        Path.Combine(Path.GetTempPath(), $"mm-repair-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
+        Path.Combine(
+            Path.GetTempPath(),
+            $"mm-repair-{pid.ToLowerInvariant()}-{ProcIdSegment()}-{ValidateNonce(nonce)}.status");
 
     internal static string FiltersStatusSidecarPath(string pid, long nonce) =>
-        Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
+        Path.Combine(
+            Path.GetTempPath(),
+            $"mm-repair-filters-{pid.ToLowerInvariant()}-{ProcIdSegment()}-{ValidateNonce(nonce)}.status");
 
     // The bound filter name is whatever LowerFilters actually holds on the
     // device - e.g. "MagicMouseDriver204Scroll", a KMDF-family variant of the
@@ -109,6 +119,16 @@ internal static class DeviceRepair
         return nonce.ToString();
     }
 
+    // Same rule for the process id: it is the other half of the same file
+    // name, so it is validated and rendered the same way.
+    static string ProcIdSegment()
+    {
+        var procId = Environment.ProcessId;
+        if (procId <= 0)
+            throw new InvalidOperationException($"DeviceRepair needs a positive process id, got {procId}.");
+        return procId.ToString();
+    }
+
     // The names to unregister. Every one has to pass the same family + charset
     // gate as the filter that stays, must not be the filter that stays, and
     // must not repeat - a duplicate would mean the caller built the list from
@@ -149,13 +169,14 @@ internal static class DeviceRepair
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$procId = '__PROCID__'
 $nonce = '__NONCE__'
 $svc = '__SVC__'
 $pidA = 'PID_' + $targetPid
 $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
-$statusFile = Join-Path $env:TEMP ('mm-repair-' + $targetPid + '-' + $nonce + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-repair-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 function Test-Vid([string]$n) {
@@ -261,6 +282,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__PROCID__", ProcIdSegment(), StringComparison.Ordinal)
             .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__SVC__", svc, StringComparison.Ordinal)
             .Replace("__VIDS__", vidLiteral, StringComparison.Ordinal);
@@ -305,6 +327,7 @@ exit 1
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$procId = '__PROCID__'
 $nonce = '__NONCE__'
 $keep = '__KEEP__'
 $remove = @(__REMOVE__)
@@ -312,7 +335,7 @@ $pidA = 'PID_' + $targetPid
 $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $enumPath = 'SYSTEM\CurrentControlSet\Enum\BTHENUM'
-$statusFile = Join-Path $env:TEMP ('mm-repair-filters-' + $targetPid + '-' + $nonce + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-repair-filters-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 function Test-Vid([string]$n) {
@@ -541,6 +564,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__PROCID__", ProcIdSegment(), StringComparison.Ordinal)
             .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__KEEP__", keep, StringComparison.Ordinal)
             .Replace("__REMOVE__", removeLiteral, StringComparison.Ordinal)
@@ -637,11 +661,15 @@ exit 1
         // One nonce per attempt, minted here because Apply IS the attempt: it
         // names this attempt's script and its status sidecar on both sides of
         // the elevation boundary - see StatusSidecarPath for what a PID-only
-        // name lets the poller believe. Logged so two overlapping attempts can
-        // be told apart in a support log.
-        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // name lets the poller believe. AttemptNonce.Next() and not the
+        // millisecond clock, because two attempts can start inside one
+        // millisecond and would then mint the same value. Logged so two
+        // overlapping attempts can be told apart in a support log.
+        var nonce = AttemptNonce.Next();
         var script = BuildScript(pid, nonce, svc);
-        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-{pid}-{ValidateNonce(nonce)}.ps1");
+        var temp = Path.Combine(
+            Path.GetTempPath(),
+            $"mm-repair-{pid}-{ProcIdSegment()}-{ValidateNonce(nonce)}.ps1");
         Logger.Log($"DEVICE_REPAIR pid={pid} nonce={nonce} svc={svc}");
         var run = LaunchElevated(temp, script, StatusSidecarPath(pid, nonce));
         if (!run.Started)
@@ -664,9 +692,11 @@ exit 1
         var remove = ValidateRemoveList(keep, removeServices);
         // Its own attempt, so its own nonce - this repair can be running while
         // an Apply for the same PID is, and neither may poll the other's file.
-        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nonce = AttemptNonce.Next();
         var script = BuildRemoveStaleFiltersScript(pid, nonce, keep, remove);
-        var temp = Path.Combine(Path.GetTempPath(), $"mm-repair-filters-{pid}-{ValidateNonce(nonce)}.ps1");
+        var temp = Path.Combine(
+            Path.GetTempPath(),
+            $"mm-repair-filters-{pid}-{ProcIdSegment()}-{ValidateNonce(nonce)}.ps1");
         var removed = string.Join(",", remove);
         Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} nonce={nonce} keep={keep} remove={removed}");
         var run = LaunchElevated(temp, script, FiltersStatusSidecarPath(pid, nonce));

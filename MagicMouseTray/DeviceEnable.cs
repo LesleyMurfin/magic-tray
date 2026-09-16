@@ -136,23 +136,34 @@ internal static class DeviceEnable
         "The elevated step could not read the Windows device list, so nothing "
         + "was changed.";
 
-    // Named after the ATTEMPT, not just the device. Two elevated attempts can
-    // be in flight for the same PID at once: TrayApp's StartRepairApply and
-    // StartStaleFilterRemoval each launch straight into Task.Run, and
-    // RunDriverActionAsync does not serialize driver actions. Under a PID-only
-    // name the poller in LaunchElevated cannot tell whose report it parsed -
-    // it accepts the first COMPLETE report at that path - so it would hand
-    // back an end state some other elevated process measured, and the
-    // File.Delete in Apply cannot close that hole because the other attempt is
-    // free to write the path after the delete succeeds. Same collision and the
-    // same fix as ModeFlip's cycle nonce (ModeFlip.cs:225-237).
+    // Named after the ATTEMPT and the PROCESS, not just the device. Two
+    // elevated attempts can be in flight for the same PID at once: TrayApp's
+    // StartRepairApply and StartStaleFilterRemoval each launch straight into
+    // Task.Run, and RunDriverActionAsync does not serialize driver actions.
+    // Under a PID-only name the poller in LaunchElevated cannot tell whose
+    // report it parsed - it accepts the first COMPLETE report at that path -
+    // so it would hand back an end state some other elevated process
+    // measured, and the File.Delete in Apply cannot close that hole because
+    // the other attempt is free to write the path after the delete succeeds.
+    // Same collision and the same fix as ModeFlip's cycle nonce
+    // (ModeFlip.cs:225-237).
+    //
+    // Two segments, two independent guarantees. AttemptNonce.Next() is
+    // monotonic within one process, so it separates attempts inside this tray;
+    // it cannot separate two trays, and two trays do run at once
+    // (ModeFlip.cs:253-257 records exactly that race). Environment.ProcessId
+    // separates the processes.
     internal static string StatusSidecarPath(string pid, long nonce) =>
-        Path.Combine(Path.GetTempPath(), $"mm-enable-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.status");
+        Path.Combine(
+            Path.GetTempPath(),
+            $"mm-enable-{pid.ToLowerInvariant()}-{ProcIdSegment()}-{ValidateNonce(nonce)}.status");
 
     // The generated .ps1 was PID-derived too, so two overlapping attempts also
     // took turns overwriting the file the other one was about to run.
     internal static string ScriptPath(string pid, long nonce) =>
-        Path.Combine(Path.GetTempPath(), $"mm-enable-{pid.ToLowerInvariant()}-{ValidateNonce(nonce)}.ps1");
+        Path.Combine(
+            Path.GetTempPath(),
+            $"mm-enable-{pid.ToLowerInvariant()}-{ProcIdSegment()}-{ValidateNonce(nonce)}.ps1");
 
     // The nonce crosses the elevation boundary as part of a file name on both
     // sides, so it is rendered as plain digits and nothing else.
@@ -161,6 +172,16 @@ internal static class DeviceEnable
         if (nonce <= 0)
             throw new InvalidOperationException($"DeviceEnable needs a positive attempt nonce, got {nonce}.");
         return nonce.ToString();
+    }
+
+    // Same rule for the process id: it is the other half of the same file
+    // name, so it is validated and rendered the same way.
+    static string ProcIdSegment()
+    {
+        var procId = Environment.ProcessId;
+        if (procId <= 0)
+            throw new InvalidOperationException($"DeviceEnable needs a positive process id, got {procId}.");
+        return procId.ToString();
     }
 
     internal static string BuildScript(string pid, long nonce, bool enable)
@@ -179,6 +200,7 @@ internal static class DeviceEnable
         var template = """
 $ErrorActionPreference = 'Continue'
 $targetPid = '__PID__'
+$procId = '__PROCID__'
 $nonce = '__NONCE__'
 $verb = '__VERB__'
 $wantEnabled = ($verb -eq 'enable-device')
@@ -188,7 +210,7 @@ $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
 $containers = @{}
 $enumBase = 'SYSTEM\CurrentControlSet\Enum'
-$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $nonce + '.status')
+$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')
 'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
 
 # The tray decides success from these numbers, so they are the device state as
@@ -341,6 +363,7 @@ exit 1
 """;
         var script = template
             .Replace("__PID__", pid, StringComparison.Ordinal)
+            .Replace("__PROCID__", ProcIdSegment(), StringComparison.Ordinal)
             .Replace("__NONCE__", ValidateNonce(nonce), StringComparison.Ordinal)
             .Replace("__VERB__", verb, StringComparison.Ordinal)
             .Replace("__VIDS__", vidLiteral, StringComparison.Ordinal);
@@ -528,9 +551,11 @@ exit 1
         // One nonce per attempt, minted here because Apply IS the attempt. It
         // names this attempt's script and its status sidecar on both sides of
         // the elevation boundary - see StatusSidecarPath for what a PID-only
-        // name lets the poller believe. Logged so two overlapping attempts can
-        // be told apart in a support log.
-        var nonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // name lets the poller believe. AttemptNonce.Next() and not the
+        // millisecond clock, because two attempts can start inside one
+        // millisecond and a shared name is the same hole again. Logged so two
+        // overlapping attempts can be told apart in a support log.
+        var nonce = AttemptNonce.Next();
         var temp = ScriptPath(pid, nonce);
         var statusPath = StatusSidecarPath(pid, nonce);
         try { File.Delete(statusPath); } catch { /* ignore */ }

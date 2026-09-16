@@ -158,29 +158,55 @@ public class DeviceEnableTests
         Assert.Contains("No catalog VID", ex.Message, StringComparison.Ordinal);
     }
 
+    // The nonce is used as an id, so the only property that matters is that it
+    // is never handed out twice. Nothing serializes elevated attempts -
+    // StartRepairApply and StartStaleFilterRemoval go straight to Task.Run, and
+    // RunDriverActionAsync does not queue driver actions - so two attempts can
+    // mint inside the same millisecond, which the old
+    // DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() mint answered with the
+    // same number. A repeat means two attempts share a script path and a status
+    // sidecar path, and the poller accepts the first COMPLETE report at the
+    // path it watches, so the tray would report an end state that a different
+    // elevated process measured.
     [Fact]
-    public void StatusSidecar_IsNamedAfterTheAttemptNotJustTheDevice()
+    public void AttemptNonce_MintedConcurrently_NeverRepeats()
     {
-        var mine = DeviceEnable.StatusSidecarPath("030d", Nonce);
+        const int attempts = 8_000;
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var minted = new long[attempts];
+        Parallel.For(0, attempts, i => minted[i] = AttemptNonce.Next());
+        var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // Nothing serializes elevated attempts - StartRepairApply and
-        // StartStaleFilterRemoval go straight to Task.Run, and
-        // RunDriverActionAsync does not queue driver actions - while the poller
-        // accepts the first COMPLETE report at the path it watches. So a second
-        // attempt for the same PID must not land on this attempt's file, or the
-        // tray reports an end state that a different process measured.
-        Assert.NotEqual(mine, DeviceEnable.StatusSidecarPath("030d", Nonce + 1));
-        Assert.NotEqual(
-            DeviceEnable.ScriptPath("030d", Nonce),
-            DeviceEnable.ScriptPath("030d", Nonce + 1));
+        Assert.Equal(attempts, minted.Distinct().Count());
+
+        // Strictly increasing once sorted: no two attempts can name one file,
+        // and a support log sorts by attempt order.
+        var sorted = minted.OrderBy(n => n).ToArray();
+        var notIncreasing = Enumerable.Range(1, attempts - 1).Count(i => sorted[i] <= sorted[i - 1]);
+        Assert.Equal(0, notIncreasing);
+
+        // Still a Unix millisecond reading, not an opaque counter: no value can
+        // precede the clock reading taken before the fan-out, and under
+        // contention the counter runs ahead of the clock by at most one per
+        // attempt.
+        Assert.All(minted, n => Assert.InRange(n, before, after + attempts));
 
         // Both sides of the elevation boundary derive the name the same way, so
-        // the script writes the file the tray is polling.
+        // the script writes the file the tray is polling. The process id is its
+        // own segment because AttemptNonce.Next() is unique within THIS process
+        // only - two trays can mint in the same millisecond.
         var script = DeviceEnable.BuildScript("030d", Nonce, enable: true);
+        Assert.Contains($"$procId = '{Environment.ProcessId}'", script, StringComparison.Ordinal);
         Assert.Contains($"$nonce = '{Nonce}'", script, StringComparison.Ordinal);
         Assert.Contains(
-            "$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $nonce + '.status')",
+            "$statusFile = Join-Path $env:TEMP ('mm-enable-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')",
             script, StringComparison.Ordinal);
+        Assert.Equal(
+            $"mm-enable-030d-{Environment.ProcessId}-{Nonce}.status",
+            Path.GetFileName(DeviceEnable.StatusSidecarPath("030d", Nonce)));
+        Assert.Equal(
+            $"mm-enable-030d-{Environment.ProcessId}-{Nonce}.ps1",
+            Path.GetFileName(DeviceEnable.ScriptPath("030d", Nonce)));
     }
 
     // --- idempotency and end-state verification --------------------------
