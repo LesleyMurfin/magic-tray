@@ -29,7 +29,11 @@ Description: >-
 
   A Magic Keyboard is the one exception. Its battery stays hidden until a
   one-time unlock is applied, and "Fix battery reads" in the keyboard's menu
-  does that for you after you confirm.
+  does that for you after you confirm. That item runs
+  kbd-patch-cachedservices.ps1 and looks for it beside the exe, which a
+  portable install does not carry. If it reports the script missing, download
+  Install-KeyboardBattery.cmd from the release page and run it as
+  administrator instead. It does the same thing.
 
   Magic Tray can also help an Apple mouse scroll again. Each mouse gets its
   own "Driver" submenu listing the routes that exist for that exact model.
