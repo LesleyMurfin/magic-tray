@@ -28,7 +28,7 @@ five you can run yourself before pushing are:
 dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (needs Windows)
 pwsh -File scripts/check-site.ps1                                         # Site checks, if you touched docs/
 pwsh -File scripts/check-version-sync.ps1                                 # Version sync, if you touched a version string
-python3 scripts/check-winget-manifest.py                                  # Winget manifest, if you touched packaging/winget
+python3 scripts/check-winget-manifest.py                                  # Winget manifest, if you touched packaging/winget (needs: pip install PyYAML)
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 

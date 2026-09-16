@@ -28,7 +28,12 @@ import pathlib
 import re
 import sys
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit("check-winget-manifest.py needs PyYAML. Install it with:\n"
+             "    python3 -m pip install 'PyYAML==6.0.3'\n"
+             "(the Winget manifest job installs that same pinned version into a throwaway venv).")
 
 IDENTIFIER = "LesleyMurfin.MagicTray"
 MANIFEST_SCHEMA = "1.12.0"
@@ -39,6 +44,25 @@ NESTED_EXE = "MagicMouseTray.exe"
 # patches in the published ZIP's digest.
 PLACEHOLDER_SHA = "0" * 64
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
+
+# What the 1.12.0 schema marks required for each manifest in the set. Checking
+# only the keys this script has an opinion about would let a manifest missing
+# DefaultLocale or Publisher through a gate whose whole claim is "carries the
+# keys winget-pkgs will be asked to accept".
+SCHEMA_REQUIRED = {
+    "version": ("PackageIdentifier", "PackageVersion", "DefaultLocale",
+                "ManifestType", "ManifestVersion"),
+    "installer": ("PackageIdentifier", "PackageVersion", "Installers",
+                  "ManifestType", "ManifestVersion"),
+    "locale": ("PackageIdentifier", "PackageVersion", "PackageLocale", "Publisher",
+               "PackageName", "License", "ShortDescription", "ManifestType",
+               "ManifestVersion"),
+}
+# Required by every installer entry, wherever the entry sits.
+SCHEMA_REQUIRED_INSTALLER_ENTRY = ("Architecture", "InstallerUrl")
+# NOT in the schema's required set. Magic Tray's listing carries it deliberately,
+# so the gate holds us to it - but the message must not claim winget demands it.
+HOUSE_REQUIRED_LOCALE = ("PublisherUrl",)
 
 
 def line_of(path: pathlib.Path, key: str | None) -> int:
@@ -58,8 +82,18 @@ def fail(problems: list[str], path: pathlib.Path, key: str | None, message: str)
     print("::error file=%s,line=%d::%s" % (path.as_posix(), line_of(path, key), message))
 
 
+def check_required(problems: list[str], path: pathlib.Path, document: dict,
+                   keys: tuple[str, ...], why: str, where: str = "") -> None:
+    """Each key present and non-empty. Absent, null, blank and [] all fail."""
+    for key in keys:
+        value = document.get(key)
+        if value is None or (isinstance(value, (str, list, dict)) and not value) or \
+                (isinstance(value, str) and not value.strip()):
+            fail(problems, path, key, "%s%s is missing or empty; %s." % (where, key, why))
+
+
 def check_common(problems: list[str], path: pathlib.Path, document: dict, version: str) -> None:
-    """The three keys every manifest in the set has to agree on."""
+    """The keys every manifest in the set has to agree on."""
     if document.get("PackageIdentifier") != IDENTIFIER:
         fail(problems, path, "PackageIdentifier",
                       "PackageIdentifier is %r; expected %r."
@@ -98,6 +132,10 @@ def check_installer(problems: list[str], path: pathlib.Path, document: dict) -> 
         # first line declaring a key, so say which entry actually failed.
         where = "Installers entry %d (%s)" % (index, entry.get("Architecture", "no Architecture"))
 
+        check_required(problems, path, entry, SCHEMA_REQUIRED_INSTALLER_ENTRY,
+                       "the 1.12.0 installer schema requires it on every entry",
+                       where="%s: " % where)
+
         if setting("InstallerType") != "zip":
             fail(problems, path, "InstallerType",
                           "%s: InstallerType is %r; Magic Tray ships a portable ZIP, so it must be 'zip'."
@@ -123,10 +161,8 @@ def check_installer(problems: list[str], path: pathlib.Path, document: dict) -> 
 
 def check_locale(problems: list[str], path: pathlib.Path, document: dict) -> None:
     """The keys the public winget listing renders."""
-    for key in ("ShortDescription", "License", "PublisherUrl"):
-        value = document.get(key)
-        if not isinstance(value, str) or not value.strip():
-            fail(problems, path, key, "%s is missing or empty; the winget listing requires it." % key)
+    check_required(problems, path, document, HOUSE_REQUIRED_LOCALE,
+                   "Magic Tray's winget listing carries it (the schema treats it as optional)")
 
 
 def check_set(problems: list[str], folder: pathlib.Path) -> None:
@@ -152,6 +188,8 @@ def check_set(problems: list[str], folder: pathlib.Path) -> None:
             fail(problems, path, None, "Manifest does not parse to a mapping.")
             continue
         parsed[kind] = document
+        check_required(problems, path, document, SCHEMA_REQUIRED[kind],
+                       "the 1.12.0 %s schema requires it" % kind)
         check_common(problems, path, document, version)
 
     if "installer" in parsed:

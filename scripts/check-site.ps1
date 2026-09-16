@@ -76,7 +76,7 @@ $SitemapUrl = "$SiteOrigin/sitemap.xml"
 # A reference may name this site by its own origin instead of a relative path -
 # every page's rel=canonical does. Those resolve on disk like any other page, so
 # strip the origin and check them rather than writing them off as external.
-$SelfOriginPattern = '^(?:https?:)?//' + [regex]::Escape(([uri]$SiteOrigin).Host) + '(?=[/?#]|$)'
+$SelfOriginPattern = '^(?<scheme>https?:)?//' + [regex]::Escape(([uri]$SiteOrigin).Host) + '(?=[/?#]|$)'
 
 # ---------------------------------------------------------------- helpers ---
 
@@ -219,24 +219,38 @@ function Test-NoIndexPage {
         True when a page carries a robots meta tag asking crawlers not to index
         it.
     .DESCRIPTION
-        Each <meta> tag is inspected on its own, and the two attributes are
-        matched independently of each other's order and of quoting. HTML does
-        not order attributes, so <meta content="noindex" name="robots"> means
-        exactly what <meta name="robots" content="noindex"> means: a pattern
-        that insisted on name-before-content would miss an equivalent tag and
-        re-open the false failure this predicate exists to prevent. 'noindex' is
-        matched as a whole word so a content list like "noindex, nofollow"
-        counts and an unrelated value containing the letters does not.
+        Each <meta> tag is split into its attributes, which is what makes this
+        exact in both directions. HTML does not order attributes, so
+        <meta content="noindex" name="robots"> means what
+        <meta name="robots" content="noindex"> means, and matching
+        name-before-content would miss the equivalent tag. Equally, the word has
+        to come from the content value itself: a loose pattern runs past the
+        closing quote, so <meta name="robots" content="index" data-x="noindex">
+        would read as noindex and quietly excuse an indexable page from sitemap
+        coverage. The content value is therefore parsed, then split on commas,
+        and 'noindex' has to be one of the directives - which also makes
+        "noindex, nofollow" count.
     #>
     [OutputType([bool])]
     param(
         [Parameter(Mandatory)][string]$Path
     )
 
+    $attribute = '(?<key>[A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"(?<quoted>[^"]*)"|''(?<single>[^'']*)''|(?<bare>[^\s"''=<>`]+))'
     $html = Get-Content -LiteralPath $Path -Raw
     foreach ($tag in [regex]::Matches($html, '<meta\b[^>]*>', 'IgnoreCase')) {
-        if ($tag.Value -notmatch 'name\s*=\s*["'']?robots\b') { continue }
-        if ($tag.Value -match 'content\s*=\s*["'']?[^>]*\bnoindex\b') { return $true }
+        $values = @{}
+        foreach ($found in [regex]::Matches($tag.Value, $attribute)) {
+            $key = $found.Groups['key'].Value.ToLowerInvariant()
+            if ($values.ContainsKey($key)) { continue }
+            $values[$key] = if ($found.Groups['quoted'].Success) { $found.Groups['quoted'].Value }
+            elseif ($found.Groups['single'].Success) { $found.Groups['single'].Value }
+            else { $found.Groups['bare'].Value }
+        }
+        if (-not $values.ContainsKey('name') -or -not $values.ContainsKey('content')) { continue }
+        if ($values['name'].Trim() -ne 'robots') { continue }
+        $directives = @($values['content'] -split ',' | ForEach-Object { $_.Trim() })
+        if ($directives -contains 'noindex') { return $true }
     }
     return $false
 }
@@ -354,8 +368,18 @@ function Test-Reference {
     )
 
     $value = $Value
-    if ($value -match $SelfOriginPattern) {
-        $value = $value -replace $SelfOriginPattern, ''
+    $origin = [regex]::Match($value, $SelfOriginPattern)
+    if ($origin.Success) {
+        # magictray.app is HTTPS-only, so writing its own origin as http:// is
+        # never right: as a subresource the browser blocks it as mixed content,
+        # and as a link it costs a redirect. Protocol-relative and https:// both
+        # resolve on disk below.
+        if ($origin.Groups['scheme'].Value -eq 'http:') {
+            New-Finding -Severity 'error' -Path $Path -Line $Line `
+                -Message ("{0} names this site over plain http://; use a relative path, or https:// at least" -f $Label)
+            return
+        }
+        $value = $value.Substring($origin.Length)
         if ($value -eq '') { $value = '/' }
     }
     if (Test-ExternalReference -Value $value) { return }
@@ -649,6 +673,16 @@ function Test-RobotsFile {
             }
             $byAgent[$token].AddRange($group.Rules)
         }
+    }
+
+    # A crawler that matches no named group reads the wildcard group, and if
+    # there is no wildcard group it reads no rules at all. Without '*' the
+    # coverage loop below can only speak for the crawlers that happen to be
+    # named, so every unnamed one would be free to index anything - which is
+    # exactly the outcome this check exists to prevent.
+    if (-not $byAgent.Contains('*')) {
+        New-Finding -Severity 'error' -Path $robotsRelative `
+            -Message "robots.txt declares no 'User-agent: *' group; any crawler without a group of its own gets no rules and may index everything"
     }
 
     # Markdown deliberately published (listed in the sitemap) is allowed to be
