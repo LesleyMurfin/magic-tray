@@ -123,7 +123,7 @@ function Get-FilterFamilyPrefix {
     return ''
 }
 
-function Get-DiscoveredFilterServiceNames {
+function Get-DiscoveredFilterServiceName {
     $keys = @()
     try {
         $keys = @(Get-ChildItem -LiteralPath $ServicesKey -ErrorAction Stop)
@@ -191,7 +191,7 @@ function Get-ServiceSnapshot {
             if ($ip) { $snap.ImagePath = $ip }
             $st = $rk.GetValue('Start', $null)
             if ($null -ne $st) { $snap.RegStart = [string]$st }
-        } catch {}
+        } catch { Write-Verbose "GetServiceSnapshot registry read failed: $_" }
     }
     if (-not $snap.ImagePath -and $snap.Binary) { $snap.ImagePath = $snap.Binary }
     if ($snap.ImagePath) {
@@ -205,7 +205,7 @@ function Get-ServiceSnapshot {
             $snap.SysExists = $true
             $snap.SysSize = $fi.Length
             $snap.SysMtime = $fi.LastWriteTime.ToString('o')
-        } catch {}
+        } catch { Write-Verbose "GetServiceSnapshot file read failed: $_" }
     }
     $snap.Running = ($snap.State -eq 'RUNNING')
     return [pscustomobject]$snap
@@ -258,7 +258,7 @@ function Resolve-BoundFilter {
 # wheel is dead. DEVPKEY_Device_Stack is the discriminator, read exactly the way
 # scripts/capture-state.ps1 reads it.
 
-function Get-DeviceStackEntries {
+function Get-DeviceStackEntry {
     param([string]$InstanceId)
     # $null = the property could not be read (no evidence). An array otherwise.
     if (-not $InstanceId) { return $null }
@@ -302,7 +302,7 @@ function Get-BoundFilterStackState {
     #   $null  = nothing readable -> no evidence -> NEVER treated as a fault
     $readable = 0
     foreach ($id in @($InstanceIds)) {
-        $stack = Get-DeviceStackEntries ([string]$id)
+        $stack = Get-DeviceStackEntry ([string]$id)
         if ($null -eq $stack) { continue }
         $readable = $readable + 1
         if (Test-StackNamesFilter $stack $BoundFilterName) { return $true }
@@ -351,7 +351,7 @@ Write-Log "Repair=$Repair  Pid=$(if ($filterPid) { $filterPid } else { 'all cata
 Write-Log ''
 Write-Log '=== FILTER SERVICES ===' 'Cyan'
 $svcSnaps = @{}
-$filterNames = @(Get-DiscoveredFilterServiceNames)
+$filterNames = @(Get-DiscoveredFilterServiceName)
 Write-Log ("  discovered={0}" -f $(if ($filterNames.Count -gt 0) { $filterNames -join ', ' } else { '(none)' }))
 if ($filterNames.Count -eq 0) {
     Write-Log ("  no service key under {0} starts with {1}" -f $ServicesKey, ($FilterPrefixes -join ' or ')) 'Yellow'
@@ -456,7 +456,7 @@ foreach ($hex in $pids) {
                         elseif ($cv) { $lf += [string]$cv }
                     }
                 }
-            } catch {}
+            } catch { Write-Verbose "Enumerate BTHENUM registry failed: $_" }
         }
         $rows += [pscustomobject]@{
             InstanceId = $id
@@ -758,7 +758,7 @@ if (Test-Path -LiteralPath $appDir -PathType Container) {
         if (-not $srcFull.Equals($dstFull, [StringComparison]::OrdinalIgnoreCase)) {
             Copy-Item -LiteralPath $txt -Destination $copyTo -Force
         }
-    } catch {}
+    } catch { Write-Verbose "Failed to copy log file: $_" }
 }
 
 if ($Repair -and $repairFailed) { exit 1 }
