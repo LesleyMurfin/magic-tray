@@ -40,13 +40,12 @@ internal static class DeviceRegistry
         //
         // There is deliberately no transport preference and no one-device-per-PID rule. The
         // false 0% from a charge-cable phantom that those rules were written for is rejected
-        // at parse level instead, in both IBatteryDevice implementations: the floor
-        // MinValidPercent = 1 (MouseBatteryDevice.cs:78) is enforced by ParseRid90Percent
-        // (MouseBatteryDevice.cs:182), and the rejected zero is logged distinctly and
-        // returned as -2 (MouseBatteryDevice.cs:158-161); KeyboardBatteryDevice.GetBatteryPercent
-        // enforces the same floor on its Feature read. Both need it because a real 0 outranks
-        // -2 and -1 in AdaptivePoller.ReadingRank, so without the floor a dead interface
-        // answering zero would beat the live interface's failure sentinel and win the group.
+        // at parse level instead: every IBatteryDevice read path gates on
+        // MouseBatteryDevice.IsRealLevel, and each logs the rejected zero under its own marker
+        // (MOUSE_BATTERY_ZERO, KB_BATTERY_ZERO) rather than a blocked-read marker. All three
+        // implementations need that floor because a real 0 outranks -2 and -1 in
+        // AdaptivePoller.ReadingRank and ends AdaptivePoller.BestReading's scan, so without it
+        // a dead interface answering zero would beat the live interface's failure sentinel.
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {

@@ -181,6 +181,21 @@ public class MouseBatteryDeviceTests
         Assert.Equal(100, MouseBatteryDevice.ParseRid90Percent([0x90, 0x04, 100]));
     }
 
+    // The level contract every IBatteryDevice read path gates on. Pinned here because the
+    // keyboard Feature read and the Logitech HID++ read enforce it inline, behind a live
+    // HID handle no unit test can open, so this predicate is their only reachable anchor.
+    [Theory]
+    [InlineData(0, false)]   // dead or phantom interface, never a level
+    [InlineData(1, true)]    // Apple's floor
+    [InlineData(100, true)]  // Apple's ceiling
+    [InlineData(101, false)]
+    [InlineData(255, false)] // a byte read that is not a percentage
+    [InlineData(-2, false)]  // sentinels are not levels
+    public void IsRealLevel_AcceptsOnlyOneToOneHundred(int pct, bool expected)
+    {
+        Assert.Equal(expected, MouseBatteryDevice.IsRealLevel(pct));
+    }
+
     // Charge-cable leftover after a USB-C charge (CM_PROB_PHANTOM, still readable).
     const string Phantom0323Col02 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col02#a&16288706&0&0001";
 

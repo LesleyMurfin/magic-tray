@@ -137,7 +137,7 @@ public class AdaptivePollerTests : IDisposable
     }
 
     // A real 0 is an answer, not a failure, so it ends the group like any other
-    // percentage. This is why both IBatteryDevice implementations floor at
+    // percentage. This is why all three IBatteryDevice implementations floor at
     // MouseBatteryDevice.MinValidPercent: an unfloored zero from a dead interface
     // would end the group here and be reported as the device's level.
     [Fact]
