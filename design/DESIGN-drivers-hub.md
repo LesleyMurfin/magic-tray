@@ -94,8 +94,8 @@ hand-written HTML in the same style as `docs/drivers.html`.
 Request flow, stated plainly:
 
 - The donate button is a link to a Stripe-hosted payment page. Card details never touch
-  `magictray.app` and never touch the tray app. `design/STRIPE-SETUP.md` already describes creating
-  that link.
+  `magictray.app` and never touch the tray app. That Payment Link already exists; it is simply not
+  referenced from the repo yet — see "What is already set up, and what is not", below.
 - Stripe posts `checkout.session.completed` to the Worker. The Worker verifies the Stripe signature,
   rejects anything unsigned, and increments a total in KV.
 - `/drivers/fund.html` loads static, then fetches `/api/funding` and fills in the total. With
@@ -226,30 +226,40 @@ staffing table.
 | Donor dispute or chargeback | Stripe handles the mechanism. The terms it is disputed against do not exist yet — open question below. |
 | Worker or KV unavailable | The pages render fully without `/api/funding`. No uptime target is promised to anyone; a volunteer project cannot honour one, so no status page and no service commitment. |
 
-## Open questions for the owner
+## What is already set up, and what is not
 
-None of these can be answered by this document, and the donate link cannot go live until the first
-three are answered in writing.
+Stripe itself is done: the account, identity verification and the Payment Link exist. That covers
+steps 1-5 of `design/STRIPE-SETUP.md`, and it settles the question that file left open at line 9 —
+a Stripe account cannot activate without a verified identity, so the entity that receives the money
+is decided.
 
-1. **Who receives the money.** `design/STRIPE-SETUP.md:9` leaves this open — identity is completed
-   as "you or Revive Business Solutions". The certificate must be issued in a verified name, and
-   that name is the same decision.
-2. **Refunds.** Whether contributions are refundable, and until when. No policy is invented here.
-3. **Donor terms.** What a contributor is told they are buying, what happens if a submission fails
+What never happened is step 6: **the link is not in the repo.** `.github/FUNDING.yml` still sets
+`custom:` to `https://magictray.app/funding.html`, and `docs/funding.html:177` still tells visitors
+"Magic Tray has no sponsor button yet." So the shipped site cannot take a contribution even though
+Stripe can. Wiring it is a two-file edit — `custom:` in `.github/FUNDING.yml` and the primary CTA on
+`docs/funding.html` — needing only the `buy.stripe.com/...` URL pasted from the Dashboard. It needs
+no design and does not belong to the hub work; it is worth doing on its own, before any of this.
+
+## Open questions
+
+These are policy, not plumbing, and none of them can be answered by this document.
+
+1. **Refunds.** Whether contributions are refundable, and until when. No policy is invented here.
+2. **Donor terms.** What a contributor is told they are buying, what happens if a submission fails
    or never happens, and what happens to a surplus.
-4. **Receipts.** Stripe's own receipt is the only receipt this design assumes. Nothing about tax
+3. **Receipts.** Stripe's own receipt is the only receipt this design assumes. Nothing about tax
    deductibility is claimed and no tax identifier is collected or displayed; the project is not a
    registered charity.
-5. **The subdomain**, as above.
+4. **The subdomain**, as above.
 
 ## Launch criteria
 
 These are the conditions for the funding pages going live. **None of them is met today** — no page
 exists, no Worker exists, no donation has been taken.
 
-- Open questions 1, 2, and 3 answered in writing.
-- A Stripe payment link exists, per `design/STRIPE-SETUP.md`, and has completed one test-mode
-  payment end to end into KV.
+- Open questions 1 and 2 answered in writing.
+- The `buy.stripe.com` link is wired into `.github/FUNDING.yml` and `docs/funding.html`, and one
+  test-mode payment has run end to end into KV.
 - The Worker verifies webhook signatures and rejects an unsigned POST.
 - `/drivers/fund.html` renders correct and complete with JavaScript disabled.
 - Every cost figure shown has a quote behind it, or is shown as a line with no figure.
