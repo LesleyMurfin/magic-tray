@@ -230,13 +230,13 @@
       <h2 id="read">Read the battery percent</h2>
       <p>Magic Tray puts an Apple device's battery percent beside your Windows 10 or Windows 11 clock. Download it, run it, then hover the small battery icon in the taskbar to read the number. Click that icon instead and it lists every paired Apple mouse, keyboard and trackpad.</p>
       <div class="how">
-        <ol class="steps">
-          <li><strong>Download</strong> Magic Tray and run it.</li>
-          <li><strong>Look</strong> at the icons beside your Windows clock.</li>
-          <li><strong>Click the ^ arrow</strong> if you can't see one.</li>
-          <li><strong>Hover</strong> the small battery icon.</li>
-          <li><strong>Read</strong> the percent in the label that appears.</li>
-          <li><strong>Click</strong> the icon to list every paired device.</li>
+        <ol class="stepper">
+          <li><span class="num">1</span><div class="step-body"><strong>Download</strong><p>Magic Tray and run it.</p></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Look</strong><p>at the icons beside your Windows clock.</p></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Click the ^ arrow</strong><p>if you can't see one.</p></div></li>
+          <li><span class="num">4</span><div class="step-body"><strong>Hover</strong><p>the small battery icon.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Read</strong><p>the percent in the label that appears.</p></div></li>
+          <li><span class="num">6</span><div class="step-body"><strong>Click</strong><p>the icon to list every paired device.</p></div></li>
         </ol>
       </div>
       <p>Some call it the battery percentage, some the battery indicator. It's the same number.</p>
@@ -277,18 +277,28 @@
       <p><a href="funding.html#test-devices">Send a report</a> · <a href="tested.html">the full list of confirmed devices</a></p>
 
       <h2 id="faq">Common questions</h2>
-      <dl class="faq">
-        <dt>Which Apple devices show a battery percent?</dt>
-        <dd>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock.</dd>
-        <dt>Can I see my Apple keyboard's battery percent on Windows?</dt>
-        <dd>Yes, once you run the one-time unlock from the Magic Tray menu. Windows keeps its own keyboard driver, and so far only the 2011 Apple Wireless Keyboard has been confirmed by a tester.</dd>
-        <dt>Why is no battery percent showing?</dt>
-        <dd>Usually the device is asleep, or the icon is hiding behind the taskbar's <code>^</code> arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows.</dd>
-        <dt>Which Apple devices has a tester confirmed?</dt>
-        <dd>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The rest should work, but nobody has reported back yet.</dd>
-        <dt>How do I check my Apple Magic Trackpad battery on Windows?</dt>
-        <dd>Run Magic Tray and hover the battery icon beside your clock. No driver changes, and no extra step like the keyboard's unlock. Magic Trackpad 2 (<code>0265</code>), the 2024 trackpad (<code>0324</code>) and the AA-battery one (<code>030E</code>) should all report a percent, but nobody has confirmed one yet, so <a href="funding.html#test-devices">send a report</a> if yours works.</dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>Which Apple devices show a battery percent? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock.</p></div>
+        </details>
+        <details>
+          <summary>Can I see my Apple keyboard's battery percent on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes, once you run the one-time unlock from the Magic Tray menu. Windows keeps its own keyboard driver, and so far only the 2011 Apple Wireless Keyboard has been confirmed by a tester.</p></div>
+        </details>
+        <details>
+          <summary>Why is no battery percent showing? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Usually the device is asleep, or the icon is hiding behind the taskbar's <code>^</code> arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows.</p></div>
+        </details>
+        <details>
+          <summary>Which Apple devices has a tester confirmed? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The rest should work, but nobody has reported back yet.</p></div>
+        </details>
+        <details>
+          <summary>How do I check my Apple Magic Trackpad battery on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Run Magic Tray and hover the battery icon beside your clock. No driver changes, and no extra step like the keyboard's unlock. Magic Trackpad 2 (<code>0265</code>), the 2024 trackpad (<code>0324</code>) and the AA-battery one (<code>030E</code>) should all report a percent, but nobody has confirmed one yet, so <a href="funding.html#test-devices">send a report</a> if yours works.</p></div>
+        </details>
+      </div>
     </article>
 
     <aside class="rail">
