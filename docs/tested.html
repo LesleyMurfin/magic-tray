@@ -207,14 +207,14 @@
 
       <h2 id="add">How to add a report</h2>
       <div class="how">
-        <ol class="steps">
-          <li><strong>Confirm the PID</strong> exists in <code>KnownMice</code> or <code>KnownKeyboards</code>. Missing → <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">issue</a>.</li>
-          <li><strong>Tray version</strong> (footer, or exe Properties → Details).</li>
-          <li><strong>Device Manager</strong> → HID device → Details → <strong>Hardware Ids</strong>.</li>
-          <li><strong>Transport</strong>: Bluetooth, USB, or both.</li>
-          <li><strong>After Refresh Now</strong>: percent, or <code>No reading</code>.</li>
-          <li><strong>Mice</strong>: driver badge (<code>KMDF</code> / <code>Boot Camp</code> / <code>Stock</code> / <code>Patched Apple</code> / <code>Not bound</code>).</li>
-          <li><strong>Keyboards</strong>: SDP <code>patched</code> or <code>unpatched</code>.</li>
+        <ol class="stepper">
+          <li><span class="num">1</span><div class="step-body"><strong>Confirm the PID</strong><p>exists in <code>KnownMice</code> or <code>KnownKeyboards</code>. Missing → <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md">issue</a>.</p></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Tray version</strong><p>footer, or exe Properties → Details.</p></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Device Manager</strong><p>→ HID device → Details → <strong>Hardware Ids</strong>.</p></div></li>
+          <li><span class="num">4</span><div class="step-body"><strong>Transport</strong><p>Bluetooth, USB, or both.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>After Refresh Now</strong><p>percent, or <code>No reading</code>.</p></div></li>
+          <li><span class="num">6</span><div class="step-body"><strong>Mice</strong><p>driver badge (<code>KMDF</code> / <code>Boot Camp</code> / <code>Stock</code> / <code>Patched Apple</code> / <code>Not bound</code>).</p></div></li>
+          <li><span class="num">7</span><div class="step-body"><strong>Keyboards</strong><p>SDP <code>patched</code> or <code>unpatched</code>.</p></div></li>
         </ol>
       </div>
       <p>Open a pull request that adds <strong>one row</strong> to the reports file. Sign the commit (<code>git commit -s</code>).</p>
@@ -233,12 +233,16 @@
       <p class="note">One row per (PID, transport, Magic Tray version). The raw file GitHub readers edit is <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md"><code>docs/TESTED.md</code></a>.</p>
 
       <h2 id="faq">Common questions</h2>
-      <dl class="faq">
-        <dt>Which Apple devices has a tester confirmed on Windows 10 or 11?</dt>
-        <dd>Three: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth.</dd>
-        <dt>Does my Magic Keyboard or Magic Trackpad work on Windows 10 or 11?</dt>
-        <dd>Nobody has confirmed one yet. Magic Tray recognises the Magic Keyboard <code>024F</code> <code>0250</code>, the Magic Keyboard with Touch ID <code>0267</code> <code>026C</code>, the 2021 Magic Keyboard <code>029C</code>, the AA-battery Magic Trackpad <code>030E</code>, Magic Trackpad 2 <code>0265</code> and the 2024 Magic Trackpad <code>0324</code>, so they should work, but no tester has reported back. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a> if yours does.</dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>Which Apple devices has a tester confirmed on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Three: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth.</p></div>
+        </details>
+        <details>
+          <summary>Does my Magic Keyboard or Magic Trackpad work on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Nobody has confirmed one yet. Magic Tray recognises the Magic Keyboard <code>024F</code> <code>0250</code>, the Magic Keyboard with Touch ID <code>0267</code> <code>026C</code>, the 2021 Magic Keyboard <code>029C</code>, the AA-battery Magic Trackpad <code>030E</code>, Magic Trackpad 2 <code>0265</code> and the 2024 Magic Trackpad <code>0324</code>, so they should work, but no tester has reported back. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a> if yours does.</p></div>
+        </details>
+      </div>
     </article>
 
     <aside class="rail">
