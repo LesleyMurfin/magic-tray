@@ -418,13 +418,26 @@ function Get-GraphEntry {
 function Get-FaqPair {
     <#
     .SYNOPSIS
-        Extracts the visible <dt>/<dd> pairs of a page, with line numbers.
+        Extracts the page's visible question/answer pairs, with line numbers.
     .DESCRIPTION
-        Pairs are collected per <dl> so each one knows whether its list is the
-        site's FAQ list (class contains the token 'faq'). Both directions of the
-        parity check need that: a Question may be answered by any definition
-        list on the page, but only a dl.faq entry is expected to exist in the
-        graph, so a glossary elsewhere on the page is not reported as missing.
+        Two markups carry a question and its answer, and both are checked.
+
+        A <dl>: pairs are collected per list so each one knows whether its list
+        is the site's FAQ list (class contains the token 'faq'). Both directions
+        of the parity check need that: a Question may be answered by any
+        definition list on the page, but only a dl.faq entry is expected to
+        exist in the graph, so a glossary elsewhere is not reported as missing.
+
+        A <details> accordion: <summary> is the question and the <div
+        class="a-body"> after it is the answer. The a-body wrapper is what
+        separates an FAQ entry from the other ten <details> on the site, which
+        collapse a spec table or an aside rather than answer a question, and
+        which must not be reported as missing from the FAQPage graph. An
+        accordion entry counts as being in the FAQ list, so it is expected in
+        the graph exactly as a dl.faq <dt> is.
+
+        The question text is run through Convert-HtmlToText, which drops the
+        chevron <svg> that sits inside every <summary>.
     #>
     [OutputType([pscustomobject])]
     param(
@@ -451,6 +464,24 @@ function Get-FaqPair {
                     Get-LineNumber -Text $Html -Offset ($bodyOffset + $pair.Index)
                 }
             }
+        }
+    }
+
+    # Every quantifier is tempered so a match cannot run past the end of the
+    # <details> it started in. A plain `.*?` let a non-FAQ <details> -- a spec
+    # table, an aside -- swallow everything up to the next accordion's a-body
+    # and report the whole slab as one unanswered question.
+    $accordion = '<details\b[^>]*>\s*<summary\b[^>]*>(?<term>(?:(?!</summary>).)*?)</summary>\s*' +
+        '<div\b[^>]*\bclass="(?<bodyclass>[^"]*)"[^>]*>(?<definition>(?:(?!</details>).)*?)</div>\s*</details>'
+    foreach ($entry in [regex]::Matches($Html, $accordion, 'Singleline, IgnoreCase')) {
+        if ((($entry.Groups['bodyclass'].Value -split '\s+') -notcontains 'a-body')) { continue }
+        [pscustomobject]@{
+            IsFaqList      = $true
+            Term           = (Convert-HtmlToText -Html $entry.Groups['term'].Value)
+            HasDefinition  = $true
+            Definition     = (Convert-HtmlToText -Html $entry.Groups['definition'].Value)
+            TermLine       = (Get-LineNumber -Text $Html -Offset $entry.Index)
+            DefinitionLine = (Get-LineNumber -Text $Html -Offset $entry.Groups['definition'].Index)
         }
     }
 }
