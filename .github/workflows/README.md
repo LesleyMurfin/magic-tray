@@ -7,15 +7,25 @@ path-filtered, so a given PR sees only the subset its changes touch. All of them
 run on GitHub-hosted runners; none needs a self-hosted runner, and only the two
 release-side workflows need a secret.
 
-| Check run | File | Trigger | Runner | Blocks a PR? |
+`main` is protected by a ruleset: no direct pushes, no force pushes, and all
+nine checks below must pass on a pull request before it can merge. There are no
+bypass actors — the maintainer goes through a PR too.
+
+Because every one of the nine is a *required* check, none of them filters the
+`pull_request` trigger by path: a check skipped by a path filter never reports a
+conclusion, and a required check that never reports blocks the PR forever. The
+`push` triggers do keep their path filters, so main is not re-linted for
+nothing.
+
+| Check run | File | Trigger | Runner | Required on `main`? |
 |---|---|---|---|---|
-| `Build and test` | `ci.yml` | PR, push `main`, dispatch | windows-latest | yes |
-| `Verify publish` | `ci.yml` | PR, push `main`, dispatch | windows-latest | yes |
-| `PowerShell lint` | `ps-lint.yml` | `**.ps1` changes, dispatch | ubuntu-latest | yes |
-| `Workflow lint` | `actionlint.yml` | `.github/workflows/**` changes, dispatch | ubuntu-latest | yes |
-| `CodeQL (csharp)` | `codeql.yml` | PR, push `main`, Mondays 07:23 UTC, dispatch | ubuntu-latest | yes |
-| `Site checks` | `site.yml` | `docs/**` changes, dispatch | ubuntu-latest | yes |
-| `Version sync` | `packaging.yml` | `packaging/**`, csproj, `docs/index.html` changes, dispatch | ubuntu-latest | yes |
+| `Build and test` | `ci.yml` | every PR, push `main`, dispatch | windows-latest | yes |
+| `Verify publish` | `ci.yml` | every PR, push `main`, dispatch | windows-latest | yes |
+| `PowerShell lint` | `ps-lint.yml` | every PR; push `main` on `**.ps1`; dispatch | ubuntu-latest | yes |
+| `Workflow lint` | `actionlint.yml` | every PR; push `main` on `.github/workflows/**`; dispatch | ubuntu-latest | yes |
+| `CodeQL (csharp)` | `codeql.yml` | every PR, push `main`, Mondays 07:23 UTC, dispatch | ubuntu-latest | yes |
+| `Site checks` | `site.yml` | every PR; push `main` on `docs/**`; dispatch | ubuntu-latest | yes |
+| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`; dispatch | ubuntu-latest | yes |
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
 | `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
 | `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |

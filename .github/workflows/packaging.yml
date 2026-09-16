@@ -18,14 +18,12 @@
 name: Packaging
 
 on:
+  # No paths filter on pull_request: `Version sync` and `Winget manifest` are
+  # required checks, and a check skipped by a path filter never reports, which
+  # blocks the PR forever. The push filter stays.
   pull_request:
-    paths:
-      - 'packaging/**'
-      - 'MagicMouseTray/MagicMouseTray.csproj'
-      - 'docs/index.html'
-      - 'scripts/check-version-sync.ps1'
-      - 'scripts/package-release.ps1'
-      - '.github/workflows/packaging.yml'
+    branches:
+      - main
   push:
     branches:
       - main
