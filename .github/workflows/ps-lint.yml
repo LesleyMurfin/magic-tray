@@ -1,0 +1,132 @@
+name: PowerShell Lint
+
+# Static analysis only: the PowerShell language parser and PSScriptAnalyzer are both
+# cross-platform, and neither loads the Windows-only cmdlets these scripts call at
+# runtime (Get-PnpDevice, sc.exe, registry providers). Nothing here executes the
+# scripts, so a windows-latest runner would buy nothing and cost ~2x the minutes.
+# pwsh 7 is preinstalled on the ubuntu-latest image.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.ps1'
+      - 'PSScriptAnalyzerSettings.psd1'
+      - '.github/workflows/ps-lint.yml'
+  # No paths filter on pull_request: `PowerShell lint` is a required check, and
+  # a check skipped by a path filter never reports, which blocks the PR forever.
+  # The push filter above stays - main only needs a re-lint when a script changes.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ps-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ps-lint:
+    name: PowerShell lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # This is the check that actually protects the shipped scripts: a syntax error
+      # in package-release.ps1 or sign-app.ps1 breaks a tagged release, and a syntax
+      # error in diagnose-driver.ps1 breaks a user's support session. Parse every
+      # .ps1 with the real PowerShell parser before any style analysis runs.
+      - name: Check PowerShell syntax
+        shell: pwsh
+        run: |
+          $root = (Get-Location).ProviderPath
+
+          $files = @(
+            Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.ps1' -Force |
+              Where-Object { ($_.FullName -split '[\\/]') -notcontains '.git' } |
+              Sort-Object FullName
+          )
+
+          if ($files.Count -eq 0) {
+            Write-Output '::error title=PowerShell lint::No .ps1 files found - the path filter or checkout is wrong.'
+            exit 1
+          }
+
+          $errorCount = 0
+          foreach ($file in $files) {
+            $rel = [IO.Path]::GetRelativePath($root, $file.FullName).Replace('\', '/')
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName, [ref]$tokens, [ref]$parseErrors)
+
+            if ($parseErrors -and $parseErrors.Count -gt 0) {
+              foreach ($parseError in $parseErrors) {
+                $msg = $parseError.Message -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A'
+                Write-Output ("::error file={0},line={1},title={2}::{3}" -f `
+                  $rel, $parseError.Extent.StartLineNumber, 'PowerShell parse error', $msg)
+                $errorCount++
+              }
+            } else {
+              Write-Output "ok   $rel"
+            }
+          }
+
+          if ($errorCount -gt 0) {
+            Write-Output "Parse check: $errorCount syntax error(s) across $($files.Count) script(s)."
+            exit 1
+          }
+          Write-Output "Parse check: $($files.Count) script(s) parsed cleanly."
+
+      # Pinned so an upstream PSScriptAnalyzer release cannot turn a green repo red
+      # with no repo change. 1.25.0 is the version this repo was verified clean
+      # against; bump it deliberately and re-run the analyzer when you do.
+      - name: Install PSScriptAnalyzer 1.25.0
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+          Import-Module PSScriptAnalyzer
+          Write-Output "PSScriptAnalyzer $((Get-Module PSScriptAnalyzer).Version)"
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $root = (Get-Location).ProviderPath
+
+          # One pass over the whole tree. Findings under .git are dropped rather than
+          # excluded up front because Invoke-ScriptAnalyzer has no exclude-path
+          # parameter; a checkout has no .ps1 in .git, so this is belt-and-braces.
+          $findings = @(
+            Invoke-ScriptAnalyzer -Path . -Recurse `
+              -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error, Warning |
+              Where-Object { ($_.ScriptPath -split '[\\/]') -notcontains '.git' }
+          )
+
+          foreach ($finding in $findings | Sort-Object ScriptPath, Line) {
+            $rel = if ($finding.ScriptPath) {
+              [IO.Path]::GetRelativePath($root, $finding.ScriptPath).Replace('\', '/')
+            } else { '' }
+            # File-scoped rules (e.g. PSUseBOMForUnicodeEncodedFile) report line 0,
+            # which GitHub will not anchor; point those at line 1.
+            $line = if ($finding.Line -gt 0) { $finding.Line } else { 1 }
+            $msg = $finding.Message -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A'
+            Write-Output ("::error file={0},line={1},title={2}::{3}" -f `
+              $rel, $line, $finding.RuleName, $msg)
+          }
+
+          $errors   = @($findings | Where-Object { $_.Severity -eq 'Error' }).Count
+          $warnings = @($findings | Where-Object { $_.Severity -eq 'Warning' }).Count
+
+          if ($findings.Count -gt 0) {
+            Write-Output "PSScriptAnalyzer: $($findings.Count) finding(s) - $errors error(s), $warnings warning(s)."
+            exit 1
+          }
+          Write-Output 'PSScriptAnalyzer: 0 findings (Error, Warning).'

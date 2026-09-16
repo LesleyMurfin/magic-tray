@@ -1,0 +1,97 @@
+# Packaging metadata checks.
+#
+# Magic Tray names its version in four independent places, and nothing used to
+# notice when they drifted apart. These two jobs are the guard:
+#
+#   Version sync    - the csproj, the winget manifest folder, the installer URL
+#                     and the version strings on magictray.app all have to tell
+#                     the same story. The rule is in
+#                     scripts/check-version-sync.ps1: published metadata tracks
+#                     the LATEST RELEASE, the csproj may run ahead of it.
+#   Winget manifest - the three manifest YAML files parse, and carry the keys
+#                     microsoft/winget-pkgs will be asked to accept.
+#
+# Both run on ubuntu-latest and read the tree. The one piece of network access
+# in either job is the pinned `pip install PyYAML==6.0.3` below, which the
+# manifest parser needs; nothing else calls out.
+# Manifest validation deliberately does not use `winget validate` (Windows
+# only, and not always present on the runner image) - the submission workflow,
+# .github/workflows/winget-submit.yml, still runs that on windows-latest.
+name: Packaging
+
+on:
+  # No paths filter on pull_request: `Version sync` and `Winget manifest` are
+  # required checks, and a check skipped by a path filter never reports, which
+  # blocks the PR forever. The push filter stays.
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - 'packaging/**'
+      - 'MagicMouseTray/MagicMouseTray.csproj'
+      - 'docs/index.html'
+      - 'scripts/check-version-sync.ps1'
+      - 'scripts/check-winget-manifest.py'
+      - 'scripts/package-release.ps1'
+      - '.github/workflows/packaging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-sync:
+    name: Version sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pwsh is preinstalled on the ubuntu-latest image; the checker is
+      # PowerShell 7 and cross-platform on purpose so it can run here rather
+      # than burning a Windows runner minute on reading text files.
+      - name: Check that every version string agrees
+        run: pwsh -File scripts/check-version-sync.ps1
+
+  winget-manifest:
+    name: Winget manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # PyYAML is NOT on the ubuntu-latest (24.04) runner image - only
+      # libyaml-dev is - and the system interpreter is PEP 668 externally
+      # managed, so `pip install` into it is refused. A throwaway venv gets a
+      # pinned PyYAML with no third-party action and no image assumptions;
+      # prepending its bin to PATH makes the `python3` below resolve to it.
+      - name: Install PyYAML 6.0.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/yamlenv"
+          "${RUNNER_TEMP}/yamlenv/bin/python" -m pip install \
+            --disable-pip-version-check --quiet 'PyYAML==6.0.3'
+          echo "${RUNNER_TEMP}/yamlenv/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/yamlenv/bin/python" -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      # The checker lives in scripts/check-winget-manifest.py so a maintainer
+      # can run the same gate locally. Every failure is a GitHub annotation on
+      # the offending key, and the script exits non-zero.
+      - name: Validate the manifest set
+        run: python3 scripts/check-winget-manifest.py

@@ -1,0 +1,38 @@
+name: Site
+
+on:
+  # No paths filter on pull_request: `Site checks` is a required check, and a
+  # check skipped by a path filter never reports, which blocks the PR forever.
+  # The push filter stays - main only needs a re-check when docs/ changes.
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'scripts/check-site.ps1'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site-checks:
+    name: Site checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Nothing here pushes; leaving the token in .git/config would only
+          # widen what a compromised step could reach.
+          persist-credentials: false
+
+      - name: Validate docs/ site
+        run: pwsh -File scripts/check-site.ps1

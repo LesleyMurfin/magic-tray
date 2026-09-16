@@ -96,16 +96,23 @@ $mouseChildren = Get-PnpDevice -Class Mouse -ErrorAction SilentlyContinue |
 # Snapshot tray-relevant pieces
 $batteryReadings = @()
 foreach ($d in $bthenum) {
+    $val = $null
     try {
-        # Get-PnpDeviceProperty DEVPKEY_Device_BatteryLevel (255 if N/A)
-        $bp = Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_BatteryLevel' -ErrorAction SilentlyContinue
+        # Get-PnpDeviceProperty DEVPKEY_Device_BatteryLevel (255 if N/A).
+        # -ErrorAction Stop on purpose: most BTHENUM nodes do not carry this
+        # property at all, and the catch below is the diagnostic that says so.
+        # SilentlyContinue made that handler unreachable.
+        $bp = Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_BatteryLevel' -ErrorAction Stop
+        # Data is still null when the device is present but reports no level.
         $val = if ($bp) { $bp.Data } else { $null }
-        $batteryReadings += [pscustomobject]@{
-            InstanceId = $d.InstanceId
-            FriendlyName = $d.FriendlyName
-            BatteryLevel_DEVPKEY = $val
-        }
-    } catch {}
+    } catch { Write-Verbose "Battery-level property unavailable for $($d.InstanceId): $($_.Exception.Message)" }
+
+    # The row is emitted either way, so the snapshot always lists every device.
+    $batteryReadings += [pscustomobject]@{
+        InstanceId = $d.InstanceId
+        FriendlyName = $d.FriendlyName
+        BatteryLevel_DEVPKEY = $val
+    }
 }
 
 # applewirelessmouse service

@@ -14,15 +14,21 @@ permissions:
 
 jobs:
   build:
+    name: Build and publish release
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
       SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      # gh release create authenticates through GH_TOKEN below, not through the
+      # git credential helper, so the checkout needs no persisted token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: '8.0.x'
 
@@ -34,29 +40,21 @@ jobs:
 
       # Unit tests target net8.0-windows and require the windows-latest runner.
       - name: Test
-        run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release
+        run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 14
 
       - name: Publish (single-file, self-contained win-x64)
         run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
       - name: Stage keyboard patch and diagnostic scripts
-        shell: pwsh
-        run: |
-          Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
-          Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
-          Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
-          Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
-          Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
-          foreach ($f in @(
-            'publish/MagicMouseTray.exe',
-            'publish/kbd-patch-cachedservices.ps1',
-            'publish/Install-KeyboardBattery.cmd',
-            'publish/capture-state.ps1',
-            'publish/diagnose-driver.ps1',
-            'publish/mm-bt-stack-snapshot.ps1'
-          )) {
-            if (-not (Test-Path $f)) { throw "$f missing" }
-          }
+        run: pwsh -File scripts/stage-publish.ps1 -PublishDir publish
 
       # Optional Authenticode signing — runs only when the PFX secrets exist.
       - name: Sign (optional)

@@ -1,0 +1,59 @@
+name: CodeQL
+
+# C# code scanning.
+#
+# build-mode: none (buildless extraction) is used deliberately. MagicMouseTray
+# targets net8.0-windows10.0.17763.0, so a build-based CodeQL run would need a
+# windows-latest runner plus the Windows SDK reference packs - several times
+# slower and far more fragile than analysing the sources directly. Buildless
+# extraction keeps the scan on ubuntu-latest; the trade-off is that findings
+# rely on source-level resolution rather than compiler output.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 07:23 UTC - off-peak, fixed minute to avoid the top-of-hour rush.
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+# Workflow scope stays read-only. The elevated scopes CodeQL needs are granted
+# on the analyze job alone, so no future job in this file inherits
+# security-events: write.
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (csharp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # actions: read lets the CodeQL action read run metadata (required on
+      # private repositories); security-events: write is the SARIF upload, and
+      # it must work on every trigger - PR, push, schedule and dispatch alike.
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: csharp
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: "/language:csharp"

@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 # Patch CachedServices SDP record to expose RID 0x47 as Feature on COL02.
 #
 # Inserts `09 20 B1 02` at the COL02 close inside the HID Report Descriptor
@@ -37,7 +37,7 @@ if (-not (Test-Path $backupDir)) {
 $base = "HKLM:\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\$Mac"
 $insertBytes = [byte[]](0x09, 0x20, 0xB1, 0x02)
 
-function Patch-Blob {
+function Edit-Blob {
     param([byte[]]$Blob, [string]$Source)
     $len = $Blob.Length
     Write-Host "[$Source] original length: $len bytes"
@@ -146,7 +146,7 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
         [IO.File]::WriteAllBytes($backup, $val)
         Write-Host "[$subkey\$($prop.Name)] backed up -> $backup"
 
-        $patched = Patch-Blob -Blob $val -Source "$subkey\$($prop.Name)"
+        $patched = Edit-Blob -Blob $val -Source "$subkey\$($prop.Name)"
 
         if ($DryRun) {
             $patchedFile = Join-Path $backupDir "patched-$subkey-$($prop.Name).bin"

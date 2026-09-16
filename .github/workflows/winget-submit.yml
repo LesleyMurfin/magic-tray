@@ -1,14 +1,15 @@
-# Magic Tray -> microsoft/winget-pkgs submission (TEMPLATE, NOT ACTIVE)
+# Magic Tray -> microsoft/winget-pkgs submission.
 #
-# GitHub only runs workflows that live in .github/workflows/. This file sits in
-# packaging/winget/ on purpose, so it does nothing until a maintainer copies it:
+# This workflow is `workflow_dispatch` only. It never runs on push, on tag, or
+# as part of the release, and it defaults to a dry run. That is deliberate: a
+# winget submission is a pull request against a repository we do not own, and a
+# human on the other side reviews it. See packaging/winget/README.md, section
+# "It cannot be fully automated".
 #
-#   cp packaging/winget/winget-submit.yml .github/workflows/winget-submit.yml
-#
-# It is workflow_dispatch only. It never runs on push, on tag, or as part of the
-# release. That is deliberate: a winget submission is a pull request against
-# someone else's repository and it is reviewed by a human. See
-# packaging/winget/README.md, section "It cannot be fully automated".
+# It automates only the mechanical half: download the published asset, verify
+# it against its .sha256 sidecar, patch the real digest into the installer
+# manifest, upload the patched manifests, and - when dry_run is turned off -
+# run `wingetcreate submit`.
 #
 # REQUIRED SECRET THAT THIS REPOSITORY DOES NOT CURRENTLY HAVE:
 #
@@ -24,8 +25,15 @@
 #   https://cla.opensource.microsoft.com before any PR of theirs can merge.
 #   Nothing here can sign it for them.
 #
+# Until that secret exists, every run must keep dry_run enabled; the first step
+# fails fast otherwise. A dry run is still useful on its own: it proves the
+# published ZIP matches its sidecar and that the manifests patch cleanly.
+#
 # The repo's built-in GITHUB_TOKEN is used only to download the release asset.
 # It cannot open a pull request against microsoft/winget-pkgs.
+#
+# The offline half of manifest checking - parse, keys, version agreement - runs
+# on every pull request in .github/workflows/packaging.yml.
 
 name: Submit to winget-pkgs
 
@@ -45,17 +53,28 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: winget-submit-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   submit:
+    name: Submit to winget-pkgs
     # windows-latest because winget validate / wingetcreate are Windows-only.
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         shell: pwsh
 
     steps:
       - name: Check out the manifests
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # wingetcreate pushes to its own fork with
+          # WINGET_CREATE_GITHUB_TOKEN, never through this checkout's
+          # credential helper.
+          persist-credentials: false
 
       - name: Require the wingetcreate token unless this is a dry run
         env:
@@ -68,14 +87,20 @@ jobs:
             Write-Host 'No WINGET_CREATE_GITHUB_TOKEN, but dry_run is true. Continuing without submitting.'
           }
           else {
-            Write-Error 'WINGET_CREATE_GITHUB_TOKEN is not set on this repository. Add it as an Actions secret, or re-run with dry_run enabled. See the header of packaging/winget/winget-submit.yml.'
+            Write-Error 'WINGET_CREATE_GITHUB_TOKEN is not set on this repository. Add it as an Actions secret, or re-run with dry_run enabled. See the header of .github/workflows/winget-submit.yml.'
             exit 1
           }
 
       - name: Locate the manifest set for this tag
         id: locate
+        # The dispatch input arrives through env, not textual interpolation into
+        # the script body: a tag carrying a quote would otherwise close the
+        # string literal and run as PowerShell before the format guard below
+        # ever sees it.
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          $tag = '${{ inputs.tag }}'
+          $tag = $env:TAG
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             Write-Error "Tag '$tag' does not look like vMAJOR.MINOR.PATCH."
             exit 1
@@ -93,8 +118,9 @@ jobs:
       - name: Download the published ZIP and its sha256 sidecar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
         run: |
-          $tag   = '${{ inputs.tag }}'
+          $tag   = $env:TAG
           $asset = '${{ steps.locate.outputs.asset }}'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           gh release download $tag --repo '${{ github.repository }}' --dir dist --pattern $asset
@@ -116,11 +142,13 @@ jobs:
           "sha256=$computed" >> $env:GITHUB_OUTPUT
 
       - name: Write the real hash into the manifest
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           $dir  = '${{ steps.locate.outputs.dir }}'
           $file = Join-Path $dir 'LesleyMurfin.MagicTray.installer.yaml'
           $sha  = '${{ steps.hash.outputs.sha256 }}'
-          $tag  = '${{ inputs.tag }}'
+          $tag  = $env:TAG
           $text = Get-Content $file -Raw
           if ($text -notmatch "releases/download/$([regex]::Escape($tag))/") {
             Write-Error "InstallerUrl in $file does not point at the $tag release. Fix the manifest before submitting."
@@ -136,15 +164,16 @@ jobs:
           Select-String -Path $file -Pattern 'InstallerSha256|InstallerUrl'
 
       - name: Validate the manifest with winget itself
-        continue-on-error: true
+        # Non-blocking on a dry run only: the runner image occasionally ships
+        # without the App Installer package, and a dry run is allowed to report
+        # that in the log. On a real submission a validation error must stop the
+        # job before wingetcreate submit can open a PR against winget-pkgs.
+        continue-on-error: ${{ inputs.dry_run }}
         run: |
-          # Present on windows-latest images. Kept non-blocking because the
-          # runner image occasionally ships without the App Installer package;
-          # read the log rather than trusting a green tick.
           winget validate --manifest '${{ steps.locate.outputs.dir }}'
 
       - name: Upload the patched manifests for inspection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: winget-manifests-${{ steps.locate.outputs.version }}
           path: ${{ steps.locate.outputs.dir }}
@@ -153,8 +182,34 @@ jobs:
         if: ${{ inputs.dry_run == false }}
         env:
           WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          WINGETCREATE_VERSION: 1.12.13.0
+          # sha256 of wingetcreate.exe from that release's wingetcreate.exe.txt
+          WINGETCREATE_SHA256: 24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA
         run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          # aka.ms/wingetcreate/latest is a mutable redirect: whatever it serves
+          # today would be executed with WINGET_CREATE_GITHUB_TOKEN in the
+          # environment (CWE-494). Pin the immutable release asset instead and
+          # refuse to run it unless BOTH the published digest and Microsoft's
+          # Authenticode signature check out.
+          $url = "https://github.com/microsoft/winget-create/releases/download/v${env:WINGETCREATE_VERSION}/wingetcreate.exe"
+          Invoke-WebRequest $url -OutFile wingetcreate.exe -UseBasicParsing
+
+          $actual = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash.ToUpperInvariant()
+          $expected = $env:WINGETCREATE_SHA256.ToUpperInvariant()
+          Write-Host "wingetcreate $env:WINGETCREATE_VERSION sha256: $actual"
+          if ($actual -ne $expected) {
+            Write-Error "wingetcreate.exe digest is $actual but the pinned digest is $expected. Refusing to execute it. If this is a deliberate version bump, update WINGETCREATE_VERSION and WINGETCREATE_SHA256 together from the release's wingetcreate.exe.txt."
+            exit 1
+          }
+
+          $signature = Get-AuthenticodeSignature wingetcreate.exe
+          $signer = $signature.SignerCertificate.Subject
+          Write-Host "Authenticode: $($signature.Status) / $signer"
+          if ($signature.Status -ne 'Valid' -or $signer -notmatch 'O=Microsoft Corporation') {
+            Write-Error "wingetcreate.exe is not validly signed by Microsoft Corporation (status $($signature.Status), signer '$signer'). Refusing to execute it."
+            exit 1
+          }
+
           # --no-open: no browser on a runner. Token comes from the environment
           # variable, not the command line, so it is not echoed into the log.
           ./wingetcreate.exe submit `

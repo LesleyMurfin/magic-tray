@@ -1,0 +1,17 @@
+# Solo-maintained repo: every route resolves to the same owner.
+# The explicit lines below are deliberate — they make the sensitive routes visible in the
+# review UI (and keep working unchanged if a second maintainer is ever added to one of them).
+
+* @LesleyMurfin
+
+# CI/CD, required checks, issue and PR templates.
+/.github/ @LesleyMurfin
+
+# Elevated PowerShell: registry writes, the Bluetooth SDP CachedServices patch, diagnostics.
+/scripts/ @LesleyMurfin
+
+# Release packaging and the winget manifests published under the maintainer's publisher id.
+/packaging/ @LesleyMurfin
+
+# magictray.app — served straight from this folder by GitHub Pages, so a merge is a deploy.
+/docs/ @LesleyMurfin

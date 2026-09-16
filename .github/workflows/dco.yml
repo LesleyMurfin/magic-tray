@@ -1,0 +1,92 @@
+name: DCO
+
+# CONTRIBUTING.md requires every contribution to be signed off
+# (https://developercertificate.org). This enforces it on pull requests.
+#
+# A sign-off only counts as a real Git trailer: `git interpret-trailers --parse`
+# emits the commit message's final trailer block and nothing else, so a
+# "Signed-off-by:" line buried in an earlier paragraph with prose after it is
+# rejected - that is text, not a trailer. Git's parser is the authority on
+# purpose: it accepts the shapes Git itself writes, notably the
+# "(cherry picked from commit ...)" line `git cherry-pick -x` appends and folded
+# multi-line trailers, which a hand-rolled "every line must look like a trailer"
+# rule fails on while offering the contributor no way to fix it.
+#
+# Merge commits are skipped (they are generated, not authored), and so are
+# dependabot[bot] / github-actions[bot] commits, which are unsigned by design
+# and would otherwise permanently block automated dependency PRs.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: dco-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Signed-off-by trailers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          work="${RUNNER_TEMP}/dco"
+          rm -rf "${work}"
+          mkdir -p "${work}"
+
+          # Commit messages and author names are untrusted input: they only ever
+          # travel through files, env vars and jq - never through the command line.
+          gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/commits" \
+            > "${work}/commits.json"
+
+          # One line per commit that has to be checked: the sha (hex, safe) and
+          # the base64 of the whole message, so a message containing newlines or
+          # shell metacharacters cannot break the loop below.
+          jq -r '
+            def is_merge: (.parents | length) > 1;
+            def is_bot: (.author.login // "") as $login
+              | $login == "dependabot[bot]" or $login == "github-actions[bot]";
+            .[]
+            | select((is_merge or is_bot) | not)
+            | "\(.sha) \(.commit.message | @base64)"
+          ' "${work}/commits.json" > "${work}/checked.txt"
+
+          total="$(jq -r 'length' "${work}/commits.json")"
+          checked="$(wc -l < "${work}/checked.txt" | tr -d '[:space:]')"
+          skipped=$(( total - checked ))
+          missing=0
+
+          while read -r sha encoded; do
+            printf '%s' "${encoded}" | base64 -d > "${work}/message"
+
+            # Trailer tokens are case-insensitive in Git, so match them that way.
+            # Parsed to a file rather than a pipe: `set -o pipefail` would report
+            # git's SIGPIPE if grep -q exited first.
+            git interpret-trailers --parse < "${work}/message" > "${work}/trailers"
+            if grep -qiE '^Signed-off-by: .+ <.+>$' "${work}/trailers"; then
+              continue
+            fi
+
+            missing=$(( missing + 1 ))
+            subject="$(head -n 1 "${work}/message")"
+            printf '::error::Commit %s (%s) has no "Signed-off-by:" trailer in its final trailer block. Fix: git commit -s (new commits), or git rebase --signoff origin/main && git push --force-with-lease (existing ones).\n' \
+              "${sha:0:7}" "${subject}"
+          done < "${work}/checked.txt"
+
+          echo "DCO: ${total} commit(s), ${checked} checked, ${skipped} skipped (merge/bot), ${missing} missing sign-off."
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi

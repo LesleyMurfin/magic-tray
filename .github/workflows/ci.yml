@@ -2,19 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
+    name: Build and test
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
+    # No NuGet caching: setup-dotnet's `cache: true` demands a packages.lock.json
+    # (this repo has none, and does not set RestorePackagesWithLockFile), and
+    # actions/cache is outside the approved action set. Restore stays uncached.
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: '8.0.x'
 
@@ -25,13 +40,25 @@ jobs:
       run: dotnet build MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-restore -c Release
 
     - name: Test
-      run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-build -c Release --verbosity normal
+      run: dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj --no-build -c Release --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: test-results
+        path: TestResults/*.trx
+        retention-days: 14
 
   verify-publish:
+    name: Verify publish
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
     # Guards the MSB3030 class of break: a Content Include left pointing at a
     # file that no longer exists fails the build for every PR, not just its own.
@@ -49,7 +76,7 @@ jobs:
         Write-Host "All csproj Content Include paths exist."
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: '8.0.x'
 
@@ -57,13 +84,7 @@ jobs:
       run: dotnet publish MagicMouseTray/MagicMouseTray.csproj -c Release -o publish
 
     - name: Stage keyboard patch and diagnostic scripts
-      shell: pwsh
-      run: |
-        Copy-Item -LiteralPath scripts/kbd-patch-cachedservices.ps1 publish/kbd-patch-cachedservices.ps1
-        Copy-Item -LiteralPath scripts/Install-KeyboardBattery.cmd publish/Install-KeyboardBattery.cmd
-        Copy-Item -LiteralPath scripts/capture-state.ps1 publish/capture-state.ps1
-        Copy-Item -LiteralPath diagnose-driver.ps1 publish/diagnose-driver.ps1
-        Copy-Item -LiteralPath scripts/mm-bt-stack-snapshot.ps1 publish/mm-bt-stack-snapshot.ps1
+      run: pwsh -File scripts/stage-publish.ps1 -PublishDir publish
 
     # verify-release.ps1 treats a missing ZIP as a hard failure, never a skip,
     # so CI has to build one. That is deliberate: the portable ZIP is the
@@ -71,11 +92,21 @@ jobs:
     # the keyboard unlock and the Diagnostics scripts at <exe>/scripts/. Packaging
     # here means a PR that breaks that layout fails now, not at tag time.
     - name: Package portable ZIP
-      shell: pwsh
       run: pwsh -File scripts/package-release.ps1 -PublishDir publish -Tag "ci-${{ github.sha }}" -OutDir dist
 
     - name: Verify release artifacts
       run: pwsh -File scripts/verify-release.ps1 -PublishDir publish
+
+    # Hand the packaged ZIP (and its checksum) to reviewers so a PR build can be
+    # downloaded and run without rebuilding it locally.
+    - name: Upload portable ZIP
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: portable-zip
+        path: |
+          dist/*.zip
+          dist/*.zip.sha256
+        retention-days: 14
 
   # docs/ is published by Pages with no build step, so CI is the only place the
   # JSON-LD graph gets parsed before a crawler reads it. A dangling @id or a
@@ -83,9 +114,13 @@ jobs:
   aeo-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - name: Check structured data
       run: pwsh -File scripts/check-aeo.ps1

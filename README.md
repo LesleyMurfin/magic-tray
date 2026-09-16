@@ -287,6 +287,8 @@ dotnet publish -c Release
 
 The exe filename stays `MagicMouseTray.exe`. The product name is **Magic Tray**.
 
+`main` takes no direct pushes: everything lands through a pull request, and nine checks have to pass first — build and tests, publish and packaging, PowerShell lint, workflow lint, CodeQL, site checks, version sync, winget manifest, DCO sign-off. All nine run on every PR. What each one does, and how to run it locally, is in [.github/workflows/README.md](.github/workflows/README.md).
+
 KMDF sources live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) (`v2-kmdf-driver/`). This repo does not vendor that driver. `DriverInstaller.OfferV3KmdfInstallAsync` snapshots that repo's default branch and runs `v2-kmdf-driver/Install-KMDF.cmd` elevated after the user's OK. The snapshot is the branch tip, not a pinned checksum-verified release. If that script is not on the branch, the install throws and never falls back to `v1-binary-patch/installer/Install-MagicMousePatch.ps1`.
 
 The v1/v2 and `030E` paths never call `pnputil` to install: `OfferV1V2ScrollFix` and `OfferTrackpadV1BootCamp` open the documented GitHub page and stop. `OfferV1V2StockRestore` unbinds `applewirelessmouse` on that PID only, leaving `HidBth`.

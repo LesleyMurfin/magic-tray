@@ -1,0 +1,13 @@
+# Four purpose-built templates already exist (bug, feature, missing-device, test-report) and
+# the in-app Help menu pre-fills them, so a blank issue only ever arrives without the version,
+# Hardware Ids and log tail that make it answerable.
+blank_issues_enabled: false
+
+# GitHub Discussions is not enabled on this repo, so it is deliberately not linked here.
+contact_links:
+  - name: Magic Tray guides (magictray.app)
+    url: https://magictray.app/
+    about: Battery percent, scroll drivers, the keyboard unlock, and which device you own. Most reports are already answered here.
+  - name: Report a security vulnerability (private)
+    url: https://github.com/LesleyMurfin/magic-tray/security/advisories/new
+    about: Registry writes, the elevated scripts, or a release artifact. Use a private advisory, not a public issue. See SECURITY.md.
