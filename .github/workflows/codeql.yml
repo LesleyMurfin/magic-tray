@@ -1,0 +1,49 @@
+name: CodeQL
+
+# C# code scanning.
+#
+# build-mode: none (buildless extraction) is used deliberately. MagicMouseTray
+# targets net8.0-windows10.0.17763.0, so a build-based CodeQL run would need a
+# windows-latest runner plus the Windows SDK reference packs - several times
+# slower and far more fragile than analysing the sources directly. Buildless
+# extraction keeps the scan on ubuntu-latest; the trade-off is that findings
+# rely on source-level resolution rather than compiler output.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 07:23 UTC - off-peak, fixed minute to avoid the top-of-hour rush.
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (csharp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: csharp
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: "/language:csharp"

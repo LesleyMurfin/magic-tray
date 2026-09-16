@@ -1,0 +1,41 @@
+# Dependabot version updates for the two dependency surfaces CI builds from.
+#
+# NOT covered here, so these need a manual bump:
+#   - PSScriptAnalyzer — the module version is pinned inside the PowerShell lint workflow
+#     (.github/workflows/ps-lint.yml). The PowerShell Gallery is not a Dependabot ecosystem.
+#   - actionlint — the workflow lint job downloads a version-pinned release binary
+#     (.github/workflows/actionlint.yml). A downloaded binary is not a manifest dependency.
+# Watch their release pages and bump the pin in the workflow by hand.
+version: 2
+updates:
+  # GitHub Actions. Every workflow SHA-pins its actions, so a pin only ever goes stale
+  # silently — this is what tells us a newer release exists.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: chore(ci)
+    open-pull-requests-limit: 5
+
+  # NuGet. There is no solution file, so `directory: /` would leave Dependabot with no
+  # manifest to read at the repo root. `directories` names the two project directories
+  # that actually contain a csproj:
+  #   MagicMouseTray.Tests — holds the test-stack PackageReferences (xunit, Test.Sdk,
+  #                          xunit.runner.visualstudio), which is what gates the
+  #                          "Build and test" check.
+  #   MagicMouseTray       — no PackageReference today (WinForms on the framework only);
+  #                          listed so the first one added is covered the day it lands.
+  - package-ecosystem: nuget
+    directories:
+      - /MagicMouseTray
+      - /MagicMouseTray.Tests
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: chore(deps)
+    open-pull-requests-limit: 5

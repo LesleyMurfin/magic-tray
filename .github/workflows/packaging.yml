@@ -1,0 +1,190 @@
+# Packaging metadata checks.
+#
+# Magic Tray names its version in four independent places, and nothing used to
+# notice when they drifted apart. These two jobs are the guard:
+#
+#   Version sync    - the csproj, the winget manifest folder, the installer URL
+#                     and the version strings on magictray.app all have to tell
+#                     the same story. The rule is in
+#                     scripts/check-version-sync.ps1: published metadata tracks
+#                     the LATEST RELEASE, the csproj may run ahead of it.
+#   Winget manifest - the three manifest YAML files parse, and carry the keys
+#                     microsoft/winget-pkgs will be asked to accept.
+#
+# Both run on ubuntu-latest and touch the network never: they read the tree.
+# Manifest validation deliberately does not use `winget validate` (Windows
+# only, and not always present on the runner image) - the submission workflow,
+# .github/workflows/winget-submit.yml, still runs that on windows-latest.
+name: Packaging
+
+on:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'MagicMouseTray/MagicMouseTray.csproj'
+      - 'docs/index.html'
+      - 'scripts/check-version-sync.ps1'
+      - 'scripts/package-release.ps1'
+      - '.github/workflows/packaging.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packaging/**'
+      - 'MagicMouseTray/MagicMouseTray.csproj'
+      - 'docs/index.html'
+      - 'scripts/check-version-sync.ps1'
+      - 'scripts/package-release.ps1'
+      - '.github/workflows/packaging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-sync:
+    name: Version sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # pwsh is preinstalled on the ubuntu-latest image; the checker is
+      # PowerShell 7 and cross-platform on purpose so it can run here rather
+      # than burning a Windows runner minute on reading text files.
+      - name: Check that every version string agrees
+        run: pwsh -File scripts/check-version-sync.ps1
+
+  winget-manifest:
+    name: Winget manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # PyYAML is preinstalled with python3 on the ubuntu-latest image, so this
+      # needs no install step and no third-party action. Every failure is a
+      # GitHub annotation on the offending key, and the job exits non-zero.
+      - name: Validate the manifest set
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          import yaml
+
+          IDENTIFIER = "LesleyMurfin.MagicTray"
+          MANIFEST_SCHEMA = "1.12.0"
+          # The manifests ship a 64-zero digest on purpose: it satisfies the
+          # schema's ^[A-Fa-f0-9]{64}$ while being obviously not a real hash.
+          # winget-submit.yml patches in the published ZIP's digest.
+          PLACEHOLDER_SHA = "0" * 64
+          ROOT = pathlib.Path("packaging/winget/manifests/l/LesleyMurfin/MagicTray")
+
+          problems = 0
+
+
+          def fail(path, key, message):
+              global problems
+              problems += 1
+              line = 1
+              if key:
+                  pattern = re.compile(r"^\s*-?\s*" + re.escape(key) + r"\s*:")
+                  for number, text in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                      if pattern.match(text):
+                          line = number
+                          break
+              print("::error file=%s,line=%d::%s" % (path.as_posix(), line, message))
+
+
+          folders = sorted(p for p in ROOT.iterdir() if p.is_dir()) if ROOT.is_dir() else []
+          if not folders:
+              print("::error file=%s,line=1::No winget manifest version folder found." % ROOT.as_posix())
+              sys.exit(1)
+
+          for folder in folders:
+              version = folder.name
+              files = {
+                  "version": folder / ("%s.yaml" % IDENTIFIER),
+                  "installer": folder / ("%s.installer.yaml" % IDENTIFIER),
+                  "locale": folder / ("%s.locale.en-US.yaml" % IDENTIFIER),
+              }
+              parsed = {}
+
+              for kind, path in files.items():
+                  if not path.is_file():
+                      print("::error file=%s,line=1::Missing %s manifest %s." % (folder.as_posix(), kind, path.name))
+                      problems += 1
+                      continue
+                  try:
+                      document = yaml.safe_load(path.read_text(encoding="utf-8"))
+                  except yaml.YAMLError as error:
+                      fail(path, None, "Not valid YAML: %s" % str(error).replace("\n", " "))
+                      continue
+                  if not isinstance(document, dict):
+                      fail(path, None, "Manifest does not parse to a mapping.")
+                      continue
+                  parsed[kind] = document
+
+                  if document.get("PackageIdentifier") != IDENTIFIER:
+                      fail(path, "PackageIdentifier", "PackageIdentifier is %r; expected %r." % (document.get("PackageIdentifier"), IDENTIFIER))
+                  if str(document.get("PackageVersion")) != version:
+                      fail(path, "PackageVersion", "PackageVersion is %r but the manifest folder is %r." % (document.get("PackageVersion"), version))
+                  if str(document.get("ManifestVersion")) != MANIFEST_SCHEMA:
+                      fail(path, "ManifestVersion", "ManifestVersion is %r; the community repository expects %r." % (document.get("ManifestVersion"), MANIFEST_SCHEMA))
+
+              installer = parsed.get("installer")
+              if installer is not None:
+                  path = files["installer"]
+                  entries = installer.get("Installers") or []
+                  if not isinstance(entries, list) or not entries:
+                      fail(path, "Installers", "No Installers entry.")
+                      entries = []
+                  first = entries[0] if entries and isinstance(entries[0], dict) else {}
+
+                  # The schema lets these sit at the root or on the installer
+                  # entry, so look in both before complaining.
+                  def setting(name):
+                      if name in installer:
+                          return installer[name]
+                      return first.get(name)
+
+                  if setting("InstallerType") != "zip":
+                      fail(path, "InstallerType", "InstallerType is %r; Magic Tray ships a portable ZIP, so it must be 'zip'." % setting("InstallerType"))
+                  if setting("NestedInstallerType") != "portable":
+                      fail(path, "NestedInstallerType", "NestedInstallerType is %r; expected 'portable'." % setting("NestedInstallerType"))
+
+                  nested = setting("NestedInstallerFiles") or []
+                  relative = [n.get("RelativeFilePath") for n in nested if isinstance(n, dict)]
+                  if relative != ["MagicMouseTray.exe"]:
+                      fail(path, "RelativeFilePath", "NestedInstallerFiles RelativeFilePath list is %r; expected exactly ['MagicMouseTray.exe'], the exe at the root of the ZIP." % relative)
+
+                  digest = str(setting("InstallerSha256") or "")
+                  if digest != PLACEHOLDER_SHA and not re.fullmatch(r"[0-9A-Fa-f]{64}", digest):
+                      fail(path, "InstallerSha256", "InstallerSha256 %r is neither 64 hex characters nor the 64-zero placeholder patched in at submission time." % digest)
+
+              locale = parsed.get("locale")
+              if locale is not None:
+                  path = files["locale"]
+                  for key in ("ShortDescription", "License", "PublisherUrl"):
+                      value = locale.get(key)
+                      if not isinstance(value, str) or not value.strip():
+                          fail(path, key, "%s is missing or empty; the winget listing requires it." % key)
+
+              print("checked manifest set %s" % folder.as_posix())
+
+          if problems:
+              print("winget manifest: %d problem(s) found." % problems)
+              sys.exit(1)
+          print("winget manifest: OK (%d set(s) checked)." % len(folders))
+          PY

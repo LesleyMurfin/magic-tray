@@ -1,8 +1,15 @@
-#Requires -Version 5
+﻿#Requires -Version 5
 # Authenticode-sign the published MagicMouseTray.exe (post-publish step).
 # Honest note: a self-signed cert does NOT clear SmartScreen reputation — only a publicly
 # trusted OV/EV code-signing cert builds reputation. Until one is procured, signing reduces
 # but does not eliminate the SmartScreen prompt the README documents.
+# PSScriptAnalyzer: signtool.exe accepts the PFX password only as a plaintext /p argument,
+# so a [SecureString] parameter would have to be unwrapped back to plaintext before use —
+# ceremony that moves the exposure rather than removing it. The value comes from the
+# SIGN_PFX_PASSWORD secret, is never written to disk and never echoed.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSAvoidUsingPlainTextForPassword', 'PfxPassword',
+    Justification = 'signtool.exe /p takes a plaintext password; SecureString would be unwrapped immediately.')]
 param(
     [Parameter(Mandatory)][string]$Exe,
     [Parameter(Mandatory)][string]$PfxPath,

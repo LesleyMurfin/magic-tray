@@ -11,12 +11,16 @@ reads it.
 ```
 packaging/winget/
   README.md                 this file
-  winget-submit.yml         workflow TEMPLATE, manual only, not active
   manifests/l/LesleyMurfin/MagicTray/1.1.0/
     LesleyMurfin.MagicTray.yaml               version manifest
     LesleyMurfin.MagicTray.installer.yaml     installer manifest
     LesleyMurfin.MagicTray.locale.en-US.yaml  default locale manifest
 ```
+
+The submission workflow itself now lives at
+`.github/workflows/winget-submit.yml`, because GitHub only runs workflows from
+that folder. It is still `workflow_dispatch` only and still defaults to a dry
+run; see "Fork and PR flow" below.
 
 The folder path is not decorative. `microsoft/winget-pkgs` requires
 `manifests/<first letter of publisher, lowercased>/<Publisher>/<PackageName>/<Version>/`,
@@ -205,13 +209,17 @@ browser OAuth flow, or reads a classic personal access token with the
 not work (<https://github.com/microsoft/winget-create/issues/595>). Do not pass
 `--token` on a command line you do not control; it can end up in a log.
 
-`packaging/winget/winget-submit.yml` automates exactly the mechanical half:
+`.github/workflows/winget-submit.yml` automates exactly the mechanical half:
 download the asset, verify it against its sidecar, patch the hash, upload the
 patched manifests, and optionally run `wingetcreate submit`. It is
-`workflow_dispatch` only and defaults to a dry run. It is **not** active — copy
-it to `.github/workflows/` first, and add the `WINGET_CREATE_GITHUB_TOKEN`
-secret, which this repository does not currently have. Its header documents the
-scope.
+`workflow_dispatch` only and defaults to a dry run. A real submission also
+needs the `WINGET_CREATE_GITHUB_TOKEN` secret, which this repository does not
+currently have, so until it is added every run must keep dry_run enabled - the
+workflow's first step fails fast otherwise. Its header documents the scope.
+
+The offline half of manifest checking - all three files parse, the keys are
+present, and the version agrees with the folder, the csproj and the site - runs
+on every pull request in `.github/workflows/packaging.yml`.
 
 ## It cannot be fully automated
 

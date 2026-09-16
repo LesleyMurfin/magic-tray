@@ -1,14 +1,15 @@
-# Magic Tray -> microsoft/winget-pkgs submission (TEMPLATE, NOT ACTIVE)
+# Magic Tray -> microsoft/winget-pkgs submission.
 #
-# GitHub only runs workflows that live in .github/workflows/. This file sits in
-# packaging/winget/ on purpose, so it does nothing until a maintainer copies it:
+# This workflow is `workflow_dispatch` only. It never runs on push, on tag, or
+# as part of the release, and it defaults to a dry run. That is deliberate: a
+# winget submission is a pull request against a repository we do not own, and a
+# human on the other side reviews it. See packaging/winget/README.md, section
+# "It cannot be fully automated".
 #
-#   cp packaging/winget/winget-submit.yml .github/workflows/winget-submit.yml
-#
-# It is workflow_dispatch only. It never runs on push, on tag, or as part of the
-# release. That is deliberate: a winget submission is a pull request against
-# someone else's repository and it is reviewed by a human. See
-# packaging/winget/README.md, section "It cannot be fully automated".
+# It automates only the mechanical half: download the published asset, verify
+# it against its .sha256 sidecar, patch the real digest into the installer
+# manifest, upload the patched manifests, and - when dry_run is turned off -
+# run `wingetcreate submit`.
 #
 # REQUIRED SECRET THAT THIS REPOSITORY DOES NOT CURRENTLY HAVE:
 #
@@ -24,8 +25,15 @@
 #   https://cla.opensource.microsoft.com before any PR of theirs can merge.
 #   Nothing here can sign it for them.
 #
+# Until that secret exists, every run must keep dry_run enabled; the first step
+# fails fast otherwise. A dry run is still useful on its own: it proves the
+# published ZIP matches its sidecar and that the manifests patch cleanly.
+#
 # The repo's built-in GITHUB_TOKEN is used only to download the release asset.
 # It cannot open a pull request against microsoft/winget-pkgs.
+#
+# The offline half of manifest checking - parse, keys, version agreement - runs
+# on every pull request in .github/workflows/packaging.yml.
 
 name: Submit to winget-pkgs
 
@@ -45,17 +53,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: winget-submit-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   submit:
+    name: Submit to winget-pkgs
     # windows-latest because winget validate / wingetcreate are Windows-only.
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         shell: pwsh
 
     steps:
       - name: Check out the manifests
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Require the wingetcreate token unless this is a dry run
         env:
@@ -68,7 +82,7 @@ jobs:
             Write-Host 'No WINGET_CREATE_GITHUB_TOKEN, but dry_run is true. Continuing without submitting.'
           }
           else {
-            Write-Error 'WINGET_CREATE_GITHUB_TOKEN is not set on this repository. Add it as an Actions secret, or re-run with dry_run enabled. See the header of packaging/winget/winget-submit.yml.'
+            Write-Error 'WINGET_CREATE_GITHUB_TOKEN is not set on this repository. Add it as an Actions secret, or re-run with dry_run enabled. See the header of .github/workflows/winget-submit.yml.'
             exit 1
           }
 
@@ -144,7 +158,7 @@ jobs:
           winget validate --manifest '${{ steps.locate.outputs.dir }}'
 
       - name: Upload the patched manifests for inspection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: winget-manifests-${{ steps.locate.outputs.version }}
           path: ${{ steps.locate.outputs.dir }}
