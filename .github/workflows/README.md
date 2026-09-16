@@ -1,8 +1,10 @@
 # Workflows
 
 Every check that runs on this repository, what it protects, and how to run it
-yourself before pushing. Nine workflows, nine check-run names. All of them run
-on GitHub-hosted runners; none needs a self-hosted runner, and only the two
+yourself before pushing. Nine workflow files; the first nine rows below are the
+checks that gate a pull request, and each runs on its own trigger - several are
+path-filtered, so a given PR sees only the subset its changes touch. All of them
+run on GitHub-hosted runners; none needs a self-hosted runner, and only the two
 release-side workflows need a secret.
 
 | Check run | File | Trigger | Runner | Blocks a PR? |
@@ -127,7 +129,10 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 ## dco.yml — `DCO sign-off`
 
 - **Purpose**: `CONTRIBUTING.md` requires `git commit -s`; this enforces it.
-  Every non-merge, non-bot commit in the PR needs a `Signed-off-by:` trailer.
+  Every non-merge, non-bot commit in the PR needs a real `Signed-off-by:` Git
+  trailer: it has to sit in the message's final trailer block, and that block
+  must hold nothing but trailers. A sign-off buried in the body with prose after
+  it is text, not a trailer, and is rejected.
   Merge commits and `dependabot[bot]`/`github-actions[bot]` commits are skipped —
   they are unsigned by design and would otherwise block dependency PRs forever.
 - **Fix a red run**: `git commit -s` for new commits, or
@@ -139,7 +144,10 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 - **Purpose**: the mechanical half of a winget submission — download the
   published asset, verify it against its `.sha256` sidecar, patch the real digest
   into the installer manifest, upload the patched set, and run `wingetcreate
-  submit` when `dry_run` is off.
+  submit` when `dry_run` is off. `wingetcreate.exe` is pinned to an immutable
+  release asset and executed only after both its published SHA256 and its
+  Microsoft Authenticode signature verify; `winget validate` failures are
+  tolerated on a dry run only.
 - **Manual only**, `dry_run` defaults to `true`, and it fails fast when
   `WINGET_CREATE_GITHUB_TOKEN` is missing and `dry_run` is off. That secret does
   not exist on this repository yet; see `packaging/winget/README.md`.

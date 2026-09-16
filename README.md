@@ -287,7 +287,7 @@ dotnet publish -c Release
 
 The exe filename stays `MagicMouseTray.exe`. The product name is **Magic Tray**.
 
-CI runs nine checks on every PR — build and tests, publish and packaging, PowerShell lint, workflow lint, CodeQL, site checks, version sync, winget manifest, DCO sign-off. Each one, and how to run it locally, is in [.github/workflows/README.md](.github/workflows/README.md).
+The repo has nine checks — build and tests, publish and packaging, PowerShell lint, workflow lint, CodeQL, site checks, version sync, winget manifest, DCO sign-off. Each runs according to its own workflow triggers, so a PR sees the subset its changes touch: build and tests, CodeQL and DCO sign-off run on every PR; the other five workflows are path-filtered. The per-check path triggers, and how to run each one locally, are in [.github/workflows/README.md](.github/workflows/README.md).
 
 KMDF sources live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) (`v2-kmdf-driver/`). This repo does not vendor that driver. `DriverInstaller.OfferV3KmdfInstallAsync` snapshots that repo's default branch and runs `v2-kmdf-driver/Install-KMDF.cmd` elevated after the user's OK. The snapshot is the branch tip, not a pinned checksum-verified release. If that script is not on the branch, the install throws and never falls back to `v1-binary-patch/installer/Install-MagicMousePatch.ps1`.
 

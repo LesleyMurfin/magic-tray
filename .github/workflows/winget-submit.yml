@@ -70,6 +70,11 @@ jobs:
     steps:
       - name: Check out the manifests
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # wingetcreate pushes to its own fork with
+          # WINGET_CREATE_GITHUB_TOKEN, never through this checkout's
+          # credential helper.
+          persist-credentials: false
 
       - name: Require the wingetcreate token unless this is a dry run
         env:
@@ -150,11 +155,12 @@ jobs:
           Select-String -Path $file -Pattern 'InstallerSha256|InstallerUrl'
 
       - name: Validate the manifest with winget itself
-        continue-on-error: true
+        # Non-blocking on a dry run only: the runner image occasionally ships
+        # without the App Installer package, and a dry run is allowed to report
+        # that in the log. On a real submission a validation error must stop the
+        # job before wingetcreate submit can open a PR against winget-pkgs.
+        continue-on-error: ${{ inputs.dry_run }}
         run: |
-          # Present on windows-latest images. Kept non-blocking because the
-          # runner image occasionally ships without the App Installer package;
-          # read the log rather than trusting a green tick.
           winget validate --manifest '${{ steps.locate.outputs.dir }}'
 
       - name: Upload the patched manifests for inspection
@@ -167,8 +173,34 @@ jobs:
         if: ${{ inputs.dry_run == false }}
         env:
           WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          WINGETCREATE_VERSION: 1.12.13.0
+          # sha256 of wingetcreate.exe from that release's wingetcreate.exe.txt
+          WINGETCREATE_SHA256: 24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA
         run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          # aka.ms/wingetcreate/latest is a mutable redirect: whatever it serves
+          # today would be executed with WINGET_CREATE_GITHUB_TOKEN in the
+          # environment (CWE-494). Pin the immutable release asset instead and
+          # refuse to run it unless BOTH the published digest and Microsoft's
+          # Authenticode signature check out.
+          $url = "https://github.com/microsoft/winget-create/releases/download/v${env:WINGETCREATE_VERSION}/wingetcreate.exe"
+          Invoke-WebRequest $url -OutFile wingetcreate.exe -UseBasicParsing
+
+          $actual = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash.ToUpperInvariant()
+          $expected = $env:WINGETCREATE_SHA256.ToUpperInvariant()
+          Write-Host "wingetcreate $env:WINGETCREATE_VERSION sha256: $actual"
+          if ($actual -ne $expected) {
+            Write-Error "wingetcreate.exe digest is $actual but the pinned digest is $expected. Refusing to execute it. If this is a deliberate version bump, update WINGETCREATE_VERSION and WINGETCREATE_SHA256 together from the release's wingetcreate.exe.txt."
+            exit 1
+          }
+
+          $signature = Get-AuthenticodeSignature wingetcreate.exe
+          $signer = $signature.SignerCertificate.Subject
+          Write-Host "Authenticode: $($signature.Status) / $signer"
+          if ($signature.Status -ne 'Valid' -or $signer -notmatch 'O=Microsoft Corporation') {
+            Write-Error "wingetcreate.exe is not validly signed by Microsoft Corporation (status $($signature.Status), signer '$signer'). Refusing to execute it."
+            exit 1
+          }
+
           # --no-open: no browser on a runner. Token comes from the environment
           # variable, not the command line, so it is not echoed into the log.
           ./wingetcreate.exe submit `

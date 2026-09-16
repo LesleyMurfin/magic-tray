@@ -14,10 +14,11 @@
 
     1. Dead internal links and assets (Test-InternalLink)
        Every relative href/src in docs/**/*.html and every url(...) in
-       docs/site.css must resolve to a file on disk. Remove this and a renamed
-       page or image 404s silently in production; GitHub Pages is case sensitive,
-       so a case-only rename is equally fatal and equally invisible locally on
-       Windows.
+       docs/site.css must resolve to a file on disk, inside the published tree.
+       Remove this and a renamed page or image 404s silently in production, or a
+       '../' reference points at a file Pages never serves; GitHub Pages is case
+       sensitive, so a case-only rename is equally fatal and equally invisible
+       locally on Windows.
 
     2. Sitemap integrity (Test-Sitemap)
        Every <loc> must live under https://magictray.app/, map to a real file,
@@ -34,9 +35,11 @@
 
     4. robots.txt sanity (Test-RobotsFile)
        robots.txt must contain only valid directives, point Sitemap: at the real
-       sitemap, and cover every published Markdown file that is not deliberately
-       listed in the sitemap. Remove this and internal design notes get indexed,
-       or a typo silently turns the whole file into a no-op.
+       sitemap, and cover every published Markdown file - at any depth under the
+       site root - that is not deliberately listed in the sitemap. Coverage is
+       judged per User-agent group, because a crawler with a group of its own
+       never reads the wildcard group. Remove this and internal design notes get
+       indexed, or a typo silently turns the whole file into a no-op.
 
     5. Stale hosts (Test-StaleHost)
        No href/src may reference localhost, 127.0.0.1, or the project's old
@@ -203,6 +206,60 @@ function Resolve-Reference {
     return [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($anchor, $native))
 }
 
+function Test-PathInside {
+    <#
+    .SYNOPSIS
+        True when a resolved path is a descendant of the site root.
+    .DESCRIPTION
+        Resolve-Reference normalises '..' away, so a reference like
+        '../../etc/passwd' can land on a real file outside the published tree and
+        Test-Path alone would call it healthy. The prefix test here is
+        separator-aware: the root is normalised to end with the platform
+        separator first, so a sibling directory that merely shares the root's
+        textual prefix ('docs-old' beside 'docs') is rejected while real
+        descendants still pass. The comparison is ordinal because GitHub Pages
+        is case sensitive.
+    #>
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Root
+    )
+
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $prefix = [System.IO.Path]::GetFullPath($Root).TrimEnd($separator) + $separator
+    return $full.StartsWith($prefix, [System.StringComparison]::Ordinal)
+}
+
+function Convert-RobotsRuleToRegex {
+    <#
+    .SYNOPSIS
+        Translates a robots.txt path rule into a regex anchored at the start of a
+        site-root-relative path.
+    .DESCRIPTION
+        In robots.txt only two characters are special: '*' matches any sequence,
+        and a TRAILING '$' anchors the rule to the end of the path. Everything
+        else is literal, so the rule is escaped first. The trailing '$' is
+        removed before escaping and re-added as a real anchor afterwards -
+        [regex]::Escape turns it into '\$', which would otherwise match a literal
+        dollar sign and make the rule match nothing. A '$' anywhere other than
+        the end stays literal, which is what robots.txt means by it.
+    #>
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Rule
+    )
+
+    $path = $Rule.TrimStart('/')
+    $anchored = $path.EndsWith('$')
+    if ($anchored) { $path = $path.Substring(0, $path.Length - 1) }
+
+    $pattern = '^' + ([regex]::Escape($path) -replace '\\\*', '.*')
+    if ($anchored) { $pattern += '$' }
+    return $pattern
+}
+
 # ----------------------------------------------------------------- checks ---
 
 function Test-InternalLink {
@@ -220,6 +277,14 @@ function Test-InternalLink {
     foreach ($ref in $Reference) {
         if (Test-ExternalReference -Value $ref.Value) { continue }
         $target = Resolve-Reference -Value $ref.Value -BaseDir $ref.Directory -SiteRoot $SiteRoot
+        if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
+            New-Finding -Severity 'error' `
+                -Path (Get-RepoRelativePath -FullPath $ref.File -RepoRoot $RepoRoot) `
+                -Line $ref.Line `
+                -Message ("{0}=""{1}"" escapes the site root: {2}" -f $ref.Attribute, $ref.Value,
+                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
+            continue
+        }
         if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
             New-Finding -Severity 'error' `
                 -Path (Get-RepoRelativePath -FullPath $ref.File -RepoRoot $RepoRoot) `
@@ -238,6 +303,13 @@ function Test-InternalLink {
         $value = $match.Groups['value'].Value.Trim()
         if (Test-ExternalReference -Value $value) { continue }
         $target = Resolve-Reference -Value $value -BaseDir $SiteRoot -SiteRoot $SiteRoot
+        if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
+            New-Finding -Severity 'error' -Path $cssRelative `
+                -Line (Get-LineNumber -Text $css -Offset $match.Index) `
+                -Message ("url(""{0}"") escapes the site root: {1}" -f $value,
+                    (Get-RepoRelativePath -FullPath $target -RepoRoot $RepoRoot))
+            continue
+        }
         if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
             New-Finding -Severity 'error' -Path $cssRelative `
                 -Line (Get-LineNumber -Text $css -Offset $match.Index) `
@@ -302,6 +374,10 @@ function Test-Sitemap {
         $relative = $loc.Substring("$SiteOrigin/".Length)
         if ($relative -eq '' -or $relative.EndsWith('/')) { $relative = "${relative}index.html" }
         $target = Join-Path $SiteRoot ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-PathInside -Path $target -Root $SiteRoot)) {
+            New-Finding -Severity 'error' -Path $sitemapRelative -Line $line -Message "<loc>$loc</loc> maps to $relative, which escapes $siteRelative/"
+            continue
+        }
         if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
             New-Finding -Severity 'error' -Path $sitemapRelative -Line $line -Message "<loc>$loc</loc> maps to $relative, which does not exist in $siteRelative/"
             continue
@@ -369,7 +445,15 @@ function Test-RobotsFile {
     }
 
     $lines = @(Get-Content -LiteralPath $robotsPath)
-    $disallow = [System.Collections.Generic.List[string]]::new()
+
+    # robots.txt is a sequence of GROUPS: one or more consecutive User-agent
+    # lines, then the rules that bind exactly those agents. A rule line closes
+    # the agent list, so the next User-agent starts a fresh group. Rules have to
+    # be tracked per group, because a crawler that has a group of its own never
+    # reads the wildcard group - a Disallow that only appears under
+    # 'User-agent: *' does not keep GPTBot out of anything.
+    $groups = [System.Collections.Generic.List[pscustomobject]]::new()
+    $current = $null
     $sitemapSeen = $false
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -393,10 +477,32 @@ function Test-RobotsFile {
             } elseif (-not (Test-Path -LiteralPath (Join-Path $SiteRoot 'sitemap.xml') -PathType Leaf)) {
                 New-Finding -Severity 'error' -Path $robotsRelative -Line $number -Message "Sitemap: points at $value but sitemap.xml does not exist"
             }
+            continue
         }
 
+        if ($key -eq 'user-agent') {
+            if ($null -eq $current -or $current.Closed) {
+                $current = [pscustomobject]@{
+                    Agents   = [System.Collections.Generic.List[string]]::new()
+                    Disallow = [System.Collections.Generic.List[string]]::new()
+                    Closed   = $false
+                }
+                $groups.Add($current)
+            }
+            $current.Agents.Add($value)
+            continue
+        }
+
+        # Allow / Disallow / Crawl-delay: a rule, so this group takes no further
+        # User-agent lines.
+        if ($null -eq $current) {
+            New-Finding -Severity 'error' -Path $robotsRelative -Line $number -Message "'$line' comes before any User-agent line, so no crawler is bound by it"
+            continue
+        }
+        $current.Closed = $true
+
         if ($key -eq 'disallow' -and $value -ne '') {
-            if (-not $disallow.Contains($value)) { $disallow.Add($value) }
+            if (-not $current.Disallow.Contains($value)) { $current.Disallow.Add($value) }
             # A rule naming a concrete file (has an extension, no wildcard) that no
             # longer exists is dead weight, not a leak: warn rather than fail.
             if ($value -notmatch '[*$]' -and [System.IO.Path]::GetExtension($value) -ne '') {
@@ -413,7 +519,8 @@ function Test-RobotsFile {
     }
 
     # Markdown deliberately published (listed in the sitemap) is allowed to be
-    # indexed. Everything else under docs/ must be covered by a Disallow rule.
+    # indexed. Everything else under the site root must be covered by a Disallow
+    # rule in EVERY group, or the crawlers whose group misses it index it.
     $published = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     $sitemapPath = Join-Path $SiteRoot 'sitemap.xml'
     if (Test-Path -LiteralPath $sitemapPath -PathType Leaf) {
@@ -422,18 +529,32 @@ function Test-RobotsFile {
         }
     }
 
-    foreach ($markdown in Get-ChildItem -LiteralPath $SiteRoot -Filter '*.md' -File) {
-        $url = "$SiteOrigin/$($markdown.Name)"
-        if ($published.Contains($url)) { continue }
+    foreach ($markdown in Get-ChildItem -LiteralPath $SiteRoot -Filter '*.md' -File -Recurse) {
+        # Rules are URL paths, so match the file's path relative to the site root
+        # rather than its bare name: docs/notes/DESIGN-x.md is served at
+        # /notes/DESIGN-x.md, which 'Disallow: /DESIGN-' does not cover. For a
+        # root-level file the relative path is just the name, as before.
+        $relative = [System.IO.Path]::GetRelativePath($SiteRoot, $markdown.FullName).Replace('\', '/')
+        if ($published.Contains("$SiteOrigin/$relative")) { continue }
 
-        $covered = $false
-        foreach ($rule in $disallow) {
-            $pattern = '^' + ([regex]::Escape($rule.TrimStart('/')) -replace '\\\*', '.*')
-            if ("$($markdown.Name)" -match $pattern) { $covered = $true; break }
-        }
-        if (-not $covered) {
+        if ($groups.Count -eq 0) {
             New-Finding -Severity 'error' -Path $robotsRelative `
-                -Message "$($markdown.Name) is published but matches no Disallow rule and is not in sitemap.xml; it would be indexed"
+                -Message "$relative is published and not in sitemap.xml, and robots.txt declares no User-agent group at all; nothing keeps it out of an index"
+            continue
+        }
+
+        $uncovered = [System.Collections.Generic.List[string]]::new()
+        foreach ($group in $groups) {
+            $covered = $false
+            foreach ($rule in $group.Disallow) {
+                if ($relative -match (Convert-RobotsRuleToRegex -Rule $rule)) { $covered = $true; break }
+            }
+            if (-not $covered) { $uncovered.Add(($group.Agents -join ', ')) }
+        }
+
+        if ($uncovered.Count -gt 0) {
+            New-Finding -Severity 'error' -Path $robotsRelative `
+                -Message ("{0} is published and not in sitemap.xml, and matches no Disallow rule for user-agent group(s): {1}; it would be indexed" -f $relative, ($uncovered -join ' | '))
         }
     }
 }

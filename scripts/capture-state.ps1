@@ -147,10 +147,14 @@ $btDev = Get-PnpDevice -ErrorAction SilentlyContinue |
 if ($btDev) {
     $state.bthenumInstanceId = $btDev.InstanceId
 
+    # -ErrorAction Stop on purpose: these reads are allowed to fail (the
+    # property is absent on some stacks, the Enum key is ACL'd), and the catch
+    # handlers below are the diagnostic. SilentlyContinue would swallow the
+    # error and leave those handlers dead code.
     # Driver stack
     try {
         $stackProp = Get-PnpDeviceProperty -InstanceId $btDev.InstanceId `
-            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction SilentlyContinue
+            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction Stop
         if ($stackProp -and $stackProp.Data) {
             $stackStr = $stackProp.Data -join ' '
             $state.filterInStack = $stackStr -imatch 'applewirelessmouse'
@@ -160,16 +164,16 @@ if ($btDev) {
     # LowerFilters - Enum key
     $btRegPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $btDev.InstanceId
     try {
-        $lf = (Get-ItemProperty -Path $btRegPath -Name LowerFilters -ErrorAction SilentlyContinue).LowerFilters
+        $lf = (Get-ItemProperty -Path $btRegPath -Name LowerFilters -ErrorAction Stop).LowerFilters
         if ($lf) { $state.lowerFiltersEnumKey = @($lf) }
     } catch { Write-Verbose "Enum-key LowerFilters unreadable: $($_.Exception.Message)" }
 
     # LowerFilters - driver instance key
     try {
-        $driverKey = (Get-ItemProperty -Path $btRegPath -Name Driver -ErrorAction SilentlyContinue).Driver
+        $driverKey = (Get-ItemProperty -Path $btRegPath -Name Driver -ErrorAction Stop).Driver
         if ($driverKey) {
             $driverInstPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\$driverKey"
-            $lf2 = (Get-ItemProperty -Path $driverInstPath -Name LowerFilters -ErrorAction SilentlyContinue).LowerFilters
+            $lf2 = (Get-ItemProperty -Path $driverInstPath -Name LowerFilters -ErrorAction Stop).LowerFilters
             if ($lf2) { $state.lowerFiltersDriverKey = @($lf2) }
         }
     } catch { Write-Verbose "Driver-key LowerFilters unreadable: $($_.Exception.Message)" }
