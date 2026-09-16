@@ -44,9 +44,11 @@ Disconnect after a last good reading well above 1% is not death.
 
 ## Enabled on this PC
 
-Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s Bluetooth / HID / USB nodes on **this PC** using the same VID/PID catalog as battery discovery. The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged — check the box again to bring it back. A new model is enabled for this control by adding it to `KnownMice` / `KnownKeyboards`.
+Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s **Bluetooth / HID** nodes on **this PC** (not USB charge leftovers). The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged.
 
-Cancelling UAC leaves it enabled. If no matching device is found, the tray reports failure and leaves the box checked.
+Check the box again **only if Windows still has the device**. If you **removed** it in Bluetooth settings, Enable cannot recreate the pairing — put the mouse in pairing mode and use **Bluetooth → Add or change devices…**. Full workflow: [ENABLE-DISABLE.md](ENABLE-DISABLE.md).
+
+Cancelling UAC leaves the previous state. If no matching Bluetooth instance is found, the tray says the device is not present and can open Bluetooth settings.
 
 Rows are per model, not per paired device. If you have **two of the same model** paired to this PC — two Magic Mouse v1, say — they share one row, and unchecking it disables **both**. The log records the `ContainerID` of every device instance that was touched, so `DEVICE_ENABLE containers=…` in the log tells you exactly which physical devices changed.
 
