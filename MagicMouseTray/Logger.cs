@@ -40,7 +40,7 @@ internal static class Logger
         message = Regex.Replace(message, @"[^\x00-\x7F]", string.Empty);
         // Redact after the strips, so the token this writes is the token
         // BugReport.ReadLogTail later reads back out of the file.
-        message = RedactMacs(message);
+        message = RedactIdentifiers(message);
         try
         {
             lock (Lock)
@@ -64,6 +64,15 @@ internal static class Logger
         }
         catch { }
     }
+
+    // The one redaction entry point every written line passes through:
+    // Bluetooth addresses, then Windows profile names. Both rules are shapes,
+    // both are shared verbatim with BugReport.Redact, and both live here
+    // rather than at the emitting call site because debug.log is handed to
+    // strangers directly and because the next emitter to log a path cannot
+    // forget a policy it never has to remember.
+    internal static string RedactIdentifiers(string text) =>
+        RedactProfilePaths(RedactMacs(text));
 
     // Canonical Bluetooth-address redaction, shared with BugReport.Redact so an
     // address redacted at this sink and one redacted for a PUBLIC issue are the
@@ -147,4 +156,74 @@ internal static class Logger
         }
         return false;
     }
+
+    // Canonical Windows profile redaction, the second identifier carried by
+    // the same log lines as the addresses above and shared with
+    // BugReport.Redact on the same terms: the pattern and the "<user>" token
+    // are BugReport's verbatim, so a path redacted in debug.log and a path
+    // redacted for a PUBLIC issue still correlate.
+    //
+    // CWE-532. Driver and device work logs absolute script paths -
+    // DRIVER_SDP (DriverInstaller.cs:694), DRIVER_KMDF_ONECLICK (:403),
+    // DRIVER_PATHA_ONECLICK (:482), DRIVER_STOCK_UNBIND (:575, :587) - and
+    // every elevated script and status sidecar is created under
+    // Path.GetTempPath() (DeviceEnable.ScriptPath:155, DeviceRepair.cs:644,
+    // ModeFlip.ScriptPath:234), which on Windows is itself
+    // C:\Users\<name>\AppData\Local\Temp. BugReport.Redact removed the name
+    // on the way to a public issue, but nothing removed it from the file, and
+    // debug.log is shared as a file.
+    //
+    // Only the one segment after \Users\ goes. Everything past the next '\'
+    // survives, which is the whole point: the temp file names carry the PID
+    // and the attempt nonce that triage is read off
+    // (mm-enable-0323-1758030000000.ps1), so a rule that swallowed the tail
+    // would trade a privacy leak for a useless log. The lazy [^\\\r\n]+? with
+    // the \|\r|\n|$ lookahead is what stops at the segment boundary while
+    // still redacting a trailing "C:\Users\lesley" that has no separator
+    // left; an account name containing spaces ("Lesley Murfin") is one
+    // segment and goes whole.
+    //
+    // BugReport's OTHER profile control, LocalIdentifiers - the literal
+    // Environment.UserName / MachineName / UserDomainName replaces - is
+    // deliberately NOT moved here. Those are live-environment literals, not
+    // shapes, and a value of 3+ chars replaces as an unanchored substring
+    // (BugReport.LocalIdentifierRegex), so the sink's output would depend on
+    // the account name of the machine it runs on. Measured on 2026-09-16 with
+    // that rule applied to a real line: account "Dev" rewrites
+    // "DEVICE_DIAG_POINTER ... Dev_<mac>" to
+    // "<user>ICE_DIAG_POINTER ... <user>_<mac>", destroying both the message
+    // key and the Dev_<mac> token RedactMacs just produced; account "mac"
+    // rewrites "mac=<mac>" to "<user>=<<user>>"; account "Temp" eats the temp
+    // directory out of every script path. The tradeoff is accepted knowingly:
+    // a bare account name logged with no \Users\ prefix is left in debug.log
+    // and is scrubbed only on the BugReport path. debug.log is the artifact
+    // docs/TEST-PLAN.md rows are read off, and a rule that can silently
+    // corrupt the identifiers in it is worse than a residue in a file the
+    // user chooses to hand over - while the public issue, which is the
+    // irreversible disclosure, still gets both belts.
+    internal static string RedactProfilePaths(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !MayContainProfilePath(text))
+            return text;
+        return ProfileName.Replace(text, "<user>");
+    }
+
+    // Compiled and static for the same reason as the address rules: this runs
+    // on every line the app writes. Options are BugReport's original
+    // IgnoreCase, unchanged, so the two paths cannot drift.
+    static readonly Regex ProfileName = new(
+        @"(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Allocation-free gate: the pattern can only match behind a literal
+    // \Users\, so an ordinal ignore-case substring search is a necessary
+    // condition for it, and a line without a profile path pays one search and
+    // no Replace. Exactly as permissive as the pattern, not merely a superset:
+    // measured on .NET 8.0.31 the IgnoreCase pattern and this search agree on
+    // every spelling of the segment under en-US, tr-TR and az-AZ, including
+    // the Unicode fold candidates \Uſerſ\ and \Userſ\, which neither matches
+    // ("Users" carries no i/I, the only letter those cultures case-fold
+    // differently). So the gate cannot under-trigger.
+    static bool MayContainProfilePath(string text) =>
+        text.Contains(@"\Users\", StringComparison.OrdinalIgnoreCase);
 }

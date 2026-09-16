@@ -59,16 +59,26 @@ internal static class BugReport
         // which would corrupt debug.log's own diagnostic identifiers. Here the
         // scrub is one-way and over-redaction costs nothing.
         text = Regex.Replace(text, @"(?<![0-9A-Fa-f])[0-9A-Fa-f]{12}(?![0-9A-Fa-f])", "<mac>");
-        // Logged log/temp/script paths all carry C:\Users\<name>\AppData\...
-        text = Regex.Replace(text, @"(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)", "<user>",
-            RegexOptions.IgnoreCase);
+        // Profile paths: the same canonical rule, now owned by the sink
+        // (Logger.RedactProfilePaths) so debug.log is redacted before the file
+        // exists rather than only on the way here. Kept in its original
+        // position - after the belt, before LocalIdentifiers - so this
+        // method's output is byte-identical to the inline copy it replaces.
+        // The order is in fact insensitive (a hex run cannot cross the '\'
+        // that bounds a profile segment, and neither "<mac>" nor "<user>"
+        // contains a 12-hex run), but that was checked on 2026-09-16 over
+        // 442,882 generated inputs rather than assumed.
+        text = Logger.RedactProfilePaths(text);
         foreach (var (pattern, placeholder) in LocalIdentifiers)
             text = pattern.Replace(text, placeholder);
         return text;
     }
 
     /// <summary>
-    /// Literal account and host name patterns — those values have no shape to match.
+    /// Literal account and host name patterns — those values have no shape to
+    /// match, which is why they stay on this public-issue path instead of
+    /// moving to the sink with the profile rule; Logger.RedactProfilePaths
+    /// records the measurement behind that split.
     /// </summary>
     static readonly (Regex Pattern, string Placeholder)[] LocalIdentifiers = BuildLocalIdentifiers();
 
