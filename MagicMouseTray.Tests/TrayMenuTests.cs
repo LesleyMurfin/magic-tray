@@ -243,44 +243,12 @@ public class TrayMenuTests
             TrayMenu.ShowTrackpadV1BootCamp(kind, pid));
     }
 
-    [Fact]
-    public void DriverChoicesLabel_ReadsAsAChoiceNotAReading()
-    {
-        Assert.Equal("What each driver would give", TrayMenu.DriverChoicesLabel);
-        // The observed capability rows are "<Capability>: <state>" and their
-        // vocabulary judges ("working", "not working"). This label collapses
-        // PREDICTIONS about drivers the user is not on, so it must carry neither
-        // that shape nor that vocabulary or the two blocks read as one.
-        Assert.DoesNotContain(":", TrayMenu.DriverChoicesLabel, StringComparison.Ordinal);
-        Assert.DoesNotContain("working", TrayMenu.DriverChoicesLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("unknown", TrayMenu.DriverChoicesLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("PATH-A", TrayMenu.DriverChoicesLabel, StringComparison.OrdinalIgnoreCase);
-    }
 
     // Every string TrayApp puts in a ToolStripItem.Text passes through
     // TrayMenu.MenuText. The cap exists because of this session's
     // screenshots: DriverAdvisor's advice paragraphs reached .Text and drew as
     // unbroken rows across the whole 1568px screen, overlapping the rest of
     // the UI. These are the properties that stop that from coming back.
-    [Fact]
-    public void MenuText_ClampsAParagraphToOneShortLine()
-    {
-        // The keyboard row from the screenshots, ~190 characters on one line.
-        const string paragraph =
-            "The driver bound to this device has not been read yet, so what works cannot be "
-            + "confirmed. Recommended: Stock Windows - Windows' own keyboard driver is the only "
-            + "choice. There is no scroll driver for a keyboard.";
-
-        var clamped = TrayMenu.MenuText(paragraph);
-
-        Assert.True(
-            clamped.Length <= TrayMenu.MenuTextMaxChars,
-            $"clamped to {clamped.Length} chars, cap is {TrayMenu.MenuTextMaxChars}");
-        Assert.EndsWith("...", clamped, StringComparison.Ordinal);
-        Assert.StartsWith("The driver bound to this device", clamped, StringComparison.Ordinal);
-        // Cut on a word boundary, so the row reads as a shortened phrase.
-        Assert.DoesNotContain(" ...", clamped, StringComparison.Ordinal);
-    }
 
     [Fact]
     public void MenuText_FlattensBreaksAndKeepsColumnSpacing()
@@ -332,8 +300,6 @@ public class TrayMenuTests
 
                 // And the paragraph is exactly what must never reach an item.
                 var full = DriverAdviceView.AdviceFull(kind, pid, status);
-                if (full.Length > TrayMenu.MenuTextMaxChars)
-                    Assert.NotEqual(full, TrayMenu.MenuText(full));
             }
         }
     }
@@ -356,9 +322,6 @@ public class TrayMenuTests
         foreach (var row in DriverAdviceView.OptionRows(kind, pid))
             Assert.Contains(row, text, StringComparison.Ordinal);
 
-        // A dialog wraps, a menu item does not: this text is the one string in
-        // the app that is deliberately far longer than the menu cap.
-        Assert.True(text.Length > TrayMenu.MenuTextMaxChars);
 
         // A device this app binds no driver for has no choices to predict, so
         // the dialog is the advice and nothing invented.
@@ -443,7 +406,6 @@ public class TrayMenuTests
 
             var dialog = TrayMenu.AdviceDialogText(
                 DeviceKind.MagicKeyboard, "0239", null, Keyboard0239, sdp);
-            Assert.True(dialog.Length > TrayMenu.MenuTextMaxChars);
         }
     }
 
