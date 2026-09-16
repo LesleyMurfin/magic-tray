@@ -8,7 +8,7 @@ Only **three** devices have ever been confirmed by a tester. Everything else in 
 
 Got an Apple mouse, keyboard or trackpad? [Send a test report](https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md). It's a short table, and "it didn't work" is just as useful as "it worked".
 
-These eight are the priority. Every one is in the app and confirmed by nobody:
+These six are the priority. Every one is in the app and confirmed by nobody:
 
 | Device | Code | Status |
 |--------|------|--------|

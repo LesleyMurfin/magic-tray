@@ -13,7 +13,9 @@
     read-only, makes no network calls, and runs on ubuntu-latest in CI and on a
     developer machine with PowerShell 7.
 
-    It owns structured data only. Links, sitemap, robots.txt, CNAME and stale
+    It owns what a crawler or an answer engine reads *about* a page: the
+    JSON-LD graph, and the head and footer metadata that has to agree with it.
+    Link resolution, sitemap membership, robots.txt syntax, CNAME and stale
     hosts belong to scripts/check-site.ps1; the two scripts do not overlap.
 
     Checks, and what breaks if the check is removed:
@@ -69,6 +71,54 @@
        the previous version while the graph advertises the new one, and answer
        engines quote the stale number.
 
+    7. Preview metadata completeness (Test-PreviewMetadata)
+       Every indexable page carries the whole og:/twitter: set the site has
+       settled on - type, site_name, title, description, url, image, image
+       width, height and alt, twitter card, title, description and image - no
+       tag is empty, no tag is declared twice, og:url equals the page's own
+       canonical, and both images exist in the published tree. Remove this and
+       the set drifts the way it already had: six pages carried nine og: tags
+       and one carried four, so sharing or quoting those pages produced a bare
+       link with no title, no summary and no card - the cheapest impression
+       the site can earn, thrown away.
+
+    8. Visible freshness matches the graph (Test-FreshnessLine)
+       Every indexable page has exactly one <time datetime="YYYY-MM-DD"> in
+       its footer, and that date equals the page's WebPage.dateModified.
+       Remove this and the date lives only inside the JSON-LD, which is a
+       freshness claim with nothing on the page behind it; worse, the two
+       drift apart and the page shows a reader one date while telling a
+       crawler another, which is a weaker signal than carrying no date at all.
+
+    9. No Markdown links in HTML (Test-MarkdownLink)
+       No href in the site points at a .md file under the site root. Pages
+       serves those URLs as text/markdown: no <title>, no canonical, no nav,
+       no structured data, nothing that can rank. TESTED.md sat in the sitemap
+       as exactly that while being the highest-intent page on the site. A link
+       to Markdown on github.com is fine - that is someone else's document,
+       not a page of this site.
+
+   10. Picture fallbacks (Test-PictureFallback)
+       Every <source srcset> target exists on disk, every <picture> holds
+       exactly one <img> fallback, and that <img> carries alt, width and
+       height. Remove this and a typo in a .webp name leaves every browser
+       that accepts WebP with no image at all while the JPEG sits unused next
+       to it, a <picture> with no <img> shows nothing anywhere, and an <img>
+       with no dimensions reflows the page as it loads - layout shift is a
+       ranking input, not only a nuisance.
+
+   11. noindex pages stay out of the sitemap (Test-NoindexPage)
+       A page carrying <meta name="robots" content="...noindex..."> is not
+       listed in sitemap.xml and carries no canonical link. Remove this and
+       the site submits a URL for crawling that it then tells the crawler to
+       throw away, and a canonical on a noindex page aims that noindex at
+       another URL, which is how a page that should rank disappears instead.
+
+    A noindex page is exempt from checks 1, 4, 7 and 8. 404.html deliberately
+    carries no entity graph, no canonical and nothing worth quoting: demanding
+    a graph and a canonical there would force the page to contradict itself.
+    It is still held to checks 9, 10 and 11.
+
     Failures are reported as GitHub Actions annotations
     (::error file=<path>,line=<n>::<message>) and as a non-zero exit code.
 
@@ -93,6 +143,26 @@ $ErrorActionPreference = 'Stop'
 
 $SiteOrigin = 'https://magictray.app'
 $SchemaContext = 'https://schema.org'
+
+# The preview set every indexable page carries. A value is the literal every
+# page must repeat; $null means the value is the page's own (a title, a
+# description, its canonical URL) and only presence and non-emptiness are
+# checked here.
+$PreviewMeta = [ordered]@{
+    'og:type'             = 'website'
+    'og:site_name'        = 'Magic Tray'
+    'og:title'            = $null
+    'og:description'      = $null
+    'og:url'              = $null
+    'og:image'            = $null
+    'og:image:width'      = '1200'
+    'og:image:height'     = '630'
+    'og:image:alt'        = $null
+    'twitter:card'        = 'summary_large_image'
+    'twitter:title'       = $null
+    'twitter:description' = $null
+    'twitter:image'       = $null
+}
 
 # ---------------------------------------------------------------- helpers ---
 
@@ -402,6 +472,170 @@ function Get-PublishedUrl {
     return "$SiteOrigin/$relative"
 }
 
+function Get-MetaTag {
+    <#
+    .SYNOPSIS
+        Every <meta> tag of a page as Key/Value/Line records.
+    .DESCRIPTION
+        Open Graph keys arrive on property=, Twitter and robots keys on name=,
+        and either spelling is legal for either, so whichever attribute is
+        present becomes the key and callers can ask for "og:title" without
+        caring how it was written. Values are entity-decoded, because &amp; in
+        a title is the same character to a crawler as &, and trimmed, because
+        a content attribute holding only spaces is an empty tag with extra
+        steps.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Html
+    )
+
+    foreach ($tag in [regex]::Matches($Html, '<meta\b[^>]*>', 'IgnoreCase')) {
+        $keyMatch = [regex]::Match($tag.Value, '\b(?:property|name)\s*=\s*["''](?<key>[^"'']*)["'']', 'IgnoreCase')
+        if (-not $keyMatch.Success) { continue }
+        $contentMatch = [regex]::Match($tag.Value, '\bcontent\s*=\s*["''](?<content>[^"'']*)["'']', 'IgnoreCase')
+        [pscustomobject]@{
+            Key      = $keyMatch.Groups['key'].Value.Trim().ToLowerInvariant()
+            HasValue = $contentMatch.Success
+            Value    = if ($contentMatch.Success) {
+                ([System.Net.WebUtility]::HtmlDecode($contentMatch.Groups['content'].Value)).Trim()
+            } else {
+                ''
+            }
+            Line     = (Get-LineNumber -Text $Html -Offset $tag.Index)
+        }
+    }
+}
+
+function Resolve-SiteReference {
+    <#
+    .SYNOPSIS
+        The file on disk a reference names, or $null when it is off-site.
+    .DESCRIPTION
+        An absolute URL on this origin and a root-relative path both resolve
+        against the site root; anything else resolves against the directory of
+        the page that wrote it, which is what a browser does. Fragments and
+        query strings are cut first: og.png?v=2 is still og.png on disk.
+
+        $null means "this script cannot check it" - another origin, mailto:,
+        data: - so a caller can tell an unverifiable reference apart from a
+        missing file instead of reporting every external URL as broken.
+    #>
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Reference,
+        [Parameter(Mandatory)][string]$PageDirectory,
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    $value = ($Reference.Trim() -split '[#?]')[0]
+    if ($value -eq '') { return $null }
+
+    if ($value.StartsWith("$SiteOrigin/", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $value = $value.Substring("$SiteOrigin/".Length)
+    } elseif ($value -match '^(?:[a-zA-Z][a-zA-Z0-9+.\-]*:|//)') {
+        return $null
+    } elseif ($value.StartsWith('/')) {
+        $value = $value.TrimStart('/')
+    } else {
+        return [System.IO.Path]::GetFullPath((Join-Path $PageDirectory $value))
+    }
+
+    if ($value -eq '') { return $null }
+    return [System.IO.Path]::GetFullPath((Join-Path $SiteRoot $value))
+}
+
+function Test-PathUnderRoot {
+    <#
+    .SYNOPSIS
+        True when a resolved full path lies inside the published tree.
+    #>
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$FullPath,
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    if ([string]::IsNullOrEmpty($FullPath)) { return $false }
+    $root = [System.IO.Path]::GetFullPath($SiteRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    return $FullPath.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::Ordinal)
+}
+
+function Get-FooterTime {
+    <#
+    .SYNOPSIS
+        Every <time> element inside a page's <footer>, with line numbers.
+    .DESCRIPTION
+        Only the footer is searched. A <time> in the body is prose - a release
+        date, a measurement - and must not be mistaken for the page's own
+        "last updated" stamp, which the site writes in exactly one place.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Html
+    )
+
+    foreach ($footer in [regex]::Matches($Html, '<footer\b[^>]*>(?<body>.*?)</footer>', 'Singleline, IgnoreCase')) {
+        $body = $footer.Groups['body'].Value
+        $bodyOffset = $footer.Groups['body'].Index
+        foreach ($element in [regex]::Matches($body, '<time\b[^>]*>', 'IgnoreCase')) {
+            $attribute = [regex]::Match($element.Value, '\bdatetime\s*=\s*["''](?<value>[^"'']*)["'']', 'IgnoreCase')
+            [pscustomobject]@{
+                HasDateTime = $attribute.Success
+                Value       = if ($attribute.Success) { $attribute.Groups['value'].Value.Trim() } else { '' }
+                Line        = (Get-LineNumber -Text $Html -Offset ($bodyOffset + $element.Index))
+            }
+        }
+    }
+}
+
+function Get-SitemapLocation {
+    <#
+    .SYNOPSIS
+        The <loc> URLs of the site's sitemap.xml, with line numbers.
+    .DESCRIPTION
+        Emits nothing when there is no sitemap: whether the file must exist is
+        scripts/check-site.ps1's question, not this one's. This script only
+        asks whether a URL it finds there contradicts the page it names.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    $path = Join-Path $SiteRoot 'sitemap.xml'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    $text = Get-Content -LiteralPath $path -Raw
+    if ([string]::IsNullOrEmpty($text)) { return }
+
+    foreach ($match in [regex]::Matches($text, '<loc>(?<loc>[^<]*)</loc>', 'IgnoreCase')) {
+        [pscustomobject]@{
+            Url  = $match.Groups['loc'].Value.Trim()
+            Line = (Get-LineNumber -Text $text -Offset $match.Index)
+        }
+    }
+}
+
+function Get-WebPageNode {
+    <#
+    .SYNOPSIS
+        The page's single WebPage node, or $null when it has none or several.
+    .DESCRIPTION
+        Ambiguity is Test-PageIdentity's finding to report, so this returns
+        $null rather than guessing and lets the caller stay silent about a
+        page that is already being reported.
+    #>
+    [OutputType([System.Collections.IDictionary])]
+    param(
+        [Parameter(Mandatory)][AllowNull()]$Graph
+    )
+
+    if ($null -eq $Graph) { return $null }
+    $nodes = @($Graph | Where-Object { (Get-TypeName -Node $_) -contains 'WebPage' })
+    if ($nodes.Count -ne 1) { return $null }
+    return $nodes[0]
+}
+
 function Get-JsonLdPage {
     <#
     .SYNOPSIS
@@ -471,8 +705,23 @@ function Get-JsonLdPage {
             if ($hrefMatch.Success) { $canonical = $hrefMatch.Groups['href'].Value.Trim() }
         }
 
+        # A page is indexable unless a robots meta tag says noindex. Several
+        # robots tags are merged the way a crawler merges them: the most
+        # restrictive directive on the page wins.
+        $meta = @(Get-MetaTag -Html $html)
+        $isIndexable = $true
+        $robotsLine = 0
+        foreach ($tag in @($meta | Where-Object { $_.Key -eq 'robots' })) {
+            if ($robotsLine -eq 0) { $robotsLine = $tag.Line }
+            if (($tag.Value -split '[,\s]+') -contains 'noindex') {
+                $isIndexable = $false
+                $robotsLine = $tag.Line
+            }
+        }
+
         [pscustomobject]@{
             File          = $page.FullName
+            Directory     = $page.DirectoryName
             Relative      = $relative
             PublishedUrl  = (Get-PublishedUrl -RelativePath $siteRelative)
             Html          = $html
@@ -485,6 +734,9 @@ function Get-JsonLdPage {
             ParseError    = $parseError
             Canonical     = $canonical
             CanonicalLine = $canonicalLine
+            Meta          = $meta
+            IsIndexable   = $isIndexable
+            RobotsLine    = $robotsLine
         }
     }
 }
@@ -496,6 +748,11 @@ function Test-JsonLdBlock {
     .SYNOPSIS
         Check 1: exactly one JSON-LD block per page, parseable, schema.org
         @context, top-level @graph array.
+    .DESCRIPTION
+        A noindex page is allowed to carry no block at all - 404.html has no
+        entity to declare and no URL a crawler should keep - but a block it
+        does carry still has to be well formed, or the page ships broken JSON
+        that a crawler reports against the whole site.
     #>
     [OutputType([pscustomobject])]
     param(
@@ -504,6 +761,7 @@ function Test-JsonLdBlock {
 
     foreach ($page in $Page) {
         if ($page.BlockCount -eq 0) {
+            if (-not $page.IsIndexable) { continue }
             New-Finding -Severity 'error' -Path $page.Relative `
                 -Message 'no <script type="application/ld+json"> block: the page carries no structured data at all'
             continue
@@ -618,6 +876,11 @@ function Test-PageIdentity {
     .SYNOPSIS
         Check 4: the WebPage node url, the canonical link and the published path
         are the same URL, and the node carries a dateModified.
+    .DESCRIPTION
+        Skipped for a noindex page: it must not claim a canonical at all, and
+        Test-NoindexPage owns that rule. Asking a page to name the URL it wants
+        indexed while it is telling crawlers to index nothing is a demand it
+        can only satisfy by contradicting itself.
     #>
     [OutputType([pscustomobject])]
     param(
@@ -625,7 +888,7 @@ function Test-PageIdentity {
     )
 
     foreach ($page in $Page) {
-        if ($null -eq $page.Graph) { continue }
+        if ($null -eq $page.Graph -or -not $page.IsIndexable) { continue }
 
         $expected = $page.PublishedUrl
 
@@ -819,6 +1082,297 @@ function Test-VersionCoherence {
     }
 }
 
+function Test-PreviewMetadata {
+    <#
+    .SYNOPSIS
+        Check 7: every indexable page carries the whole og:/twitter: preview
+        set, with non-empty values, an og:url equal to its canonical, and
+        images that exist in the published tree.
+    .DESCRIPTION
+        The required set lives in $PreviewMeta. A tag with a literal there must
+        repeat it exactly, because those four values (og:type, og:site_name and
+        the image dimensions) describe the site rather than the page and a page
+        that disagrees is simply wrong about where it lives. The rest only have
+        to be present, non-empty and, for og:url, equal to the canonical: a
+        preview card that names a different URL than the page claims as its own
+        splits the shares between two addresses.
+
+        Duplicates are reported rather than merged. Two og:title tags do not
+        average; the consumer picks one, and which one is not something the
+        site gets to decide.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page,
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    foreach ($page in $Page) {
+        if (-not $page.IsIndexable) { continue }
+
+        $byKey = @{}
+        foreach ($tag in @($page.Meta)) {
+            if ($tag.Key -notlike 'og:*' -and $tag.Key -notlike 'twitter:*') { continue }
+            if ($byKey.ContainsKey($tag.Key)) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $tag.Line `
+                    -Message ("""{0}"" is declared twice: a consumer keeps one of the two values and the page has no say in which" -f $tag.Key)
+                continue
+            }
+            $byKey[$tag.Key] = $tag
+            if ($tag.Value -eq '') {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $tag.Line `
+                    -Message ("""{0}"" has an empty content attribute: an empty tag is worse than a missing one, because a consumer stops looking for a fallback" -f $tag.Key)
+            }
+        }
+
+        $headLine = if ($page.CanonicalLine -gt 0) { $page.CanonicalLine } else { 1 }
+
+        foreach ($key in @($PreviewMeta.Keys)) {
+            if (-not $byKey.ContainsKey($key)) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $headLine `
+                    -Message ("<head> has no ""{0}"" tag: every page on this site carries the same preview set, and a page missing part of it is shared and quoted as a bare link with no card" -f $key)
+                continue
+            }
+
+            $expected = $PreviewMeta[$key]
+            if ($null -eq $expected) { continue }
+            $actual = $byKey[$key].Value
+            if ($actual -cne $expected) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $byKey[$key].Line `
+                    -Message ("""{0}"" is ""{1}"" but every page on this site says ""{2}"": that value describes the site, not the page" -f $key, $actual, $expected)
+            }
+        }
+
+        if ($byKey.ContainsKey('og:url') -and $null -ne $page.Canonical -and $byKey['og:url'].Value -cne $page.Canonical) {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $byKey['og:url'].Line `
+                -Message ("og:url is ""{0}"" but the canonical link is ""{1}"": shares of this page would accumulate against a URL the page itself does not claim" -f
+                    $byKey['og:url'].Value, $page.Canonical)
+        }
+
+        foreach ($key in @('og:image', 'twitter:image')) {
+            if (-not $byKey.ContainsKey($key)) { continue }
+            $tag = $byKey[$key]
+            if ($tag.Value -eq '') { continue }
+
+            $resolved = Resolve-SiteReference -Reference $tag.Value -PageDirectory $page.Directory -SiteRoot $SiteRoot
+            if ($null -eq $resolved) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $tag.Line `
+                    -Message ("""{0}"" points at ""{1}"", which is not served from this site, so nothing here can tell whether the preview image still exists" -f $key, $tag.Value)
+                continue
+            }
+            if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $tag.Line `
+                    -Message ("""{0}"" names ""{1}"", which is not in the published tree: the card renders blank wherever the page is shared" -f $key, $tag.Value)
+            }
+        }
+    }
+}
+
+function Test-FreshnessLine {
+    <#
+    .SYNOPSIS
+        Check 8: one <time datetime="YYYY-MM-DD"> in the footer of every
+        indexable page, equal to that page's WebPage.dateModified.
+    .DESCRIPTION
+        A missing dateModified is Test-PageIdentity's finding, so a page
+        without one is only asked for a well-formed visible date here; it is
+        not reported twice for the same defect.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page
+    )
+
+    foreach ($page in $Page) {
+        if (-not $page.IsIndexable) { continue }
+
+        $webPage = Get-WebPageNode -Graph $page.Graph
+        $dateModified = $null
+        if ($null -ne $webPage -and $webPage.Contains('dateModified')) {
+            $dateModified = "$($webPage['dateModified'])"
+        }
+
+        $times = @(Get-FooterTime -Html $page.Html)
+        if ($times.Count -eq 0) {
+            New-Finding -Severity 'error' -Path $page.Relative `
+                -Line (Get-TextLine -Text $page.Html -Needle @('<footer') -Fallback 1) `
+                -Message 'the footer carries no <time datetime="YYYY-MM-DD">: the page''s only freshness signal is inside the JSON-LD, which is a claim with nothing visible behind it'
+            continue
+        }
+        if ($times.Count -gt 1) {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $times[1].Line `
+                -Message ("the footer carries {0} <time> elements: the page states more than one last-updated date and a reader cannot tell which one is the page's" -f $times.Count)
+            continue
+        }
+
+        $time = $times[0]
+        if (-not $time.HasDateTime) {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $time.Line `
+                -Message 'the footer <time> has no datetime attribute, so the date is prose a crawler cannot read'
+            continue
+        }
+        if ($time.Value -notmatch '^\d{4}-\d{2}-\d{2}$') {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $time.Line `
+                -Message ("footer <time datetime=""{0}""> is not shaped YYYY-MM-DD" -f $time.Value)
+            continue
+        }
+        if ($null -ne $dateModified -and $time.Value -cne $dateModified) {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $time.Line `
+                -Message ("the footer shows {0} but the WebPage node says dateModified {1}: the page tells a reader one date and a crawler another" -f $time.Value, $dateModified)
+        }
+    }
+}
+
+function Test-MarkdownLink {
+    <#
+    .SYNOPSIS
+        Check 9: no href in the site points at a .md file under the site root.
+    .DESCRIPTION
+        Only references that resolve inside the published tree are reported.
+        A Markdown file on github.com is someone else's document served by
+        someone else's renderer; a Markdown file here is served as
+        text/markdown with no title, no canonical and no navigation, so a link
+        to it hands a reader - and a crawler following it - a dead end that
+        cannot rank.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page,
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    foreach ($page in $Page) {
+        foreach ($match in [regex]::Matches($page.Html, '\bhref\s*=\s*["''](?<href>[^"'']*)["'']', 'IgnoreCase')) {
+            $href = $match.Groups['href'].Value.Trim()
+            $target = ($href -split '[#?]')[0]
+            if (-not $target.EndsWith('.md', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+            $resolved = Resolve-SiteReference -Reference $href -PageDirectory $page.Directory -SiteRoot $SiteRoot
+            if (-not (Test-PathUnderRoot -FullPath $resolved -SiteRoot $SiteRoot)) { continue }
+
+            New-Finding -Severity 'error' -Path $page.Relative `
+                -Line (Get-LineNumber -Text $page.Html -Offset $match.Index) `
+                -Message ("href=""{0}"" points at a Markdown file in the published site: Pages serves it as text/markdown, so it has no title, no canonical and no nav and can never rank. Link the HTML page, or the file's GitHub blob URL" -f $href)
+        }
+    }
+}
+
+function Test-PictureFallback {
+    <#
+    .SYNOPSIS
+        Check 10: every <source srcset> target exists, every <picture> has one
+        <img> fallback, and that fallback carries alt, width and height.
+    .DESCRIPTION
+        A <source> is chosen before the <img> is ever consulted, so a missing
+        WebP is not a graceful degradation: the browsers that accept WebP -
+        most of them - get nothing while the JPEG sits unused beside it. The
+        dimensions are checked on the fallback because that is the element
+        that reserves the box; without them the page reflows as each photo
+        arrives, and layout shift is scored, not merely noticed.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page,
+        [Parameter(Mandatory)][string]$SiteRoot
+    )
+
+    foreach ($page in $Page) {
+        foreach ($source in [regex]::Matches($page.Html, '<source\b[^>]*>', 'IgnoreCase')) {
+            $srcset = [regex]::Match($source.Value, '\bsrcset\s*=\s*["''](?<value>[^"'']*)["'']', 'IgnoreCase')
+            if (-not $srcset.Success) { continue }
+            $sourceLine = Get-LineNumber -Text $page.Html -Offset $source.Index
+
+            foreach ($candidate in ($srcset.Groups['value'].Value -split ',')) {
+                # A srcset entry is a URL plus an optional 2x or 800w descriptor.
+                $reference = @($candidate.Trim() -split '\s+')[0]
+                if ($reference -eq '') { continue }
+
+                $resolved = Resolve-SiteReference -Reference $reference -PageDirectory $page.Directory -SiteRoot $SiteRoot
+                if ($null -eq $resolved) { continue }
+                if (Test-Path -LiteralPath $resolved -PathType Leaf) { continue }
+
+                New-Finding -Severity 'error' -Path $page.Relative -Line $sourceLine `
+                    -Message ("<source srcset> names ""{0}"", which is not in the published tree: a browser that picks this source gets no image at all, and the fallback next to it is never tried" -f $reference)
+            }
+        }
+
+        foreach ($picture in [regex]::Matches($page.Html, '<picture\b[^>]*>(?<body>.*?)</picture>', 'Singleline, IgnoreCase')) {
+            $pictureLine = Get-LineNumber -Text $page.Html -Offset $picture.Index
+            $body = $picture.Groups['body'].Value
+            $images = @([regex]::Matches($body, '<img\b[^>]*>', 'IgnoreCase'))
+
+            if ($images.Count -ne 1) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $pictureLine `
+                    -Message ("<picture> contains {0} <img> elements: it needs exactly one fallback, or browsers that take none of the sources show nothing" -f $images.Count)
+                continue
+            }
+
+            $image = $images[0].Value
+            $imageLine = Get-LineNumber -Text $page.Html -Offset ($picture.Groups['body'].Index + $images[0].Index)
+
+            $alt = [regex]::Match($image, '\balt\s*=\s*["''](?<value>[^"'']*)["'']', 'IgnoreCase')
+            if (-not $alt.Success -or $alt.Groups['value'].Value.Trim() -eq '') {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $imageLine `
+                    -Message 'the <img> fallback inside <picture> has no alt text: every photograph here carries information a reader who cannot see it still needs, and it is the only description of the image a crawler ever gets'
+            }
+
+            foreach ($attribute in @('width', 'height')) {
+                $found = [regex]::Match($image, ('\b{0}\s*=\s*["''](?<value>[^"'']*)["'']' -f $attribute), 'IgnoreCase')
+                $value = if ($found.Success) { $found.Groups['value'].Value.Trim() } else { '' }
+
+                if ($value -eq '') {
+                    New-Finding -Severity 'error' -Path $page.Relative -Line $imageLine `
+                        -Message ("the <img> fallback inside <picture> has no {0}: the browser reserves no box for it and the page jumps as the photograph arrives, which is layout shift and is scored" -f $attribute)
+                    continue
+                }
+                if ($value -notmatch '^[1-9]\d*$') {
+                    New-Finding -Severity 'error' -Path $page.Relative -Line $imageLine `
+                        -Message ("the <img> fallback inside <picture> has {0}=""{1}"": the attribute must be a pixel count, or the browser reserves no box and the page shifts as the image arrives" -f $attribute, $value)
+                }
+            }
+        }
+    }
+}
+
+function Test-NoindexPage {
+    <#
+    .SYNOPSIS
+        Check 11: a noindex page is absent from sitemap.xml and carries no
+        canonical link.
+    .DESCRIPTION
+        Whether the sitemap lists every indexable page is
+        scripts/check-site.ps1's question. This one is the opposite direction
+        and only this script can answer it, because only this script reads the
+        page's robots meta: a URL submitted for crawling that then refuses to
+        be indexed spends crawl budget to produce nothing, and a canonical on
+        such a page aims the noindex at whatever URL it names.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Page,
+        [Parameter(Mandatory)][string]$SiteRoot,
+        [Parameter(Mandatory)][string]$RepoRoot
+    )
+
+    $locations = @(Get-SitemapLocation -SiteRoot $SiteRoot)
+    $sitemapPath = Get-RepoRelativePath -FullPath (Join-Path $SiteRoot 'sitemap.xml') -RepoRoot $RepoRoot
+
+    foreach ($page in $Page) {
+        if ($page.IsIndexable) { continue }
+
+        foreach ($location in @($locations | Where-Object { $_.Url -ceq $page.PublishedUrl })) {
+            New-Finding -Severity 'error' -Path $sitemapPath -Line $location.Line `
+                -Message ("sitemap.xml submits {0} for crawling, but {1} carries meta robots noindex: the site asks a crawler to fetch a page it is then told to drop" -f
+                    $location.Url, $page.Relative)
+        }
+
+        if ($null -ne $page.Canonical) {
+            New-Finding -Severity 'error' -Path $page.Relative -Line $page.CanonicalLine `
+                -Message ("a noindex page must not carry <link rel=""canonical"" href=""{0}"">: canonical says ""index that URL instead"" while robots says ""index nothing"", and the conflict is resolved by the crawler, sometimes by carrying the noindex over to the canonical target" -f $page.Canonical)
+        }
+    }
+}
+
 # ------------------------------------------------------------------- main ---
 
 if (-not (Test-Path -LiteralPath $DocsDir -PathType Container)) {
@@ -843,6 +1397,11 @@ $findings.AddRange([pscustomobject[]]@(Test-EntityConsistency -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-PageIdentity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-FaqParity -Page $pages))
 $findings.AddRange([pscustomobject[]]@(Test-VersionCoherence -Page $pages))
+$findings.AddRange([pscustomobject[]]@(Test-PreviewMetadata -Page $pages -SiteRoot $siteRoot))
+$findings.AddRange([pscustomobject[]]@(Test-FreshnessLine -Page $pages))
+$findings.AddRange([pscustomobject[]]@(Test-MarkdownLink -Page $pages -SiteRoot $siteRoot))
+$findings.AddRange([pscustomobject[]]@(Test-PictureFallback -Page $pages -SiteRoot $siteRoot))
+$findings.AddRange([pscustomobject[]]@(Test-NoindexPage -Page $pages -SiteRoot $siteRoot -RepoRoot $repoRoot))
 
 $errors = @($findings | Where-Object { $_.Severity -eq 'error' })
 $warnings = @($findings | Where-Object { $_.Severity -eq 'warning' })
@@ -853,7 +1412,7 @@ foreach ($finding in $findings) {
     Write-Output "::$($finding.Severity) $location::$($finding.Message)"
 }
 
-Write-Output ("Structured data checks: {0} pages, {1} errors, {2} warnings" -f $pages.Count, $errors.Count, $warnings.Count)
+Write-Output ("Answer-engine checks: {0} pages, {1} errors, {2} warnings" -f $pages.Count, $errors.Count, $warnings.Count)
 
 if ($errors.Count -gt 0) { exit 1 }
 exit 0

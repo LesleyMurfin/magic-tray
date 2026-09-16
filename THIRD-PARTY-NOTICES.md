@@ -196,14 +196,22 @@ Licence texts:
 
 ### Modification status, and why the site itself is not CC BY-SA
 
-Every photograph above is included **unmodified apart from resizing and EXIF stripping**, with
-the one exception noted in its own entry: `magic-mouse-v2-model-number-a1657.jpg` is a crop of a
-**CC0** original, which carries no share-alike obligation. Nothing under CC BY-SA has been
-cropped, recoloured, or composited.
+Every photograph above is included **unmodified apart from resizing, format conversion and EXIF
+stripping**, with the one exception noted in its own entry: `magic-mouse-v2-model-number-a1657.jpg`
+is a crop of a **CC0** original, which carries no share-alike obligation. Nothing under CC BY-SA
+has been cropped, recoloured, or composited.
+
+Each photograph also ships as a **WebP derivative** beside its JPEG (`<name>.webp`, offered first
+through `<picture>` so phones download roughly a fifth of the bytes). Each one is generated from
+the licensed original by ffmpeg with a width resize and a format conversion and nothing else: no
+cropping, no recolouring, no annotation, no compositing, no change of framing. Those are the
+technical modifications CC BY-SA 4.0 §2(a)(4) allows without producing Adapted Material, so a
+WebP file carries exactly the author, licence and credit of the JPEG it came from, and the credit
+lines already on the pages cover both files.
 
 All visible cropping on the site happens at display time, through CSS `object-fit` /
-`object-position` in `docs/site.css`. The stored pixels are untouched, so that is presentation,
-not adaptation.
+`object-position` in `docs/site.css`. No stored file, JPEG or WebP, is cropped or edited, so that
+is presentation, not adaptation.
 
 Publishing these photographs alongside the site's own text is a **Collection** in the sense of
 CC BY-SA 4.0 §1(f), not an **Adapted Work**. Share-alike therefore attaches to each photograph

@@ -211,6 +211,50 @@ eligibility rules:
 Copilot and several answer engines, in minutes rather than weeks. Google ignores IndexNow; for
 Google, Search Console → URL Inspection → Request indexing is still the manual lever.
 
+## Round two: the parts that are ranking inputs, not entity signals
+
+Structured data decides *how* a page can be shown. It is not a ranking factor. These are, and they
+were all measurably wrong:
+
+- **`devices.html` shipped 2.07 MB of photographs** — ten 1600 px JPEGs in cards that render at
+  400 px. It is the page a phone user lands on when they search "which magic mouse do I have", so
+  it was the worst page on the site to make heavy. Every photo now has a 800 px WebP derivative
+  served through `<picture>`, JPEG kept as the fallback: **2072 KB → 426 KB, 79% less**.
+  `keyboard.html` went 294 KB → 165 KB. Site-wide image payload is down 74%. Sizes were measured
+  in a headless browser, not guessed, and SSIM against the old render confirms the CSS crops still
+  frame the hardware feature each card is about.
+- **Preview metadata was uneven** — nine `og:` tags on some pages, four on others, one `twitter:`
+  tag on three of them. A page with no card is a page nobody reposts. All nine pages now carry the
+  same thirteen-tag set with page-specific values.
+- **`TESTED.md` was a sitemap URL served as `text/markdown`** — no title, no canonical, no nav, no
+  styling. It is also the highest-intent content here: "does my Magic Keyboard work on Windows 11"
+  is a question with buying intent and almost no good answers on the web. It is now
+  **`tested.html`**, a real page, linked from the homepage rail, `battery.html` and `drivers.html`.
+  The Markdown files stay in the repo for GitHub readers and are `Disallow`ed, so one URL owns the
+  content.
+- **There was no `404.html`** — GitHub's generic page, no way back into the site. There is one now,
+  `noindex`, out of the sitemap, linking the five real destinations.
+- **No visible freshness date.** `dateModified` lived in JSON-LD, where a reader cannot see it and
+  a crawler cannot corroborate it. Every page now shows `Last updated <time datetime="…">`, and CI
+  fails if the visible date and the graph disagree.
+
+`scripts/check-aeo.ps1` grew five checks for the new invariants: preview-metadata completeness,
+visible date equals `dateModified`, no HTML link to a `.md` inside the site, every `<picture>`
+fallback exists with dimensions, and a `noindex` page stays out of the sitemap.
+
+Repo topics gained `windows-10`, `magic-mouse-scroll`, `bootcamp-drivers` and `battery-percentage`;
+the repo page is the highest-authority URL this project has, and it was tagged `windows-11` only.
+
+### What is still not done, in order of value
+
+1. **Links.** Nothing above changes authority. See below.
+2. **Submit the winget manifest.** `packaging/winget/` holds a complete, unsubmitted 1.1.0 manifest
+   set. A merged `microsoft/winget-pkgs` PR is a citation from a Microsoft-owned repository, and
+   `winget install` output is text answer engines quote.
+3. **Search Console and Bing Webmaster Tools.** Still manual: verify the domain property, submit
+   the sitemap, request indexing for `/`, `/tested.html`, `/drivers.html`, `/v3.html`.
+4. **A photograph of the 2024 mouse underside**, still the one content gap on `devices.html`.
+
 ## Still the biggest lever
 
 Structured data tells Google *what* a page is. Links decide whether the site or the repo ranks. The
