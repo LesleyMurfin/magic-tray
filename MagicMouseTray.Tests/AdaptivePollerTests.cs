@@ -38,6 +38,19 @@ public class AdaptivePollerTests : IDisposable
         Assert.False(AdaptivePoller.DeviceSetChanged(names, ["Magic Mouse v1", "Magic Keyboard"]));
     }
 
+    // Discovery now yields one name per INTERFACE, so WaitForNextCycle compares a list
+    // holding a mouse's name three times against the name-keyed _lastSeen. Only a
+    // set comparison survives that; a count or sequence comparison would report a
+    // device-set change on every 15 s probe and turn a 24 h battery interval into a
+    // permanent 15 s HID poll.
+    [Fact]
+    public void DeviceSetChanged_FalseWhenOneDeviceRepeatsItsName()
+    {
+        Assert.False(AdaptivePoller.DeviceSetChanged(
+            ["Magic Mouse 2024"],
+            ["Magic Mouse 2024", "Magic Mouse 2024", "Magic Mouse 2024"]));
+    }
+
     [Fact]
     public void DeviceSetChanged_TrueWhenNameDisappears()
     {
@@ -102,5 +115,84 @@ public class AdaptivePollerTests : IDisposable
         Assert.True(AdaptivePoller.ShouldSkipPid(cfg, "030d"));
         cfg.SetDeviceEnabled("030d", true);
         Assert.False(AdaptivePoller.ShouldSkipPid(cfg, "030d"));
+    }
+
+    [Fact]
+    public void BestReading_FirstRealPercentWins_LaterInterfacesNotRead()
+    {
+        var unreadable = new CountingDevice(-2);
+        var real = new CountingDevice(42);
+        var later = new CountingDevice(77);
+
+        int best = AdaptivePoller.BestReading(
+            [unreadable, real, later], TimeSpan.FromSeconds(30));
+
+        Assert.Equal(42, best);
+        Assert.Equal(1, unreadable.Reads);
+        Assert.Equal(1, real.Reads);
+        Assert.Equal(0, later.Reads);
+    }
+
+    [Fact]
+    public void BestReading_AllInterfacesFail_MinusTwoBeatsMinusOne()
+    {
+        var notFound = new CountingDevice(-1);
+        var present = new CountingDevice(-2);
+        var alsoNotFound = new CountingDevice(-1);
+
+        int best = AdaptivePoller.BestReading(
+            [notFound, present, alsoNotFound], TimeSpan.FromSeconds(30));
+
+        Assert.Equal(-2, best);
+        Assert.Equal(1, notFound.Reads);
+        Assert.Equal(1, present.Reads);
+        Assert.Equal(1, alsoNotFound.Reads);
+
+        // Nothing present at all stays -1, which is what PollLoop counts three of before
+        // it mints -3. Seeding best at -2 would pass every assertion above and silently
+        // retire the -3 escalation for every device.
+        Assert.Equal(-1, AdaptivePoller.BestReading(
+            [new CountingDevice(-1), new CountingDevice(-1)], TimeSpan.FromSeconds(30)));
+    }
+
+    // A real 0 is an answer, not a failure, so it ends the group like any other
+    // percentage. This is why all three IBatteryDevice implementations floor at
+    // MouseBatteryDevice.MinValidPercent: an unfloored zero from a dead interface
+    // would end the group here and be reported as the device's level.
+    [Fact]
+    public void BestReading_RealZeroCountsAsAnAnswer_AndOutranksUnreadable()
+    {
+        var present = new CountingDevice(-2);
+        var zero = new CountingDevice(0);
+        var notFound = new CountingDevice(-1);
+
+        int best = AdaptivePoller.BestReading(
+            [present, zero, notFound], TimeSpan.FromSeconds(30));
+
+        Assert.Equal(0, best);
+        Assert.Equal(1, present.Reads);
+        Assert.Equal(1, zero.Reads);
+        Assert.Equal(0, notFound.Reads);
+    }
+
+    // One HID interface of one device, returning a fixed reading and counting how often
+    // it was read, so a test can pin which interfaces BestReading actually touched.
+    sealed class CountingDevice : IBatteryDevice
+    {
+        readonly int _pct;
+
+        internal CountingDevice(int pct) => _pct = pct;
+
+        internal int Reads { get; private set; }
+
+        public string DeviceName => "Magic Mouse";
+        public string Pid => "0323";
+        public DeviceKind Kind => DeviceKind.MagicMouseV3;
+
+        public int GetBatteryPercent()
+        {
+            Reads++;
+            return _pct;
+        }
     }
 }

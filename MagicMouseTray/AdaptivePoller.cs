@@ -62,6 +62,31 @@ internal sealed class AdaptivePoller : IDisposable
     // Ranks a battery reading when collapsing a device's multiple HID collections to one:
     // a real percentage (0-100) beats -2 (present but unreadable) beats -1 (not found).
     static int ReadingRank(int pct) => pct >= 0 ? pct + 2 : (pct == -2 ? 1 : 0);
+
+    // Reads a group's HID collections in discovery order and returns the best-ranked reading,
+    // stopping at the first real percentage. Discovery returns one device per interface path and
+    // no longer collapses a PID's collections; DeviceRegistry.TryClassify gates on a collection
+    // only for MagicMouseV3 and for keyboards, so 030D, 0269, 0310 and the trackpads contribute
+    // every collection they expose, and reading all of them would cost up to timeout each, on
+    // every tick, with no bound on the group size.
+    // First real answer wins is the tie-break: any percentage in 0-100 is the battery level, so a
+    // second live collection could only substitute a different equally-real number at the cost of
+    // another timeout, and ReadingRank's preference for the higher number is arbitrary between two
+    // live reads. When two live collections of one device disagree the winner is therefore the
+    // first one that answers, in discovery order. Failures still rank, so a -2 (present but
+    // unreadable) anywhere in the group beats -1 (not found), and then the whole group is read.
+    internal static int BestReading(IEnumerable<IBatteryDevice> group, TimeSpan timeout)
+    {
+        int best = -1;
+        foreach (var device in group)
+        {
+            int pct = ReadBatteryGuarded(device, timeout);
+            if (pct >= 0) return pct;
+            if (ReadingRank(pct) > ReadingRank(best)) best = pct;
+        }
+        return best;
+    }
+
     // True when the Discover DeviceName set differs (order and duplicates ignored).
     internal static bool DeviceSetChanged(IEnumerable<string> oldNames, IEnumerable<string> newNames)
     {
@@ -126,8 +151,9 @@ internal sealed class AdaptivePoller : IDisposable
                     // surfaces a unified path, Col01 pointer, and Col02 vendor battery — all the same
                     // DisplayName). Discover returns one device per path, so raising BatteryChanged
                     // per path lets a non-battery collection's -1/-2 clobber the good Col02 reading
-                    // (last write wins in TrayApp's per-name dictionary). Collapse to the best read
-                    // per device name: a real percentage beats -2 (present, unreadable) beats -1.
+                    // (last write wins in TrayApp's per-name dictionary). BestReading collapses each
+                    // name to one reading: the first collection that answers with a real percentage,
+                    // or the best-ranked failure when none does.
                     foreach (var group in devices.GroupBy(d => d.DeviceName, StringComparer.OrdinalIgnoreCase))
                     {
                         var kind = group.First().Kind;
@@ -136,12 +162,7 @@ internal sealed class AdaptivePoller : IDisposable
                         if (ShouldSkipPid(_config, pid))
                             continue;
 
-                        int best = -1;
-                        foreach (var device in group)
-                        {
-                            int pct = ReadBatteryGuarded(device, DeviceReadTimeout);
-                            if (ReadingRank(pct) > ReadingRank(best)) best = pct;
-                        }
+                        int best = BestReading(group, DeviceReadTimeout);
 
                         if (best == -1)
                         {
@@ -196,7 +217,7 @@ internal sealed class AdaptivePoller : IDisposable
                     lowestDevice, lowestPct, _config.GetThreshold(lowestPid), lowestIsV3);
                 LastInterval = interval;
 
-                Logger.Log($"POLL_SCHEDULED devices={devices.Count} lowest_pct={lowestPct} next_in={interval}");
+                Logger.Log($"POLL_SCHEDULED interfaces={devices.Count} devices={seenThisCycle.Count} lowest_pct={lowestPct} next_in={interval}");
             }
             catch (Exception ex)
             {
@@ -234,7 +255,7 @@ internal sealed class AdaptivePoller : IDisposable
                     names[i] = probe[i].DeviceName;
                 if (DeviceSetChanged(_lastSeen.Keys, names))
                 {
-                    Logger.Log($"POLL_DEVICE_SET_CHANGED last={_lastSeen.Count} now={names.Length} breaking wait");
+                    Logger.Log($"POLL_DEVICE_SET_CHANGED last_names={_lastSeen.Count} now_paths={names.Length} breaking wait");
                     return;
                 }
             }

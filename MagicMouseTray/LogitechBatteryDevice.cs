@@ -91,7 +91,10 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         if (resp is null) return -1;
 
         int pct = resp[4]; // % at offset 4 for both 0x1000 GetBatteryLevelStatus and 0x1004 GetStatus
-        return pct is >= 0 and <= 100 ? pct : -1;
+        // Same level contract as the Apple paths (MouseBatteryDevice.IsRealLevel). A real
+        // percentage ends AdaptivePoller.BestReading's scan of the group, so an unfloored 0
+        // from a dead interface would win over a live one's failure sentinel and alert at 0%.
+        return MouseBatteryDevice.IsRealLevel(pct) ? pct : -1;
     }
 
     static byte[] NewReport(byte reportId, int len, byte featureIndex, byte funcByte, byte arg0, byte arg1)

@@ -93,7 +93,7 @@ internal static class Logger
     //   BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&000205ac_PID&0239
     // to ...-8000-<mac>}..., i.e. it corrupts the primary diagnostic identifier
     // on every line carrying an instance ID (DEVICE_DIAG_POINTER path=,
-    // DISCOVER_SKIP_DUPLICATE path=, STOCK_DRIVER_PROBE_FAILED id=). Harmless
+    // DISCOVER_SKIP_SAME_PATH path=, STOCK_DRIVER_PROBE_FAILED id=). Harmless
     // in BugReport's one-way scrub for a public issue; a real regression in the
     // log that docs/TEST-PLAN.md rows are read off.
     //
