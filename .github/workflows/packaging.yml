@@ -1,11 +1,12 @@
 # Packaging metadata checks.
 #
-# Magic Tray names its version in four independent places, and nothing used to
+# Magic Tray names its version in five independent places, and nothing used to
 # notice when they drifted apart. These two jobs are the guard:
 #
 #   Version sync    - the csproj, the winget manifest folder, the installer URL
-#                     and the version strings on magictray.app all have to tell
-#                     the same story. The rule is in
+#                     and the version strings on magictray.app - both the home
+#                     page and the agent install guide, docs/install.txt - all
+#                     have to tell the same story. The rule is in
 #                     scripts/check-version-sync.ps1: published metadata tracks
 #                     the LATEST RELEASE, the csproj may run ahead of it.
 #   Winget manifest - the three manifest YAML files parse, and carry the keys
@@ -33,6 +34,9 @@ on:
       - 'packaging/**'
       - 'MagicMouseTray/MagicMouseTray.csproj'
       - 'docs/index.html'
+      # docs/install.txt names the current release as an illustration, and
+      # check-version-sync.ps1 holds that illustration to the released version.
+      - 'docs/install.txt'
       - 'scripts/check-version-sync.ps1'
       - 'scripts/check-winget-manifest.py'
       - 'scripts/package-release.ps1'

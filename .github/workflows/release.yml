@@ -6,6 +6,12 @@ name: release
 # because links already in the wild point at them. A SHA256SUMS covering every
 # uploaded asset goes up with them, and the notes quote the exe's digest and
 # byte length so nobody needs a second download to check the first.
+#
+# Two verification steps, and they are not redundant. verify-release.ps1 gates
+# the local artefacts before upload; verify-published-release.ps1 runs after
+# `gh release create` and re-checks the release as published, because the run
+# that shipped v1.1.0 verified local files, published the wrong asset set from
+# a stale revision of this file, and reported success.
 on:
   push:
     tags:
@@ -124,3 +130,23 @@ jobs:
           ZIP_PATH: ${{ steps.package.outputs.zip }}
           SUMS_PATH: ${{ steps.package.outputs.sums }}
         run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/diagnose-and-recover.ps1" "publish/mm-bt-stack-snapshot.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes
+
+      # The gate that v1.1.0 did not have. "Verify release artifacts" above
+      # runs at line 78, BEFORE this job uploads anything, and it inspects
+      # publish/ and dist/ on the runner's disk. It therefore cannot see what
+      # gh release create actually attached: on 2026-09-02 an older revision of
+      # this file published a bare exe and two scripts, with no ZIP, no
+      # checksum and auto-generated notes, and the run went green.
+      #
+      # This step re-checks the release as published, through the GitHub API and
+      # the public asset URLs. It is deliberately a hard gate with no
+      # continue-on-error: the release is already public by the time it runs, so
+      # failing the run is the only way anyone finds out, and finding out two
+      # minutes after the tag - while the tag can still be deleted and re-cut -
+      # is the entire point. GITHUB_REPOSITORY rather than the script's default
+      # so a fork verifies its own release.
+      - name: Verify the published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pwsh -File scripts/verify-published-release.ps1 -Tag "$env:GITHUB_REF_NAME" -Repo "$env:GITHUB_REPOSITORY"
