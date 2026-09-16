@@ -42,15 +42,19 @@ Disconnect after a last good reading well above 1% is not death.
 - At **0–1%** while connected: a plug-now window.
 - If it **disconnects**, that window **closes**. Disconnect is not treated as death — you can charge it.
 
-## Enabled on this PC
+## Show in Magic Tray, and the Windows device
 
-Each device row has **Enabled on this PC** (on by default). Uncheck it, confirm, then accept UAC. Magic Tray disables that device’s **Bluetooth / HID** nodes on **this PC** (not USB charge leftovers). The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged.
+Two different things used to live in one checkbox called **Enabled on this PC**. They are now two items on the device row, because one of them is a Windows change that can fail and the other cannot.
 
-Check the box again **only if Windows still has the device**. If you **removed** it in Bluetooth settings, Enable cannot recreate the pairing — put the mouse in pairing mode and use **Bluetooth → Add or change devices…**. Full workflow: [ENABLE-DISABLE.md](ENABLE-DISABLE.md).
+**Show in Magic Tray** (on by default) is the tray's own setting. Uncheck it and the tray hides that row and stops reading its battery. Nothing is elevated, no administrator prompt appears, and Windows is not touched at all — the device keeps working.
 
-Cancelling UAC leaves the previous state. If no matching Bluetooth instance is found, the tray says the device is not present and can open Bluetooth settings.
+**Windows device → Stop this device in Windows** is the one that changes Windows. It asks first, then needs administrator approval, and disables that device's **Bluetooth / HID** nodes on this PC (never USB charge leftovers). The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged. **Start this device in Windows** puts it back; if Windows is already driving the device the tray says there is nothing to change and runs nothing, so no approval is asked for.
 
-Rows are per model, not per paired device. If you have **two of the same model** paired to this PC — two Magic Mouse v1, say — they share one row, and unchecking it disables **both**. The log records the `ContainerID` of every device instance that was touched, so `DEVICE_ENABLE containers=…` in the log tells you exactly which physical devices changed.
+Starting it again works **only if Windows still has the device**. If you **removed** it in Bluetooth settings, starting it cannot recreate the pairing — put the mouse in pairing mode and use **Bluetooth → Add or change devices…**. Full workflow: [ENABLE-DISABLE.md](ENABLE-DISABLE.md).
+
+Cancelling the administrator prompt leaves the previous state. If no matching Bluetooth instance is found, the tray says the device is not present and can open Bluetooth settings.
+
+Rows are per model, not per paired device. If you have **two of the same model** paired to this PC — two Magic Mouse v1, say — they share one row, and stopping it in Windows stops **both**. The log records the `ContainerID` of every device instance that was touched, so `DEVICE_ENABLE containers=…` in the log tells you exactly which physical devices changed.
 
 
 ## Report a bug

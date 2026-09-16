@@ -5,8 +5,9 @@ using System.IO;
 
 namespace MagicMouseTray;
 
-// Enabled on this PC: stop/start the Windows device for this catalog PID
-// so a Mac can take the Bluetooth link. No unpair. No driver installers.
+// Start/Stop this device in Windows: stop/start the Windows device for this
+// catalog PID so a Mac can take the Bluetooth link. No unpair. No driver
+// installers.
 // VID needles come from KnownMice / KnownKeyboards — adding a device to
 // those tables is what makes enable/disable work for it.
 //

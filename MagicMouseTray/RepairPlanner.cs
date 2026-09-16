@@ -374,7 +374,7 @@ internal static class RepairPlanner
             if (snapshot.ConfigEnabled == false)
             {
                 detail += " Once it is paired again, come back to this menu and turn "
-                    + "\"Enabled on this PC\" back on for this mouse.";
+                    + "\"Show in Magic Tray\" back on for this mouse.";
             }
 
             return new RepairFinding(
@@ -414,7 +414,7 @@ internal static class RepairPlanner
                 "Mouse is switched off in this app",
                 "The mouse is connected to this PC, but it is switched off in Magic Tray, so the "
                 + "tray hides it and stops reading its battery level. The fix simply turns "
-                + "\"Enabled on this PC\" back on for this mouse. Nothing is installed, nothing is "
+                + "\"Show in Magic Tray\" back on for this mouse. Nothing is installed, nothing is "
                 + "removed, and the mouse stays paired.",
                 AutoFixable: true);
         }

@@ -2964,7 +2964,7 @@ internal sealed class TrayApp : IDisposable
 
         if (finding.AutoFixable && finding.Action == RepairAction.EnableInApp)
         {
-            return "OK turns \"Enabled on this PC\" back on for this device in Magic Tray. "
+            return "OK turns \"Show in Magic Tray\" back on for this device. "
                 + "Cancel changes nothing.";
         }
 
@@ -2992,7 +2992,7 @@ internal sealed class TrayApp : IDisposable
         return power
             + "\n2. In Windows Settings -> Bluetooth and devices, choose Add device -> Bluetooth."
             + "\n3. Pick the mouse in the list and let Windows finish pairing."
-            + "\n4. Back in the Magic Tray menu, turn \"Enabled on this PC\" back on for this device if it is off.";
+            + "\n4. Back in the Magic Tray menu, turn \"Show in Magic Tray\" back on for this device if it is off.";
     }
 
     void StartRepairApply(string pid, RepairProblem problem)

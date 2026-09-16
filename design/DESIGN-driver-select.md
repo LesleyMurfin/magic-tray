@@ -18,6 +18,8 @@ Exactly one radio checked from `Classify`. Labels above are the only user-visibl
 
 The recommendation is not baked into a radio label. `DriverAdvisor.RecommendedFor(kind, pid)` marks exactly one `DriverOption` as `Recommended`, and `DriverAdvisor.AdviceLine(kind, pid, status)` renders one short line the tray shows next to the choices. That line is defined for every driver state, not only `NotBound`: `IsOnRecommended(kind, pid, status)` tells the tray whether the bound driver already is the recommended one, so a correct setup gets a confirmation rather than a nag. `AdviceLine` returns null only where there is no driver story to tell for the device, and then nothing is shown.
 
+As built, that line exists in two lengths, because a `ToolStripItem` does not wrap and a paragraph handed to `.Text` draws a row the width of the screen: the Driver submenu draws `DriverAdviceView.AdviceShort` (one line, composed from `RecommendedFor` / `CurrentOptionId`, under a hard character cap the tests walk exhaustively), and the dialog behind that row draws `AdviceFull`, which is `DriverAdvisor.AdviceLine`'s paragraph verbatim.
+
 `OptionsFor(kind, pid)` is the single source of the per-choice expectations. Each `DriverOption` carries `Pointer`, `Scroll` and `Battery` as a `CapabilityExpectation` - `Works`, `Dead`, `EitherOrOnly`, `NotApplicable` or `Unknown` - plus a `Why`. `EitherOrOnly` is the Patched Apple case: scroll and battery each work, but never at the same moment. These are predictions for a choice, not observations of the present; the live per-capability reads stay where they are (`docs/ENABLE-DISABLE.md`).
 
 | Click | What happens |
@@ -26,7 +28,7 @@ The recommendation is not baked into a radio label. `DriverAdvisor.RecommendedFo
 | **Patched Apple driver** | User-initiated only (V5). Same honesty: patched Apple `.sys` is not WHQL after patch; Test Mode on; HVCI off; scroll and battery are mutually exclusive. Cancel aborts. Never runs from poll / `Classify` / startup / missing KMDF. |
 | **Stock Windows** | User-initiated unbind (V5): leave `HidBth`, no KMDF bind, no Apple filter on 0323. Not a Test Mode path. Not `FLIP:NoFilter` (that is a PathA mode, not a lasting stock choice). |
 
-KMDF keeps native scroll and battery together and needs no flip. Stock Windows has neither our filter nor a flip. v1/v2 Fix scroll and keyboard Fix battery reads are unchanged.
+KMDF keeps native scroll and battery together and needs no flip. Stock Windows has neither our filter nor a flip. v1/v2 keep their own two radios, **Boot Camp** and **Stock Windows**, which is where the old orange Fix scroll item went - `TrayMenu.ShowFixScroll` is now false for every kind and status - and the keyboard **Fix battery reads** offer is unchanged.
 
 ## Mode A/B battery flip, as built (Patched Apple only)
 
@@ -36,28 +38,38 @@ The V4 sticky Scroll / Battery pair is gone. Mode B is the only resting state, a
 
 One cycle, one UAC prompt:
 
-1. Before elevating, the tray writes a sentinel (`%APPDATA%\MagicMouseTray\mode-flip.sentinel`, the directory `Logger` already uses): schema version, start time, PID, and for every `Enum\BTHENUM` key the cycle will touch, that key's verbatim previous `LowerFilters` value plus a `prev_present` flag, so "value absent" stays distinct from "value empty".
+1. Before elevating, the tray writes a sentinel (`%APPDATA%\MagicMouseTray\mode-flip.sentinel`, the directory `Logger` already uses): schema version (`v=`), start time (`started=`, which doubles as the cycle's nonce), PID, and for every `Enum\BTHENUM` key the cycle will touch a `key=` line followed by a `present=` flag and one `filter=` line per name in that key's previous `LowerFilters` value - so "value absent" stays distinct from "value empty", and the value's order is recorded as written, with nothing sorted or deduplicated.
 2. One elevated PowerShell run owns the whole cycle - flip to Mode A, hold, restore Mode B - so the user approves once, not twice.
-3. That script reports phases through `%TEMP%\mm-modeflip-0323.status`, appends `ready` once Mode A is confirmed by `col02` being present, then blocks waiting for `%TEMP%\mm-modeflip-0323.done`.
+3. That script reports phases through a status sidecar in `%TEMP%` named after the cycle, not just the device - `mm-modeflip-0323-<nonce>.status`, the nonce being the sentinel's own start timestamp - appends `ready` once Mode A is confirmed by `col02` being present, then blocks waiting for the matching `mm-modeflip-0323-<nonce>.done`. Per-cycle names are the point: a transcript an earlier or overlapping cycle left behind can never be read as this one's, and a handshake file under this cycle's own name that will not clear refuses the cycle rather than polling a file it does not own.
 4. The tray, unelevated, sees `ready`, calls the `readPercent` callback it was handed - the ordinary battery read, no second reader - and then writes the done file.
 5. The same still-running elevated script restores Mode B from a PowerShell `finally`, so the restore runs even when the middle of the cycle fails.
-6. The post-state is verified, never assumed: the script re-reads `LowerFilters` and the present HID interface shape after the restart, and the tray independently re-reads `LowerFilters` and confirms the unified v3 HID path with no `&col0x`. Only a confirmed Mode B counts as restored, and the sentinel is deleted only after that confirmation.
+6. The post-state is verified, never assumed, and the two halves verify different things. The elevated script appends `restored` only when its own re-read of `LowerFilters` matches what it recorded **and** the unified v3 HID path with no `&col0x` is back. The tray's verdict - the one the outcome and the sentinel hang on - is `CompareTargets` and nothing else: every recorded key re-read, the recorded value required back verbatim and in its **recorded order** (Windows loads `LowerFilters` in order), case-insensitive per name, and tri-state, so a recorded key that has gone or a hive that cannot be read is no evidence rather than success. Mode B is still measured and logged beside every verdict (`filters_match=`, `mode_b=`), and deliberately cannot outvote the value: the devnode re-enumerates on the Bluetooth stack's own schedule and was measured arriving after the registry was already correct, so gating on it would report a restore that did land as failed. The sentinel is deleted only on that comparison - never on an observed Mode B and never on the script's own `restored` token - plus the one case where the UAC prompt produced no elevated process at all, because then nothing was written.
 
 Outcomes, on `ModeFlipResult(Outcome, Percent, RestoredToModeB, Detail)`:
 
 | `ModeFlipOutcome` | Meaning |
 | --- | --- |
-| `Ok` | Mode A reached, a percent read, Mode B verified. |
+| `Ok` | Mode A reached, a percent read, and the recorded `LowerFilters` value verified back. |
 | `NotPathA` | The device is not bound to the patched Apple driver, so there is nothing to flip. Nothing runs. |
 | `NoInstances` | No live Bluetooth instance for the PID to act on. Nothing runs. |
 | `Cancelled` | The UAC prompt was declined: no registry write, no device restart, the sentinel deleted again, and the mouse never left Mode B. |
-| `FlipFailed` | Mode A was not confirmed within `timeoutMs` (45 s by default - that budget is the `ready` handshake, not the whole cycle). The restore still runs and is still verified. |
+| `FlipFailed` | Mode A was not confirmed within `timeoutMs` (45 s by default - that budget is the `ready` handshake, not the whole cycle), or the cycle refused to start at all: a recorded filter name that is not a plain service name, a handshake file that would not clear, a sentinel that could not be written. A cycle that started still restores and is still verified; one that refused wrote nothing to restore. |
 | `BatteryUnreadable` | Mode A was reached, but the read came back with no percent. The restore still runs and is still verified. |
-| `RestoreFailed` | The one outcome where Mode B could not be verified. `RestoredToModeB` is false and scroll may stay dead until it is restored. |
+| `RestoreFailed` | The one outcome where the recorded `LowerFilters` value could not be confirmed back. `RestoredToModeB` is false and scroll may stay dead until it is restored. |
 
-`RestoredToModeB` is true for every outcome except `RestoreFailed`, because the restore sits in the `finally` and is proved by a re-read rather than assumed from an exit code.
+The restore sits in the `finally` and is proved by a re-read rather than assumed from an exit code, so `RestoredToModeB` is the `CompareTargets` verdict and nothing else. Anything short of the recorded value back is reported as `RestoreFailed`, outranking even a successful reading, which is why `RestoredToModeB` is false for `RestoreFailed` by construction and true for `Ok`, `FlipFailed` and `BatteryUnreadable`. On the refusals that never elevate - `NotPathA`, `NoInstances`, a preflight `FlipFailed` - it carries what the tray could see of the untouched stack instead, because there was nothing to restore.
 
 Crash safety is the sentinel's whole job. `ModeFlip.StaleModeAOnStartup()` is true while that file exists and parses, which means a previous cycle died before its restore was verified - a crash, a kill, a reboot mid-flip. `ModeFlip.RestoreModeB()` is the recovery: its own single UAC prompt, the same verified re-read, and the sentinel removed only on success. That is the one-click restore the tray can offer at the next startup.
+
+What the user sees, as built:
+
+- **One action item** on the device's **Driver:** submenu, `ModeFlipView.MenuItemLabel()` - "Read battery now - stops the mouse for 10-20 seconds..." - and not a pair of sticky Scroll / Battery radios. There is no state the user is left parked in, so there is nothing for a checked radio to mean.
+- **One OK/Cancel consent dialog** before anything is elevated, `ModeFlipView.OfferText(pid)`: the 10-20 second pause in pointer and scrolling (the figure the hardware test measured), the single administrator approval that covers the whole reading, and the promise that the tray always puts the mouse back and checks that it did. Cancel elevates nothing, writes nothing and persists no driver choice - the old sticky pair saved the choice before the flip was even attempted, so a silent failure left the config and the machine disagreeing.
+- **One result dialog per cycle**, `TrayApp.ReportModeFlip` handing the result to `ModeFlipView.ResultText`, one branch per `ModeFlipOutcome`; only a verified restore is allowed to say the mouse is back in scroll mode.
+- **A separate recovery item** on the same submenu, `ModeFlipView.RestoreItemLabel` - "Restore scroll mode" - present whenever this driver is bound, whether or not a flip has run, because every restore-failed sentence tells the user to hunt for exactly that wording.
+- **A startup offer**, `ModeFlipView.StartupRestoreOffer()`, shown once per process while `ModeFlip.StaleModeAOnStartup()` is true: OK runs `RestoreModeB()`, Cancel leaves the offer for the next start.
+
+The internal Mode A / Mode B names never reach the screen: the user-facing vocabulary is "battery mode" for the shape where the percent is readable and scroll is dead, and "scroll mode" for the resting shape.
 
 ### Removed: the `mm-dev-queue` protocol
 
@@ -100,7 +112,7 @@ Radio checked:
 | `StockKmdf` | Stock Windows |
 | `NotBound` | none - the advice line still recommends KMDF |
 
-`NotBound` is not a fourth choice. `PathAPatched` and `StockKmdf` are valid choices, not defects - but the advice line is present in every 0323 state, not only `NotBound`: `DriverAdvisor.AdviceLine` speaks on `PatchedKmdf`, `PathAPatched`, `StockKmdf` and `NotBound` alike, confirming the setup when `IsOnRecommended` is true and naming the trade-off when it is not. `V3Badge`: `PatchedKmdf` -> `KMDF`; `PathAPatched` -> `Patched Apple`; `StockKmdf` -> `Stock`; else `Not bound`.
+`NotBound` is not a fourth choice. `PathAPatched` and `StockKmdf` are valid choices, not defects - but the advice line is present in every 0323 state, not only `NotBound`: `DriverAdvisor.AdviceLine` speaks on `PatchedKmdf`, `PathAPatched`, `StockKmdf` and `NotBound` alike, confirming the setup when `IsOnRecommended` is true and naming the trade-off when it is not. `V3Badge`: `PatchedKmdf` -> `KMDF`; `PathAPatched` -> `Patched Apple`; `StockKmdf` -> `Stock`; `Error` -> `Error`; else `Not bound`.
 
 V2 does not touch `Aggregate` or `IconAttention`. `PathAPatched` is not a worst-state, so Aggregate stays `Ok` for a bound PathA 0323; 0323 attention stays `UnknownAppleMouse` / `Error` only.
 
@@ -161,7 +173,8 @@ Do not revive idle recycle as UX. Do not treat `FLIP:NoFilter` as Stock.
 
 - `StaleModeAOnStartup()` is true only while a parseable sentinel exists, and false once a restore has been verified.
 - `ReadBatteryViaFlip` on a device that is not `PathAPatched` returns `NotPathA` and changes nothing.
-- Every outcome except `RestoreFailed` reports `RestoredToModeB`; `RestoreFailed` never reports `Ok`.
+- `MapOutcome` reports `RestoreFailed` for anything but a `true` `FiltersRestored`, including the tri-state `null`, and that outranks a percent that was read; `Ok`, `FlipFailed` and `BatteryUnreadable` are therefore only reachable with the recorded value verified back.
+- `CompareTargets` is order-sensitive: the same names in a different order is `false`, a recorded key that is gone is `null`, and neither is success.
 - No test reimplements flip timing, and none asserts a queue file or a scheduled task.
 
 **V5**:
