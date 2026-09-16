@@ -35,11 +35,14 @@
 
     4. robots.txt sanity (Test-RobotsFile)
        robots.txt must contain only valid directives, point Sitemap: at the real
-       sitemap, and cover every published Markdown file - at any depth under the
-       site root - that is not deliberately listed in the sitemap. Coverage is
-       judged per User-agent group, because a crawler with a group of its own
-       never reads the wildcard group. Remove this and internal design notes get
-       indexed, or a typo silently turns the whole file into a no-op.
+       sitemap, and keep every published Markdown file - at any depth under the
+       site root - out of the index unless it is deliberately listed in the
+       sitemap. Coverage is decided the way a crawler decides it (RFC 9309):
+       groups naming the same user-agent are merged, each user-agent is judged
+       against its own rules rather than everyone else's, and the most specific
+       matching rule wins, so an Allow can defeat a Disallow. Remove this and
+       internal design notes get indexed, or a typo silently turns the whole
+       file into a no-op.
 
     5. Stale hosts (Test-StaleHost)
        No href/src may reference localhost, 127.0.0.1, or the project's old
@@ -260,6 +263,41 @@ function Convert-RobotsRuleToRegex {
     return $pattern
 }
 
+function Get-RobotsVerdict {
+    <#
+    .SYNOPSIS
+        The effective robots.txt verdict for one path under one merged rule set.
+    .DESCRIPTION
+        RFC 9309 section 2.2.2: the most specific matching rule wins, measured by
+        the octet length of the rule's path pattern, and an Allow beats an equally
+        specific Disallow. A path that no rule matches is crawlable. Collecting
+        only Disallow rules and calling any match "covered" would therefore be
+        wrong twice over: it ignores an Allow that overrides a broader Disallow,
+        and it lets a short Disallow outrank a longer, more specific Allow.
+
+        Returns 'disallow', 'allow', or 'none' when nothing matched.
+    #>
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Rule
+    )
+
+    $verdict = 'none'
+    $specificity = -1
+    foreach ($item in $Rule) {
+        if ($Path -notmatch $item.Pattern) { continue }
+        $length = $item.Value.Length
+        if ($length -gt $specificity) {
+            $specificity = $length
+            $verdict = $item.Type
+        } elseif ($length -eq $specificity -and $item.Type -eq 'allow') {
+            $verdict = 'allow'
+        }
+    }
+    return $verdict
+}
+
 # ----------------------------------------------------------------- checks ---
 
 function Test-InternalLink {
@@ -430,6 +468,12 @@ function Test-RobotsFile {
     .SYNOPSIS
         Check 4: robots.txt is syntactically valid, points at the real sitemap,
         and keeps every non-published Markdown file out of search indexes.
+    .DESCRIPTION
+        Coverage is judged the way a crawler judges it (RFC 9309): groups naming
+        the same product token are merged, each user-agent is evaluated against
+        its own merged rules, and the most specific matching rule wins - so an
+        Allow can defeat a Disallow. A file is only safe when the effective rule
+        is a Disallow for every user-agent named in the file.
     #>
     [OutputType([pscustomobject])]
     param(
@@ -483,9 +527,9 @@ function Test-RobotsFile {
         if ($key -eq 'user-agent') {
             if ($null -eq $current -or $current.Closed) {
                 $current = [pscustomobject]@{
-                    Agents   = [System.Collections.Generic.List[string]]::new()
-                    Disallow = [System.Collections.Generic.List[string]]::new()
-                    Closed   = $false
+                    Agents = [System.Collections.Generic.List[string]]::new()
+                    Rules  = [System.Collections.Generic.List[pscustomobject]]::new()
+                    Closed = $false
                 }
                 $groups.Add($current)
             }
@@ -501,8 +545,17 @@ function Test-RobotsFile {
         }
         $current.Closed = $true
 
+        # An empty Disallow value means "disallow nothing", and an empty Allow is
+        # a no-op: neither constrains a path, so neither joins the rule set.
+        if (($key -eq 'allow' -or $key -eq 'disallow') -and $value -ne '') {
+            $current.Rules.Add([pscustomobject]@{
+                    Type    = $key
+                    Value   = $value
+                    Pattern = Convert-RobotsRuleToRegex -Rule $value
+                })
+        }
+
         if ($key -eq 'disallow' -and $value -ne '') {
-            if (-not $current.Disallow.Contains($value)) { $current.Disallow.Add($value) }
             # A rule naming a concrete file (has an extension, no wildcard) that no
             # longer exists is dead weight, not a leak: warn rather than fail.
             if ($value -notmatch '[*$]' -and [System.IO.Path]::GetExtension($value) -ne '') {
@@ -518,9 +571,26 @@ function Test-RobotsFile {
         New-Finding -Severity 'error' -Path $robotsRelative -Message "robots.txt has no Sitemap: line; it must point at $SitemapUrl"
     }
 
+    # RFC 9309 section 2.2.1: records naming the same product token are merged
+    # into one rule set, so a repeated 'User-agent: GPTBot' group extends the
+    # earlier one rather than standing alone. Collapse the groups accordingly and
+    # judge each user-agent against its own merged rules. Matching is ordinal;
+    # product tokens are case-insensitive, so they are folded to lower case.
+    $byAgent = [ordered]@{}
+    foreach ($group in $groups) {
+        foreach ($agent in $group.Agents) {
+            $token = $agent.ToLowerInvariant()
+            if (-not $byAgent.Contains($token)) {
+                $byAgent[$token] = [System.Collections.Generic.List[pscustomobject]]::new()
+            }
+            $byAgent[$token].AddRange($group.Rules)
+        }
+    }
+
     # Markdown deliberately published (listed in the sitemap) is allowed to be
-    # indexed. Everything else under the site root must be covered by a Disallow
-    # rule in EVERY group, or the crawlers whose group misses it index it.
+    # indexed. For everything else under the site root, the effective rule for
+    # EVERY user-agent must be a Disallow, or the crawlers it does not bind will
+    # index it.
     $published = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     $sitemapPath = Join-Path $SiteRoot 'sitemap.xml'
     if (Test-Path -LiteralPath $sitemapPath -PathType Leaf) {
@@ -537,24 +607,21 @@ function Test-RobotsFile {
         $relative = [System.IO.Path]::GetRelativePath($SiteRoot, $markdown.FullName).Replace('\', '/')
         if ($published.Contains("$SiteOrigin/$relative")) { continue }
 
-        if ($groups.Count -eq 0) {
+        if ($byAgent.Count -eq 0) {
             New-Finding -Severity 'error' -Path $robotsRelative `
                 -Message "$relative is published and not in sitemap.xml, and robots.txt declares no User-agent group at all; nothing keeps it out of an index"
             continue
         }
 
-        $uncovered = [System.Collections.Generic.List[string]]::new()
-        foreach ($group in $groups) {
-            $covered = $false
-            foreach ($rule in $group.Disallow) {
-                if ($relative -match (Convert-RobotsRuleToRegex -Rule $rule)) { $covered = $true; break }
-            }
-            if (-not $covered) { $uncovered.Add(($group.Agents -join ', ')) }
+        $reachable = [System.Collections.Generic.List[string]]::new()
+        foreach ($token in $byAgent.Keys) {
+            $verdict = Get-RobotsVerdict -Path $relative -Rule $byAgent[$token].ToArray()
+            if ($verdict -ne 'disallow') { $reachable.Add(("{0} ({1})" -f $token, $verdict)) }
         }
 
-        if ($uncovered.Count -gt 0) {
+        if ($reachable.Count -gt 0) {
             New-Finding -Severity 'error' -Path $robotsRelative `
-                -Message ("{0} is published and not in sitemap.xml, and matches no Disallow rule for user-agent group(s): {1}; it would be indexed" -f $relative, ($uncovered -join ' | '))
+                -Message ("{0} is published and not in sitemap.xml, and robots.txt does not disallow it for user-agent(s): {1}; it would be indexed" -f $relative, ($reachable -join ', '))
         }
     }
 }
