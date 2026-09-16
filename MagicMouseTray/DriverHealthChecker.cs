@@ -62,47 +62,102 @@ internal static class DriverHealthChecker
     internal static bool IsKeyboardPid(string pid) =>
         Array.Exists(KeyboardPids, p => p == pid.ToLowerInvariant());
 
-    internal static bool IsPatchedKmdfName(string? name) =>
-        !string.IsNullOrEmpty(name)
-        && name.Equals(DriverPackageCatalog.PatchedKmdfServiceName, StringComparison.OrdinalIgnoreCase);
+    // Family membership, not exact equality: the live 2024 stack binds
+    // MagicMouseDriver204Scroll, a suffixed variant of the catalog constant.
+    // The rule itself lives in RepairPlanner - never duplicated here.
+    internal static bool IsPatchedKmdfName(string? name) => RepairPlanner.IsKmdfFamily(name);
 
-    internal static bool IsAppleFilterName(string? name) =>
-        !string.IsNullOrEmpty(name)
-        && name.Equals(DriverPackageCatalog.AppleFilterServiceName, StringComparison.OrdinalIgnoreCase);
+    internal static bool IsAppleFilterName(string? name) => RepairPlanner.IsAppleFamily(name);
 
-    // 0323: MagicMouseDriver wins; else applewirelessmouse; else Service or null.
+    // 0323: KMDF family wins; else Apple filter family; else Service or null.
+    // Returns the VERBATIM registry name (e.g. MagicMouseDriver204Scroll), never a
+    // normalized catalog constant - callers query SCM with whatever this returns.
     internal static string? PreferredBoundName(string pid, string? service, string[]? filters)
     {
         pid = pid.ToLowerInvariant();
         if (IsV3Pid(pid))
         {
             if (IsPatchedKmdfName(service))
-                return DriverPackageCatalog.PatchedKmdfServiceName;
-            var kmdf = FindFilter(filters, DriverPackageCatalog.PatchedKmdfServiceName);
+                return service;
+            var kmdf = FindKmdfFilter(filters);
             if (kmdf is not null)
-                return DriverPackageCatalog.PatchedKmdfServiceName;
-            if (FindFilter(filters, DriverPackageCatalog.AppleFilterServiceName) is not null)
-                return DriverPackageCatalog.AppleFilterServiceName;
+                return kmdf;
+            var v3Awm = FindAppleFilter(filters);
+            if (v3Awm is not null)
+                return v3Awm;
             if (IsAppleFilterName(service))
-                return DriverPackageCatalog.AppleFilterServiceName;
+                return service;
             if (!string.IsNullOrEmpty(service))
                 return service;
             return null;
         }
 
-        var awm = FindFilter(filters, DriverPackageCatalog.AppleFilterServiceName);
+        var awm = FindAppleFilter(filters);
         if (awm is not null)
-            return DriverPackageCatalog.AppleFilterServiceName;
+            return awm;
         if (IsAppleFilterName(service))
-            return DriverPackageCatalog.AppleFilterServiceName;
+            return service;
         return null;
     }
 
-    static string? FindFilter(string[]? filters, string name)
+    // Every family filter named on the live stack for this PID, in the SAME
+    // precedence order PreferredBoundName uses, de-duplicated case-insensitively
+    // with verbatim registry casing. Pure - no SCM, no registry - so the caller
+    // (and tests) decide which candidate is EFFECTIVE via PickEffectiveBound.
+    internal static string[] BoundCandidates(string pid, string? service, string[]? filters)
     {
-        if (filters is null) return null;
-        return Array.Find(filters, f => f.Equals(name, StringComparison.OrdinalIgnoreCase));
+        pid = pid.ToLowerInvariant();
+        var ordered = new List<string>();
+
+        void Add(string? name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return;
+            if (ordered.Exists(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)))
+                return;
+            ordered.Add(name);
+        }
+
+        if (IsV3Pid(pid))
+        {
+            if (IsPatchedKmdfName(service))
+                Add(service);
+            if (filters is not null)
+                foreach (var f in filters)
+                    if (IsPatchedKmdfName(f))
+                        Add(f);
+        }
+
+        if (filters is not null)
+            foreach (var f in filters)
+                if (IsAppleFilterName(f))
+                    Add(f);
+        if (IsAppleFilterName(service))
+            Add(service);
+
+        return ordered.Count == 0 ? [] : ordered.ToArray();
     }
+
+    // Windows PnP loads EVERY filter named in LowerFilters, so the effective one is
+    // whichever is actually RUNNING - live 2024 lists a stale MagicMouseDriver
+    // (Stopped) ahead of the working MagicMouseDriver204Scroll (Running). With none
+    // running the first candidate stands, keeping the stopped-but-bound diagnosis.
+    internal static string? PickEffectiveBound(string[] candidates, Func<string, bool> isRunning)
+    {
+        if (candidates is not { Length: > 0 })
+            return null;
+        foreach (var c in candidates)
+            if (isRunning(c))
+                return c;
+        return candidates[0];
+    }
+
+    // First family member, original casing preserved.
+    static string? FindKmdfFilter(string[]? filters) =>
+        filters is null ? null : Array.Find(filters, RepairPlanner.IsKmdfFamily);
+
+    static string? FindAppleFilter(string[]? filters) =>
+        filters is null ? null : Array.Find(filters, RepairPlanner.IsAppleFamily);
 
     // LowerFilters is REG_MULTI_SZ or REG_SZ depending on who wrote it.
     static string[] ReadFilters(RegistryKey? key)
@@ -124,25 +179,26 @@ internal static class DriverHealthChecker
         return list.Count == 0 ? [] : list.ToArray();
     }
 
+    // The one composition of the bind layers: BTHENUM LowerFilters, HID
+    // LowerFilters, then the HID Service (a bind candidate - KMDF on the child).
+    // MergeBoundLayers and BoundCandidates must see the same list.
+    static string[] MergedFilterLayers(string[]? bthFilters, string[]? hidFilters, string? hidService)
+    {
+        var merged = new List<string>();
+        if (bthFilters is { Length: > 0 }) merged.AddRange(bthFilters);
+        if (hidFilters is { Length: > 0 }) merged.AddRange(hidFilters);
+        if (!string.IsNullOrEmpty(hidService)) merged.Add(hidService);
+        return merged.Count == 0 ? [] : merged.ToArray();
+    }
+
     // BTHENUM + HID layers. HID Service is a bind candidate (KMDF on the child).
     internal static string? MergeBoundLayers(
         string pid,
         string? bthService,
         string[]? bthFilters,
         string? hidService,
-        string[]? hidFilters)
-    {
-        if ((bthFilters is null || bthFilters.Length == 0)
-            && (hidFilters is null || hidFilters.Length == 0)
-            && string.IsNullOrEmpty(hidService))
-            return PreferredBoundName(pid, bthService, bthFilters);
-
-        var merged = new List<string>();
-        if (bthFilters is { Length: > 0 }) merged.AddRange(bthFilters);
-        if (hidFilters is { Length: > 0 }) merged.AddRange(hidFilters);
-        if (!string.IsNullOrEmpty(hidService)) merged.Add(hidService);
-        return PreferredBoundName(pid, bthService, merged.ToArray());
-    }
+        string[]? hidFilters) =>
+        PreferredBoundName(pid, bthService, MergedFilterLayers(bthFilters, hidFilters, hidService));
 
     // Enum\HID keys whose name contains the 4-hex PID. KMDF Service wins for logging.
     internal static void CollectHidLayer(string pid, out string? hidService, out string[] hidFilters)
@@ -247,6 +303,55 @@ internal static class DriverHealthChecker
         return DriverStatus.NotInstalled;
     }
 
+    // Registry bind name is not SCM. Leftover LowerFilters=MagicMouseDriver with
+    // the service STOPPED (win32 31) must not stay PatchedKmdf — that locks the
+    // KMDF radio and hides a dead wheel.
+    internal static DriverStatus AfterFilterServiceState(
+        DriverStatus status, string pid, bool filterServiceRunning)
+    {
+        pid = pid.ToLowerInvariant();
+        if (IsV3Pid(pid) && status == DriverStatus.PatchedKmdf && !filterServiceRunning)
+            return DriverStatus.NotBound;
+        if (!IsV3Pid(pid) && status == DriverStatus.Ok && !filterServiceRunning)
+            return DriverStatus.NotBound;
+        return status;
+    }
+
+    internal static bool KernelServiceRunning(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return false;
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "sc.exe",
+                Arguments = "query " + name,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p is null)
+                return false;
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(2000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                return false;
+            }
+            var text = stdout.GetAwaiter().GetResult();
+            _ = stderr.GetAwaiter().GetResult();
+            return text.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // Worst-state wins. Ok only when every paired Apple mouse is healthy
     // (v1/v2 Ok or 0323 PatchedKmdf). Bound v1 + unbound 2024 is NOT Ok (#4).
     internal static DriverStatus Aggregate(IReadOnlyList<DeviceDriverHealth> devices)
@@ -287,6 +392,19 @@ internal static class DriverHealthChecker
 
             bool applePkg = AppleFilterPackagePresent();
             bool kmdfPkg = KmdfPackagePresent();
+            // sc.exe per name, once per call: this runs on every menu open and poll.
+            var scmCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+            bool Running(string name)
+            {
+                if (!scmCache.TryGetValue(name, out var run))
+                {
+                    run = KernelServiceRunning(name);
+                    scmCache[name] = run;
+                }
+                return run;
+            }
+
             var list = new List<DeviceDriverHealth>();
             var hidCache = new Dictionary<string, (string? service, string[] filters)>(StringComparer.OrdinalIgnoreCase);
 
@@ -312,12 +430,26 @@ internal static class DriverHealthChecker
                     using var instance = deviceKey.OpenSubKey(instanceName, writable: false);
                     var service = instance?.GetValue("Service") as string;
                     var filters = ConcatFilters(ReadFilters(deviceKey), ReadFilters(instance));
+                    var merged = MergedFilterLayers(filters, hidLayer.filters, hidLayer.service);
                     var hidBound = PreferredBoundName(pid, hidLayer.service, hidLayer.filters)
                         ?? hidLayer.service;
-                    var bound = MergeBoundLayers(pid, service, filters, hidLayer.service, hidLayer.filters);
+                    // LowerFilters can name several family filters (live 2024: stale
+                    // MagicMouseDriver first, working MagicMouseDriver204Scroll second).
+                    // The RUNNING one is effective; collection order must not decide.
+                    var candidates = BoundCandidates(pid, service, merged);
+                    var bound = PickEffectiveBound(candidates, Running)
+                        ?? PreferredBoundName(pid, service, merged);
                     var status = Classify(pid, bound, applePkg, kmdfPkg, lasting0323Choice);
+                    // SCM state of the ACTUAL bound service, not the catalog constant.
+                    var scmName = string.IsNullOrEmpty(bound)
+                        ? (IsV3Pid(pid)
+                            ? DriverPackageCatalog.PatchedKmdfServiceName
+                            : DriverPackageCatalog.AppleFilterServiceName)
+                        : bound;
+                    var scm = Running(scmName);
+                    status = AfterFilterServiceState(status, pid, scm);
                     var deviceId = $@"{BtHidEnumBase}\{subkeyName}\{instanceName}";
-                    Logger.Log($"DRIVER_CHECK pid=0x{pid.ToUpperInvariant()} bth={service ?? "none"} hid={hidBound ?? "none"} bound={bound ?? "none"} status={status}");
+                    Logger.Log($"DRIVER_CHECK pid=0x{pid.ToUpperInvariant()} bth={service ?? "none"} hid={hidBound ?? "none"} bound={bound ?? "none"} status={status} scm={(scm ? "running" : "stopped")} cands={(candidates.Length == 0 ? "none" : string.Join(",", candidates))}");
                     list.Add(new DeviceDriverHealth(deviceId, pid, status, bound));
                 }
             }

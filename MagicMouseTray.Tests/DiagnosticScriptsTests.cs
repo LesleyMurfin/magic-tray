@@ -82,6 +82,7 @@ public class DiagnosticScriptsTests
             {
                 "capture-state.ps1",
                 "diagnose-driver.ps1",
+                "diagnose-and-recover.ps1",
                 "mm-bt-stack-snapshot.ps1",
                 "mm-devmgr-dump.ps1",
             },
@@ -120,11 +121,13 @@ public class DiagnosticScriptsTests
     {
         Assert.Equal("Run capture-state.ps1", DiagnosticScripts.CaptureStateLabel);
         Assert.Equal("Run diagnose-driver.ps1", DiagnosticScripts.DiagnoseDriverLabel);
+        Assert.Equal("Run diagnose-and-recover.ps1", DiagnosticScripts.DiagnoseAndRecoverLabel);
         Assert.Equal("Run mm-bt-stack-snapshot.ps1", DiagnosticScripts.BtStackSnapshotLabel);
         Assert.Equal("Run mm-devmgr-dump.ps1", DiagnosticScripts.DevMgrDumpLabel);
 
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseDriverLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseAndRecoverLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.BtStackSnapshotLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DevMgrDumpLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Show driver state", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);

@@ -37,6 +37,9 @@ if ($Compare) {
         if ($null -eq $Obj) {
             throw "Invalid snapshot: $Path is empty."
         }
+        # boundFilter is deliberately NOT required: captures taken before the
+        # filter name became device-derived do not carry it, and those files must
+        # still compare.
         $required = @(
             'label', 'timestamp',
             'col01Present', 'col02Present', 'filterInStack',
@@ -97,6 +100,9 @@ if ($Compare) {
 
     Compare-Field "col01Present"           $a.col01Present          $b.col01Present          -GoodIfTrue
     Compare-Field "col02Present"           $a.col02Present          $b.col02Present          -GoodIfTrue
+    $boundA = if ($a.PSObject.Properties['boundFilter']) { $a.boundFilter } else { '(not recorded)' }
+    $boundB = if ($b.PSObject.Properties['boundFilter']) { $b.boundFilter } else { '(not recorded)' }
+    Compare-Field "boundFilter"            $boundA                  $boundB                  -GoodIfEqual
     Compare-Field "filterInStack"          $a.filterInStack         $b.filterInStack
     Compare-Field "lowerFiltersEnumKey"    ($a.lowerFiltersEnumKey  -join ',') ($b.lowerFiltersEnumKey  -join ',') -GoodIfEqual
     Compare-Field "lowerFiltersDriverKey"  ($a.lowerFiltersDriverKey -join ',') ($b.lowerFiltersDriverKey -join ',') -GoodIfEqual
@@ -121,6 +127,33 @@ if (-not $Label) {
 }
 
 $mmPid = "0323"
+
+# Filter families, same prefixes as RepairPlanner.IsKmdfFamily / IsAppleFamily.
+$kmdfPrefix  = 'MagicMouseDriver'
+$applePrefix = 'applewirelessmouse'
+
+function Resolve-BoundFilterName {
+    param([string[]]$Names)
+    foreach ($n in @($Names)) {
+        if ($n -and $n.StartsWith($kmdfPrefix, [StringComparison]::OrdinalIgnoreCase)) { return $n }
+    }
+    foreach ($n in @($Names)) {
+        if ($n -and $n.StartsWith($applePrefix, [StringComparison]::OrdinalIgnoreCase)) { return $n }
+    }
+    return ''
+}
+
+function Test-StackHasFilter {
+    param([string]$StackText, [string]$BoundFilter)
+    if (-not $StackText) { return $false }
+    if ($BoundFilter -and $StackText.IndexOf($BoundFilter, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    # A filter of the same family under any name is still attached.
+    foreach ($p in @($kmdfPrefix, $applePrefix)) {
+        if ($StackText.IndexOf($p, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    }
+    return $false
+}
+
 $state = [ordered]@{
     label              = $Label
     timestamp          = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
@@ -130,6 +163,7 @@ $state = [ordered]@{
     hidDeviceCount     = 0
     hidDevices         = @()
     bthenumInstanceId  = ""
+    boundFilter        = ""
     lowerFiltersEnumKey    = @()
     lowerFiltersDriverKey  = @()
     serviceState       = ""
@@ -147,19 +181,13 @@ $btDev = Get-PnpDevice -ErrorAction SilentlyContinue |
 if ($btDev) {
     $state.bthenumInstanceId = $btDev.InstanceId
 
-    # -ErrorAction Stop on purpose: these reads are allowed to fail (the
-    # property is absent on some stacks, the Enum key is ACL'd), and the catch
-    # handlers below are the diagnostic. SilentlyContinue would swallow the
-    # error and leave those handlers dead code.
-    # Driver stack
-    try {
-        $stackProp = Get-PnpDeviceProperty -InstanceId $btDev.InstanceId `
-            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction Stop
-        if ($stackProp -and $stackProp.Data) {
-            $stackStr = $stackProp.Data -join ' '
-            $state.filterInStack = $stackStr -imatch 'applewirelessmouse'
-        }
-    } catch { Write-Verbose "DEVPKEY_Device_Stack unavailable: $($_.Exception.Message)" }
+    # LowerFilters FIRST: the filter name comes from the device, never from a
+    # constant. This script used to hardcode 'applewirelessmouse' for both the
+    # DEVPKEY_Device_Stack match and the sc.exe query, so on a PID 0323 KMDF
+    # machine - the only machine this pre/post-reboot compare exists for -
+    # filterInStack always read $false and serviceState was always empty. That
+    # silently hid the fault this compare exists to catch: filter registered and
+    # its service RUNNING, but not attached to the live stack.
 
     # LowerFilters - Enum key
     $btRegPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $btDev.InstanceId
@@ -176,7 +204,21 @@ if ($btDev) {
             $lf2 = (Get-ItemProperty -Path $driverInstPath -Name LowerFilters -ErrorAction Stop).LowerFilters
             if ($lf2) { $state.lowerFiltersDriverKey = @($lf2) }
         }
-    } catch { Write-Verbose "Driver-key LowerFilters unreadable: $($_.Exception.Message)" }
+    } catch { Write-Verbose "Driver-instance-key LowerFilters unreadable: $($_.Exception.Message)" }
+
+    # Bound filter: KMDF family wins, then the Apple filter family.
+    $state.boundFilter = Resolve-BoundFilterName (@($state.lowerFiltersEnumKey) + @($state.lowerFiltersDriverKey))
+
+    # Driver stack - the attachment signal. LowerFilters and sc query only prove
+    # registration; DEVPKEY_Device_Stack is what says the filter is on the stack.
+    try {
+        $stackProp = Get-PnpDeviceProperty -InstanceId $btDev.InstanceId `
+            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction SilentlyContinue
+        if ($stackProp -and $stackProp.Data) {
+            $stackStr = $stackProp.Data -join ' '
+            $state.filterInStack = Test-StackHasFilter $stackStr $state.boundFilter
+        }
+    } catch { Write-Verbose "DEVPKEY_Device_Stack unreadable: $($_.Exception.Message)" }
 }
 
 # HID devices with this PID
@@ -191,11 +233,16 @@ $state.hidDevices     = $hidList | ForEach-Object { @{ instanceId = $_.InstanceI
 $state.col01Present   = @($hidList | Where-Object { $_.InstanceId -match 'COL01' }).Count -gt 0
 $state.col02Present   = @($hidList | Where-Object { $_.InstanceId -match 'COL02' }).Count -gt 0
 
-# Service state
-try {
-    $scOut = & sc.exe query applewirelessmouse 2>&1
-    $state.serviceState = ($scOut | Where-Object { $_ -match 'STATE' } | Select-Object -First 1).Trim()
-} catch { Write-Verbose "sc.exe query applewirelessmouse failed: $($_.Exception.Message)" }
+# Service state of the filter this device actually binds (not a hardcoded name).
+if ($state.boundFilter) {
+    try {
+        $scOut = & sc.exe query $state.boundFilter 2>&1
+        $stateLine = $scOut | Where-Object { $_ -match 'STATE' } | Select-Object -First 1
+        if ($stateLine) { $state.serviceState = ([string]$stateLine).Trim() }
+    } catch { Write-Verbose "sc.exe query $($state.boundFilter) failed: $($_.Exception.Message)" }
+} else {
+    $state.serviceState = "(no filter in LowerFilters)"
+}
 
 # startup-repair.log
 $logFile = "C:\ProgramData\MagicMouseTray\startup-repair.log"
@@ -217,6 +264,7 @@ Write-Host "  Timestamp:      $($state.timestamp)"
 Write-Host "  COL01 (scroll): $($state.col01Present)" -ForegroundColor $(if ($state.col01Present) {"Green"} else {"Red"})
 Write-Host "  COL02 (battery):$($state.col02Present)" -ForegroundColor $(if ($state.col02Present) {"Green"} else {"Red"})
 Write-Host "  Filter in stack:$($state.filterInStack)"
+Write-Host "  Bound filter:   $(if ($state.boundFilter) { $state.boundFilter } else { '(none)' })"
 Write-Host "  LowerFilters(Enum):   $($state.lowerFiltersEnumKey -join ', ')"
 Write-Host "  LowerFilters(Driver): $($state.lowerFiltersDriverKey -join ', ')"
 Write-Host "  Service state:  $($state.serviceState)"

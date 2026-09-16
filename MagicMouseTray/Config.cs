@@ -91,6 +91,12 @@ internal sealed class Config
     internal bool IsDeviceEnabled(string pid) =>
         !_deviceEnabled.TryGetValue(pid, out var enabled) || enabled;
 
+    // "Is there an explicit enabled_<pid> line for this PID?" - not what it says.
+    // Absent means the device was never toggled here, which the repair planner
+    // reads as "this PC does not own it" and stays quiet about. Same dictionary,
+    // same case-insensitive keying as IsDeviceEnabled / SetDeviceEnabled.
+    internal bool HasDeviceEnabledEntry(string pid) => _deviceEnabled.ContainsKey(pid);
+
     internal void SetDeviceEnabled(string pid, bool value)
     {
         _deviceEnabled[pid] = value;

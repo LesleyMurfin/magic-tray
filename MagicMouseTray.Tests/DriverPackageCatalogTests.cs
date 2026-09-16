@@ -426,4 +426,104 @@ public class DriverPackageCatalogTests
             () => DriverInstaller.ExecuteV1V2StockRestore(withKmdf));
         Assert.Contains("Uninstall-KMDF.cmd", kmdfEx.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void KeyboardSdpPatch_PromptStatesEveryCostBeforeTheUserAgrees()
+    {
+        var text = DriverInstaller.KeyboardSdpPatchPrompt("e806884b0741");
+
+        Assert.Contains("scripts/kbd-patch-cachedservices.ps1 -Mac e806884b0741", text,
+            StringComparison.Ordinal);
+        Assert.Contains("Bluetooth SDP cache entry", text, StringComparison.Ordinal);
+        Assert.Contains("battery", text, StringComparison.Ordinal);
+        Assert.Contains("one administrator approval", text, StringComparison.Ordinal);
+        Assert.Contains("changes nothing else", text, StringComparison.Ordinal);
+        Assert.Contains("Re-pairing the keyboard can undo it", text, StringComparison.Ordinal);
+        Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PathAOnKmdf_WarnsThatWhqlAppleInfCanOutrankTheTestSignedKmdfPackage()
+    {
+        var text = DriverInstaller.KmdfDisplacementWarning();
+
+        // the ranking mechanism, not just "this is risky"
+        Assert.Contains("Windows ranks a WHQL-signed package above the test-signed KMDF package",
+            text, StringComparison.Ordinal);
+        Assert.Contains("0323", text, StringComparison.Ordinal);
+        // a real possibility, never a promise
+        Assert.Contains("can move it off", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("will move", text, StringComparison.Ordinal);
+        // the concrete loss and the way back
+        Assert.Contains("tunable scroll", text, StringComparison.Ordinal);
+        Assert.Contains("battery", text, StringComparison.Ordinal);
+        Assert.Contains("pick KMDF again in the tray", text, StringComparison.Ordinal);
+
+        // shown to a user who has KMDF to lose, and to a caller that did not
+        // say; never to a user already off KMDF
+        Assert.True(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.PatchedKmdf));
+        Assert.True(DriverInstaller.WarnsKmdfDisplacement(null));
+        Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.PathAPatched));
+        Assert.False(DriverInstaller.WarnsKmdfDisplacement(DriverStatus.StockKmdf));
+    }
+
+    [Fact]
+    public void DeclinedUacPrompt_IsTheNativeErrorCode_NotEveryElevationFailure()
+    {
+        // 1223 ERROR_CANCELLED is what ShellExecute reports when the user
+        // clicks No, and the only signal that may downgrade an offer from
+        // Failed to Cancelled. The message is localised, so the code decides.
+        Assert.True(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(1223)));
+        Assert.True(DriverInstaller.IsUacDeclined(
+            new System.ComponentModel.Win32Exception(1223, "Der Vorgang wurde durch den Benutzer abgebrochen.")));
+
+        // Elevation that was granted and then went wrong is still a failure:
+        // 2 ERROR_FILE_NOT_FOUND, 740 ERROR_ELEVATION_REQUIRED, and
+        // RunElevated's own timeout / non-zero-exit / no-process throws.
+        Assert.False(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(2)));
+        Assert.False(DriverInstaller.IsUacDeclined(new System.ComponentModel.Win32Exception(740)));
+        Assert.False(DriverInstaller.IsUacDeclined(
+            new InvalidOperationException("Install-KMDF.cmd exited 1.")));
+        Assert.False(DriverInstaller.IsUacDeclined(
+            new InvalidOperationException("Could not start elevated process (UAC cancelled?).")));
+    }
+
+    [Fact]
+    public void V3StockRestore_SecondDeclineNamesTheHalfThatAlreadyRan()
+    {
+        var text = DriverInstaller.V3StockPartialRestoreMessage();
+
+        // Both halves by name: one ran, one did not.
+        Assert.Contains(DriverPackageCatalog.KmdfUninstallCmdRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains(DriverPackageCatalog.PathAUninstallScriptRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains("was declined", text, StringComparison.Ordinal);
+        // the state the machine is actually in, and the way out
+        Assert.Contains("not on stock HidBth yet", text, StringComparison.Ordinal);
+        Assert.Contains("Run Stock again", text, StringComparison.Ordinal);
+    }
+
+    // Step 2 failing for a non-UAC reason leaves the same half-changed machine
+    // as the declined prompt, so the message must still name the half that ran
+    // and must carry the thrown reason: a 15-minute timeout and "exited 1" are
+    // different problems and the reason is the only thing separating them.
+    [Fact]
+    public void V3StockRestore_PostStepOneFailureCarriesTheReasonWithThePartialState()
+    {
+        // RunElevated's own non-zero-exit text: it throws
+        // $"{Path.GetFileName(fileName)} exited {p.ExitCode}.", and step 2 of
+        // the Stock restore runs through powershell.exe.
+        const string reason = "powershell.exe exited 1.";
+        var text = DriverInstaller.V3StockPartialRestoreMessage(reason);
+
+        Assert.Contains(DriverPackageCatalog.KmdfUninstallCmdRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains(DriverPackageCatalog.PathAUninstallScriptRelativePath, text,
+            StringComparison.Ordinal);
+        Assert.Contains("not on stock HidBth yet", text, StringComparison.Ordinal);
+        Assert.Contains(reason, text, StringComparison.Ordinal);
+        // It did not claim a decline it never observed.
+        Assert.DoesNotContain("was declined", text, StringComparison.Ordinal);
+    }
 }

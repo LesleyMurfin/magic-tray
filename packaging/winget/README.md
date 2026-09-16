@@ -60,10 +60,13 @@ together; a mixed set fails validation.
 `InstallerType: zip`, `NestedInstallerType: portable`.
 
 Magic Tray is not an installer. It is `MagicMouseTray.exe` with a `scripts/`
-folder beside it, and the keyboard battery unlock plus every entry in the
-Diagnostics menu look for `<folder of the exe>/scripts/<name>`. Ship the loose
-exe and you ship a tray whose "Fix battery reads" and whose Diagnostics menu are
-both dead. Installing the archive keeps the pair together.
+folder beside it, and both script resolvers probe that pair of locations: the
+keyboard battery unlock looks in `<folder of the exe>/scripts/<name>` first and
+beside the exe second, and the Diagnostics menu looks beside the exe first and
+in `<folder of the exe>/scripts/<name>` second. The archive layout satisfies
+both orders. Ship the loose exe and you ship a tray whose "Fix battery reads"
+and whose Diagnostics menu are both dead. Installing the archive keeps the pair
+together.
 
 `ArchiveBinariesDependOnPath: true` matters for the same reason. By default
 WinGet drops a symlink into its `Links` folder and puts that on `PATH`; with

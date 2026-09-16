@@ -8,6 +8,20 @@ using Microsoft.Win32;
 
 namespace MagicMouseTray;
 
+// What an Offer* entry point actually did. A caller may persist a driver
+// choice only on Confirmed: the user agreed and the step was launched without
+// an immediate error. Cancelled means the user declined and nothing ran.
+// Failed means the offer was refused or errored. Unavailable means the package
+// or device fact the offer needs is not on this branch / this machine, which
+// is a repo or hardware state and not a user error.
+internal enum InstallOutcome
+{
+    Confirmed,
+    Cancelled,
+    Failed,
+    Unavailable,
+}
+
 // User-initiated driver offers. Never silent. KMDF never falls back to
 // PATH-A (Install-MagicMousePatch.ps1). PathA is a dedicated user-initiated
 // offer and never falls back to KMDF. Stock unbinds to HidBth; never FLIP:NoFilter.
@@ -30,11 +44,20 @@ internal static class DriverInstaller
     // v1/v2: open the documented tealtadpole page. Do not pnputil / rebind.
     internal static string V1V2BootCampPageUrl => DriverPackageCatalog.TealtadpolePageUrl;
 
-    internal static void OfferV1V2ScrollFix()
+    internal static InstallOutcome OfferV1V2ScrollFix()
     {
         var url = V1V2BootCampPageUrl;
-        Logger.Log($"DRIVER_OFFER v1v2 url={url}");
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        try
+        {
+            Logger.Log($"DRIVER_OFFER v1v2 url={url}");
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked($"Could not open {url}. {ex.Message}");
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
 
     // v1 trackpad (030E only): confirm-first Boot Camp applewtp. Open the
@@ -87,16 +110,25 @@ internal static class DriverInstaller
             TrackpadV1BootCampPageUrl);
     }
 
-    internal static void OfferTrackpadV1BootCamp(string pid)
+    internal static InstallOutcome OfferTrackpadV1BootCamp(string pid)
     {
-        var plan = PlanTrackpadV1BootCamp(pid);
-        foreach (var forbidden in TrackpadV1BootCampForbiddenNames)
+        TrackpadV1BootCampPlan plan;
+        try
         {
-            if (plan.Url.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
+            plan = PlanTrackpadV1BootCamp(pid);
+            foreach (var forbidden in TrackpadV1BootCampForbiddenNames)
             {
-                throw new InvalidOperationException(
-                    $"Trackpad Boot Camp refuses {forbidden}.");
+                if (plan.Url.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Trackpad Boot Camp refuses {forbidden}.");
+                }
             }
+        }
+        catch (InvalidOperationException ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
         }
 
         var result = System.Windows.Forms.MessageBox.Show(
@@ -107,11 +139,20 @@ internal static class DriverInstaller
         if (result != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_OFFER trackpadv1 aborted cancelled");
-            return;
+            return InstallOutcome.Cancelled;
         }
 
-        Logger.Log($"DRIVER_OFFER trackpadv1 url={plan.Url}");
-        Process.Start(new ProcessStartInfo(plan.Url) { UseShellExecute = true });
+        try
+        {
+            Logger.Log($"DRIVER_OFFER trackpadv1 url={plan.Url}");
+            Process.Start(new ProcessStartInfo(plan.Url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked($"Could not open {plan.Url}. {ex.Message}");
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
 
     // v1/v2: user-initiated Stock restore. Unbind applewirelessmouse on this
@@ -162,9 +203,19 @@ internal static class DriverInstaller
             ExternalScripts: []);
     }
 
-    internal static void OfferV1V2StockRestore(string pid)
+    internal static InstallOutcome OfferV1V2StockRestore(string pid)
     {
-        var plan = PlanV1V2StockRestore(pid);
+        V1V2StockRestorePlan plan;
+        try
+        {
+            plan = PlanV1V2StockRestore(pid);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+
         var result = System.Windows.Forms.MessageBox.Show(
             plan.Prompt,
             "Magic Tray",
@@ -173,10 +224,24 @@ internal static class DriverInstaller
         if (result != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_V1V2_STOCK_ABORTED cancelled");
-            return;
+            return InstallOutcome.Cancelled;
         }
 
-        ExecuteV1V2StockRestore(plan);
+        try
+        {
+            ExecuteV1V2StockRestore(plan);
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_V1V2_STOCK_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
 
     internal static void ExecuteV1V2StockRestore(V1V2StockRestorePlan plan)
@@ -291,7 +356,7 @@ foreach ($id in $restart) {
     // 0323: snapshot default main of magic-mouse-v3-windows-fix and run
     // v2-kmdf-driver/Install-KMDF.cmd elevated. If the cmd is missing, stop
     // with an error — never fall back to PATH-A.
-    internal static async Task OfferV3KmdfInstallAsync(CancellationToken ct = default)
+    internal static async Task<InstallOutcome> OfferV3KmdfInstallAsync(CancellationToken ct = default)
     {
         var prompt = System.Windows.Forms.MessageBox.Show(
             "The Magic Mouse 2024 (0323) KMDF driver is self-signed. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it.\n\nOK continues with Install-KMDF.cmd. Cancel aborts.",
@@ -301,82 +366,168 @@ foreach ($id in $restart) {
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_KMDF_ABORTED cancelled");
-            return;
+            return InstallOutcome.Cancelled;
         }
 
-        var extractDir = await DownloadV3DefaultBranchAsync(ct);
+        string extractDir;
+        try
+        {
+            extractDir = await DownloadV3DefaultBranchAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked($"Could not pull {DriverPackageCatalog.V3RepoUrl}. {ex.Message}");
+            return InstallOutcome.Failed;
+        }
+
         var script = FindKmdfOneClick(extractDir, DriverPackageCatalog.KmdfInstallCmdRelativePath);
         if (script is null)
         {
-            throw new InvalidOperationException(
+            // The cmd not being on the branch is a repo state, not a user
+            // error, and never a reason to fall back to PATH-A.
+            ShowBlocked(
                 $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
                 $"'{DriverPackageCatalog.V3RepoRef}' but " +
                 $"{DriverPackageCatalog.KmdfInstallCmdRelativePath} is not on this branch. " +
                 "Will not run PATH-A Install-MagicMousePatch.ps1. " +
                 "Will not patch applewirelessmouse.sys.");
+            return InstallOutcome.Unavailable;
         }
 
         if (IsPathAInstaller(script) || !IsKmdfOneClick(script))
         {
-            throw new InvalidOperationException(
-                "Refusing a script that is not v2-kmdf-driver/Install-KMDF.cmd.");
+            ShowBlocked("Refusing a script that is not v2-kmdf-driver/Install-KMDF.cmd.");
+            return InstallOutcome.Failed;
         }
 
         Logger.Log($"DRIVER_KMDF_ONECLICK script={script}");
-        RunElevated(
-            "cmd.exe",
-            $"/c \"{script}\"",
-            workingDirectory: Path.GetDirectoryName(script),
-            windowStyle: ProcessWindowStyle.Normal,
-            timeout: TimeSpan.FromMinutes(15));
+        try
+        {
+            RunElevated(
+                "cmd.exe",
+                $"/c \"{script}\"",
+                workingDirectory: Path.GetDirectoryName(script),
+                windowStyle: ProcessWindowStyle.Normal,
+                timeout: TimeSpan.FromMinutes(15));
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_KMDF_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
 
     // 0323: user-initiated Patched Apple offer. Same Test Mode / HVCI facts as
     // KMDF. Scroll and battery are mutually exclusive. Never KMDF fallback.
-    internal static async Task OfferV3PathAInstallAsync(CancellationToken ct = default)
+    // currentStatus is what the caller already read for this mouse. Null means
+    // the caller did not say, and an unknown state is warned rather than waved
+    // through: losing KMDF silently is the expensive outcome, a warning the
+    // user did not need is cheap. The warning never blocks - it warns, then obeys.
+    internal static async Task<InstallOutcome> OfferV3PathAInstallAsync(
+        DriverStatus? currentStatus = null,
+        CancellationToken ct = default)
     {
+        var body =
+            "The Magic Mouse 2024 (0323) patched Apple driver is not WHQL after patch. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it. Scroll and battery are mutually exclusive.";
+        if (WarnsKmdfDisplacement(currentStatus))
+            body += "\n\n" + KmdfDisplacementWarning();
+
         var prompt = System.Windows.Forms.MessageBox.Show(
-            "The Magic Mouse 2024 (0323) patched Apple driver is not WHQL after patch. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it. Scroll and battery are mutually exclusive.\n\nOK continues. Cancel aborts.",
+            body + "\n\nOK continues. Cancel aborts.",
             "Magic Tray",
             System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_PATHA_ABORTED cancelled");
-            return;
+            return InstallOutcome.Cancelled;
         }
 
-        var extractDir = await DownloadV3DefaultBranchAsync(ct);
+        string extractDir;
+        try
+        {
+            extractDir = await DownloadV3DefaultBranchAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked($"Could not pull {DriverPackageCatalog.V3RepoUrl}. {ex.Message}");
+            return InstallOutcome.Failed;
+        }
+
         var script = FindPathAInstaller(extractDir, DriverPackageCatalog.PathAInstallScriptRelativePath);
         if (script is null)
         {
-            throw new InvalidOperationException(
+            ShowBlocked(
                 $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
                 $"'{DriverPackageCatalog.V3RepoRef}' but " +
                 $"{DriverPackageCatalog.PathAInstallScriptRelativePath} is not on this branch. " +
                 "Will not run v2-kmdf-driver/Install-KMDF.cmd. " +
                 "Will not fall back to KMDF.");
+            return InstallOutcome.Unavailable;
         }
 
         if (!IsPathAInstaller(script) || IsKmdfOneClick(script) || IsPathAUninstallScript(script))
         {
-            throw new InvalidOperationException(
+            ShowBlocked(
                 "Refusing a script that is not v1-binary-patch/installer/Install-MagicMousePatch.ps1.");
+            return InstallOutcome.Failed;
         }
 
         Logger.Log($"DRIVER_PATHA_ONECLICK script={script}");
-        RunElevated(
-            "powershell.exe",
-            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
-            workingDirectory: Path.GetDirectoryName(script),
-            windowStyle: ProcessWindowStyle.Normal,
-            timeout: TimeSpan.FromMinutes(15));
+        try
+        {
+            RunElevated(
+                "powershell.exe",
+                $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
+                workingDirectory: Path.GetDirectoryName(script),
+                windowStyle: ProcessWindowStyle.Normal,
+                timeout: TimeSpan.FromMinutes(15));
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_PATHA_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
+
+    // Only a mouse that is on KMDF right now has KMDF to lose. A user already
+    // on stock or on the patched Apple driver must not be told they are about
+    // to lose something they do not have.
+    internal static bool WarnsKmdfDisplacement(DriverStatus? currentStatus) =>
+        currentStatus is null or DriverStatus.PatchedKmdf;
+
+    // Why this route can cost a working KMDF mouse its driver: Windows ranks
+    // driver packages by signature trust, Apple's INF is WHQL/catalog-signed
+    // and now claims 0323 too, and the KMDF package is test-signed. Stated as
+    // a real possibility with its mechanism, not as a certainty, and with the
+    // way back.
+    internal static string KmdfDisplacementWarning() =>
+        "If this mouse is on the KMDF driver right now, this install can move it off. " +
+        "Apple's own INF now also claims the Magic Mouse 2024 (0323), and Apple's package is WHQL-signed. " +
+        "Windows ranks a WHQL-signed package above the test-signed KMDF package, " +
+        "so installing this route can win that ranking and displace KMDF. " +
+        "This does not happen every time, but it can. " +
+        "If it does, you lose what KMDF gives you: the tunable scroll speed, and the direct battery read. " +
+        "On the patched Apple driver scroll and battery are mutually exclusive, " +
+        "and reading the battery needs a brief mode flip each time. " +
+        "To get back, pick KMDF again in the tray and reinstall it.";
 
     // 0323: user-initiated Stock restore. Unbind to HidBth. Not Test Mode.
     // Run Uninstall-KMDF.cmd and Uninstall-MagicMousePatch.ps1 when present.
     // Never FLIP:NoFilter.
-    internal static async Task OfferV3StockRestoreAsync(CancellationToken ct = default)
+    internal static async Task<InstallOutcome> OfferV3StockRestoreAsync(CancellationToken ct = default)
     {
         var prompt = System.Windows.Forms.MessageBox.Show(
             "This restores the Magic Mouse 2024 (0323) to stock Windows HID (HidBth). No KMDF bind and no patched Apple filter. Test Mode is not required.\n\nOK continues. Cancel aborts.",
@@ -386,62 +537,186 @@ foreach ($id in $restart) {
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_STOCK_ABORTED cancelled");
-            return;
+            return InstallOutcome.Cancelled;
         }
 
-        var extractDir = await DownloadV3DefaultBranchAsync(ct);
+        string extractDir;
+        try
+        {
+            extractDir = await DownloadV3DefaultBranchAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked($"Could not pull {DriverPackageCatalog.V3RepoUrl}. {ex.Message}");
+            return InstallOutcome.Failed;
+        }
+
         var kmdfUninstall = FindKmdfUninstaller(extractDir);
         var pathAUninstall = FindPathAUninstaller(extractDir);
         if (kmdfUninstall is null && pathAUninstall is null)
         {
-            throw new InvalidOperationException(
+            ShowBlocked(
                 $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} and " +
                 $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} are not on " +
                 $"{DriverPackageCatalog.V3RepoUrl} default branch '{DriverPackageCatalog.V3RepoRef}'. " +
                 "Will not run FLIP:NoFilter as Stock.");
+            return InstallOutcome.Unavailable;
         }
 
-        if (kmdfUninstall is not null)
+        // Two elevated steps, so a declined prompt means different things at
+        // each one. Counting the steps that returned is the only way to tell
+        // "nothing happened" from "half of it happened": RunElevated returns
+        // only after the process exited 0.
+        var completedSteps = 0;
+        try
         {
-            Logger.Log($"DRIVER_STOCK_UNBIND script={kmdfUninstall}");
-            RunElevated(
-                "cmd.exe",
-                $"/c \"{kmdfUninstall}\"",
-                workingDirectory: Path.GetDirectoryName(kmdfUninstall),
-                windowStyle: ProcessWindowStyle.Normal,
-                timeout: TimeSpan.FromMinutes(15));
-        }
+            if (kmdfUninstall is not null)
+            {
+                Logger.Log($"DRIVER_STOCK_UNBIND script={kmdfUninstall}");
+                RunElevated(
+                    "cmd.exe",
+                    $"/c \"{kmdfUninstall}\"",
+                    workingDirectory: Path.GetDirectoryName(kmdfUninstall),
+                    windowStyle: ProcessWindowStyle.Normal,
+                    timeout: TimeSpan.FromMinutes(15));
+                completedSteps++;
+            }
 
-        if (pathAUninstall is not null)
-        {
-            Logger.Log($"DRIVER_STOCK_UNBIND script={pathAUninstall}");
-            RunElevated(
-                "powershell.exe",
-                $"-NoProfile -ExecutionPolicy Bypass -File \"{pathAUninstall}\"",
-                workingDirectory: Path.GetDirectoryName(pathAUninstall),
-                windowStyle: ProcessWindowStyle.Normal,
-                timeout: TimeSpan.FromMinutes(15));
+            if (pathAUninstall is not null)
+            {
+                Logger.Log($"DRIVER_STOCK_UNBIND script={pathAUninstall}");
+                RunElevated(
+                    "powershell.exe",
+                    $"-NoProfile -ExecutionPolicy Bypass -File \"{pathAUninstall}\"",
+                    workingDirectory: Path.GetDirectoryName(pathAUninstall),
+                    windowStyle: ProcessWindowStyle.Normal,
+                    timeout: TimeSpan.FromMinutes(15));
+                completedSteps++;
+            }
         }
+        catch (Exception ex) when (IsUacDeclined(ex) && completedSteps == 0)
+        {
+            Logger.Log("DRIVER_STOCK_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            // Declining the second prompt is not the same as declining the
+            // first. completedSteps == 1 here can only be the KMDF uninstall,
+            // which already ran elevated, and nothing rolls it back - so this
+            // stays Failed and keeps its error box: the mouse is off KMDF with
+            // the patched Apple filter still bound, and only the user can
+            // finish that.
+            Logger.Log("DRIVER_STOCK_PARTIAL cancelled reason=uac-declined step=2");
+            ShowBlocked(V3StockPartialRestoreMessage());
+            return InstallOutcome.Failed;
+        }
+        catch (Exception ex) when (completedSteps == 1)
+        {
+            // Same half-changed machine state as the declined second prompt -
+            // KMDF uninstalled, patched Apple filter still bound - reached by a
+            // different exception: RunElevated's 15-minute timeout, or its
+            // non-zero exit ("powershell.exe exited 1."), or a start failure.
+            // The state and the reason are both needed, so neither
+            // replaces the other: a timeout and a non-zero exit are different
+            // problems, and ex.Message is the only thing that tells them apart.
+            Logger.Log($"DRIVER_STOCK_PARTIAL failed step=2 err={ex.Message}");
+            ShowBlocked(V3StockPartialRestoreMessage(ex.Message));
+            return InstallOutcome.Failed;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
 
-    // Keyboard PATH-C. Discovers the live Bluetooth MAC and passes -Mac.
-    // The script requires -Mac — never omit it.
-    internal static void OfferKeyboardSdpPatch()
-    {
-        var script = FindKeyboardPatchScript()
-            ?? throw new InvalidOperationException(
-                $"{DriverPackageCatalog.KeyboardPatchScriptPath} not found next to the tray.");
+    // Says which half of the restore happened, because "The operation was
+    // canceled by the user." (the Win32Exception text) would leave the user
+    // believing the machine is untouched when it is mid-change.
+    internal static string V3StockPartialRestoreMessage() =>
+        $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} ran, then the administrator prompt " +
+        $"for {DriverPackageCatalog.PathAUninstallScriptRelativePath} was declined. " +
+        V3StockPartialRestoreState();
 
-        var mac = TryDiscoverKeyboardMac()
-            ?? throw new InvalidOperationException(
+    // Step 2 failed after step 1 returned, and not by a declined prompt. The
+    // reason goes on its own line rather than inside the sentence: it is a
+    // thrown message, so its punctuation and length are not ours to assume.
+    internal static string V3StockPartialRestoreMessage(string reason) =>
+        $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} ran, then " +
+        $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} stopped before it finished. " +
+        V3StockPartialRestoreState() +
+        $"\n\n{reason}";
+
+    // The state is identical whichever exception reported it, so both messages
+    // share this half rather than drifting apart as two near-copies.
+    static string V3StockPartialRestoreState() =>
+        "The KMDF uninstall is done and the patched Apple filter is still in place, " +
+        "so this Magic Mouse is not on stock HidBth yet. " +
+        "Run Stock again and approve both prompts to finish it.";
+
+    // Keyboard PATH-C. Discovers the live Bluetooth MAC and passes -Mac.
+    // The script requires -Mac - never omit it. Confirm-first like every other
+    // elevated offer: Cancel runs nothing at all.
+    internal static InstallOutcome OfferKeyboardSdpPatch()
+    {
+        var script = FindKeyboardPatchScript();
+        if (script is null)
+        {
+            ShowBlocked(
+                $"{DriverPackageCatalog.KeyboardPatchScriptPath} not found next to the tray.");
+            return InstallOutcome.Unavailable;
+        }
+
+        var mac = TryDiscoverKeyboardMac();
+        if (mac is null)
+        {
+            ShowBlocked(
                 "Could not discover a Magic Keyboard Bluetooth MAC. " +
                 "Refusing to run kbd-patch-cachedservices.ps1 without -Mac.");
+            return InstallOutcome.Unavailable;
+        }
+
+        var prompt = System.Windows.Forms.MessageBox.Show(
+            KeyboardSdpPatchPrompt(mac),
+            "Magic Tray",
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning);
+        if (prompt != System.Windows.Forms.DialogResult.OK)
+        {
+            Logger.Log("DRIVER_SDP_ABORTED cancelled");
+            return InstallOutcome.Cancelled;
+        }
 
         var args =
             $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mac \"{mac}\"";
         Logger.Log($"DRIVER_SDP script={script} mac={mac}");
-        RunElevated("powershell.exe", args);
+        try
+        {
+            RunElevated("powershell.exe", args);
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_SDP_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+        return InstallOutcome.Confirmed;
     }
+
+    // States what runs, what it changes, that it needs one administrator
+    // approval, that it changes nothing else, and how to undo it.
+    internal static string KeyboardSdpPatchPrompt(string mac) =>
+        $"This runs {DriverPackageCatalog.KeyboardPatchScriptPath} -Mac {mac} for this Magic Keyboard. " +
+        "It changes the Bluetooth SDP cache entry for that keyboard so Windows exposes its battery. " +
+        "It needs one administrator approval and changes nothing else. " +
+        "Re-pairing the keyboard can undo it.\n\n" +
+        "OK continues. Cancel aborts.";
 
     internal static async Task<string> DownloadV3DefaultBranchAsync(CancellationToken ct)
     {
@@ -673,6 +948,17 @@ foreach ($id in $restart) {
         return subkeyName.Substring(pidIdx + 5, 4).ToLowerInvariant();
     }
 
+    // ShellExecute reports a declined UAC prompt as Win32Exception with native
+    // error 1223 (ERROR_CANCELLED); Process.Start surfaces that unchanged.
+    // Same signal DeviceEnable.LaunchElevated and DeviceRepair.LaunchElevated
+    // fold into Started=false. The native code is the test, not the message,
+    // which is localised. Every other Win32Exception - 2 ERROR_FILE_NOT_FOUND,
+    // 740 ERROR_ELEVATION_REQUIRED - is a real failure and stays Failed.
+    // A caller that sees this must not also show an error box: the user is the
+    // one who said no, and nothing ran.
+    internal static bool IsUacDeclined(Exception ex) =>
+        ex is System.ComponentModel.Win32Exception w && w.NativeErrorCode == 1223;
+
     static void RunElevated(
         string fileName,
         string arguments,
@@ -700,5 +986,17 @@ foreach ($id in $restart) {
         }
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited {p.ExitCode}.");
+    }
+
+    // Offer* returns its outcome instead of throwing it, so the explanation
+    // has to be shown here or the user never sees why nothing happened.
+    static void ShowBlocked(string message)
+    {
+        Logger.Log($"DRIVER_BLOCKED err={message}");
+        System.Windows.Forms.MessageBox.Show(
+            message,
+            "Magic Tray",
+            System.Windows.Forms.MessageBoxButtons.OK,
+            System.Windows.Forms.MessageBoxIcon.Error);
     }
 }
