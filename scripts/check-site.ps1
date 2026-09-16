@@ -452,6 +452,12 @@ function Test-Sitemap {
     foreach ($page in $HtmlFile) {
         if ($page.DirectoryName -ne $rootPath) { continue }
         if ($listed.Contains($page.Name)) { continue }
+        # A page that tells crawlers not to index it must not be advertised in the
+        # sitemap: the two directives contradict each other, and Search Console
+        # reports the pair as an error. docs/404.html is the case that exists
+        # today. Requiring membership here would make the two rules unsatisfiable.
+        $head = Get-Content -LiteralPath $page.FullName -Raw
+        if ([regex]::IsMatch($head, '<meta[^>]+name\s*=\s*["'']robots["''][^>]+content\s*=\s*["''][^"'']*noindex', 'IgnoreCase')) { continue }
         New-Finding -Severity 'error' -Path $sitemapRelative -Message "$($page.Name) is published but missing from sitemap.xml"
     }
 }
