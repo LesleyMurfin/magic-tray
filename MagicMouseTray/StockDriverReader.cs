@@ -120,6 +120,7 @@ internal static class StockDriverReader
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
     const uint CR_SUCCESS = 0x00000000;
     const uint CR_NO_SUCH_DEVNODE = 0x0000000D;
+    const uint CR_BUFFER_SMALL = 0x00000001;
 
     // cfgmgr32.h: the devnode is flagged as having a problem. See NodeOk for
     // why this, and not DN_STARTED (0x00000008), is the health test.

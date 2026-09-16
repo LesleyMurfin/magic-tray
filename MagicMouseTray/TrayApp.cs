@@ -989,7 +989,7 @@ internal sealed class TrayApp : IDisposable
             if (kbdRec != null)
                 item.DropDownItems.Add(new ToolStripMenuItem(kbdRec) { Enabled = false });
             var fix = new ToolStripMenuItem("Fix battery reads") { ForeColor = Color.OrangeRed };
-            fix.Click += (_, _) => RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
+            fix.Click += (_, _) => RunDriverAction(() => DriverInstaller.OfferKeyboardSdpPatch());
             item.DropDownItems.Add(fix);
         }
 
@@ -1066,8 +1066,7 @@ internal sealed class TrayApp : IDisposable
                 if (!modeB)
                     scroll.Click += (_, _) => _ = RunDriverActionAsync(async () =>
                     {
-                        _config.SetDriver0323(Config.Driver0323PathA);
-                        await Task.Run(() => V3RecycleManager.SubmitFlipAndWait(V3RecycleManager.FlipPhase.AppleFilter));
+                        await Task.Run(() => ModeFlip.RestoreModeB());
                     });
                 driverMenu.DropDownItems.Add(scroll);
 
@@ -1079,10 +1078,8 @@ internal sealed class TrayApp : IDisposable
                 if (!modeA)
                     battery.Click += (_, _) => _ = RunDriverActionAsync(async () =>
                     {
-                        _config.SetDriver0323(Config.Driver0323PathA);
-                        await Task.Run(() => V3RecycleManager.SubmitFlipAndWait(V3RecycleManager.FlipPhase.NoFilter));
+                        await Task.Run(() => ModeFlip.RestoreModeB());
                     });
-                driverMenu.DropDownItems.Add(battery);
             }
 
             item.DropDownItems.Add(driverMenu);
@@ -1101,7 +1098,7 @@ internal sealed class TrayApp : IDisposable
                 Checked = status == DriverStatus.Ok
             };
             if (TrayMenu.V1V2BootCampRadioEnabled(status))
-                bootCamp.Click += (_, _) => RunDriverAction(DriverInstaller.OfferV1V2ScrollFix);
+                bootCamp.Click += (_, _) => RunDriverAction(() => DriverInstaller.OfferV1V2ScrollFix());
             else
                 bootCamp.Enabled = false;
             driverMenu.DropDownItems.Add(bootCamp);

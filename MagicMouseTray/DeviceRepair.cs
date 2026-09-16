@@ -553,37 +553,37 @@ exit 1
         catch (System.ComponentModel.Win32Exception) { return (false, "", null); }
         if (p is null)
             return (false, "", null);
+        string sidecar = "";
+        int? exit = null;
         using (p)
         {
-        var started = DateTime.UtcNow;
-        var until = started + TimeSpan.FromMinutes(2);
-        var sidecar = "";
-        while (DateTime.UtcNow < until)
-        {
-            if (File.Exists(statusPath))
+            var started = DateTime.UtcNow;
+            var until = started + TimeSpan.FromMinutes(2);
+            while (DateTime.UtcNow < until)
             {
-                try { sidecar = File.ReadAllText(statusPath).Trim(); }
-                catch { sidecar = ""; }
-                if (sidecar is "ok" or "failed" or "no-instances" or "filter-blocked" or "nothing-to-do")
-                    break;
+                if (File.Exists(statusPath))
+                {
+                    try { sidecar = File.ReadAllText(statusPath).Trim(); }
+                    catch { sidecar = ""; }
+                    if (sidecar is "ok" or "failed" or "no-instances" or "filter-blocked" or "nothing-to-do")
+                        break;
+                }
+                try
+                {
+                    // Cancelled UAC prompt: the launcher is gone and nothing was written.
+                    if (p.HasExited
+                        && sidecar.Length == 0
+                        && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
+                        break;
+                }
+                catch { /* UseShellExecute */ }
+                Thread.Sleep(150);
             }
-            try
+            if (!p.HasExited)
             {
-                // Cancelled UAC prompt: the launcher is gone and nothing was written.
-                if (p.HasExited
-                    && sidecar.Length == 0
-                    && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
-                    break;
+                try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
             }
-            catch { /* UseShellExecute */ }
-            Thread.Sleep(150);
-        }
-        if (!p.HasExited)
-        {
-            try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
-        }
-        int? exit = null;
-        try { if (p.HasExited) exit = p.ExitCode; } catch { /* UseShellExecute */ }
+            try { if (p.HasExited) exit = p.ExitCode; } catch { /* UseShellExecute */ }
         }
         return (true, sidecar, exit);
     }
