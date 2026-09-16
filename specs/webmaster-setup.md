@@ -42,6 +42,22 @@ Google limits automated/rapid URL inspection submissions. To expedite fresh craw
 
 ---
 
+### Additional Managed Properties
+
+#### `riley.team` (Domain property)
+- **Status:** **Added and auto-verified** on 2026-09-16 via existing Cloudflare DNS integration.
+- **Property:** `sc-domain:riley.team`
+- **Sitemap Submitted:** `https://riley.team/sitemap.xml` (Submitted on 2026-09-16).
+- **Priority Crawl:** URL Inspection run for `https://riley.team/`; live indexability test passed; indexing requested. Google confirmed:
+  > *"URL was added to a priority crawl queue. Submitting a page multiple times will not change its queue position or priority."*
+
+#### `revivebusiness.ca` (Domain property)
+- **Status:** **Verified** Domain property (`sc-domain:revivebusiness.ca`).
+- **Sitemap Submitted:** `https://revivebusiness.ca/sitemap.xml` (Submitted on 2026-09-16).
+- **Priority Crawl:** URL Inspection run for `https://revivebusiness.ca/`; live indexability test passed; indexing requested. Google confirmed:
+  > *"URL was added to a priority crawl queue. Submitting a page multiple times will not change its queue position or priority."*
+---
+
 ## 2. Bing Webmaster Tools & Answer Engines
 
 ### Automated IndexNow (Active)
