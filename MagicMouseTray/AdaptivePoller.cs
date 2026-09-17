@@ -62,6 +62,36 @@ internal sealed class AdaptivePoller : IDisposable
     // Ranks a battery reading when collapsing a device's multiple HID collections to one:
     // a real percentage (0-100) beats -2 (present but unreadable) beats -1 (not found).
     static int ReadingRank(int pct) => pct >= 0 ? pct + 2 : (pct == -2 ? 1 : 0);
+
+    // The collapse comparison, with one tie-break added and nothing else
+    // changed: among readings of EQUAL rank, one carrying the zero-report fact
+    // wins.
+    //
+    // Why the tie needs breaking at all. All four -2 producers rank identically
+    // at 1 - the v3 truncation (MouseBatteryDevice.cs:168-180), a wrong report
+    // id (:186-188), a failed IOCTL (:199-201) and the v1/v2
+    // MOUSE_UNIFIED_BLOCKED (:336) - the old comparison was strictly `>`, and
+    // DeviceRegistry.Discover does not enumerate collections in any defined
+    // order. So on the exact device shape the battery rule targets (COL01
+    // failing while COL02 truncates) which -2 survived, and therefore which
+    // probe record travelled with it, was decided by enumeration order.
+    //
+    // Every other ordering is untouched, so the rationale at :155-160 stands: a
+    // real percentage still beats -2, which still beats -1, and this can only
+    // choose between readings the old rule considered equal.
+    internal static bool PrefersReading(
+        int candidatePct, bool? candidateZeroReport, int bestPct, bool? bestZeroReport)
+    {
+        int candidate = ReadingRank(candidatePct);
+        int best = ReadingRank(bestPct);
+        if (candidate != best)
+            return candidate > best;
+
+        // Only true breaks the tie. null (nothing judgeable came back) must
+        // never outrank a reading that actually answered.
+        return candidateZeroReport == true && bestZeroReport != true;
+    }
+
     // True when the Discover DeviceName set differs (order and duplicates ignored).
     internal static bool DeviceSetChanged(IEnumerable<string> oldNames, IEnumerable<string> newNames)
     {
@@ -137,11 +167,29 @@ internal sealed class AdaptivePoller : IDisposable
                             continue;
 
                         int best = -1;
+
+                        // The probe travels WITH the winning reading rather
+                        // than beside it: the fact and the percent have to come
+                        // from the same HID collection, or COL01's failed open
+                        // supplies the fact while COL02 supplies the number.
+                        BatteryProbe? bestProbe = null;
                         foreach (var device in group)
                         {
                             int pct = ReadBatteryGuarded(device, DeviceReadTimeout);
-                            if (ReadingRank(pct) > ReadingRank(best)) best = pct;
+                            var probe = (device as MouseBatteryDevice)?.LastProbe;
+                            if (!PrefersReading(pct, probe?.ZeroReport, best, bestProbe?.ZeroReport))
+                                continue;
+
+                            best = pct;
+                            bestProbe = probe;
                         }
+
+                        // Publish only the survivor. A group with no v3 probe at
+                        // all publishes nothing, which leaves the snapshot's
+                        // field null - no evidence, and no evidence raises
+                        // nothing.
+                        if (bestProbe is not null)
+                            DeviceDiagReader.PublishBatteryProbe(pid, bestProbe);
 
                         if (best == -1)
                         {

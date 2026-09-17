@@ -150,25 +150,74 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
             {
                 var pct = ParseRid90Percent(buf);
+
+                // Every terminal outcome below captures the correlated probe,
+                // and each one captures a DIFFERENT fact. The -2 sentinel is
+                // left exactly as it was - three of these paths still return it
+                // and two other classes emit it for unrelated reasons
+                // (KeyboardBatteryDevice's blocked SDP cap, and :336 below), so
+                // the fact is carried BESIDE the sentinel and never instead of
+                // it. Redefining -2 would silently change the keyboard rule at
+                // RepairPlanner.cs:412-426 and the repair script behind it.
                 if (pct is >= 0)
                 {
+                    CaptureProbe(zeroReport: false);
                     Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
                     return pct.Value;
                 }
                 if (IsBogusZeroReport(buf))
                 {
+                    // THE truncation fingerprint: a well-formed report whose
+                    // percent byte is 0. The log text below predates the
+                    // finding that the filter's inbound diversion swallows the
+                    // percentage on a 1-byte control-channel read, so "no
+                    // battery report sent yet" is one of two causes now - the
+                    // other being this defect. Which one it is is not decidable
+                    // here; it is decided by the planner from the probe's
+                    // correlation with a live touch stream.
+                    CaptureProbe(zeroReport: true);
                     Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)");
                     return -2;
                 }
+
+                // Wrong report id: nothing judgeable came back, so the fact is
+                // unknown and NOT false - claiming "a real percent arrived"
+                // would be as wrong as claiming the zero.
+                CaptureProbe(zeroReport: null);
                 Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
                 return -2;
             }
             if (attempt < 2) Thread.Sleep(50);
         }
 
+        // The IOCTL failed outright after three attempts. Measured live as
+        // err=21 (ERROR_NOT_READY) while the device was re-enumerating after a
+        // restart, in the same minute that Rid12Count collapsed 2095323 -> 521.
+        // Folding that into the zero-report fact would diagnose the truncation
+        // defect - whose repair is a device restart - from the evidence of a
+        // restart in progress, i.e. a loop.
+        CaptureProbe(zeroReport: null);
         Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
         return -2;
     }
+
+    // The correlated probe for THIS collection's read (Ruling L): a v3 exposes
+    // three HID collections under one DeviceName and the poller collapses their
+    // readings to one, so the probe has to travel with the reading that wins
+    // rather than being published from whichever path happened to run last.
+    // AdaptivePoller carries it alongside `best` and publishes only the
+    // winner's (AdaptivePoller.cs:169-192).
+    //
+    // Instances are created fresh per poll by DeviceRegistry.Discover, so this
+    // can never hold a reading from an earlier cycle.
+    internal BatteryProbe? LastProbe { get; private set; }
+
+    // Taken IMMEDIATELY after HidD_GetInputReport returned, in the same code
+    // path, because that is the only moment the filter's shared last-inbound
+    // slot can still hold the control-channel frame this read caused
+    // (BatteryProbe.DiagAfter).
+    void CaptureProbe(bool? zeroReport) =>
+        LastProbe = DeviceDiagReader.TakeBatteryProbe(zeroReport);
 
     internal static int? ParseRid90Percent(byte[] buf)
     {
