@@ -6,6 +6,181 @@ using Microsoft.Win32;
 
 namespace MagicMouseTray;
 
+// Which of the KMDF filter's Diag values could be read AT ALL. This is the
+// tri-state that keeps the reader honest: the Diag block is published by one
+// driver build, older builds publish fewer values, and an unreadable or absent
+// value is NOT a measurement.
+//
+// A 0 in this key is a real, load-bearing measurement - Rid12Count == 0 means
+// the touch stream has delivered nothing since the last reinstall - so an
+// absent value may never be reported as 0. Every field of the snapshot below
+// is therefore nullable and stays null when it was not read.
+internal enum DiagAvailability
+{
+    // Every value named by the snapshot was present and of a usable type.
+    Ok,
+
+    // HKLM\SYSTEM\CurrentControlSet\Services\<svc>\Diag does not exist: the
+    // filter is not installed, or the name we resolved is not the one that is
+    // installed. All values null.
+    ServiceKeyMissing,
+
+    // The key opened but at least one value was absent or carried a type this
+    // reader cannot use. The values that WERE there are populated; the rest
+    // stay null. Not a fault - an older filter build simply publishes fewer.
+    ValueMissing,
+
+    // The key exists and this token may not read it. All values null. Measured
+    // as reachable without elevation on the reference PC, so this is the
+    // hardened-machine case, not the normal one.
+    AccessDenied,
+}
+
+// One read of the KMDF filter's Diag block, taken at TakenAt from the service
+// named by ServiceKeyName. Plain data - no registry handles, no Windows types -
+// so the planner can consume it and tests can build it by hand.
+//
+// The four counters are REG_DWORDs that WRAP and that a driver reinstall RESETS
+// TO 0, which is why they are widened to ulong? here: a caller comparing two
+// snapshots must be able to see "went backwards" as a distinct case from
+// "climbed", and must never see a reset as a huge negative delta.
+internal sealed record FilterDiagSnapshot(
+    DateTimeOffset TakenAt,
+    DiagAvailability Availability,
+    // The service whose Diag key this snapshot was ACTUALLY read from, verbatim
+    // (e.g. "MagicMouseDriver204Scroll"). Always the service that was read -
+    // resolved from the live stack when that worked, the installed-name literal
+    // when it did not. A snapshot may never name a service it did not read.
+    string ServiceKeyName,
+    ulong? Rid12Count, ulong? AclTranslateCount, ulong? AclInterceptCount, ulong? AclOutCount,
+    // LastAclReceived / LastAclCapacity / LastAclBytes are a SINGLE "last
+    // inbound frame" slot in the filter, shared between the HID control channel
+    // and the interrupt channel, and the mouse streams multitouch reports at
+    // ~65/s. So any sample taken a meaningful time after a control-channel
+    // GET_REPORT shows the interrupt channel's frame instead - measured
+    // identically (received 23, capacity 9, bytes A1 12 ...) on both a broken
+    // and a restored filter build. They are surfaced as OPPORTUNISTIC
+    // CORROBORATION ONLY, never as a health signal, and the rejection recorded
+    // at :276-290 stands for exactly that use: nothing may gate on them.
+    // They become meaningful only in ReadAfterProbe, which samples them in the
+    // same code path as the probe that filled them.
+    uint? LastAclReceived, uint? LastAclCapacity, uint? LastOutHdr, uint? LastOutBufferSize,
+    // REG_BINARY, raw. Never stringified: the percentage the truncation defect
+    // discards was on the wire in these bytes (A1-90-04-16 = 22 %), so the
+    // consumer gets the frame and decides.
+    byte[]? LastAclBytes, uint? ScrollStep, uint? MtEnableStatus, uint? MtEnableTries)
+{
+    // The filter's outbound header byte for a HID control-channel
+    // GET_REPORT(Input) - what the truncated battery read looks like on the
+    // wire side of the slot.
+    const uint AclOutGetReportHeader = 0x41;
+
+    // HidBth reads the control channel header-first with a ONE byte buffer, so
+    // a capacity of 1 beside a received length of a whole report is the
+    // truncation itself: the filter took the entire response onto its scratch
+    // and handed back one byte.
+    const uint TruncatedCapacity = 1;
+    const uint MinTruncatedFrame = 4;
+
+    // POSITIVE CORROBORATION ONLY. true means this sample caught the truncating
+    // control-channel read in the shared slot. false and null mean NOTHING -
+    // not health, not absence of the defect - because the interrupt channel
+    // overwrites the slot ~65 times a second. A caller may use this to enrich a
+    // finding it has already decided on other evidence; it may never gate on
+    // it, and it may never log its absence as evidence of health.
+    internal bool TruncationCorroborated =>
+        Availability == DiagAvailability.Ok
+        && LastOutHdr == AclOutGetReportHeader
+        && LastAclCapacity == TruncatedCapacity
+        && LastAclReceived >= MinTruncatedFrame;
+}
+
+// Reads the filter's Diag block. One implementation talks to the registry; the
+// tests drive the same decisions through IDiagValueSource with no hardware.
+internal interface IFilterDiagReader
+{
+    // One sample, now. Never throws: an unreadable key is an Availability, not
+    // an exception.
+    FilterDiagSnapshot Read();
+
+    // The sweep-to-sweep pair a counter delta needs. Before is the snapshot
+    // this reader took for the same service on a PREVIOUS sweep (null on the
+    // first one), After is a fresh sample.
+    //
+    // This is also the correlated read: called immediately after a HID
+    // GET_REPORT (DeviceDiagReader.TakeBatteryProbe, from
+    // MouseBatteryDevice.cs:164-199), After is the only sample that can still
+    // catch the control-channel frame in the filter's shared last-inbound slot.
+    // Any later sample shows the interrupt channel's instead, which is why the
+    // LastAcl triple is corroboration and never a test.
+    (FilterDiagSnapshot? Before, FilterDiagSnapshot After) ReadPair();
+
+    // Did the touch-report stream ADVANCE between these two samples?
+    //
+    // true only when both samples are usable and the counter genuinely climbed.
+    // Everything else is false, and every "else" is a real case:
+    //   either snapshot null ....... first sweep, nothing to compare.
+    //   either not Ok .............. no measurement, so no delta.
+    //   either count null .......... the value is not published by this build.
+    //   equal ...................... an idle mouse, or a sub-second re-read.
+    //   backwards .................. a driver reinstall zeroes every Diag
+    //                                counter, so a lower number is a NEW
+    //                                baseline, never a negative delta.
+    // Static because the pure decision layer (RepairPlanner) must reach it
+    // without owning a reader, a registry or a Windows type; the counter-reset
+    // rule itself is DeviceDiagReader.CounterAdvanced, shared with
+    // EvaluateCounterSample so there is exactly one truth about resets.
+    static bool TouchStreamAdvanced(FilterDiagSnapshot? before, FilterDiagSnapshot? after)
+    {
+        if (before is null || after is null)
+            return false;
+        if (before.Availability != DiagAvailability.Ok || after.Availability != DiagAvailability.Ok)
+            return false;
+
+        // Both counters came from REG_DWORDs widened through uint, so they
+        // always fit a long and the cast cannot lose or wrap a value.
+        return DeviceDiagReader.CounterAdvanced(
+            (long?)before.Rid12Count, (long?)after.Rid12Count);
+    }
+}
+
+// One battery read of the v3 with everything needed to judge it, captured at
+// the read itself. Plain data.
+//
+// The five members are the whole correlation. A percent byte of 0 means
+// NOTHING on its own: the mouse legitimately stops answering its vendor report
+// when the touch stream stops, which is the ordinary idle case the planner
+// already suppresses. It means the filter truncated the response only when the
+// touch stream was demonstrably alive across the same read.
+internal sealed record BatteryProbe(
+    // When the 0x90 GetInputReport returned.
+    DateTimeOffset TakenAt,
+    // true  - a WELL-FORMED 0x90 report whose percent byte is 0
+    //         (MouseBatteryDevice.IsBogusZeroReport:236-237, the :168-180 site).
+    // false - a real percent came back.
+    // null  - nothing judgeable: MOUSE_RID90_BAD :186-188 (wrong report id) or
+    //         MOUSE_RID90_FAILED :199-201 (the IOCTL failed, e.g. err=21 while
+    //         the device re-enumerates). These may NEVER be folded into true:
+    //         the repair for the truncation fault is a device restart, so
+    //         reading a mid-restart failure as the fault prescribes another
+    //         restart - the loop FindingGate.cs:8-21 exists to stop.
+    bool? ZeroReport,
+    // The Diag sample from a PREVIOUS sweep for the same service, so the pair
+    // spans a real interval. null on the first probe.
+    FilterDiagSnapshot? DiagBefore,
+    // Diag read IMMEDIATELY after the same GetInputReport call. This is the one
+    // moment the filter's shared last-inbound slot can still show the
+    // control-channel frame (LastOutHdr 0x41 / LastAclCapacity 1), and even
+    // then only sometimes - the interrupt channel overwrites it ~65 times a
+    // second. Corroboration, never a gate.
+    FilterDiagSnapshot? DiagAfter,
+    // When an advance of the touch-report counter was OBSERVED, from the fresh
+    // delta rather than the 60 s memoised MultitouchAdvancing verdict. The
+    // advance itself happened somewhere in the interval that ended at this
+    // sample, so this is an upper bound on how long ago the stream moved, not
+    // an instant. null = no evidence, and no evidence raises nothing.
+    DateTimeOffset? TouchAdvancedAt);
+
 // Per-capability health evidence the registration-only reader cannot supply:
 // is the multitouch report stream actually MOVING, is the Bluetooth pointer
 // child actually PRESENT, and is the driver package's F1 watcher installed and
@@ -67,7 +242,10 @@ internal static class DeviceDiagReader
     // is exactly what the live log showed. The baseline is therefore only
     // replaced once it is at least BaselineMinAge old, so bursts measure
     // against a sample far enough back for the counter to have moved.
-    static readonly TimeSpan BaselineMinAge = TimeSpan.FromSeconds(2);
+    // internal: FilterDiagReader.ReadPair applies the same burst discipline to
+    // the snapshot pair it hands the planner, and there must be one interval
+    // rule, not two.
+    internal static readonly TimeSpan BaselineMinAge = TimeSpan.FromSeconds(2);
 
     // Once movement is proven, it stays proven for this long. The counter only
     // climbs while a hand is on the mouse, so without this the same healthy
@@ -170,7 +348,7 @@ internal static class DeviceDiagReader
             if (BaselineByService.TryGetValue(service, out var baseline))
             {
                 previous = baseline.Value;
-                if (value > baseline.Value)
+                if (CounterAdvanced(baseline.Value, value))
                 {
                     advancing = true;
                     LastAdvanceAtUtc[service] = nowUtc;
@@ -523,7 +701,13 @@ internal static class DeviceDiagReader
 
     // REG_DWORD marshals to int and can carry the high bit once the counter
     // passes 2^31, so it is widened through uint to stay monotonic.
-    static long? ReadDword(RegistryKey key, string name) => key.GetValue(name) switch
+    static long? ReadDword(RegistryKey key, string name) => ReadDword(key.GetValue(name));
+
+    // The same widening one step later: FilterDiagReader reads its values
+    // through a seam that hands back the raw object, so the conversion has to
+    // be reachable without a RegistryKey. One accessor with two entry points -
+    // a second copy of the high-bit rule would drift from this one.
+    internal static long? ReadDword(object? raw) => raw switch
     {
         int i => unchecked((uint)i),
         uint u => u,
@@ -531,11 +715,28 @@ internal static class DeviceDiagReader
         _ => null,
     };
 
+    // The single counter-reset rule, shared by EvaluateCounterSample above and
+    // IFilterDiagReader.TouchStreamAdvanced, so there is exactly one truth
+    // about resets instead of two that will drift.
+    //
+    // Only a strictly increasing pair is an advance:
+    //   equal    - an idle mouse, or a sub-second re-read of the same value.
+    //   lower    - a NEW baseline, never a negative delta. A driver reinstall
+    //              zeroes every Diag counter, and a device restart was measured
+    //              on this machine collapsing Rid12Count 2095323 -> 521, so a
+    //              counter that stopped increasing is itself the signature of a
+    //              device mid-restart.
+    //   unknown  - the value is not published by this filter build.
+    internal static bool CounterAdvanced(long? before, long? after) =>
+        before is long b && after is long a && a > b;
+
     // Two gates before a caller-supplied string is ever concatenated into a key
     // path: it must be one of the driver families the planner knows
     // (RepairPlanner.cs:358-366), and it must look like a service name -
     // no separators, no dots, nothing that could climb out of Services\.
-    static bool IsSafeFamilyServiceName(string? service)
+    // internal: FilterDiagReader gates the service name it resolved through the
+    // same two gates before concatenating it into a key path.
+    internal static bool IsSafeFamilyServiceName(string? service)
     {
         if (string.IsNullOrEmpty(service))
             return false;
@@ -706,4 +907,421 @@ internal static class DeviceDiagReader
     // either reader.
     [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     static extern uint CM_Locate_DevNodeW(out uint pdnDevInst, string pDeviceID, uint ulFlags);
+
+    // The newest correlated battery probe per PID. In-memory only: a tray
+    // restart forgets it, which can only DELAY a finding and can never invent
+    // one, and nothing here is worth a line in the user-facing ini.
+    static readonly object ProbeLock = new();
+    static readonly Dictionary<string, BatteryProbe> ProbeByPid =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // How old the newest probe may be and still be evidence about NOW. The
+    // battery poll interval for a v3 starts at 5 minutes
+    // (AdaptivePoller.cs:20) and stretches to a day when nothing changes, so
+    // this is "the probe the current poll cycle took"; anything older means the
+    // poller has gone quiet and the snapshot carries null rather than a stale
+    // claim. The planner applies its own, tighter correlation bound on top.
+    internal static readonly TimeSpan BatteryProbeMaxAge = TimeSpan.FromMinutes(5);
+
+    // Distinct baseline key for the Rid12Count series. MultitouchAdvancing
+    // feeds the SAME per-service dictionary with AclTranslateCount (ReadCounter
+    // prefers it, :687-699), and comparing one counter against the other's
+    // baseline would be garbage in both directions. The suffix keeps the two
+    // series independent, exactly as the tests' unique service names do.
+    const string Rid12SeriesSuffix = @"\Rid12Count";
+
+    // Builds the correlated record. Called from the battery read path
+    // IMMEDIATELY after HidD_GetInputReport returns (MouseBatteryDevice.cs:150)
+    // because that ordering is the only thing that gives the LastAcl triple any
+    // meaning at all - see BatteryProbe.DiagAfter.
+    internal static BatteryProbe TakeBatteryProbe(bool? zeroReport) =>
+        TakeBatteryProbe(zeroReport, new FilterDiagReader(), DateTimeOffset.UtcNow);
+
+    // Seam-taking overload: tests supply the reader and the clock, so the whole
+    // correlation is drivable with no driver, no mouse and no registry.
+    internal static BatteryProbe TakeBatteryProbe(
+        bool? zeroReport, IFilterDiagReader reader, DateTimeOffset takenAt)
+    {
+        var (before, after) = reader.ReadPair();
+
+        // The FRESH delta's recency, never the memoised MultitouchAdvancing
+        // verdict: AliveMemory (:255) holds that true for a full minute after
+        // the last increment, which is exactly the idle population the
+        // suppression at RepairPlanner.cs:404-414 protects. Folding this sample
+        // in also re-baselines a counter that went backwards (:357-361), which
+        // is the device-mid-restart signature.
+        DateTimeOffset? touchAdvancedAt = null;
+        if (after.Availability == DiagAvailability.Ok && after.Rid12Count is ulong rid12)
+        {
+            EvaluateCounterSample(
+                after.ServiceKeyName + Rid12SeriesSuffix,
+                unchecked((long)rid12),
+                takenAt.UtcDateTime,
+                out _,
+                out var lastAdvance);
+            if (lastAdvance is DateTime advanced)
+                touchAdvancedAt = new DateTimeOffset(advanced, TimeSpan.Zero);
+        }
+
+        // DiagBefore/DiagAfter are adjacent and identically typed, so they are
+        // passed BY NAME: transposing them would compile cleanly and silently
+        // invert the interval, which is the one thing the reinstall-reset case
+        // depends on reading correctly.
+        return new BatteryProbe(
+            takenAt,
+            zeroReport,
+            DiagBefore: before,
+            DiagAfter: after,
+            TouchAdvancedAt: touchAdvancedAt);
+    }
+
+    // Only the reading that SURVIVED the poller's per-device collapse may
+    // publish (AdaptivePoller.cs:139-143). A v3 exposes three HID collections
+    // under one DeviceName, so publishing per path would let COL01's failed
+    // open supply the zero-report fact while COL02 supplied the percent - the
+    // mis-pairing this whole record exists to eliminate.
+    internal static void PublishBatteryProbe(string pid, BatteryProbe probe)
+    {
+        if (string.IsNullOrEmpty(pid))
+            return;
+
+        lock (ProbeLock)
+            ProbeByPid[pid] = probe;
+    }
+
+    // The newest probe for this PID, or null when there is none or it is older
+    // than BatteryProbeMaxAge. null is NO EVIDENCE and must raise nothing.
+    internal static BatteryProbe? LatestBatteryProbe(string pid, DateTimeOffset now)
+    {
+        if (string.IsNullOrEmpty(pid))
+            return null;
+
+        lock (ProbeLock)
+        {
+            if (!ProbeByPid.TryGetValue(pid, out var probe))
+                return null;
+            return now - probe.TakenAt <= BatteryProbeMaxAge ? probe : null;
+        }
+    }
+}
+
+// What one read of ONE named value under ONE service's Diag key can say.
+// Deliberately not a general-purpose registry abstraction: the seam exists so
+// the decisions above can be driven with no driver installed, and widening it
+// would only move untestable code back behind it.
+internal enum DiagValueStatus
+{
+    Present,
+    ValueMissing,
+    ServiceKeyMissing,
+    AccessDenied,
+}
+
+// Raw stays an object because that is exactly what the hive hands back - int
+// for REG_DWORD, byte[] for REG_BINARY - and because the conversion belongs on
+// the testable side of the seam, not in the class holding the key handle.
+internal readonly record struct DiagValue(DiagValueStatus Status, object? Raw)
+{
+    internal static DiagValue Present(object raw) => new(DiagValueStatus.Present, raw);
+    internal static DiagValue Missing => new(DiagValueStatus.ValueMissing, null);
+    internal static DiagValue KeyMissing => new(DiagValueStatus.ServiceKeyMissing, null);
+    internal static DiagValue Denied => new(DiagValueStatus.AccessDenied, null);
+}
+
+internal interface IDiagValueSource
+{
+    DiagValue Read(string serviceKeyName, string valueName);
+}
+
+// The only part of the reader that touches the hive, and it makes no decisions.
+// Same idiom as every other registry reader here: Registry.LocalMachine
+// .OpenSubKey(..., writable: false), an absent key is a STATE and not an
+// exception, nothing is ever written (DeviceDiagReader.cs:689-690,
+// DeviceSnapshotReader.cs:370-371, DriverClaimReader.cs:351-352).
+//
+// Measured on the reference PC at Medium IL (not elevated): the whole Diag
+// block reads fine from a normal user token, so AccessDenied is the
+// hardened-machine case rather than the normal one - and it must stay
+// distinguishable from an absent key, because "cannot look" and "not there"
+// prescribe opposite things.
+internal sealed class RegistryDiagValueSource : IDiagValueSource
+{
+    const string ServicesBase = @"SYSTEM\CurrentControlSet\Services";
+
+    public DiagValue Read(string serviceKeyName, string valueName)
+    {
+        try
+        {
+            using var diag = Registry.LocalMachine.OpenSubKey(
+                ServicesBase + "\\" + serviceKeyName + "\\Diag", writable: false);
+            if (diag is null)
+                return DiagValue.KeyMissing;
+
+            var raw = diag.GetValue(valueName);
+            return raw is null ? DiagValue.Missing : DiagValue.Present(raw);
+        }
+        catch (System.Security.SecurityException)
+        {
+            return DiagValue.Denied;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return DiagValue.Denied;
+        }
+    }
+}
+
+// Reads the KMDF filter's Diag block into a FilterDiagSnapshot.
+//
+// The Diag block is the only place the two silent defects leave a trace that
+// usermode can see without elevation: the filter rewrites it wholesale every
+// 1000 ms from a WDF timer work item, and every value in it is a REG_DWORD or
+// REG_BINARY under
+// HKLM\SYSTEM\CurrentControlSet\Services\<filter service>\Diag.
+//
+// Two rules this class exists to enforce, both of which were easy to get wrong:
+//   An absent value is NOT 0. A 0 in this block is a real measurement, so a
+//   missing value has to arrive as null plus ValueMissing.
+//   The service it read is always the service it NAMES. The installed-name
+//   literal is an acceptable thing to READ; reporting a snapshot while naming
+//   a service it did not come from is not.
+internal sealed class FilterDiagReader : IFilterDiagReader
+{
+    // The name the KMDF package's 2.0.4.x build installs under, used ONLY when
+    // the live stack cannot be resolved. Composed from the catalog constant
+    // rather than spelled out a second time - the family predicate
+    // RepairPlanner.IsKmdfFamily is a prefix test on that same constant
+    // (RepairPlanner.cs:905-908), so the two can never disagree about what
+    // "KMDF family" means.
+    internal const string FallbackServiceKeyName =
+        DriverPackageCatalog.PatchedKmdfServiceName + "204Scroll";
+
+    // Previous snapshot per resolved service name. Static and locked for the
+    // same reason DeviceDiagReader's counter baseline is (:259-261): the tray
+    // constructs readers freely and a delta must survive across them.
+    static readonly object PairLock = new();
+    static readonly Dictionary<string, FilterDiagSnapshot> PreviousByService =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    readonly IDiagValueSource _values;
+    readonly Func<string?> _resolveServiceKeyName;
+
+    internal FilterDiagReader()
+        : this(new RegistryDiagValueSource(), ResolveFromLiveStack) { }
+
+    // For the call sites that have already resolved the bound filter for their
+    // own reasons (DeviceSnapshotReader does): re-walking Enum\HID to
+    // rediscover it would be both slower and a second answer to one question.
+    internal FilterDiagReader(Func<string?> resolveServiceKeyName)
+        : this(new RegistryDiagValueSource(), resolveServiceKeyName) { }
+
+    internal FilterDiagReader(IDiagValueSource values, Func<string?> resolveServiceKeyName)
+    {
+        _values = values;
+        _resolveServiceKeyName = resolveServiceKeyName;
+    }
+
+    public FilterDiagSnapshot Read()
+    {
+        var takenAt = DateTimeOffset.UtcNow;
+        var service = ResolveServiceKeyName(out var fromLiveStack);
+
+        // terminal sticks once the KEY itself answered: after that every
+        // further value read can only repeat the same answer, so the key is not
+        // opened again. anyMissing is the per-value state.
+        var terminal = DiagValueStatus.Present;
+        var anyMissing = false;
+
+        DiagValue Value(string name)
+        {
+            if (terminal != DiagValueStatus.Present)
+                return new DiagValue(terminal, null);
+
+            var read = _values.Read(service, name);
+            if (read.Status is DiagValueStatus.ServiceKeyMissing or DiagValueStatus.AccessDenied)
+                terminal = read.Status;
+            else if (read.Status == DiagValueStatus.ValueMissing)
+                anyMissing = true;
+            return read;
+        }
+
+        // A counter is a REG_DWORD that wraps and that a reinstall resets, so it
+        // is widened - never truncated - on the way out.
+        ulong? Counter(string name)
+        {
+            var read = Value(name);
+            var widened = DeviceDiagReader.ReadDword(read.Raw);
+            if (widened is long value)
+                return unchecked((ulong)value);
+
+            // Present but carrying a type this reader cannot use is exactly as
+            // much evidence as absent: none.
+            if (read.Status == DiagValueStatus.Present)
+                anyMissing = true;
+            return null;
+        }
+
+        uint? Dword(string name)
+        {
+            var read = Value(name);
+            if (DeviceDiagReader.ReadDword(read.Raw) is long value
+                && value >= 0 && value <= uint.MaxValue)
+                return (uint)value;
+
+            if (read.Status == DiagValueStatus.Present)
+                anyMissing = true;
+            return null;
+        }
+
+        // REG_BINARY, handed back verbatim. The percentage the truncation
+        // defect throws away is in these bytes, so the consumer gets the frame.
+        // The hive allocates a fresh array per read, so there is nothing to
+        // copy defensively.
+        byte[]? Binary(string name)
+        {
+            var read = Value(name);
+            if (read.Raw is byte[] bytes)
+                return bytes;
+
+            if (read.Status == DiagValueStatus.Present)
+                anyMissing = true;
+            return null;
+        }
+
+        var rid12 = Counter("Rid12Count");
+        var aclTranslate = Counter("AclTranslateCount");
+        var aclIntercept = Counter("AclInterceptCount");
+        var aclOut = Counter("AclOutCount");
+        var lastAclReceived = Dword("LastAclReceived");
+        var lastAclCapacity = Dword("LastAclCapacity");
+        var lastOutHdr = Dword("LastOutHdr");
+        var lastOutBufferSize = Dword("LastOutBufferSize");
+        var lastAclBytes = Binary("LastAclBytes");
+        var scrollStep = Dword("ScrollStep");
+        var mtEnableStatus = Dword("MtEnableStatus");
+        var mtEnableTries = Dword("MtEnableTries");
+
+        var availability = terminal switch
+        {
+            DiagValueStatus.ServiceKeyMissing => DiagAvailability.ServiceKeyMissing,
+            DiagValueStatus.AccessDenied => DiagAvailability.AccessDenied,
+            _ => anyMissing ? DiagAvailability.ValueMissing : DiagAvailability.Ok,
+        };
+
+        // The key answered for the whole block, so nothing it might have said
+        // before that survives: a snapshot that cannot be trusted carries no
+        // values at all rather than a readable-looking half.
+        if (availability is DiagAvailability.ServiceKeyMissing or DiagAvailability.AccessDenied)
+        {
+            Logger.Log($"FILTER_DIAG svc={service} src={(fromLiveStack ? "stack" : "fallback")} "
+                + $"avail={availability}");
+            return new FilterDiagSnapshot(
+                takenAt, availability, service,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        var snapshot = new FilterDiagSnapshot(
+            takenAt, availability, service,
+            rid12, aclTranslate, aclIntercept, aclOut,
+            lastAclReceived, lastAclCapacity, lastOutHdr, lastOutBufferSize,
+            lastAclBytes, scrollStep, mtEnableStatus, mtEnableTries);
+
+        // "unknown" spelled out rather than omitted, the same discipline as
+        // REPAIR_SNAPSHOT: a field missing from a log line is indistinguishable
+        // from a field that read 0.
+        Logger.Log($"FILTER_DIAG svc={service} src={(fromLiveStack ? "stack" : "fallback")} "
+            + $"avail={availability} rid12={Unknown(rid12)} acl_tx={Unknown(aclTranslate)} "
+            + $"out_hdr={Hex(lastOutHdr)} acl_cap={Unknown(lastAclCapacity)} "
+            + $"acl_recv={Unknown(lastAclReceived)} step={Unknown(scrollStep)} "
+            + $"corroborated={snapshot.TruncationCorroborated}");
+        return snapshot;
+    }
+
+    public (FilterDiagSnapshot? Before, FilterDiagSnapshot After) ReadPair()
+    {
+        var after = Read();
+        FilterDiagSnapshot? before = null;
+
+        lock (PairLock)
+        {
+            if (PreviousByService.TryGetValue(after.ServiceKeyName, out var previous))
+            {
+                before = previous;
+
+                // Same burst discipline as the counter baseline
+                // (DeviceDiagReader.cs:236-248): a snapshot sweep reads the same
+                // PID several times inside one second, and replacing the stored
+                // sample every time would compare a counter against itself and
+                // report a standing stream as "not advancing".
+                if (after.TakenAt - previous.TakenAt >= DeviceDiagReader.BaselineMinAge)
+                    PreviousByService[after.ServiceKeyName] = after;
+            }
+            else
+            {
+                PreviousByService[after.ServiceKeyName] = after;
+            }
+        }
+
+        return (before, after);
+    }
+
+    // Which service's Diag key to read, and which path we got there by. The
+    // returned name is ALWAYS the one that is then read, so a fallback read can
+    // never be mistaken for a resolved one; the log line records the path.
+    string ResolveServiceKeyName(out bool fromLiveStack)
+    {
+        var resolved = _resolveServiceKeyName();
+        if (DeviceDiagReader.IsSafeFamilyServiceName(resolved))
+        {
+            fromLiveStack = true;
+            return resolved!;
+        }
+
+        fromLiveStack = false;
+        return FallbackServiceKeyName;
+    }
+
+    // Registry-only resolution of the 0323's filter service: no process spawn,
+    // no SCM query, so this is cheap enough for the 250 ms cadence the wheel
+    // sink polls at.
+    //
+    // Only a KMDF-family name may answer. The Diag block is published by that
+    // filter alone - an Apple Boot Camp filter has no Diag key at all - so
+    // accepting an Apple-family name here would produce ServiceKeyMissing under
+    // a service name that is not even supposed to have one, and reading the
+    // KMDF literal while the Apple filter is bound would report a service this
+    // machine does not run.
+    internal static string? ResolveFromLiveStack()
+    {
+        try
+        {
+            DriverHealthChecker.CollectHidLayer(
+                ModeFlip.V3Pid, out var hidService, out var hidFilters);
+
+            // The repo's one precedence order for "which family filter is on
+            // this stack" (DriverHealthChecker.cs:107-139), not a second walk.
+            foreach (var candidate in
+                DriverHealthChecker.BoundCandidates(ModeFlip.V3Pid, hidService, hidFilters))
+            {
+                if (RepairPlanner.IsKmdfFamily(candidate)
+                    && DeviceDiagReader.IsSafeFamilyServiceName(candidate))
+                    return candidate;
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // Nothing was learned, which is not the same as "not installed":
+            // the caller falls back to the installed-name literal and says so.
+            Logger.Log($"FILTER_DIAG_RESOLVE_FAILED err={ex.Message}");
+            return null;
+        }
+    }
+
+    static string Unknown(ulong? value) => value?.ToString() ?? "unknown";
+
+    static string Unknown(uint? value) => value?.ToString() ?? "unknown";
+
+    static string Hex(uint? value) => value is uint v ? $"0x{v:X2}" : "unknown";
 }

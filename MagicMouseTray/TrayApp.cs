@@ -831,8 +831,9 @@ internal sealed class TrayApp : IDisposable
             UpdateBatteryReadsVisibility();
         };
 
-        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings)));
-        if (_findings.Count > 0)
+        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(
+            RepairPlanner.MenuLabel(HeadlineFindings())));
+        if (HeadlineFindings().Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
         menu.Items.Add(_repairItem);
@@ -2328,8 +2329,8 @@ internal sealed class TrayApp : IDisposable
         {
             if (_repairItem != null)
             {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings);
-                _repairItem.ForeColor = _findings.Count > 0
+                _repairItem.Text = RepairPlanner.MenuLabel(HeadlineFindings());
+                _repairItem.ForeColor = HeadlineFindings().Count > 0
                     ? Color.OrangeRed
                     : SystemColors.ControlText;
             }
@@ -2723,7 +2724,9 @@ internal sealed class TrayApp : IDisposable
 
     RepairFinding? FindFinding(string pid)
     {
-        foreach (var f in _findings)
+        // HeadlineFindings, not _findings: a measured scroll verdict has to
+        // reach the device row it is about, not only the top-of-menu row.
+        foreach (var f in HeadlineFindings())
         {
             if (TrayMenu.PidEq(f.Pid, pid))
                 return f;
@@ -2771,7 +2774,11 @@ internal sealed class TrayApp : IDisposable
             MultitouchAdvancing: snapshot?.MultitouchAdvancing,
             Problem: FindFinding(pid)?.Problem,
             EnabledInApp: EnabledInApp(pid),
-            Sdp: sdp);
+            Sdp: sdp,
+            // The passive observation, so the scroll line cannot claim
+            // "working" off counter movement while a measured window on this
+            // very device saw no notch reach Windows.
+            Wheel: snapshot?.Wheel);
     }
 
     // Tri-state, deliberately: true on, false switched off in this app, null
@@ -2827,7 +2834,7 @@ internal sealed class TrayApp : IDisposable
     /// </summary>
     void ShowRepairFlow()
     {
-        if (_findings.Count == 0)
+        if (HeadlineFindings().Count == 0)
         {
             if (_pendingFindings.Count > 0)
             {
@@ -2846,11 +2853,29 @@ internal sealed class TrayApp : IDisposable
                     + "reported if it is still there.");
                 return;
             }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+
+            // ONE source of truth with the row above. This used to be the
+            // literal "No problems found." - a second, independently written
+            // string that could agree with the menu row only by coincidence,
+            // and a cheerier claim than the row was entitled to make. The row
+            // is RepairPlanner.MenuLabel(HeadlineFindings()) (:834, refreshed
+            // :2331); the toast is now that same call on that same list.
+            ToastNotifier.Show(TrayMenu.ProductName,
+                RepairPlanner.MenuLabel(HeadlineFindings()));
+
+            // ...and the label above is about the DRIVER and the CONNECTION. It
+            // has never been able to see the scroll wheel, so where nothing
+            // explains a dead wheel, the honest next move is to measure it with
+            // the user's help rather than let "No problems found" stand as an
+            // answer about scrolling.
+            OfferScrollProbe();
             return;
         }
 
-        foreach (var finding in _findings.ToArray())
+        // The same list the row and the toast are built from, so a measured
+        // scroll verdict is walked here too instead of being announced by a
+        // headline that leads nowhere.
+        foreach (var finding in HeadlineFindings().ToArray())
         {
             if (!HandleFinding(finding))
                 break;
@@ -2859,6 +2884,234 @@ internal sealed class TrayApp : IDisposable
 
     // Same guided flow, scoped to the one finding shown on a device row.
     void ShowRepairFlow(RepairFinding finding) => _ = HandleFinding(finding);
+
+    // The headline's single source of truth, shared by the menu row (:834,
+    // refreshed :2331) and by the toast that the same click produces (:2849):
+    // the planner's gated findings PLUS the verdict of the user-initiated
+    // scroll probe.
+    //
+    // The probe result belongs here and not in _findings because it is not a
+    // gated observation - FindingGate confirms a fault by seeing it repeatedly
+    // (FindingGate.cs:11-18), and a probe the user performed once is already
+    // as confirmed as it will ever get. What it must NOT be is invisible: the
+    // label reads driver and connection state only, so without this a measured
+    // dead wheel would sit behind a row saying "No problems found".
+    IReadOnlyList<RepairFinding> HeadlineFindings()
+    {
+        if (_scrollProbeFinding is null)
+            return _findings;
+        var combined = new List<RepairFinding>(_findings.Count + 1);
+        combined.AddRange(_findings);
+        combined.Add(_scrollProbeFinding);
+        return combined;
+    }
+
+    // What the last prompted scroll probe measured, or null when none has ever
+    // produced a verdict. Set only by a probe whose control leg carried notches
+    // and whose discriminator leg carried none; cleared only by a later probe
+    // that saw notches on the discriminator. An INCONCLUSIVE probe changes
+    // nothing in either direction - that is the whole meaning of inconclusive.
+    RepairFinding? _scrollProbeFinding;
+
+    // One sink for the process, so the decoder proof is not thrown away between
+    // probes: DecoderValidated can only be set by decoding a real click, it is
+    // sticky per device path inside the sink, and a fresh sink per probe would
+    // force the user to click every single time.
+    IWheelSink? _wheelSink;
+    // Whether any observation this process has taken proved the decoder. Drives
+    // the click-first wording, nothing else.
+    bool _scrollDecoderValidated;
+
+    // Offered only where the driver state leaves a dead wheel UNEXPLAINED: a
+    // live v3 whose filter is bound, running and actually in the device stack.
+    // Every other shape is one of the automatic rules above, and those name a
+    // cause and offer a real fix - asking the user to perform a 20-second
+    // gesture test to rediscover a stopped service would be a waste of their
+    // time.
+    DeviceSnapshot? ScrollProbeCandidate()
+    {
+        foreach (var s in _snapshots)
+        {
+            if (!DriverHealthChecker.IsV3Pid(s.Pid))
+                continue;
+            if (s.BthenumLiveCount <= 0 || string.IsNullOrEmpty(s.BoundFilterName))
+                continue;
+            if (!s.FilterServiceRunning || s.FilterInStack != true)
+                continue;
+            return s;
+        }
+        return null;
+    }
+
+    void OfferScrollProbe()
+    {
+        // A verdict already measured is reported instead of re-measured.
+        if (_scrollProbeFinding is not null)
+        {
+            _ = HandleFinding(_scrollProbeFinding);
+            return;
+        }
+
+        var snapshot = ScrollProbeCandidate();
+        if (snapshot is null)
+            return;
+
+        var intro =
+            "No problem was found with this mouse's driver or its connection - and that is not "
+            + "an answer about the scroll wheel.\n\n"
+            + "This PC cannot tell a mouse whose scrolling is broken from a mouse nobody has "
+            + "scrolled on: both look exactly the same from here. A hand resting on the top "
+            + "surface sends the same stream of touch reports as a hand scrolling, and a "
+            + "working mouse spends most of its time sending no scroll at all. So the only "
+            + "honest way to check is to measure two short gestures while you make them.\n\n"
+            + "It takes about twenty seconds, in two steps of ten. Nothing is installed, "
+            + "nothing is changed on this PC or on the mouse, no administrator prompt appears, "
+            + "and you can stop at any step.\n\n"
+            + "OK starts the test. Cancel changes nothing.";
+        if (System.Windows.Forms.MessageBox.Show(
+                intro, TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OKCancel,
+                System.Windows.Forms.MessageBoxIcon.Information)
+            != System.Windows.Forms.DialogResult.OK)
+        {
+            Logger.Log($"SCROLL_PROBE_DECLINED pid={snapshot.Pid}");
+            return;
+        }
+
+        StartScrollProbe(snapshot);
+    }
+
+    // Measurement runs off the dispatcher - two ten-second windows plus dialogs
+    // would otherwise freeze the tray - and every dialog is marshalled back,
+    // with the same dispatcher-is-gone early-out the repair apply path uses
+    // (:3050-3055). A probe that resolves after the UI has gone logs and drops.
+    void StartScrollProbe(DeviceSnapshot snapshot)
+    {
+        var service = RepairPlanner.FilterServiceFor(snapshot);
+        _wheelSink ??= new RawInputWheelSink(
+            new RawInputMouseSource(),
+            () => DeviceDiagReader.MultitouchAdvancing(service));
+        var sink = _wheelSink;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RunScrollProbeAsync(snapshot, sink).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"SCROLL_PROBE_FAIL pid={snapshot.Pid} err={ex.Message}");
+            }
+        });
+    }
+
+    async Task RunScrollProbeAsync(DeviceSnapshot snapshot, IWheelSink sink)
+    {
+        // Leg 1, the positive control, FIRST: it is the leg most likely to
+        // succeed, so a user who abandons the flow has still given us the
+        // control rather than the half that cannot be interpreted alone.
+        if (!AskOnUi(RepairPlanner.ScrollProbeControlPrompt(_scrollDecoderValidated)))
+            return;
+        var control = await sink.ObservePromptedAsync(
+            RepairPlanner.ScrollProbeLeg, CancellationToken.None).ConfigureAwait(false);
+        _scrollDecoderValidated |= control.DecoderValidated;
+
+        // Exactly one retry, and it REPLACES the control observation rather
+        // than adding to it: accumulating windows is the passive design that
+        // cannot tell a healthy mouse nobody scrolled on from a broken one.
+        if (control.WheelEvents == 0 && control.HWheelEvents == 0)
+        {
+            if (!AskOnUi(RepairPlanner.ScrollProbeControlRetryPrompt))
+                return;
+            control = await sink.ObservePromptedAsync(
+                RepairPlanner.ScrollProbeLeg, CancellationToken.None).ConfigureAwait(false);
+            _scrollDecoderValidated |= control.DecoderValidated;
+        }
+
+        if (!AskOnUi(RepairPlanner.ScrollProbeDiscriminatorPrompt))
+            return;
+        var discriminator = await sink.ObservePromptedAsync(
+            RepairPlanner.ScrollProbeLeg, CancellationToken.None).ConfigureAwait(false);
+        _scrollDecoderValidated |= discriminator.DecoderValidated;
+
+        var verdict = RepairPlanner.JudgeScrollProbe(control, discriminator);
+        Logger.Log($"SCROLL_PROBE pid={snapshot.Pid} verdict={verdict} "
+            + $"control_wheel={control.WheelEvents}+{control.HWheelEvents} "
+            + $"control_void={control.Void} "
+            + $"probe_wheel={discriminator.WheelEvents}+{discriminator.HWheelEvents} "
+            + $"probe_records={discriminator.MouseRecords} probe_void={discriminator.Void} "
+            + $"decoder={discriminator.DecoderValidated} "
+            + $"target={discriminator.TargetDevicePath ?? "none"}");
+
+        var finding = RepairPlanner.PlanScrollProbe(snapshot, control, discriminator);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            Logger.Log($"SCROLL_PROBE_RESULT pid={snapshot.Pid} verdict={verdict} ui=gone");
+            return;
+        }
+        dispatcher.Invoke(() => OnScrollProbeFinished(verdict, finding));
+    }
+
+    void OnScrollProbeFinished(
+        RepairPlanner.ScrollProbeVerdict verdict, RepairFinding? finding)
+    {
+        switch (verdict)
+        {
+            case RepairPlanner.ScrollProbeVerdict.NotchesMissing when finding is not null:
+                // Recorded BEFORE it is shown, so the menu row and the icon
+                // stop saying "No problems found" from this moment on.
+                _scrollProbeFinding = finding;
+                UpdateDeviceMenuItems();
+                _ = HandleFinding(finding);
+                break;
+            case RepairPlanner.ScrollProbeVerdict.NotchesDelivered:
+                // Notches got through, so a standing verdict from an earlier
+                // probe is no longer supported by the evidence and is dropped.
+                // The wording still refuses to call scrolling healthy.
+                _scrollProbeFinding = null;
+                UpdateDeviceMenuItems();
+                TellOnUi(RepairPlanner.ScrollProbeNoFaultFound);
+                break;
+            default:
+                TellOnUi(RepairPlanner.ScrollProbeInconclusive);
+                break;
+        }
+    }
+
+    // OKCancel on the UI thread from a background step. false for Cancel AND
+    // for a dispatcher that has gone away, which ends the probe without a
+    // verdict - the same "no evidence, no claim" default the planner uses.
+    bool AskOnUi(string body)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            Logger.Log("SCROLL_PROBE_PROMPT ui=gone");
+            return false;
+        }
+        return dispatcher.Invoke(() => System.Windows.Forms.MessageBox.Show(
+                body + "\n\nOK starts the ten seconds. Cancel stops the test.",
+                TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OKCancel,
+                System.Windows.Forms.MessageBoxIcon.Information)
+            == System.Windows.Forms.DialogResult.OK);
+    }
+
+    void TellOnUi(string body)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            Logger.Log("SCROLL_PROBE_REPORT ui=gone");
+            return;
+        }
+        dispatcher.Invoke(() => System.Windows.Forms.MessageBox.Show(
+            body, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OK,
+            System.Windows.Forms.MessageBoxIcon.Information));
+    }
 
     // Returns true when the finding was handled and the walk may continue.
     bool HandleFinding(RepairFinding finding)

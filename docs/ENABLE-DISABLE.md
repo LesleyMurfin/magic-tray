@@ -286,6 +286,7 @@ The in-app path above covers all three field faults. Reach for the scripts when 
 | `scripts/capture-state.ps1` | Pre/post-reboot **v3 (0323) only** compare. Not a v1 tool. |
 | `diagnose-driver.ps1` | Deep dive on `applewirelessmouse.sys` (v1/v2 Boot Camp). |
 | `scripts/mm-bt-stack-snapshot.ps1` | Live BT HID stack dump. No repair. |
+| `scripts/repair-magicmouse-channel.ps1` | v3 (`0323`) battery reading `90 00 00` on a mouse that is being used. One elevated `pnputil /restart-device` on the live BTHENUM instance, to re-arm the filter's control channel, then re-reads Input `0x90` on COL02 and the filter's `Diag` values and reports the percent it actually got. A reprieve, not a fix: the next device-initiated reconnect unarms the channel again. `-WhatIf` shows the plan without elevation. |
 
 Tray Diagnostics launches those **without** `-Repair`. Script repair is CLI-only, elevated:
 
