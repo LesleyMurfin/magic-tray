@@ -106,30 +106,39 @@ and this one exists only to hand visitors and crawlers on to the new URL. Note f
 deliberately absent — this redirect stub and `docs/404.html` — or it will fail them on
 purpose-built behaviour.
 
-### Why not drivers.magictray.app
+### Why drivers.magictray.app
 
-A `drivers.` subdomain with `/mouse`, `/keyboard`, `/trackpad` under it was considered and
-rejected, on two counts:
+**Decided 2026-09-16 by Lesley Murfin (CEO). This is settled; do not reopen it.**
 
-1. **It splits the site in two.** Google evaluates a subdomain as its own host. The trust that
-   `magictray.app` has accumulated does not transfer in full, and a brand-new host starts cold —
-   for a site this small, that is the whole budget. Subdirectories on one host keep it pooled.
-2. **GitHub Pages allows one custom domain per site.** `docs/CNAME` holds exactly one hostname, so
-   a second host means a second repository, a second Pages deployment, a second certificate, a
-   second Search Console property, and a second sitemap — for the same handful of pages.
+The driver hub ships on `drivers.magictray.app`, served from the
+`magic-mouse-v3-windows-fix` repository with its own `docs/CNAME`. Driver pages do **not** move
+to `magictray.app/drivers/*.html`.
 
-A third count used to stand here: that a `/trackpad` route would be a page with nothing on it. That
-is no longer true, and the correction is worth recording. `vitoplantamura/MagicTrackpad2ForWindows`
-is a Precision Touchpad driver for the Magic Trackpad 2 on Windows 11, GPL-2.0, **signed by
-Microsoft** — so it needs no Test Mode, unlike the 2024 mouse route — with its `v2.0` release published in February 2026. Together with the "does my trackpad do gestures
-on Windows" demand, that is real content, so `docs/trackpad.html` exists on **this** host. It is not
-ours and we have not tested it: the page names it, states what it targets, and links its repo
-rather than repeating its steps.
+An earlier revision of this file recorded the opposite conclusion. It was never approved and is
+overturned. Recording the reasoning so the argument is not relitigated:
 
-The lesson is the one that rejected the subdomain in the first place. A route earns a URL when
-there is something true to put on it, not when it completes a pattern. If the driver content ever
-outgrows one page, the move is `magictray.app/drivers/mouse-2024.html` style paths on this host —
-same authority, same deployment, real content per path.
+1. **The two sites have different jobs.** `magictray.app` sells a tray app that reads battery
+   percent. The driver hub is a certification and download project with its own roadmap, funding
+   state and release cadence. Separate hosts let them ship on separate schedules without one
+   repository's release gate blocking the other's.
+2. **Two repositories already exist.** The driver content lives in
+   `magic-mouse-v3-windows-fix` today and is deployed from there. A subdomain matches the
+   deployment boundary that is already real; subdirectory paths would mean either merging the
+   repositories or proxying one through the other.
+3. **Search Console cost is nil.** `magictray.app` is verified as a **Domain** property, not a
+   URL-prefix property, so `drivers.magictray.app` is covered by the existing DNS TXT
+   verification with no second property and no second verification step.
+
+The cost is real and accepted: `drivers.magictray.app` is evaluated by Google as its own host and
+starts without the trust `magictray.app` has accumulated. Mitigation is cross-linking — every
+driver page links back to the apex, and the apex links out to the hub — plus a shared
+`SoftwareApplication` entity in the JSON-LD on both hosts so the two are read as one project.
+
+`docs/trackpad.html` stays on this host. It is written for the "does my trackpad do gestures on
+Windows" query and points at `vitoplantamura/MagicTrackpad2ForWindows`, a Microsoft-signed
+Precision Touchpad driver for the Magic Trackpad 2 on Windows 11, GPL-2.0, `v2.0` released
+February 2026. It is not ours and we have not tested it: the page names it, states what it
+targets, and links its repo rather than repeating its steps.
 
 ## Search Console
 

@@ -22,7 +22,9 @@
   <meta name="twitter:description" content="The AA, Lightning and Apple Wireless mice take one Apple driver you download. The 2024 USB-C mouse has no finished scroll fix yet.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
   <meta name="application-name" content="Magic Tray">
-  <link rel="icon" href="screenshot-tray.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <script type="application/ld+json">
   {
@@ -48,6 +50,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -103,7 +108,7 @@
         "@type": "HowTo",
         "@id": "https://magictray.app/drivers.html#v1v2",
         "name": "Get scrolling back on an Apple Magic Mouse with AA batteries or a Lightning port",
-        "description": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) all take a Windows driver Apple wrote years ago, and it still works on Windows 10 and 11. Nothing about Windows changes, and no warning appears on your desktop.",
+        "description": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) take a driver Apple wrote years ago. It still works on Windows 10 and 11, and nothing else about Windows changes.",
         "totalTime": "PT10M",
         "step": [
           {
@@ -115,42 +120,30 @@
           {
             "@type": "HowToStep",
             "position": 2,
-            "name": "Let Magic Tray open the download page",
-            "text": "Click Boot Camp in the tray menu. Apple's Windows mouse drivers are called Boot Camp; no Mac is needed. Magic Tray opens the download page."
+            "name": "Open Apple's download page",
+            "text": "Click Boot Camp. Magic Tray opens Apple's download page."
           },
           {
             "@type": "HowToStep",
             "position": 3,
-            "name": "Click the green Code button",
-            "text": "On that page, click the green Code button."
+            "name": "Download the files",
+            "text": "Click the green Code button, then Download ZIP."
           },
           {
             "@type": "HowToStep",
             "position": 4,
-            "name": "Download the files",
-            "text": "Click Download ZIP."
+            "name": "Unzip the folder",
+            "text": "Open the download. Drag the AppleWirelessMouse folder to your desktop."
           },
           {
             "@type": "HowToStep",
             "position": 5,
-            "name": "Unzip the folder",
-            "text": "Open the downloaded file. Drag the AppleWirelessMouse folder to your desktop."
+            "name": "Install it",
+            "text": "Right-click AppleWirelessMouse and choose Install. Click Yes when Windows asks."
           },
           {
             "@type": "HowToStep",
             "position": 6,
-            "name": "Install it",
-            "text": "Open that folder. Right-click AppleWirelessMouse and choose Install."
-          },
-          {
-            "@type": "HowToStep",
-            "position": 7,
-            "name": "Say yes to Windows",
-            "text": "Windows asks for permission. Click Yes."
-          },
-          {
-            "@type": "HowToStep",
-            "position": 8,
             "name": "Restart and scroll",
             "text": "Restart your PC, then scroll with one finger."
           }
@@ -166,23 +159,7 @@
             "name": "Why won't my Apple Magic Mouse scroll on Windows 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The v1 (030D), v2 (0269) and Apple Wireless Mouse (0310) take Apple's own driver; Magic Tray only opens the download page and you run the file. The 2024 USB-C mouse (0323) has no finished scroll fix yet."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Which driver does my Apple Magic Mouse need on Windows 10 or 11?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) all take Apple's own driver. The 2024 USB-C mouse (0323) has no finished scroll fix to download yet."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway."
+              "text": "Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The three older mice take Apple's own driver. The 2024 USB-C mouse (0323) has no finished scroll fix yet."
             }
           },
           {
@@ -190,15 +167,7 @@
             "name": "Will Magic Tray change my mouse driver without asking?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No, never on its own. Magic Tray opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "My Magic Mouse still won't scroll. What do I check?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "If the Driver tab still says Microsoft, run the install again. If nothing changed after a restart, unpair the mouse in Windows Bluetooth settings and pair it again."
+              "text": "No. It opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything."
             }
           }
         ]
@@ -217,127 +186,152 @@
         <a href="battery.html">See my battery</a>
         <a href="devices.html">Which device?</a>
         <a href="drivers.html" aria-current="page">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="v3.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · make it scroll</p>
         <h1>Windows 10 and 11 drivers for Apple Magic Mouse scrolling</h1>
-        <p class="lead">Windows won't scroll with one finger on an Apple Magic Mouse until you add a driver, the software Windows uses to talk to your mouse. Your battery percent already works without one.</p>
-        <p><strong>The AA and Lightning mice take one download. The 2024 USB-C mouse has no scroll fix yet.</strong></p>
+        <p class="lead">The AA, Lightning and Apple Wireless mice take one Apple driver you download and install. The 2024 USB-C mouse has no scroll fix to install yet.</p>
         <p class="cta">
           <a class="primary" href="#v1v2">AA and Lightning mice</a>
           <a class="ghost" href="#v3">The 2024 mouse</a>
         </p>
       </header>
 
-      <div class="table-scroll" tabindex="0">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="What each mouse needs to scroll, scrollable table">
       <table>
-        <thead><tr><th>Your mouse</th><th>Code Windows shows</th><th>What you need</th><th>Where to go</th></tr></thead>
+        <caption>Each Apple mouse, the code Windows shows, and what it needs</caption>
+        <thead><tr><th>Your mouse</th><th>Code Windows shows</th><th>What it needs</th></tr></thead>
         <tbody>
-          <tr><td>Magic Mouse, AA batteries</td><td><code>030D</code></td><td>Apple's own driver, confirmed by a tester</td><td><a href="#v1v2">Apple's driver</a></td></tr>
-          <tr><td>Magic Mouse, Lightning port</td><td><code>0269</code></td><td>Apple's driver, nobody has confirmed it yet</td><td><a href="#v1v2">Apple's driver</a></td></tr>
-          <tr><td>Magic Mouse 2024, USB-C port</td><td><code>0323</code></td><td>No finished scroll fix to download yet</td><td><a href="#v3">The 2024 mouse</a></td></tr>
-          <tr><td>Apple Wireless Mouse, AA batteries</td><td><code>0310</code></td><td>Apple's driver, nobody has confirmed it yet</td><td><a href="#v1v2">Apple's driver</a></td></tr>
+          <tr><td>Magic Mouse, AA batteries</td><td><code>030D</code></td><td><a href="#v1v2">Apple's driver</a>, confirmed by a tester</td></tr>
+          <tr><td>Magic Mouse, Lightning port</td><td><code>0269</code></td><td><a href="#v1v2">Apple's driver</a>, unconfirmed</td></tr>
+          <tr><td>Magic Mouse 2024, USB-C port</td><td><code>0323</code></td><td><a href="#v3">Nothing to install yet</a></td></tr>
+          <tr><td>Apple Wireless Mouse, AA batteries</td><td><code>0310</code></td><td><a href="#v1v2">Apple's driver</a>, unconfirmed</td></tr>
         </tbody>
       </table>
       </div>
-      <p class="note">Not sure which mouse you have? <a href="devices.html#identify">Find out in one minute</a>.</p>
+      <p class="note"><a href="devices.html#identify">Which mouse do I have?</a></p>
 
-      <h2 id="only-moves">Why does my Magic Mouse move the pointer but not scroll?</h2>
-      <p>Windows drives an Apple Magic Mouse as a plain two-button mouse. It never reads the touch surface on top, so finger scrolling does nothing.</p>
-      <p>A driver teaches Windows to turn that finger movement into scrolling. Which one you need depends on your mouse.</p>
+      <h2 id="only-moves">Why it moves but won't scroll</h2>
+      <p>Windows drives a Magic Mouse as a plain two-button mouse and never reads the touch surface on top. A driver is the software that turns finger movement into scrolling.</p>
 
-      <h2 id="v1v2">The AA, Lightning and Apple Wireless mice: Apple's own driver</h2>
-      <p class="lead">The Magic Mouse v1 (<code>030D</code>), v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take a Windows driver Apple wrote years ago, and it still works on Windows 10 and 11.</p>
-      <p>Nothing about Windows changes, and no warning appears on your desktop.</p>
-      <p class="note">Boot Camp is Apple's name for its own Windows drivers. You don't need a Mac, and you install nothing called Boot Camp.</p>
+      <h2 id="v1v2">AA, Lightning and Apple Wireless: Apple's own driver</h2>
+      <p class="lead">The v1 (<code>030D</code>), v2 (<code>0269</code>) and Apple Wireless Mouse (<code>0310</code>) take a driver Apple wrote years ago. It still works on Windows 10 and 11.</p>
+      <div class="ident-grid">
+        <article class="ident-card">
+          <div class="ident-visual">
+            <figure class="photo pos-center">
+              <picture>
+                <source srcset="img/magic-mouse-v1-cover-off-aa.webp" type="image/webp">
+                <img src="img/magic-mouse-v1-cover-off-aa.jpg" width="1600" height="1200" alt="A Magic Mouse v1 with the battery door lifted off, showing the bay for two AA batteries." loading="lazy" decoding="async">
+              </picture>
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">030D · AA batteries</p>
+            <h3>Magic Mouse v1</h3>
+          </div>
+        </article>
+        <article class="ident-card">
+          <div class="ident-visual">
+            <figure class="photo pos-center">
+              <picture>
+                <source srcset="img/magic-mouse-v2-underside-lightning-alt.webp" type="image/webp">
+                <img src="img/magic-mouse-v2-underside-lightning-alt.jpg" width="1600" height="1200" alt="Underside of a Magic Mouse v2. There is no battery door. A cable plugs into a port on the bottom, and the etched text reads Model A1657." loading="lazy" decoding="async">
+              </picture>
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0269 · Lightning</p>
+            <h3>Magic Mouse v2</h3>
+          </div>
+        </article>
+      </div>
+      <p class="credit">Photos via Wikimedia Commons: FASTILY, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; Syced, <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.</p>
       <div class="how">
-        <h3>Eight steps</h3>
-        <ol>
-          <li>Right-click the Magic Tray icon. Open your mouse, then <strong>Driver</strong>.</li>
-          <li>Click <strong>Boot Camp</strong>. Magic Tray opens the download page.</li>
-          <li>On that page, click the green <strong>Code</strong> button.</li>
-          <li>Click <strong>Download ZIP</strong>.</li>
-          <li>Open the downloaded file. Drag the <strong>AppleWirelessMouse</strong> folder to your desktop.</li>
-          <li>Open that folder. Right-click <strong>AppleWirelessMouse</strong> and choose <strong>Install</strong>.</li>
-          <li>Windows asks for permission. Click <strong>Yes</strong>.</li>
-          <li>Restart your PC, then scroll with one finger.</li>
+        <h3>Six steps</h3>
+        <ol class="stepper">
+          <li><span class="num">1</span><div class="step-body"><strong>Right-click the Magic Tray icon.</strong><p>Open your mouse, then <strong>Driver</strong>.</p></div></li>
+          <li><span class="num">2</span><div class="step-body"><strong>Click Boot Camp.</strong><p>Magic Tray opens Apple's download page.</p></div></li>
+          <li><span class="num">3</span><div class="step-body"><strong>Click the green Code button,</strong><p>then <strong>Download ZIP</strong>.</p></div></li>
+          <li><span class="num">4</span><div class="step-body"><strong>Open the download.</strong><p>Drag the <strong>AppleWirelessMouse</strong> folder to your desktop.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Right-click AppleWirelessMouse and choose Install.</strong><p>Click <strong>Yes</strong> when Windows asks.</p></div></li>
+          <li><span class="num">6</span><div class="step-body"><strong>Restart your PC,</strong><p>then scroll with one finger.</p></div></li>
         </ol>
-        <p class="note">No Magic Tray open? The same files live on <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole's download page</a>.</p>
+        <p class="note">Without Magic Tray, the same files are on <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole's page</a>.</p>
       </div>
       <details>
         <summary>Show the technical details</summary>
-        <p>The package is Apple's Boot Camp <code>applewirelessmouse.sys</code>. It ships with Apple's own signature catalogue, so Windows loads it with nothing switched off.</p>
-        <p>Step 5 targets <code>AppleWirelessMouse.inf</code>. The tray's <strong>Boot Camp</strong> item only opens the download page: no <code>pnputil</code>, no rebind.</p>
+        <p>Boot Camp is Apple's name for its own Windows drivers, not a Mac.</p>
+        <p>The package is Apple's <code>applewirelessmouse.sys</code>, signed by Apple's own catalogue, so nothing gets switched off. Step 5 targets <code>AppleWirelessMouse.inf</code>. The tray only opens the download page: no <code>pnputil</code>, no rebind. <strong>Stock Windows</strong> undoes it.</p>
       </details>
-      <p class="note">Want to go back to plain Windows? The <strong>Driver</strong> menu has <strong>Stock Windows</strong>, which undoes this.</p>
 
-      <h2 id="v3">The Magic Mouse 2024 with USB-C: no scroll fix to download yet</h2>
-      <p class="lead">The 2024 USB-C Magic Mouse (<code>0323</code>) has no finished scroll fix you can install today. The community driver it needs is still being built, so there is nothing to download.</p>
-      <p>Your battery percent on this mouse already works with no driver at all, and a tester has confirmed it. <a href="battery.html#read">See it in the tray</a>, or read <a href="tested.html">the full list of confirmed devices</a>.</p>
+      <h2 id="v3">The Magic Mouse 2024 with USB-C: nothing to install yet</h2>
+      <p class="lead">The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix you can install today. Its battery percent already works with no driver, <a href="tested.html">confirmed by a tester</a>.</p>
+      <div class="ident-grid">
+        <article class="ident-card">
+          <div class="ident-visual">
+            <figure class="photo pos-bottom">
+              <picture>
+                <source srcset="img/magic-mouse-v3-underside-usbc.webp" type="image/webp">
+                <img src="img/magic-mouse-v3-underside-usbc.jpg" width="1144" height="1144" alt="Underside of the 2024 Magic Mouse. There is no battery door. A small oval USB-C port sits on the bottom edge between the two skid strips, and the etched text reads Model A3204." loading="lazy" decoding="async">
+              </picture>
+            </figure>
+          </div>
+          <div class="ident-body">
+            <p class="pid-line">0323 · USB-C</p>
+            <h3>Magic Mouse 2024</h3>
+            <a href="magic-mouse-2024.html">Why this one is hard</a>
+          </div>
+        </article>
+      </div>
+      <p class="credit">2024 Magic Mouse underside: Apple product image, © Apple Inc., used unmodified apart from resizing; not Creative Commons licensed.</p>
+      <p>The driver itself lives on this project's <a href="https://drivers.magictray.app/">driver pages</a>. It will appear there when it is finished.</p>
       <ul class="facts">
-        <li><strong>Scrolling is the only thing missing.</strong> Nobody can install that driver yet, from the tray or by hand.</li>
-        <li>Why this mouse is the awkward one: <a href="v3.html">the 2024 mouse explained</a>.</li>
-        <li>What would finish it: <a href="funding.html">a driver Microsoft has checked</a>.</li>
+        <li><strong>Community driver:</strong> the tray's <strong>Driver</strong> menu lists it, but it isn't published. Pick it and the tray stops with an error.</li>
+        <li><strong>Patched Apple driver:</strong> real today. Scrolling or battery, never both, and unconfirmed.</li>
+        <li><strong>Microsoft has checked neither.</strong> Both need a Windows startup setting that lowers a real protection.</li>
       </ul>
-      <p>The tray's <strong>Driver</strong> menu already lists the community driver. Once it's published, picking it will download and install it after you confirm.</p>
-      <p>Pick it today and the tray tells you the driver isn't available yet, and nothing on your PC changes.</p>
-      <p>The menu's other choice, the patched Apple driver, does have an installer today. On that route you get scrolling or battery, never both, and nobody has confirmed it.</p>
-      <p>Neither driver has been checked by Microsoft, and the startup setting they need lowers a real security protection.</p>
+
       <details id="cost">
         <summary>What that Windows startup setting costs you</summary>
         <ul class="facts" id="cost-list">
-          <li>Windows normally refuses a driver nobody has checked. Now it accepts them from anywhere.</li>
-          <li>Memory integrity has to be off, and that removes a real layer of defence.</li>
-          <li>Small grey text sits in your desktop corner. Some games with anti-cheat won't start.</li>
-          <li>On a work PC this may be a bad deal. Only you can judge that.</li>
-          <li>A Microsoft-checked driver would remove all of it.</li>
+          <li>Windows accepts unchecked drivers, from anywhere.</li>
+          <li>Memory integrity goes off, which removes a real layer of defence.</li>
+          <li>Grey text in your desktop corner, and some anti-cheat games won't start.</li>
+          <li>On a work PC, a bad deal. A <a href="funding.html">driver Microsoft has checked</a> removes all of it.</li>
         </ul>
       </details>
-      <details>
-        <summary>Show the technical details</summary>
-        <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
-        <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is on the branch, with scroll and battery mutually exclusive.</p>
-      </details>
+      <p class="note">Picking the community driver before it is published never quietly switches you to the patched Apple driver instead. File paths and HID detail: <a href="magic-mouse-2024.html#details">the 2024 mouse page</a>.</p>
 
       <h2 id="faq">Questions</h2>
-      <dl class="faq">
-        <dt>Why won't my Apple Magic Mouse scroll on Windows 11?</dt>
-        <dd>Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The v1 (<code>030D</code>), v2 (<code>0269</code>) and Apple Wireless Mouse (<code>0310</code>) take <a href="#v1v2">Apple's own driver</a>; Magic Tray only opens the download page and you run the file. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix yet.</dd>
-        <dt>Which driver does my Apple Magic Mouse need on Windows 10 or 11?</dt>
-        <dd>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</dd>
-        <dt>Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?</dt>
-        <dd>Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway.</dd>
-        <dt>Will Magic Tray change my mouse driver without asking?</dt>
-        <dd>No, never on its own. Magic Tray opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything.</dd>
-        <dt>My Magic Mouse still won't scroll. What do I check?</dt>
-        <dd>If the Driver tab still says Microsoft, run the install again. If nothing changed after a restart, unpair the mouse in Windows Bluetooth settings and pair it again.</dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>Why won't my Apple Magic Mouse scroll on Windows 11?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The three older mice take <a href="#v1v2">Apple's own driver</a>. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix yet.</p></div>
+        </details>
+        <details>
+          <summary>Will Magic Tray change my mouse driver without asking?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>No. It opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything.</p></div>
+        </details>
+      </div>
 
       <h2 id="stuck">Still no scrolling?</h2>
-      <p>If an Apple Magic Mouse still won't scroll on Windows, check four things: an install that didn't take, a restart, a Windows update that swapped the driver back, and your device code.</p>
       <ul class="facts">
-        <li><strong>The Driver tab still says Microsoft:</strong> the install didn't take, so do it again.</li>
-        <li><strong>Nothing changed after a restart:</strong> unpair the mouse in Settings, then pair it again.</li>
-        <li><strong>It worked, then stopped:</strong> a Windows update swapped the driver back. Install it again.</li>
-        <li><strong>Windows shows <code>0323</code>:</strong> there's no scroll driver to install yet. <a href="#v3">Read why</a>.</li>
-        <li><strong>Still nothing:</strong> <a href="https://github.com/LesleyMurfin/magic-tray/issues">open an issue about a Magic Mouse that won't scroll</a>. Give your Windows version and mouse code.</li>
+        <li><strong>Driver tab still says Microsoft:</strong> the install didn't take. Run it again.</li>
+        <li><strong>Nothing changed after a restart:</strong> unpair in Settings, then pair again.</li>
+        <li><strong>It worked, then stopped:</strong> a Windows update swapped the driver back.</li>
+        <li><strong>Windows shows <code>0323</code>:</strong> no scroll driver to install yet.</li>
+        <li><strong>Still nothing:</strong> <a href="https://github.com/LesleyMurfin/magic-tray/issues">open an issue</a> with your Windows version and mouse code.</li>
       </ul>
 
-      <h2>Keyboards and trackpads</h2>
-      <ul class="facts">
-        <li><strong>Magic Keyboard:</strong> no driver to swap. Its battery needs <a href="keyboard.html#unlock">a one-time unlock</a>.</li>
-        <li><strong>Magic Trackpad:</strong> it already clicks and moves. <a href="devices.html#identify">Which trackpad you have</a>.</li>
-      </ul>
-    </article>
+      <p class="note">Keyboards and trackpads need no driver swap: <a href="keyboard.html#unlock">the keyboard battery unlock</a>, <a href="trackpad.html">a trackpad on Windows</a>.</p>
+    </main>
 
     <aside class="rail">
       <div class="rail-card">
@@ -361,17 +355,54 @@
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html">Which device?</a>
+          ·
+          <a href="drivers.html" aria-current="page">Make it scroll</a>
+          ·
+          <a href="keyboard.html">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="tested.html">Tested devices</a>
+          ·
+          <a href="funding.html">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <ul class="star-links">
+        <li>
+          <a class="star-link" href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star sbagirici
+          </a>
+        </li>
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star Magic Tray
+          </a>
+        </li>
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star the 2024 mouse driver
+          </a>
+        </li>
+      </ul>
       <p>
-        <a href="https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows">Star sbagirici</a>
-        ·
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-        ·
-        <a href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 mouse driver</a>
-        ·
-        <a href="tested.html">Hardware reports</a>
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

@@ -50,6 +50,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -71,7 +74,7 @@
         "@type": "WebPage",
         "@id": "https://magictray.app/trackpad.html#webpage",
         "url": "https://magictray.app/trackpad.html",
-        "name": "Apple Magic Trackpad on Windows 10/11: battery percent, no gestures",
+        "name": "Magic Trackpad on Windows 10 and 11: battery, no gestures",
         "description": "A Magic Trackpad moves the pointer and clicks on Windows 10 and 11 as soon as you pair it, and Magic Tray shows its battery percent for free. Windows gives you no gestures.",
         "isPartOf": { "@id": "https://magictray.app/#site" },
         "about": { "@id": "https://magictray.app/#app" },
@@ -91,15 +94,7 @@
             "name": "Does a Magic Trackpad need a driver on Windows 10 or 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Pair it in Windows Bluetooth settings and the pointer moves and the surface clicks straight away, on Windows 10 and Windows 11. Magic Tray reads the battery percent with nothing else installed either. A driver only comes into it if you want gestures, and that driver is not ours."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Why are there no trackpad gestures on Windows?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Because Windows treats a Magic Trackpad as an ordinary mouse. It never shows a Touchpad page in Settings for it, so two-finger scrolling, pinch to zoom and three-finger swipes do nothing. Magic Tray does not change that: it reads batteries and adds no gestures."
+              "text": "No. Pair it in Windows Bluetooth settings and the pointer moves and the surface clicks. Magic Tray reads the battery percent with nothing else installed. A driver comes into it only if you want gestures, and that driver is not ours."
             }
           },
           {
@@ -107,15 +102,7 @@
             "name": "Can I use a Magic Trackpad on a PC that is not a Mac?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Any Windows 10 or Windows 11 PC with Bluetooth will pair a Magic Trackpad and use it as a pointer. You do not need a Mac, and you do not need to install anything called Boot Camp, which is only Apple's name for its own Windows drivers."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Has anyone confirmed the battery percent on a Magic Trackpad?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Not yet. Magic Tray knows all three trackpads and should read a percent from each, but no test report exists for any of them. The three devices that are confirmed were all tested by the author on his own PC, so no trackpad on this page has an independent report behind it. A report from you would fix that."
+              "text": "Yes. Any Windows 10 or 11 PC with Bluetooth pairs one and uses it as a pointer. You don't need a Mac, and you install nothing called Boot Camp, which is only Apple's name for its own Windows drivers."
             }
           }
         ]
@@ -150,12 +137,8 @@
       <nav aria-label="Site">
         <a href="./">Home</a>
         <a href="battery.html">See my battery</a>
-        <a href="devices.html">Which device?</a>
+        <a href="devices.html" aria-current="true">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="trackpad.html" aria-current="page">Trackpad</a>
-        <a href="magic-mouse-2024.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
@@ -163,105 +146,143 @@
 
   <div class="shell">
     <main id="content" class="primary" tabindex="-1">
-      <h1>Magic Trackpad on Windows 10 and 11</h1>
+      <header class="page-intro">
+        <h1>Magic Trackpad on Windows 10 and 11</h1>
+        <p class="lead">Pair it: the pointer moves, the surface clicks, and Magic Tray shows the battery percent free, with no driver and no unlock. Gestures come from neither Windows nor Magic Tray.</p>
+        <p class="cta">
+          <a class="primary" href="battery.html#read">See my battery</a>
+        </p>
+      </header>
 
-      <p class="lead">A Magic Trackpad moves the pointer and clicks on Windows 10 and 11 as soon as you pair it, and Magic Tray shows its battery percent for free. Windows gives you no gestures, and Magic Tray does not add any.</p>
+      <h2 id="gestures">Gestures: one third-party driver</h2>
+      <p class="note"><a href="https://github.com/vitoplantamura/MagicTrackpad2ForWindows">MagicTrackpad2ForWindows</a> is GPL-2.0 licensed and signed by Microsoft, so it needs no Test Mode and no Memory integrity off. It is not ours, we have not tested it, and we get nothing if you install it.</p>
+      <details>
+        <summary>MagicTrackpad2ForWindows, in its own words</summary>
+        <ul class="facts">
+          <li>It is a Magic Trackpad 2 Precision Touchpad driver for Windows 11, based on the imbushuo driver, GPL-2.0 licensed and signed by Microsoft. Its author paid for the certificate himself, so it needs no Test Mode and no Memory integrity off.</li>
+          <li><strong>Latest release:</strong> <code>v2.0</code>, 25 February 2026. One file, <code>MT2FW11-20260223-MSSigned.zip</code>, 316,588 bytes.</li>
+          <li><strong>What it targets:</strong> Windows 11 and the Magic Trackpad 2. Its notes say Windows 10 on AMD64 needs a workaround from its issue tracker, and Windows 10 on ARM64 is unsupported.</li>
+          <li><strong>What its README claims beyond that:</strong> USB-C Magic Trackpad 2 support, battery level reading, haptic feedback control. Its claims, not ours.</li>
+          <li>Follow its own instructions, not ours: it says to uninstall Magic Utilities and Trackpad++ first.</li>
+        </ul>
+      </details>
 
-      <ul class="facts">
-        <li><strong>Nothing to install for the basics.</strong> Pointer, clicks and the battery percent all work on Windows as it came.</li>
-        <li><strong>No scroll fix here.</strong> The scrolling driver on this site is for a Magic Mouse. A trackpad has no equivalent from us.</li>
-        <li><strong>No trackpad has been confirmed.</strong> All three should work. Nobody has reported back yet.</li>
-      </ul>
-
-      <h2 id="pointer">Does the Magic Trackpad work on Windows 11?</h2>
-
-      <p>Yes, as a pointer. Pair it in Windows Bluetooth settings and it moves the cursor and clicks when you press the surface, on Windows 11 and on Windows 10. Windows sees it as an ordinary mouse, which is the whole story: you get everything a mouse does, and nothing a touchpad does.</p>
-
-      <div class="table-scroll" tabindex="0" role="region" aria-label="What works with nothing installed, scrollable table">
-      <table>
-        <caption>What works on a Magic Trackpad with nothing installed</caption>
-        <thead>
-          <tr><th>What you want</th><th>Paired, with nothing installed</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Move the pointer</td><td>Works</td></tr>
-          <tr><td>Click by pressing the surface</td><td>Works</td></tr>
-          <tr><td>Battery percent beside the clock</td><td>Works, with Magic Tray. Free, and no driver</td></tr>
-          <tr><td>Two-finger scrolling, pinch to zoom, three-finger swipe</td><td>No. Windows does not read more than one finger here</td></tr>
-          <tr><td>A Touchpad page in Windows Settings</td><td>No. Windows has it filed as a mouse</td></tr>
-        </tbody>
-      </table>
+      <h2 id="which">Which Magic Trackpad do you have?</h2>
+      <div class="picker">
+        <nav class="picker-tabs" aria-label="Choose your device">
+          <a href="#pp-t1">AA batteries</a>
+          <a href="#pp-t2">Rechargeable</a>
+          <a href="#pp-t3">Model number</a>
+        </nav>
+        <div class="picker-panels">
+          <section class="picker-panel" id="pp-t1">
+            <article class="ident-card">
+              <div class="ident-visual">
+                <figure class="photo pos-center">
+                  <picture>
+                    <source srcset="img/magic-trackpad-2010-aa-battery-tube.webp" type="image/webp">
+                    <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries." loading="lazy" decoding="async">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">030E · AA batteries</p>
+                <h3>A cap you unscrew</h3>
+                <p>The 2010 Magic Trackpad. A round cap on the back edge opens the battery tube. Needs a tester.</p>
+                <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a>
+              </div>
+            </article>
+          </section>
+          <section class="picker-panel" id="pp-t2">
+            <article class="ident-card">
+              <div class="ident-visual">
+                <figure class="photo pos-bottom">
+                  <picture>
+                    <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
+                    <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge." loading="lazy" decoding="async">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">0265 or 0324 · rechargeable</p>
+                <h3>A port on the edge</h3>
+                <p>Lightning is Magic Trackpad 2 (<code>0265</code>), USB-C is the 2024 model (<code>0324</code>). Both need a tester.</p>
+                <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a>
+              </div>
+            </article>
+          </section>
+          <section class="picker-panel" id="pp-t3">
+            <article class="ident-card">
+              <div class="ident-visual">
+                <figure class="photo pos-bottom">
+                  <picture>
+                    <source srcset="img/magic-trackpad-2010-underside-model-a1339.webp" type="image/webp">
+                    <img src="img/magic-trackpad-2010-underside-model-a1339.jpg" width="1600" height="1600" alt="Underside of a Magic Trackpad from 2010, beside its aluminium battery tube. The small print reads Model No.: A1339." loading="lazy" decoding="async">
+                  </picture>
+                </figure>
+              </div>
+              <div class="ident-body">
+                <p class="pid-line">A1339 · model number</p>
+                <h3>Printed underneath</h3>
+                <p>The 2010 trackpad is etched <code>A1339</code>; the four-character code Windows shows is certain.</p>
+                <a href="devices.html#identify">Where to read the code</a>
+              </div>
+            </article>
+          </section>
+        </div>
       </div>
+      <p class="credit">Photos via Wikimedia Commons: Josh Kehn at English Wikipedia, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; © Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons).</p>
 
-      <h2 id="battery">Does a Magic Trackpad need a driver for the battery percent?</h2>
+      <details id="pointer">
+        <summary>What works with nothing installed</summary>
+        <div class="table-scroll table-stack" tabindex="0" role="region" aria-label="What works with nothing installed, scrollable table">
+        <table>
+          <caption>What works on a Magic Trackpad with nothing installed</caption>
+          <thead>
+            <tr><th>What you want</th><th>Paired, with nothing installed</th></tr>
+          </thead>
+          <tbody>
+            <tr><td data-label="What you want">Move the pointer</td><td data-label="Paired, with nothing installed">Works</td></tr>
+            <tr><td data-label="What you want">Click by pressing the surface</td><td data-label="Paired, with nothing installed">Works</td></tr>
+            <tr><td data-label="What you want">Battery percent beside the clock</td><td data-label="Paired, with nothing installed">Works, with Magic Tray. Free, and no driver</td></tr>
+            <tr><td data-label="What you want">Two-finger scrolling, pinch to zoom, three-finger swipe</td><td data-label="Paired, with nothing installed">No. Windows does not read more than one finger here</td></tr>
+            <tr><td data-label="What you want">A Touchpad page in Windows Settings</td><td data-label="Paired, with nothing installed">No. Windows has it filed as a mouse</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>No unlock to run, unlike a <a href="keyboard.html#unlock">Magic Keyboard</a>.</p>
+      </details>
 
-      <p>No. Install Magic Tray, pair the trackpad, and the percent appears in the tray menu. There is no unlock to run, unlike a <a href="keyboard.html#unlock">Magic Keyboard</a>, and no driver to swap, unlike a <a href="drivers.html#v1v2">Magic Mouse that will not scroll</a>. <a href="battery.html#read">Where to look for the number</a>.</p>
-
-      <div class="table-scroll" tabindex="0" role="region" aria-label="The three Magic Trackpads, scrollable table">
-      <table>
-        <caption>The three Magic Trackpads, their device codes and test status</caption>
-        <thead>
-          <tr><th>Trackpad</th><th>Device code</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Magic Trackpad (AA batteries)</td><td><code>030E</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Trackpad 2 (Lightning)</td><td><code>0265</code></td><td>needs a tester</td></tr>
-          <tr><td>Magic Trackpad (2024, USB-C)</td><td><code>0324</code></td><td>needs a tester</td></tr>
-        </tbody>
-      </table>
-      </div>
-
-      <p>Magic Tray recognises all three and should read a percent from each. None of them is confirmed, so treat the table as "should work, nobody has confirmed it yet" rather than a promise.</p>
-
-      <p class="note">One trackpad has a driver item in the menu: the AA-battery <code>030E</code>. Its submenu can open Apple's own Boot Camp wireless trackpad download page, and that is all it does — Magic Tray installs nothing and you run the file yourself. You do not need it for the battery percent. For <code>0265</code> and <code>0324</code> the app offers no driver change at all and refuses to try.</p>
-
-      <h2 id="gestures">Can I get Magic Trackpad gestures on Windows?</h2>
-
-      <p>Not from Windows, and not from Magic Tray. Somebody else's driver does it, and it is free.</p>
-
-      <p><a href="https://github.com/vitoplantamura/MagicTrackpad2ForWindows">MagicTrackpad2ForWindows</a> describes itself as a Magic Trackpad 2 Precision Touchpad driver for Windows 11, based on the imbushuo driver and signed by Microsoft. It is GPL-2.0 licensed, and its author writes that he paid for the certificate himself so that Windows would accept it. Being Microsoft-signed is the part that matters to you: it needs no Test Mode and no Memory integrity switched off, unlike the <a href="magic-mouse-2024.html">2024 Magic Mouse</a> route.</p>
-
-      <ul class="plain">
-        <li><strong>Latest release:</strong> <code>v2.0</code>, published 25 February 2026, on its <a href="https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases">releases page</a>. One file, <code>MT2FW11-20260223-MSSigned.zip</code>, 316,588 bytes.</li>
-        <li><strong>What it targets:</strong> Windows 11, and the Magic Trackpad 2. Its own notes say Windows 10 on AMD64 works only through a workaround posted in its issue tracker, and that Windows 10 on ARM64 is not supported.</li>
-        <li><strong>What its README claims beyond that:</strong> support for the USB-C Magic Trackpad 2, battery level reading, and haptic feedback control. Those are its claims, not ours, and we have checked none of them.</li>
-      </ul>
-
-      <p><strong>It is not ours and we have not tested it.</strong> We are not connected to that project and we get nothing if you install it. Follow its own instructions rather than anything written here, because a driver's steps go stale the moment someone copies them: it tells you to remove older trackpad drivers first, and says it is especially important to uninstall Magic Utilities and Trackpad++ before you start. A driver changes how Windows sees your hardware, so read the page you are installing from.</p>
-
-      <p>If all you wanted was the number on the battery, you do not need any of this. <a href="battery.html#read">Magic Tray shows it as it is.</a></p>
-
-      <h2 id="which">Which Magic Trackpad do I have?</h2>
-
-      <p>Look at the back edge. A round cap you unscrew means the AA-battery model; a charging port means one of the rechargeable ones. The four-character code Windows shows is the answer that never lies, and one page owns that check: <a href="devices.html#kbtrackpad">the trackpad photographs</a> and <a href="devices.html#identify">where to read the code in Device Manager</a>.</p>
-
-      <h2 id="test">Can you help test a Magic Trackpad?</h2>
-
-      <p>No trackpad has ever been confirmed. Three devices are confirmed on this project, and all three were tested by the author on his own PC, so nothing on this page has an independent report behind it. A trackpad report is the single most useful thing you can send.</p>
-
-      <p>We need the battery percent only — there is no driver from us to test. Tell us:</p>
-
-      <ul>
-        <li>Which trackpad you have</li>
-        <li>Its four-character device code (<a href="devices.html#identify">where to find that</a>)</li>
-        <li>Your Windows version</li>
-        <li>Whether Magic Tray showed a percent, or <code>No reading</code></li>
-      </ul>
-
-      <p><a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a report</a>. "It didn't work" is as useful as "it worked". <a href="funding.html#test-devices">Other devices need testers too</a>.</p>
+      <details id="test">
+        <summary>Device codes, test status, and how to help</summary>
+        <div class="table-scroll table-stack" tabindex="0" role="region" aria-label="The three Magic Trackpads, scrollable table">
+        <table>
+          <caption>The three Magic Trackpads, their device codes and test status</caption>
+          <thead>
+            <tr><th>Trackpad</th><th>Device code</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td data-label="Trackpad">Magic Trackpad (AA batteries)</td><td data-label="Device code"><code>030E</code></td><td data-label="Status">needs a tester</td></tr>
+            <tr><td data-label="Trackpad">Magic Trackpad 2 (Lightning)</td><td data-label="Device code"><code>0265</code></td><td data-label="Status">needs a tester</td></tr>
+            <tr><td data-label="Trackpad">Magic Trackpad (2024, USB-C)</td><td data-label="Device code"><code>0324</code></td><td data-label="Status">needs a tester</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>Magic Tray should read a percent from all three, and none is confirmed yet. Send which trackpad you have, its <a href="devices.html#identify">four-character device code</a>, your Windows version, and whether Magic Tray showed a percent or <code>No reading</code>. <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a report</a>: "it didn't work" is as useful as "it worked". <a href="funding.html#test-devices">Other devices need testers too</a>.</p>
+        <p>The AA-battery <code>030E</code> has a submenu that opens Apple's own Boot Camp wireless trackpad download page and nothing else: Magic Tray installs nothing, you run the file. You don't need it for the battery percent. For <code>0265</code> and <code>0324</code> the app offers no driver change.</p>
+      </details>
 
       <h2 id="faq">Common questions</h2>
-
-      <dl class="faq">
-        <dt>Does a Magic Trackpad need a driver on Windows 10 or 11?</dt>
-        <dd>No. Pair it in Windows Bluetooth settings and the pointer moves and the surface clicks straight away, on Windows 10 and Windows 11. Magic Tray reads the battery percent with nothing else installed either. A driver only comes into it if you want gestures, and <a href="#gestures">that driver is not ours</a>.</dd>
-        <dt>Why are there no trackpad gestures on Windows?</dt>
-        <dd>Because Windows treats a Magic Trackpad as an ordinary mouse. It never shows a Touchpad page in Settings for it, so two-finger scrolling, pinch to zoom and three-finger swipes do nothing. Magic Tray does not change that: it reads batteries and adds no gestures.</dd>
-        <dt>Can I use a Magic Trackpad on a PC that is not a Mac?</dt>
-        <dd>Yes. Any Windows 10 or Windows 11 PC with Bluetooth will pair a Magic Trackpad and use it as a pointer. You do not need a Mac, and you do not need to install anything called Boot Camp, which is only Apple's name for its own Windows drivers.</dd>
-        <dt>Has anyone confirmed the battery percent on a Magic Trackpad?</dt>
-        <dd>Not yet. Magic Tray knows all three trackpads and should read a percent from each, but no test report exists for any of them. The three devices that are confirmed were all tested by the author on his own PC, so no trackpad on this page has an independent report behind it. <a href="#test">A report from you would fix that.</a></dd>
-      </dl>
+      <div class="accordion two-col">
+        <details>
+          <summary>Does a Magic Trackpad need a driver on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>No. Pair it in Windows Bluetooth settings and the pointer moves and the surface clicks. Magic Tray reads the battery percent with nothing else installed. A driver comes into it only if you want <a href="#gestures">gestures</a>, and that driver is not ours.</p></div>
+        </details>
+        <details>
+          <summary>Can I use a Magic Trackpad on a PC that is not a Mac? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes. Any Windows 10 or 11 PC with Bluetooth pairs one and uses it as a pointer. You don't need a Mac, and you install nothing called Boot Camp, which is only Apple's name for its own Windows drivers.</p></div>
+        </details>
+      </div>
     </main>
 
     <aside class="rail">
@@ -302,6 +323,8 @@
           ·
           <a href="magic-mouse-2024.html">The 2024 mouse</a>
           ·
+          <a href="tested.html">Tested devices</a>
+          ·
           <a href="funding.html">Support</a>
           ·
           <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
@@ -309,10 +332,16 @@
       </nav>
       <p>Magic Tray is Windows software, not a desk stand.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <div class="star-links">
+        <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star Magic Tray
+        </a>
+      </div>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md">Tested devices</a>
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

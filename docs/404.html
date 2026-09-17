@@ -6,7 +6,9 @@
   <title>Page not found - Magic Tray</title>
   <meta name="description" content="That Magic Tray page does not exist. Links here to the battery percent, device identification, driver and keyboard pages.">
   <meta name="robots" content="noindex">
-  <link rel="icon" href="screenshot-tray.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
 </head>
@@ -20,16 +22,13 @@
         <a href="battery.html">See my battery</a>
         <a href="devices.html">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="v3.html">The 2024 mouse</a>
-        <a href="funding.html">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · 404</p>
         <h1>This page does not exist</h1>
@@ -45,7 +44,7 @@
         <li><a href="keyboard.html">Keyboard battery</a> - the one-time unlock a Magic Keyboard needs.</li>
       </ul>
       <p class="note">If a link on this site brought you here, <a href="https://github.com/LesleyMurfin/magic-tray/issues/new">open an issue</a> and say which page it was on.</p>
-    </article>
+    </main>
 
     <aside class="rail">
       <div class="rail-card">
@@ -59,14 +58,41 @@
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html">Which device?</a>
+          ·
+          <a href="drivers.html">Make it scroll</a>
+          ·
+          <a href="keyboard.html">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="tested.html">Tested devices</a>
+          ·
+          <a href="funding.html">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Magic Tray is Windows software, not a desk stand.</p>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <div class="star-links">
+        <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star Magic Tray
+        </a>
+      </div>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-        ·
-        <a href="tested.html">Hardware reports</a>
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
       <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
     </div>

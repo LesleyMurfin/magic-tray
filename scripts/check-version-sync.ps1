@@ -6,20 +6,23 @@
     version that was actually released.
 
 .DESCRIPTION
-    Magic Tray carries its version number in four independent places, and they
+    Magic Tray carries its version number in five independent places, and they
     do not all mean the same thing:
 
       1. MagicMouseTray/MagicMouseTray.csproj  - the version being DEVELOPED.
       2. packaging/winget/manifests/.../<ver>/ - the version that was RELEASED.
       3. docs/index.html                       - what magictray.app ADVERTISES.
       4. scripts/package-release.ps1           - the asset NAME pattern.
+      5. docs/install.txt                      - what magictray.app TELLS AN
+                                                 AI AGENT to install.
 
-    The rule this script encodes is therefore not "all four must be equal":
+    The rule this script encodes is therefore not "all five must be equal":
 
-      * The winget manifests and the public site describe a build that people
-        can actually download, so they must both name the LATEST RELEASED
-        version, and the installer URL must point at that release's tag and at
-        the exact asset file name scripts/package-release.ps1 produces.
+      * The winget manifests and the public pages - docs/index.html and the
+        agent install guide docs/install.txt - describe a build that people can
+        actually download, so they must all name the LATEST RELEASED version,
+        and the installer URL must point at that release's tag and at the exact
+        asset file name scripts/package-release.ps1 produces.
       * The csproj may legitimately run AHEAD of the released version - that is
         the normal "next version in development" state, and it is reported as a
         ::notice, not an error. It may never run BEHIND it, because that means
@@ -31,6 +34,9 @@
         previous version, so the site's "Download vX.Y.Z" text, its brand
         <small> badge and its softwareVersion JSON-LD disagree with the ZIP the
         download link actually serves.
+      * The same release leaves docs/install.txt naming the previous tag as the
+        current one, so an agent a user pointed at
+        https://magictray.app/install.txt reads a stale example.
       * A winget manifest folder is copied for a new version but one of the
         three YAML files keeps the old PackageVersion, or the InstallerUrl still
         points at the previous tag - which winget accepts and then installs the
@@ -205,6 +211,7 @@ function Get-ShortVersion {
 $csprojRel = 'MagicMouseTray/MagicMouseTray.csproj'
 $packagerRel = 'scripts/package-release.ps1'
 $docsRel = 'docs/index.html'
+$installRel = 'docs/install.txt'
 $manifestRootRel = 'packaging/winget/manifests/l/LesleyMurfin/MagicTray'
 
 # ---------------------------------------------------------------------------
@@ -425,7 +432,52 @@ if ($null -ne $releasedVersion) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. The csproj may lead the released version, never trail it.
+# 5. The agent install guide must name the released version where it names one
+#    at all - and only where it names one.
+# ---------------------------------------------------------------------------
+
+# docs/install.txt is published at https://magictray.app/install.txt and is read
+# by an AI agent that a user has asked to install Magic Tray, so it rots at
+# release time exactly the way docs/index.html does. It is in scope here for the
+# same reason the site is: it is public metadata describing a build that people
+# can actually download, and nothing else in CI notices when it names a tag that
+# is no longer the newest one. A stale version matters more here than on the
+# site, because the reader is a machine acting on the text rather than a person
+# who can see the release page beside it.
+#
+# The check is deliberately narrower than the one on docs/index.html, because
+# the file makes a narrower claim. Its STEP 1 sends the agent to
+# api.github.com/repos/LesleyMurfin/magic-tray/releases/latest for tag_name and
+# the assets array and then says, in as many words, "Do not assume those values;
+# read them from the API response". The version it prints is therefore an
+# "at the time of writing" illustration, not an instruction to install that
+# version - so the one thing that can go stale is the illustration, and that is
+# the one thing checked. No download URL, asset digest or step text is held to
+# the released version here: the file does not assert any of them, and a check
+# stricter than the file it guards would only teach people to edit the file to
+# please the checker.
+if ($null -ne $releasedVersion) {
+    $install = Get-RepoFile -RelativePath $installRel
+    if ($null -eq $install) {
+        Write-Problem -Path $installRel -Line 1 -Message 'Agent install guide is missing; https://magictray.app/install.txt is served from it.'
+    }
+    else {
+        # Every occurrence, as elsewhere in this script: a second "current
+        # release is vX.Y.Z" added lower down must not escape the check.
+        $examples = @(Get-TaggedValueList -Content $install -Pattern 'current release is v(\d+\.\d+\.\d+)')
+        if ($examples.Count -eq 0) {
+            Write-Problem -Path $installRel -Line 1 -Message 'No "current release is vX.Y.Z" example found. STEP 1 names the current release as an illustration, and this check holds that illustration to the released version, so the wording has to stay recognisable. Reword the check with the file.'
+        }
+        foreach ($example in $examples) {
+            if ($example.Value -ne $releasedVersion) {
+                Write-Problem -Path $installRel -Line $example.Line -Message ('The "current release" example says v{0} but the released version is {1}. The file tells the agent not to trust the example, but a stale one still misleads: update it when a release is promoted.' -f $example.Value, $releasedVersion)
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 6. The csproj may lead the released version, never trail it.
 # ---------------------------------------------------------------------------
 
 if ($null -ne $csprojVersion -and $null -ne $releasedVersion) {
@@ -435,7 +487,7 @@ if ($null -ne $csprojVersion -and $null -ne $releasedVersion) {
         Write-Problem -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> {0} is behind the released version {1}. Bump the csproj: a release must never be cut from a tree with a stale version." -f $csprojVersion, $releasedVersion)
     }
     elseif ($developed -gt $released) {
-        Write-Advice -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> {0} is ahead of the released version {1}. That is the normal 'next version in development' state; the winget manifests and docs/index.html stay on {1} until {0} is tagged and published." -f $csprojVersion, $releasedVersion)
+        Write-Advice -Path $csprojRel -Line $csprojVersionLine -Message ("<Version> {0} is ahead of the released version {1}. That is the normal 'next version in development' state; the winget manifests, docs/index.html and docs/install.txt stay on {1} until {0} is tagged and published." -f $csprojVersion, $releasedVersion)
     }
 }
 
