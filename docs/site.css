@@ -1320,6 +1320,28 @@ details > *:not(summary) {
 details > *:not(summary):first-of-type { margin-top: 0.2rem; }
 details code { font-family: var(--mono); font-size: 0.85rem; }
 
+/* A link to a question or an aside lands on a <details> that is closed, so the
+   visitor arrives at a summary and an answer they cannot see. The usual fix is
+   a hashchange listener that sets the `open` attribute, but the site is served
+   under `script-src 'none'` and has no JavaScript at all, so that is not
+   available.
+
+   ::details-content is the element's own slot, and making it visible reveals
+   the answer without the attribute. Where the pseudo-element is not supported
+   the rule is dropped and the old behaviour remains: the summary is still
+   scrolled to, still focusable, still one click from the answer. Nothing is
+   worse than it is now, so this needs no fallback.
+
+   `content-visibility` alone leaves the slot at zero height while the closed
+   state still applies `block-size: 0`, so both are needed. */
+details:target::details-content {
+  content-visibility: visible;
+  block-size: auto;
+}
+/* The marker would otherwise still point sideways at content that is open. */
+details:target > summary::before { transform: rotate(45deg); }
+.accordion details:target > summary .chev { transform: rotate(180deg); }
+
 
 /* ---------------------------------------------------------------------------
    Device picker: one device visible at a time.
