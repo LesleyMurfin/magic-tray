@@ -39,12 +39,13 @@ Set-StrictMode -Version 2
 # rest, and both resolvers find it there: scripts/ is
 # FindKeyboardPatchScript's first probe and DiagnosticScripts.Find's second.
 $ScriptPayload = [ordered]@{
-  'scripts/kbd-patch-cachedservices.ps1' = 'scripts/kbd-patch-cachedservices.ps1'
-  'scripts/Install-KeyboardBattery.cmd'  = 'scripts/Install-KeyboardBattery.cmd'
-  'scripts/capture-state.ps1'            = 'scripts/capture-state.ps1'
-  'scripts/diagnose-driver.ps1'          = 'diagnose-driver.ps1'
-  'scripts/diagnose-and-recover.ps1'     = 'scripts/diagnose-and-recover.ps1'
-  'scripts/mm-bt-stack-snapshot.ps1'     = 'scripts/mm-bt-stack-snapshot.ps1'
+  'scripts/kbd-patch-cachedservices.ps1'  = 'scripts/kbd-patch-cachedservices.ps1'
+  'scripts/Install-KeyboardBattery.cmd'   = 'scripts/Install-KeyboardBattery.cmd'
+  'scripts/capture-state.ps1'             = 'scripts/capture-state.ps1'
+  'scripts/diagnose-driver.ps1'           = 'diagnose-driver.ps1'
+  'scripts/diagnose-and-recover.ps1'      = 'scripts/diagnose-and-recover.ps1'
+  'scripts/mm-bt-stack-snapshot.ps1'      = 'scripts/mm-bt-stack-snapshot.ps1'
+  'scripts/repair-magicmouse-channel.ps1' = 'scripts/repair-magicmouse-channel.ps1'
 }
 
 function Get-CsprojVersion {

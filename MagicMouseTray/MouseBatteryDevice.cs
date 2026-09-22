@@ -143,32 +143,120 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         }
 
         var buf = new byte[inLen];
+
+        // The probe's touch evidence is a counter delta, and a delta is only
+        // evidence about NOW if the interval it spans is short. This sample is
+        // taken immediately BEFORE the request goes out, so the pair the
+        // planner judges spans THIS read - the three attempts and their sleeps
+        // included - instead of the 5 min .. 24 h gap back to the previous poll
+        // cycle, which is what let a mouse last touched hours ago read as "in
+        // use right now". The bound and what it costs in detection are recorded
+        // at DeviceDiagReader.PairMaxSpan.
+        //
+        // One reader for both samples: it resolves the bound filter service
+        // once, and the pair must come from the same service either way.
+        var diag = new FilterDiagReader();
+        var diagBefore = diag.Read();
+
+        // The loop records ONE thing: whether the IOCTL ever answered. Every
+        // terminal outcome below is then derived from that flag plus the
+        // buffer, so a read is classified in exactly one place.
+        //
+        // It used to be four CaptureProbe calls, one per outcome, each with a
+        // hand-written fact - and changing any single one of them was a
+        // one-keystroke way to resurrect the restart loop with no test able to
+        // see it, because this method needs a live 0323 and unmockable
+        // hid.dll/kernel32.dll externs (HidNative.cs:24-25, :51-53) to run at
+        // all. What survives that constraint is a single call whose argument is
+        // a pure function of facts the loop measured: ZeroReportFact (:295-303)
+        // is testable and pinned, and ioctlSucceeded cannot be edited to a
+        // literal without also changing the control flow that reads it.
+        bool ioctlSucceeded = false;
         for (int attempt = 0; attempt < 3; attempt++)
         {
             Array.Clear(buf, 0, buf.Length);
             buf[0] = BatteryReportId;
             if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
             {
-                var pct = ParseRid90Percent(buf);
-                if (pct is >= 0)
-                {
-                    Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
-                    return pct.Value;
-                }
-                if (IsBogusZeroReport(buf))
-                {
-                    Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)");
-                    return -2;
-                }
-                Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
-                return -2;
+                ioctlSucceeded = true;
+                break;
             }
             if (attempt < 2) Thread.Sleep(50);
         }
 
-        Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
+        // The correlated probe for this read, captured before anything is
+        // logged or returned. The -2 sentinel is left exactly as it was -
+        // three of the outcomes below still return it and two other classes
+        // emit it for unrelated reasons (KeyboardBatteryDevice's blocked SDP
+        // cap, and :402 below), so the fact is carried BESIDE the sentinel and
+        // never instead of it. Redefining -2 would silently change the keyboard
+        // rule at RepairPlanner.cs:416-430 and the repair script behind it.
+        CaptureProbe(ZeroReportFact(ioctlSucceeded, buf), diag, diagBefore);
+
+        if (!ioctlSucceeded)
+        {
+            // The IOCTL failed outright after three attempts. Measured live as
+            // err=21 (ERROR_NOT_READY) while the device was re-enumerating
+            // after a restart, in the same minute that Rid12Count collapsed
+            // 2095323 -> 521. Folding that into the zero-report fact would
+            // diagnose the truncation defect - whose repair is a device restart
+            // - from the evidence of a restart in progress, i.e. a loop.
+            //
+            // buf is NOT innocent here: the last attempt left the id byte
+            // written and everything else zeroed (:177-178), which is
+            // byte-for-byte the fingerprint IsBogusZeroReport looks for. The
+            // only thing between a re-enumerating mouse and a restart loop is
+            // ioctlSucceeded, which is why ZeroReportFact tests it FIRST.
+            Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
+            return -2;
+        }
+
+        var pct = ParseRid90Percent(buf);
+        if (pct is >= 0)
+        {
+            Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
+            return pct.Value;
+        }
+
+        if (IsBogusZeroReport(buf))
+        {
+            // THE truncation fingerprint: a well-formed report whose percent
+            // byte is 0. The log text below predates the finding that the
+            // filter's inbound diversion swallows the percentage on a 1-byte
+            // control-channel read, so "no battery report sent yet" is one of
+            // two causes now - the other being this defect. Which one it is is
+            // not decidable here; it is decided by the planner from the probe's
+            // correlation with a live touch stream.
+            Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)");
+            return -2;
+        }
+
+        // Wrong report id: nothing judgeable came back, so the fact is unknown
+        // and NOT false - claiming "a real percent arrived" would be as wrong
+        // as claiming the zero.
+        Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
         return -2;
     }
+
+    // The correlated probe for THIS collection's read (Ruling L): a v3 exposes
+    // three HID collections under one DeviceName and the poller collapses their
+    // readings to one, so the probe has to travel with the reading that wins
+    // rather than being published from whichever path happened to run last.
+    // AdaptivePoller carries it alongside `best` and publishes only the
+    // winner's (AdaptivePoller.cs:140-174).
+    //
+    // Instances are created fresh per poll by DeviceRegistry.Discover, so this
+    // can never hold a reading from an earlier cycle.
+    internal BatteryProbe? LastProbe { get; private set; }
+
+    // The after-sample is taken IMMEDIATELY after HidD_GetInputReport returned,
+    // in the same code path, because that is the only moment the filter's
+    // shared last-inbound slot can still hold the control-channel frame this
+    // read caused (BatteryProbe.DiagAfter). before is the pre-read sample from
+    // the same reader, so the pair is bounded by the read itself.
+    void CaptureProbe(bool? zeroReport, IFilterDiagReader diag, FilterDiagSnapshot? before) =>
+        LastProbe = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport, diag, before, DateTimeOffset.UtcNow);
 
     internal static int? ParseRid90Percent(byte[] buf)
     {
@@ -186,6 +274,33 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // A well-formed 0x90 report whose percent byte is 0 - rejected, logged distinctly.
     internal static bool IsBogusZeroReport(byte[] buf) =>
         buf is not null && buf.Length >= 3 && buf[0] == BatteryReportId && buf[2] == 0;
+
+    // The fact each terminal outcome of a 0x90 read carries, as a pure
+    // function of the two things that decide it: did the IOCTL answer, and what
+    // is in the buffer. Every terminal outcome of ReadV3Rid90 is classified
+    // through this one call (:194), so the mapping lives in a testable place
+    // instead of in four literals at four return paths.
+    //   true  - a well-formed report whose percent byte is 0: THE truncation
+    //           fingerprint, and the only fact rule 2e may fire on.
+    //   false - a real percent arrived.
+    //   null  - nothing judgeable came back: a wrong report id, or an IOCTL
+    //           that never answered at all.
+    //
+    // ioctlSucceeded is tested FIRST and short-circuits, because a failed read
+    // leaves a buffer that LOOKS like the fingerprint - ReadV3Rid90 zeroes it
+    // and writes the report id before every attempt - and because the failure
+    // measured here was err=21 on a mouse mid-re-enumeration. Reading that as
+    // the truncation defect prescribes a device restart from the evidence of a
+    // restart already in progress: the loop FindingGate.cs:8-21 exists to stop.
+    internal static bool? ZeroReportFact(bool ioctlSucceeded, byte[] buf)
+    {
+        if (!ioctlSucceeded)
+            return null;                      // the IOCTL never answered
+        if (ParseRid90Percent(buf) is >= 0)
+            return false;                     // a real percent arrived
+        return IsBogusZeroReport(buf) ? true  // well-formed, percent byte 0
+                                      : null; // wrong report id: not judgeable
+    }
 
     static string FormatReportHead(byte[] buf, int count)
     {

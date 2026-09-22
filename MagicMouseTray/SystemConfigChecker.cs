@@ -100,7 +100,7 @@ internal static class SystemConfigChecker
     const string NestedSignatureOid = "1.3.6.1.4.1.311.2.4.1";
 
     // The watcher writes one "heartbeat alive" line every 5 minutes
-    // (DeviceDiagReader.cs:40-43). Four missed heartbeats is the threshold: a
+    // (DeviceDiagReader.cs:610-612). Four missed heartbeats is the threshold: a
     // single missed line is scheduler jitter, not a finding.
     internal static readonly TimeSpan WatcherStaleAfter = TimeSpan.FromMinutes(20);
 
@@ -240,7 +240,7 @@ internal static class SystemConfigChecker
     //                                   could not read it (capped at Advisory
     //                                   by SigningSeverity). For a v1/v2 the
     //                                   documented route is Apple's signed
-    //                                   binary (README.md:389,
+    //                                   binary (README.md:253,
     //                                   docs/drivers.html:634), so with no
     //                                   evidence there is nothing to raise.
     //
@@ -1035,7 +1035,7 @@ internal static class SystemConfigChecker
     // Every installed service in the family, read from its own ImagePath,
     // because that is the file Windows loads and because Check is not told
     // which variant is bound: the KMDF package ships MagicMouseDriver204Scroll
-    // beside MagicMouseDriver (RepairPlanner.cs:495-501). One self-signed file
+    // beside MagicMouseDriver (RepairPlanner.cs:908-910). One self-signed file
     // is enough for signing policy to matter; it takes every file on this PC
     // reading as trusted to say that it does not.
     static List<string> DriverImages(SigningSubject subject)

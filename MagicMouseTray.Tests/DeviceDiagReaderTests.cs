@@ -29,7 +29,7 @@ public class DeviceDiagReaderTests
     static readonly DateTime T0 = new(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
 
     static bool? Sample(string service, long value, DateTime atUtc) =>
-        DeviceDiagReader.EvaluateCounterSample(service, value, atUtc, out _, out _);
+        DeviceDiagReader.EvaluateCounterSample(service, value, atUtc, out _, out _, out _);
 
     [Fact]
     public void EvaluateCounterSample_FirstSample_IsUnknown()
@@ -40,7 +40,7 @@ public class DeviceDiagReaderTests
         // the baseline, and the log line for it must say prev=none
         // last_advance=never rather than invent either.
         var advancing = DeviceDiagReader.EvaluateCounterSample(svc, 142271, T0,
-            out var previous, out var lastAdvance);
+            out var previous, out var lastAdvance, out _);
 
         Assert.Null(advancing);
         Assert.Null(previous);
@@ -57,7 +57,7 @@ public class DeviceDiagReaderTests
         Assert.Null(Sample(svc, 142271, T0));
 
         var advancing = DeviceDiagReader.EvaluateCounterSample(svc, 142513, T0.AddSeconds(2.5),
-            out var previous, out _);
+            out var previous, out _, out _);
 
         Assert.True(advancing);
         Assert.Equal<long?>(142271, previous);
@@ -110,6 +110,29 @@ public class DeviceDiagReaderTests
         // "working" and "not verified" from one menu open to the next.
         Assert.True(Sample(svc, 1001, T0.AddSeconds(3 + 30)));
         Assert.True(Sample(svc, 1001, T0.AddSeconds(3 + 59)));
+    }
+
+    [Fact]
+    public void EvaluateCounterSample_UnchangedShortlyAfterMovement_IsRememberedButNotFresh()
+    {
+        var svc = Unique("mt-fresh-");
+
+        Assert.Null(Sample(svc, 1000, T0));
+
+        var moved = DeviceDiagReader.EvaluateCounterSample(svc, 1001, T0.AddSeconds(3),
+            out _, out _, out var advancedOnMove);
+        Assert.True(moved);
+        Assert.True(advancedOnMove);
+
+        // The memo is what the capability row wants - still "advancing" half a
+        // minute later - and it is exactly what the prompted scroll probe must
+        // not see. MultitouchAdvancingFresh answers from advancedNow, so a leg
+        // the user spent reading the prompt reports no touch and comes out
+        // void, instead of inheriting a verdict from the click that started it.
+        var remembered = DeviceDiagReader.EvaluateCounterSample(svc, 1001, T0.AddSeconds(33),
+            out _, out _, out var advancedOnHold);
+        Assert.True(remembered);
+        Assert.False(advancedOnHold);
     }
 
     [Fact]

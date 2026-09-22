@@ -107,7 +107,14 @@ internal static class DeviceCapability
         bool? MultitouchAdvancing,
         RepairProblem? Problem,
         bool? EnabledInApp,
-        SdpPatchState? Sdp = null);
+        SdpPatchState? Sdp = null,
+        // What Raw Input last delivered for this device's pointer collection
+        // (WheelSink). null is "never observed". Present only so this file can
+        // stop CLAIMING scroll works on evidence that cannot support it: a
+        // measured window with zero wheel events contradicts the counter-based
+        // "working" line below, and an observation with Void set or an
+        // unvalidated decoder is not a measurement at all.
+        WheelObservation? Wheel = null);
 
     // A keyboard has no pointer of its own; every mouse and trackpad does.
     internal static bool PointerApplies(DeviceKind kind) =>
@@ -168,6 +175,8 @@ internal static class DeviceCapability
                 return "Scroll: not working (two drivers registered)";
             case RepairProblem.FilterPackageMissing:
                 return ScrollNoPackage;
+            case RepairProblem.ScrollNotchesNotDelivered:
+                return ScrollNotchesDropped;
         }
 
         // No snapshot at all: FilterPackagePresent is the reader's always-set
@@ -191,6 +200,21 @@ internal static class DeviceCapability
         // read as a fault here. Counters standing still cannot tell an idle
         // mouse from a broken one, so it is not an accusation either - the user
         // asserts the symptom through the ScrollHelpItemLabel item instead.
+        // Counter movement in the driver's Diag key proves the multitouch
+        // stream is flowing. It does NOT prove a notch ever reached Windows -
+        // the measured defect is a filter that translates every report and
+        // emits no notches - so a raw-input window that actually measured this
+        // device and saw zero wheel events outranks it here. That window cannot
+        // accuse the driver on its own (a hand resting on the surface produces
+        // exactly the same zeros), which is why this is an observation and not
+        // a fault: the prompted probe behind ScrollHelpItemLabel is what
+        // decides. Reported before "working" so the row never out-claims the
+        // evidence beneath it.
+        if (f.Wheel is { Void: false, DecoderValidated: true, TargetDevicePath: not null } wheel
+            && wheel.WheelEvents == 0
+            && wheel.HWheelEvents == 0)
+            return ScrollNotObserved;
+
         if (f.MultitouchAdvancing == true)
             return "Scroll: working";
         if (f.FilterInStack == true)
@@ -201,6 +225,11 @@ internal static class DeviceCapability
     const string ScrollServiceStopped = "Scroll: not working (driver service not running)";
     const string ScrollNotAttached = "Scroll: not working (driver not attached)";
     const string ScrollNoPackage = "Scroll: not installed (no scroll driver on this PC)";
+    // A measured fault, from the prompted two-gesture probe only.
+    const string ScrollNotchesDropped = "Scroll: not working (driver drops scroll it reads)";
+    // NOT a fault: nobody has scrolled while the tray was watching, which is
+    // indistinguishable from a driver that drops every notch.
+    const string ScrollNotObserved = "Scroll: no scrolling seen yet (unverified)";
 
     internal static string BatteryRow(CapabilityFacts f)
     {
@@ -209,6 +238,12 @@ internal static class DeviceCapability
         // never attempted; saying a percent would invent one.
         if (f.EnabledInApp == false)
             return "Battery: not polled (switched off in this app)";
+
+        // The percentage arrived and was destroyed on the way up, which is a
+        // different statement from "Windows sends no report" below - and the
+        // opposite of unavailable: the mouse answered.
+        if (f.Problem == RepairProblem.BatteryResponseTruncated)
+            return "Battery: answer cut off by the scroll driver";
 
         // A Magic Keyboard percent does not come from the device asking to be
         // read: Windows exposes no battery Feature cap on the stock SDP record

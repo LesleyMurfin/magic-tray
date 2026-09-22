@@ -260,5 +260,44 @@ public class MouseBatteryDeviceTests
         Assert.Equal(!bluetooth && path.Length > 0, DeviceRegistry.IsUsbTransportPath(path));
     }
 
+    // The PRODUCER half of the restart-loop guard. Each assertion below is one
+    // terminal outcome of ReadV3Rid90, which classifies every read through a
+    // single ZeroReportFact call (MouseBatteryDevice.cs:194) - so this file is
+    // where that mapping is pinned, and changing any row of it has to go red
+    // here. ReadV3Rid90 itself cannot be driven from a test: it needs a live
+    // 0323 and sits on unmockable hid.dll/kernel32.dll externs.
+    //
+    // The planner half is pinned by RepairPlannerTests
+    // .PlanOne_BatteryReadThatNeverAnswered_RaisesNothingAndCannotLoop, which
+    // hand-writes the fact and therefore cannot see this mapping drift.
+    [Fact]
+    public void ZeroReportFact_PinsEveryTerminalOutcomeOfA0x90Read()
+    {
+        // A real percent came back: the live mm-hid-probe bytes, 46 %.
+        Assert.False(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x90, 0x04, 0x2E]));
 
+        // THE truncation fingerprint: a well-formed 0x90 whose percent byte
+        // is 0. The only fact the finding may fire on.
+        Assert.True(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x90, 0x04, 0x00]));
+
+        // Wrong report id - nothing judgeable came back. Unknown, and NOT
+        // false: claiming "a real percent arrived" would be as wrong as
+        // claiming the zero.
+        Assert.Null(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x47, 0x00, 0x3C]));
+
+        // THE LOOP HAZARD, and the load-bearing row: a buffer that WOULD have
+        // parsed, on a read that did not succeed. Measured as err=21 while the
+        // device re-enumerated after a restart, in the same minute Rid12Count
+        // collapsed 2095323 -> 521.
+        Assert.Null(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: false, [0x90, 0x04, 0x2E]));
+
+        // And the same failed read as it really arrives: ReadV3Rid90 zeroes the
+        // buffer and writes the report id before every attempt, so what a
+        // three-times-failed IOCTL leaves behind is byte-identical to the
+        // fingerprint above. Only ioctlSucceeded separates them - reading this
+        // shape as the defect would prescribe a device restart from the
+        // evidence of a restart already in progress.
+        Assert.True(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x90, 0x00, 0x00]));
+        Assert.Null(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: false, [0x90, 0x00, 0x00]));
+    }
 }
