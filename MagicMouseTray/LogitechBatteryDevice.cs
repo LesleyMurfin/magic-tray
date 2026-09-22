@@ -147,7 +147,16 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
                 if ((uint)Marshal.GetLastWin32Error() != HidNative.ERROR_IO_PENDING) return null;
                 if (HidNative.WaitForSingleObject(evt, TIMEOUT_MS) != HidNative.WAIT_OBJECT_0)
                 {
+                    // CancelIo only REQUESTS cancellation: the read can still be in flight when
+                    // it returns. Without waiting for the cancelled I/O to finish, the finally
+                    // below closes the event and this frame returns while the kernel still owns
+                    // `ov` (a local on a frame that is going away) and `buf` (an unpinned managed
+                    // array) - it would later signal a closed-and-possibly-reused handle and
+                    // write into memory this frame no longer owns. GetOverlappedResult with
+                    // bWait=true blocks until the cancellation has actually completed; the result
+                    // is uninteresting, only the completion is.
                     HidNative.CancelIo(handle);
+                    HidNative.GetOverlappedResult(handle, ref ov, out _, true);
                     return null;
                 }
             }
