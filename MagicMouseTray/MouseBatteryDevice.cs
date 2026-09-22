@@ -9,32 +9,46 @@
 //   &col02 0xFF00/0x0014 Input 0x90 = 73%, bytes=[90 04 49]).
 //
 //   v1/v2 (030D / 0269 / 0310) and every trackpad (030E / 0265 / 0324) share ONE entry
-//   point, ReadV1V2Feature, but the channel it takes is whatever the opened node's
-//   descriptor declares, and that is NOT the same channel on every model:
+//   point, ReadV1V2Feature, which tries BOTH channels on the node it opened (see PROBE,
+//   LEARN, RELEARN below) because the channel that answers is NOT the same on every model
+//   and the descriptor only suggests which to try first:
 //     030D: the unified Generic Device (0x0006) battery-strength (0x0020) FEATURE
 //       report, RID 0x47. Measured by this project on its own hardware (97%; again
 //       2026-09-21, 91%, bytes=[47 5B]). That mouse enumerates as ONE interface with
 //       no &col0x suffix and carries the Feature on the mouse collection itself, which
 //       is why nothing about collections can take its percent away - a 030D fact only.
-//     0269: no Generic Device battery-strength Feature exists on this model at all, so
-//       the unifiedApple branch below can never fire for it. Its only channel is the
-//       second top-level collection - usage page 0xFF00, usage 0x0014, Input RID 0x90,
-//       percent byte at buf[2] - which is the same shape the 0323 uses and which Windows
-//       exposes as the &Col02 interface. Source: public HID descriptor dump of a Magic
-//       Mouse 2 at
+//     0269: its public descriptor declares no Generic Device battery-strength Feature at
+//       all, so feature47 on it is a blind try that is expected to fail. The channel it
+//       does declare is the second top-level collection - usage page 0xFF00, usage 0x0014,
+//       Input RID 0x90, percent byte at buf[2] - the same shape the 0323 uses and which
+//       Windows exposes as the &Col02 interface. Source: public HID descriptor dump of a
+//       Magic Mouse 2 at
 //       https://github.com/svartalf/hid-magicmouse2/blob/master/dumps/debugfs-rdesc.log
 //       Numeric facts re-parsed from that byte string only: the repo is kernel-derived,
 //       so no prose, code or comments are copied from it (same rule as hid-ids.h).
 //       This project has never read a 0269 itself - one tester reported that Magic Tray
 //       finds no battery on the Boot Camp route (issue #124). The descriptor is also why
 //       discovery must keep EVERY collection of a mouse as a read candidate: collapse a
-//       0269 onto its pointer collection and ReadV1V2Feature has no channel left to read.
+//       0269 onto its pointer collection and neither channel has anywhere to answer from.
 //     0310 (Apple Wireless Mouse): never read here, no descriptor ever seen, unknown.
 //   BLE v2 is VID 0001004C PID&0269 (#73).
 //   Of this family only the 030D has ever been measured here (97%, unified Feature 0x47),
 //   so DriverAdvisor keys its battery CLAIM on the PID and not on Kind (#137), and the
-//   trackpad prose describes this descriptor-driven path rather than the v3's fixed
-//   0x90 (#134).
+//   trackpad prose describes this probe rather than the v3's fixed 0x90 (#134).
+//
+// PROBE, LEARN, RELEARN (issue #124 follow-up). The descriptor is no longer allowed to VETO a
+// channel, only to order the attempts: ReadV1V2Feature tries the declared channel first
+// because it is the cheapest likely hit, then tries the other one anyway. An Apple device
+// answering a report it never declared is ordinary behaviour, and this project cannot predict
+// per-model channels - the three shapes it knows disagree (030D unified Feature on one
+// interface and 0323 Input 0x90 on col02, both measured here; 0269 Input 0x90 on col02, from
+// its public descriptor, never read by this project). Apple's driver choice changes the shape
+// again (measured on the 0323: filter bound = one unified node with no readable battery,
+// filter removed = &col02 appears and reads). So the app stops guessing: it probes, logs
+// EVERY attempt with its outcome, remembers the pair that worked in config.ini
+// (BatteryChannelMemory, one battery call per poll from then on), and
+// throws that memory away the moment it stops working - which is what makes a Boot Camp to
+// Stock driver switch self-healing without the user doing anything.
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -99,6 +113,11 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     internal const byte BatteryReportId = 0x90;
     // Apple firmware reports 1..100; 0 is only ever seen from a dead/phantom interface.
     internal const int MinValidPercent = 1;
+    // The report id to try for feature47 when the opened node declares NONE. A declared id is
+    // a fact read out of this device; 0x47 is a fallback GUESS - it is the id every Apple
+    // device measured by this project has carried (030D live 2026-09-21: 91%, bytes=[47 5B]),
+    // which makes it the best blind try and nothing more.
+    internal const byte FallbackFeatureReportId = 0x47;
 
     // Ordered read candidates for ONE physical mouse, primary first. A mouse usually has a
     // single interface, but a v1/v2 can expose several collections (pointer plus vendor) and
@@ -136,6 +155,37 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
 
     public int GetBatteryPercent()
     {
+        // A remembered answer is read with exactly ONE battery call: the collection that
+        // answered last time, over the channel that answered last time, and no probe walk.
+        // This is the maintainer's "once it figures out which way is right, forget about
+        // trying the other way".
+        var learned = LearnedAnswer;
+        if (learned is { } answer)
+        {
+            int idx = IndexOfCollection(answer.Collection);
+            if (idx < 0)
+            {
+                // The remembered collection is not among this mouse's interfaces any more. A
+                // driver change reshapes them (the 0323 loses &col02 when Apple's filter is
+                // bound), so this is a relearn, not an error.
+                BatteryChannelMemory.Forget(Pid, answer, "collection_absent");
+            }
+            else
+            {
+                int pct = ReadCandidate(_candidates[idx], answer);
+                if (pct >= MinValidPercent)
+                {
+                    _preferred = idx;
+                    return pct;
+                }
+                // Do not keep failing silently on a stale answer: forget it and fall through
+                // to the full probe walk on THIS read, so one poll both notices the change
+                // and finds the new channel. The next success writes the new answer.
+                BatteryChannelMemory.Forget(Pid, answer,
+                    pct == -2 ? "answered_unusable" : "read_failed");
+            }
+        }
+
         // Read the interface that answered last time first, then the other candidates in
         // discovery order. The first one that yields a real percent becomes the preferred
         // interface for every later poll.
@@ -165,7 +215,41 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // Same order AdaptivePoller.ReadingRank uses when collapsing a device's collections.
     static int SentinelRank(int pct) => pct == -2 ? 1 : 0;
 
-    int ReadCandidate(string path)
+    // The v3 has a MEASURED fixed channel and takes no part in probing or learning: Input 0x90
+    // on col02, Feature measured failing (err 87, 2026-09-01). Nothing may be learned for it
+    // and no stored answer may be applied to it, or a hand-edited config.ini could change a
+    // read path this project has hardware evidence for.
+    bool HasFixedV3Channel =>
+        Kind == DeviceKind.MagicMouseV3 || Pid.Equals("0323", StringComparison.OrdinalIgnoreCase);
+
+    BatteryChannelAnswer? LearnedAnswer => HasFixedV3Channel ? null : BatteryChannelMemory.Get(Pid);
+
+    // Which candidate carries the remembered collection. -1 when none does.
+    int IndexOfCollection(string token)
+    {
+        for (int i = 0; i < _candidates.Count; i++)
+            if (string.Equals(CollectionToken(_candidates[i]), token, StringComparison.OrdinalIgnoreCase))
+                return i;
+        return -1;
+    }
+
+    // The &col0N fragment of an interface path, lowercased, or "none" when the path carries no
+    // &col fragment at all (the 030D shape). Half of a learned answer's key: unlike the full
+    // path it survives re-pairing, which re-mints the instance ids, and it never contains the
+    // Bluetooth MAC.
+    internal static string CollectionToken(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return BatteryChannelAnswer.NoCollection;
+        int at = path.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return BatteryChannelAnswer.NoCollection;
+        int start = at + 4;
+        int end = start;
+        while (end < path.Length && char.IsAsciiDigit(path[end])) end++;
+        if (end == start) return BatteryChannelAnswer.NoCollection;
+        return string.Concat("col", path.AsSpan(start, end - start));
+    }
+
+    int ReadCandidate(string path, BatteryChannelAnswer? learned = null)
     {
         if (DeviceRegistry.IsHandsFreeOrIphonePath(path))
         {
@@ -188,10 +272,31 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             return -1;
         }
 
-        if (Kind == DeviceKind.MagicMouseV3 || Pid.Equals("0323", StringComparison.OrdinalIgnoreCase))
+        if (HasFixedV3Channel)
+        {
+            LogV3ChannelSkipOnce(path);
             return ReadV3Rid90(handle, path);
+        }
 
-        return ReadV1V2Feature(handle, path);
+        return learned is { } answer
+            ? ReadLearnedChannel(handle, path, answer)
+            : ReadV1V2Feature(handle, path);
+    }
+
+    // PIDs whose deliberate one-channel v3 behaviour has already been logged this run.
+    static readonly HashSet<string> V3SkipLogged = new(StringComparer.OrdinalIgnoreCase);
+
+    // Every other mouse in this file now tries both channels; the v3 deliberately does not,
+    // because Feature was MEASURED failing on it. A silent exception to the file's own rule is
+    // exactly what makes a remote debug.log unreadable, so say it - once per run, not once per
+    // 30-second poll.
+    void LogV3ChannelSkipOnce(string path)
+    {
+        lock (V3SkipLogged)
+        {
+            if (!V3SkipLogged.Add(Pid)) return;
+        }
+        Logger.Log($"MOUSE_CHANNEL_SKIP pid={Pid} col={CollectionToken(path)} channel={BatteryChannelAnswer.Feature47} reason=measured_err87 (v3 reads Input 0x90 on col02 only)");
     }
 
     // Live 0323: mm-hid-probe got 47% from Input 0x90 buf[2] on COL02.
@@ -278,22 +383,92 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         return sb.ToString();
     }
 
+    // What the descriptor of ONE opened node says. Copied out of the preparsed data before it
+    // is freed: when every channel fails, these numbers ARE the diagnosis of the node that was
+    // opened, and nothing else in the log identifies it.
+    readonly record struct NodeCaps(
+        byte? FeatureBatteryRid,
+        bool VendorBatteryInput,
+        int FeatureLen,
+        ushort UsagePage,
+        ushort Usage,
+        ushort FeatureValueCaps,
+        ushort InputLen);
+
+    // One channel to try on an opened node. Declared records whether this node's own
+    // descriptor announced the channel - worth logging on every line, because the point of the
+    // probe is that an UNDECLARED channel is attempted anyway and sometimes answers.
+    internal readonly record struct ChannelAttempt(string Channel, byte ReportId, bool Declared);
+
+    // Attempt order for a v1/v2 node. BOTH channels are always attempted; the descriptor only
+    // decides which goes first. A declared Generic Device battery-strength Feature cap leads
+    // because it is the cheapest likely hit (030D), otherwise the vendor Input 0x90 leads
+    // (0269, 0323 shape). A descriptor that declares neither is a reason to probe, never a
+    // reason to report the device as having no battery - which is the bug in issue #124.
+    internal static ChannelAttempt[] AttemptOrder(byte? declaredFeatureRid, bool declaredVendorInput)
+    {
+        var feature = new ChannelAttempt(
+            BatteryChannelAnswer.Feature47,
+            declaredFeatureRid ?? FallbackFeatureReportId,
+            declaredFeatureRid.HasValue);
+        var input = new ChannelAttempt(
+            BatteryChannelAnswer.Input90, BatteryReportId, declaredVendorInput);
+        return declaredFeatureRid.HasValue ? [feature, input] : [input, feature];
+    }
+
     int ReadV1V2Feature(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string path)
     {
+        if (!TryInspect(handle, path, out var node)) return -1;
+
+        string col = CollectionToken(path);
+        int best = -1;
+        foreach (var attempt in AttemptOrder(node.FeatureBatteryRid, node.VendorBatteryInput))
+        {
+            int pct = RunAttempt(handle, col, attempt, node.FeatureLen);
+            if (pct >= MinValidPercent)
+            {
+                // Figured out: this PID answers on this collection over this channel. From the
+                // next poll on it is read with one call and the other channel is not touched
+                // again - until it fails, which is what Forget / MOUSE_RELEARN is for.
+                BatteryChannelMemory.Learn(Pid, new BatteryChannelAnswer(col, attempt.Channel, attempt.ReportId));
+                return pct;
+            }
+            if (SentinelRank(pct) > SentinelRank(best)) best = pct;
+        }
+
+        // Both channels were tried on this node and neither produced a percent. Name the node
+        // completely AND name what was attempted: a remote reporter's log has to separate "the
+        // wrong collection was opened" from "this device really has no battery report", and
+        // since this build no longer trusts the descriptor, "no cap declared" alone would be a
+        // claim the app did not observe (issue #124).
+        Logger.Log($"MOUSE_NO_BATTERY_CAP device={DeviceName} pid={Pid} col={col} tried={BatteryChannelAnswer.Input90},{BatteryChannelAnswer.Feature47} usage=0x{node.UsagePage:X4}/0x{node.Usage:X4} featcaps={node.FeatureValueCaps} featlen={node.FeatureLen} inlen={node.InputLen} path={path}");
+        return best;
+    }
+
+    // The remembered channel, and only it. The descriptor is still read here, but it costs no
+    // battery call: it sizes the Feature buffer and keeps the declared= field of the log line a
+    // fact instead of a guess. Exactly one HidD_GetInputReport / HidD_GetFeature leaves this
+    // method, which is the whole point of remembering.
+    int ReadLearnedChannel(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string path, BatteryChannelAnswer answer)
+    {
+        if (!TryInspect(handle, path, out var node)) return -1;
+
+        var attempt = answer.Channel == BatteryChannelAnswer.Input90
+            ? new ChannelAttempt(BatteryChannelAnswer.Input90, answer.ReportId, node.VendorBatteryInput)
+            : new ChannelAttempt(BatteryChannelAnswer.Feature47, answer.ReportId, node.FeatureBatteryRid == answer.ReportId);
+        return RunAttempt(handle, CollectionToken(path), attempt, node.FeatureLen);
+    }
+
+    // Reads the opened node's descriptor. False means the node could not be inspected at all,
+    // and each such -1 names its own cause: a silent one is undiagnosable in a remote log.
+    bool TryInspect(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string path, out NodeCaps node)
+    {
+        node = default;
         if (!HidNative.HidD_GetPreparsedData(handle, out var preparsed))
         {
             Logger.Log($"MOUSE_NO_PREPARSED device={DeviceName} err={Marshal.GetLastWin32Error()} path={path}");
-            return -1;
+            return false;
         }
-
-        bool splitVendor = false;
-        bool unifiedApple = false;
-        byte unifiedRid = 0;
-        int featureLen = 0;
-        // Copied out of caps and kept past the finally that frees the preparsed data: when
-        // neither battery channel is declared, these four numbers ARE the diagnosis of the
-        // node that was opened, and nothing else in the log identifies it.
-        ushort usagePage = 0, usage = 0, featureValueCaps = 0, inputLen = 0;
 
         try
         {
@@ -301,15 +476,10 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             if (HidNative.HidP_GetCaps(preparsed, ref caps) != HidNative.HIDP_STATUS_SUCCESS)
             {
                 Logger.Log($"MOUSE_NO_CAPS device={DeviceName} err={Marshal.GetLastWin32Error()} path={path}");
-                return -1;
+                return false;
             }
 
-            usagePage = caps.UsagePage;
-            usage = caps.Usage;
-            featureValueCaps = caps.NumberFeatureValueCaps;
-            inputLen = caps.InputReportByteLength;
-            featureLen = caps.FeatureReportByteLength;
-
+            byte? featureRid = null;
             if (caps.NumberFeatureValueCaps > 0)
             {
                 var fcaps = new HidNative.HIDP_VALUE_CAPS[caps.NumberFeatureValueCaps];
@@ -320,88 +490,156 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                     {
                         if (fcaps[i].UsagePage == UP_GENDEV_BATTERY && fcaps[i].Usage == USG_GENDEV_BATTSTRENG)
                         {
-                            unifiedApple = true;
-                            unifiedRid = fcaps[i].ReportID;
+                            featureRid = fcaps[i].ReportID;
                             break;
                         }
                     }
                 }
             }
 
-            // The vendor collection: usage page 0xFF00, usage 0x0014, Input RID 0x90.
-            // For a 0269 this is the ONLY battery channel there is (see the file header);
-            // reaching it therefore depends entirely on the node opened BEING that
-            // collection, which is what the candidate walk in GetBatteryPercent exists to
-            // guarantee - the pointer collection of the same mouse declares neither channel
-            // and can only produce MOUSE_NO_BATTERY_CAP.
-            // The >= 3 guard fits that collection exactly rather than excluding it:
-            // HIDP_CAPS.InputReportByteLength counts the report-ID byte, so report ID +
-            // flags byte + percent byte = 3, and buf[2] is the percent.
-            if (caps.UsagePage == UP_VENDOR_BATTERY && caps.Usage == USG_VENDOR_BATTERY
-                && caps.InputReportByteLength >= 3)
-                splitVendor = true;
+            // The vendor collection: usage page 0xFF00, usage 0x0014, Input RID 0x90. The >= 3
+            // guard fits that collection exactly rather than excluding it: InputReportByteLength
+            // counts the report-ID byte, so report ID + flags + percent = 3, and buf[2] is the
+            // percent. Declaring it only moves Input 0x90 to the front of the attempt order;
+            // not declaring it no longer blocks the try.
+            bool vendorInput = caps.UsagePage == UP_VENDOR_BATTERY && caps.Usage == USG_VENDOR_BATTERY
+                && caps.InputReportByteLength >= 3;
+
+            node = new NodeCaps(
+                featureRid, vendorInput, caps.FeatureReportByteLength,
+                caps.UsagePage, caps.Usage, caps.NumberFeatureValueCaps, caps.InputReportByteLength);
+            return true;
         }
         finally
         {
             HidNative.HidD_FreePreparsedData(preparsed);
         }
+    }
 
-        if (splitVendor)
+    // One channel attempt on an opened node: one TRY line in, one OK or one FAIL line out, so a
+    // reporter's debug.log is a complete record of what the device answered.
+    int RunAttempt(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen)
+    {
+        Logger.Log($"MOUSE_CHANNEL_TRY pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} declared={(attempt.Declared ? "true" : "false")}");
+        return attempt.Channel == BatteryChannelAnswer.Input90
+            ? TryInput90(handle, col, attempt)
+            : TryFeature(handle, col, attempt, featureLen);
+    }
+
+    int TryInput90(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt)
+    {
+        var buf = new byte[64];
+        // Three IOCTLs 50ms apart are ONE attempt of this channel: a Bluetooth mouse that has
+        // just woken refuses the first call. One outcome line is logged either way.
+        for (int n = 0; n < 3; n++)
         {
-            var buf = new byte[Math.Max(3, 64)];
-            for (int attempt = 0; attempt < 3; attempt++)
+            Array.Clear(buf, 0, buf.Length);
+            buf[0] = attempt.ReportId;
+            if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
             {
-                Array.Clear(buf, 0, buf.Length);
-                buf[0] = BatteryReportId;
-                if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
+                var pct = ParseRid90Percent(buf);
+                if (pct is not null)
                 {
-                    var pct = ParseRid90Percent(buf);
-                    if (pct is >= 0)
-                    {
-                        Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (split)");
-                        return pct.Value;
-                    }
-                    if (IsBogusZeroReport(buf))
-                        Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (split, not a real level)");
-                    else
-                        Logger.Log($"MOUSE_SPLIT_BAD device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (split, percent byte outside 1..100)");
-                    return -1;
+                    LogChannelOk(col, attempt, pct.Value, buf, 3);
+                    return pct.Value;
                 }
-                if (attempt < 2) Thread.Sleep(50);
+                LogChannelFail(col, attempt, 0, IsBogusZeroReport(buf) ? "zero_byte" : "out_of_range", buf, 3);
+                // The device answered and what it sent was not a usable level.
+                return -2;
             }
-            Logger.Log($"MOUSE_READ_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()}");
-            return -1;
+            if (n < 2) Thread.Sleep(50);
+        }
+        LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0);
+        return DeclaredFailureSentinel(attempt);
+    }
+
+    int TryFeature(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen)
+    {
+        // Sized from the descriptor when the node declares feature reports at all; 64 is the
+        // blind-try buffer for a node that declares none, matching the input path.
+        var buf = new byte[featureLen > 0 ? Math.Max(featureLen, 2) : 64];
+        buf[0] = attempt.ReportId;
+        if (!HidNative.HidD_GetFeature(handle, buf, buf.Length))
+        {
+            LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0);
+            return DeclaredFailureSentinel(attempt);
         }
 
-        if (unifiedApple && featureLen > 0)
+        int pct = buf[1];
+        if (pct is >= MinValidPercent and <= 100)
         {
-            var fbuf = new byte[Math.Max(featureLen, 2)];
-            fbuf[0] = unifiedRid;
-            if (HidNative.HidD_GetFeature(handle, fbuf, fbuf.Length))
-            {
-                int pct = fbuf[1];
-                if (pct is >= MinValidPercent and <= 100)
-                {
-                    Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (unified Feature 0x{unifiedRid:X2})");
-                    return pct;
-                }
-                if (pct == 0)
-                    Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{unifiedRid:X2} bytes=[{FormatReportHead(fbuf, 2)}] (unified Feature, not a real level)");
-                else
-                    Logger.Log($"MOUSE_UNIFIED_BAD device={DeviceName} rid=0x{unifiedRid:X2} bytes=[{FormatReportHead(fbuf, 2)}] (unified Feature, percent byte outside 1..100)");
-                return -1;
-            }
-            int err = Marshal.GetLastWin32Error();
-            Logger.Log($"MOUSE_UNIFIED_BLOCKED device={DeviceName} err={err} (battery report not exposed)");
-            return -2;
+            LogChannelOk(col, attempt, pct, buf, 2);
+            return pct;
         }
+        LogChannelFail(col, attempt, 0, pct == 0 ? "zero_byte" : "out_of_range", buf, 2);
+        return -2;
+    }
 
-        // The one fully silent failure this file used to have. The node that was opened
-        // declares neither a Generic Device battery-strength FEATURE cap nor the
-        // 0xFF00/0x0014 vendor top level, so there is no channel here to read. Name the node
-        // completely: a remote reporter's log has to separate "the wrong collection was
-        // opened" from "this device really has no battery report" (issue #124).
-        Logger.Log($"MOUSE_NO_BATTERY_CAP device={DeviceName} usage=0x{usagePage:X4}/0x{usage:X4} featcaps={featureValueCaps} featlen={featureLen} inlen={inputLen} path={path}");
-        return -1;
+    // A call that FAILS on a channel this node DECLARES is the old MOUSE_UNIFIED_BLOCKED case:
+    // the device says it has a battery report and Windows will not hand it over (a bound filter
+    // driver eats the IOCTL), which is -2, present but unreadable. A blind try that fails
+    // observed nothing at all and may not claim anything, so it stays -1.
+    static int DeclaredFailureSentinel(ChannelAttempt attempt) => attempt.Declared ? -2 : -1;
+
+    void LogChannelOk(string col, ChannelAttempt attempt, int pct, byte[] buf, int bytes)
+    {
+        Logger.Log($"MOUSE_CHANNEL_OK pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} pct={pct} bytes=[{FormatReportHead(buf, bytes)}]");
+        // The success line every existing consumer greps for, in the exact wording
+        // DRIVER-MATRIX.md and DriverAdvisor quote: "(split)" for the vendor Input channel,
+        // "(unified Feature 0xNN)" for the Generic Device Feature channel.
+        string how = attempt.Channel == BatteryChannelAnswer.Input90
+            ? "(split)"
+            : $"(unified Feature 0x{attempt.ReportId:X2})";
+        Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% {how}");
+    }
+
+    void LogChannelFail(string col, ChannelAttempt attempt, int err, string reason, byte[]? buf, int bytes)
+    {
+        // Bytes only when there ARE bytes: a failed call read nothing, and printing an empty
+        // buffer as if it were the device's answer would be a claim it never made.
+        string tail = buf is null ? string.Empty : $" bytes=[{FormatReportHead(buf, bytes)}]";
+        Logger.Log($"MOUSE_CHANNEL_FAIL pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} err={err} reason={reason}{tail}");
+    }
+}
+
+// Where a learned answer lives at run time.
+//
+// It cannot live in a MouseBatteryDevice: DeviceRegistry.Discover rebuilds every device object
+// on every poll cycle, so an instance field (the sticky _preferred index) only shortcuts the
+// walk WITHIN one read and is gone by the next tick. The answer therefore has to outlive the
+// instances, and the process already owns exactly one Config - App.xaml.cs hands it to TrayApp,
+// which hands it to AdaptivePoller. Threading that handle down through
+// DeviceRegistry.Discover, which builds devices out of paths and has no business knowing about
+// user settings, would be the uglier change; instead AdaptivePoller - the owner of both the
+// Config and the poll loop the reads happen on - attaches that same instance here as this
+// store's persistence sink. Config stays the single writer of config.ini, so no second
+// instance can clobber a threshold with a stale snapshot.
+//
+// Unattached (unit tests, any code path that reads a battery without a poller) every call is a
+// no-op and the reader simply probes, which is the correct degraded behaviour.
+internal static class BatteryChannelMemory
+{
+    static Config? _sink;
+
+    internal static void Attach(Config? config) => Volatile.Write(ref _sink, config);
+
+    internal static BatteryChannelAnswer? Get(string pid) => Volatile.Read(ref _sink)?.GetBatteryChannel(pid);
+
+    // Config only reports true when the stored answer actually changed, so a device that keeps
+    // answering the same way writes config.ini once and logs once - not every 30 seconds.
+    internal static void Learn(string pid, BatteryChannelAnswer answer)
+    {
+        if (Volatile.Read(ref _sink) is not { } config) return;
+        if (config.SetBatteryChannel(pid, answer))
+            Logger.Log($"MOUSE_CHANNEL_LEARNED pid={pid} col={answer.Collection} channel={answer.Channel} rid=0x{answer.ReportId:X2}");
+    }
+
+    // The remembered answer stopped working. Log what it was and why it is being dropped, then
+    // drop it: the caller re-probes on the same read and the next success stores the new
+    // answer, so a driver switch shows up in the log as relearn then learn.
+    internal static void Forget(string pid, BatteryChannelAnswer was, string reason)
+    {
+        Logger.Log($"MOUSE_RELEARN pid={pid} was={was.Collection}:{was.Channel} reason={reason}");
+        Volatile.Read(ref _sink)?.ClearBatteryChannel(pid);
     }
 }

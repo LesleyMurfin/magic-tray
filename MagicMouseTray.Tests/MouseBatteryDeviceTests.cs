@@ -338,4 +338,112 @@ public class MouseBatteryDeviceTests
         Assert.Equal(DeviceKind.MagicKeyboard, found[0].Kind);
         Assert.Equal("0239", found[0].Pid);
     }
+
+    // The descriptor orders the attempts, it does not veto one. A node that declares the
+    // unified Generic Device battery-strength Feature is read there first because that is the
+    // cheapest likely hit (030D), and Input 0x90 is STILL attempted afterwards.
+    [Fact]
+    public void AttemptOrder_DeclaredFeatureLeads_InputIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(0x47, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Feature47, BatteryChannelAnswer.Input90 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.Equal(0x47, (int)order[0].ReportId);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[1].ReportId);
+    }
+
+    // The 0269 / 0323 shape: a vendor top level (0xFF00/0x0014) and no Feature battery cap at
+    // all. Input 0x90 leads, and the Feature channel is still tried afterwards at the fallback
+    // id, flagged as the guess it is.
+    [Fact]
+    public void AttemptOrder_DeclaredVendorInputLeads_FeatureIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: true);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // Issue #124: the node that declares NEITHER channel is exactly the one the old build gave
+    // up on with MOUSE_NO_BATTERY_CAP. Both channels must still be attempted - an Apple device
+    // answering a report it never declared is the case this whole probe exists for.
+    [Fact]
+    public void AttemptOrder_NothingDeclared_StillTriesBothChannels()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.All(order, a => Assert.False(a.Declared));
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[0].ReportId);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // The learned answer is keyed on this token, so it has to come off a real interface path -
+    // including the 030D shape, which has no collection fragment at all.
+    [Theory]
+    [InlineData(Bt0269Col02, "col02")]
+    [InlineData(@"\\?\HID#VID_05AC&PID_0269&MI_01&COL02#a&16288706&0&0001", "col02")]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&030d#9&bt", "none")]
+    [InlineData(@"\\?\hid#vid_05ac&pid_030d&col#7&odd", "none")]
+    [InlineData("", "none")]
+    public void CollectionToken_IsTheStablePartOfThePath(string path, string expected)
+    {
+        Assert.Equal(expected, MouseBatteryDevice.CollectionToken(path));
+    }
+
+    // A remembered answer that stops working must not keep failing: it is forgotten, so the
+    // next read probes both channels again and can learn the new one. This is what makes a
+    // Boot Camp to Stock driver switch heal itself with no user action.
+    [Fact]
+    public void LearnedAnswer_IsForgottenWhenItStopsWorking()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-chan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0269", learned);
+            Assert.Equal(learned, BatteryChannelMemory.Get("0269"));
+            Assert.Equal(learned, Config.Load(file).GetBatteryChannel("0269"));
+
+            BatteryChannelMemory.Forget("0269", learned, "read_failed");
+            Assert.Null(BatteryChannelMemory.Get("0269"));
+            Assert.Null(Config.Load(file).GetBatteryChannel("0269"));
+
+            // And the new shape is remembered in its place.
+            var relearned = new BatteryChannelAnswer(
+                BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47);
+            BatteryChannelMemory.Learn("0269", relearned);
+            Assert.Equal(relearned, Config.Load(file).GetBatteryChannel("0269"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // Nothing attached (any read that happens without a poller) must degrade to "no memory,
+    // just probe" rather than throw.
+    [Fact]
+    public void LearnedAnswer_WithoutASink_IsSilentlyAbsent()
+    {
+        BatteryChannelMemory.Attach(null);
+        BatteryChannelMemory.Learn("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
+        Assert.Null(BatteryChannelMemory.Get("0269"));
+    }
 }
