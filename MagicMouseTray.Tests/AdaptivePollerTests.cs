@@ -225,6 +225,15 @@ public class AdaptivePollerTests : IDisposable
     // Ending the group at the timeout must not throw away what the group already established: an
     // earlier interface answered "present, report not exposed", which is a diagnosis, and the
     // wedged interface added no information to overwrite it with.
+    //
+    // The budget is seconds, not milliseconds, and deliberately so. This test asserts an ORDERING
+    // property, but ReadBatteryGuarded cannot tell "the device did not answer" from "the thread
+    // pool did not schedule the read": the first device answers instantly once it runs, yet on a
+    // loaded runner with workers parked by the wedged tests above it, a 250 ms budget expired
+    // before that read started, the group ended on a phantom timeout and best was -1. Windows CI
+    // caught exactly that. The budget must therefore exceed worst-case pool scheduling, not
+    // worst-case device latency - the wedged device never answers at any budget, so the only cost
+    // of a generous one is this test's own wall time.
     [Fact]
     public void BestReading_TimeoutAfterUnreadable_KeepsTheMinusTwo()
     {
@@ -233,7 +242,7 @@ public class AdaptivePollerTests : IDisposable
         var later = new CountingDevice(55);
 
         int best = AdaptivePoller.BestReading(
-            [present, wedged, later], TimeSpan.FromMilliseconds(250));
+            [present, wedged, later], TimeSpan.FromSeconds(2));
 
         Assert.Equal(-2, best);
         Assert.Equal(1, present.Reads);
