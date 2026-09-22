@@ -33,19 +33,20 @@ internal static class DeviceRegistry
         // only some of them answer HidD_GetInputReport with a real level; the rest return
         // [90 00 00]. Discovery cannot tell which is which without reading, so it keeps them
         // all and AdaptivePoller picks the winner: it groups by DeviceName and ranks a real
-        // percentage above -2 above -1 (AdaptivePoller.ReadingRank), and stops reading a
-        // group's remaining interfaces once one answers with a real percentage. Dropping
-        // candidates here ran before that ranking and could leave only an interface that
-        // never reports.
+        // percentage above -2 above -1 (AdaptivePoller.BestReading), and stops reading a group's
+        // remaining interfaces once one answers with a real percentage - or, when one wedges,
+        // once the first read times out, so the amplification costs at most one read budget per
+        // group per tick. Dropping candidates here ran before that ranking and could leave only
+        // an interface that never reports.
         //
         // There is deliberately no transport preference and no one-device-per-PID rule. The
         // false 0% from a charge-cable phantom that those rules were written for is rejected
         // at parse level instead: every IBatteryDevice read path gates on
         // MouseBatteryDevice.IsRealLevel, and each logs the rejected zero under its own marker
-        // (MOUSE_BATTERY_ZERO, KB_BATTERY_ZERO) rather than a blocked-read marker. All three
-        // implementations need that floor because a real 0 outranks -2 and -1 in
-        // AdaptivePoller.ReadingRank and ends AdaptivePoller.BestReading's scan, so without it
-        // a dead interface answering zero would beat the live interface's failure sentinel.
+        // (MOUSE_BATTERY_ZERO, KB_BATTERY_ZERO, LOGI_BATTERY_ZERO) rather than a blocked-read
+        // marker. All three implementations need that floor because a real 0 outranks -2 and -1
+        // in AdaptivePoller.BestReading and ends its scan, so without it a dead interface
+        // answering zero would beat the live interface's failure sentinel.
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {

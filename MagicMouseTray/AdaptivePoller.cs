@@ -13,7 +13,8 @@ namespace MagicMouseTray;
 internal sealed class AdaptivePoller : IDisposable
 {
     // Fired once per discovered device per poll cycle.
-    // percent sentinel values: -1=not found/disconnected, -2=present but unreadable, -3=battery unavailable.
+    // percent sentinel values: -1=not found/disconnected/read did not answer, -2=present but the
+    // battery report is not exposed, -3=battery unavailable (three consecutive -1s, minted below).
     internal event Action<int, string, DeviceKind, string>? BatteryChanged;
 
     // Last computed interval — readable by TrayApp for tooltip.
@@ -40,49 +41,66 @@ internal sealed class AdaptivePoller : IDisposable
 
     // Reads one device's battery with a hard timeout and exception guard so a single slow or
     // throwing device can't stall the poll loop. On timeout/throw the device is logged (so the
-    // culprit is identifiable) and treated as unreadable (-1), matching the disconnected sentinel.
-    static int ReadBatteryGuarded(IBatteryDevice device, TimeSpan timeout)
+    // culprit is identifiable) and the reading is -1, matching the disconnected sentinel: -2
+    // means the battery report is not exposed, which a read that never answered has not
+    // established, and -2 is what buys the elevated keyboard SDP patch offer.
+    //
+    // TimedOut is reported separately from the value because the two failures have opposite
+    // costs. A throw came back immediately and left nothing behind. A timeout spent the whole
+    // budget AND leaked the worker: Task.Run cannot cancel a blocking HID IOCTL
+    // (HidD_GetFeature / HidD_GetInputReport), so the abandoned read keeps a thread-pool thread
+    // until the driver releases it, which on a wedged interface is never. BestReading needs to
+    // tell the two apart to bound the tick.
+    static (int Pct, bool TimedOut) ReadBatteryGuarded(IBatteryDevice device, TimeSpan timeout)
     {
         try
         {
             var read = Task.Run(device.GetBatteryPercent);
             if (read.Wait(timeout))
-                return read.Result;
+                return (read.Result, false);
 
             Logger.Log($"POLL_DEVICE_TIMEOUT device={device.DeviceName} after={timeout} (read abandoned, treated as -1)");
-            return -1;
+            return (-1, true);
         }
         catch (Exception ex)
         {
             Logger.Log($"POLL_DEVICE_ERROR device={device.DeviceName} err={ex.GetBaseException().Message}");
-            return -1;
+            return (-1, false);
         }
     }
 
-    // Ranks a battery reading when collapsing a device's multiple HID collections to one:
-    // a real percentage (0-100) beats -2 (present but unreadable) beats -1 (not found).
-    static int ReadingRank(int pct) => pct >= 0 ? pct + 2 : (pct == -2 ? 1 : 0);
-
-    // Reads a group's HID collections in discovery order and returns the best-ranked reading,
-    // stopping at the first real percentage. Discovery returns one device per interface path and
-    // no longer collapses a PID's collections; DeviceRegistry.TryClassify gates on a collection
-    // only for MagicMouseV3 and for keyboards, so 030D, 0269, 0310 and the trackpads contribute
-    // every collection they expose, and reading all of them would cost up to timeout each, on
-    // every tick, with no bound on the group size.
-    // First real answer wins is the tie-break: any percentage in 0-100 is the battery level, so a
-    // second live collection could only substitute a different equally-real number at the cost of
-    // another timeout, and ReadingRank's preference for the higher number is arbitrary between two
-    // live reads. When two live collections of one device disagree the winner is therefore the
-    // first one that answers, in discovery order. Failures still rank, so a -2 (present but
-    // unreadable) anywhere in the group beats -1 (not found), and then the whole group is read.
+    // Reads a group's HID collections in discovery order and returns the first real percentage,
+    // or, when none answers, the better of the two failure sentinels. Discovery returns one
+    // device per interface path and no longer collapses a PID's collections; DeviceRegistry
+    // .TryClassify gates on a collection only for MagicMouseV3 and for keyboards, so 030D, 0269,
+    // 0310 and the trackpads contribute every collection they expose and the group size is
+    // unbounded, which is why the scan needs two exits and both of them are cost bounds.
+    //
+    // First real answer wins: any percentage in 1-100 is the battery level, so a second live
+    // collection could only substitute a different equally-real number at the cost of another
+    // read. When two live collections of one device disagree the winner is therefore the first
+    // one that answers, in discovery order.
+    //
+    // First timeout also wins, and this is the exit the motivating failure needs. An interface
+    // answering [90 00 00] forever yields -2 or -1, never >= 0, so before this exit the whole
+    // group was read on every tick: measured at 3 x budget and 3 permanently parked workers per
+    // tick for one wedged 3-interface device. One timeout has already proved the device is not
+    // answering and has already cost a worker we can never get back, so continuing multiplies
+    // both by the interface count, forever. Returning best rather than -1 keeps a -2 seen
+    // earlier in the group. An exception is deliberately NOT an exit: it cost no budget and
+    // parked nothing, so a throwing collection must not hide a live one behind it.
     internal static int BestReading(IEnumerable<IBatteryDevice> group, TimeSpan timeout)
     {
         int best = -1;
         foreach (var device in group)
         {
-            int pct = ReadBatteryGuarded(device, timeout);
+            var (pct, timedOut) = ReadBatteryGuarded(device, timeout);
             if (pct >= 0) return pct;
-            if (ReadingRank(pct) > ReadingRank(best)) best = pct;
+            // Only the failure sentinels reach here, so the whole of the ranking is this one
+            // line: -2 (present, report not exposed) outranks -1 (not found), and a later -1
+            // must not erase a -2 already seen in the group.
+            if (pct == -2) best = -2;
+            if (timedOut) return best;
         }
         return best;
     }
@@ -153,7 +171,8 @@ internal sealed class AdaptivePoller : IDisposable
                     // per path lets a non-battery collection's -1/-2 clobber the good Col02 reading
                     // (last write wins in TrayApp's per-name dictionary). BestReading collapses each
                     // name to one reading: the first collection that answers with a real percentage,
-                    // or the best-ranked failure when none does.
+                    // or, when none does, the better failure sentinel of the collections it got to
+                    // read before the first timeout ended the scan.
                     foreach (var group in devices.GroupBy(d => d.DeviceName, StringComparer.OrdinalIgnoreCase))
                     {
                         var kind = group.First().Kind;

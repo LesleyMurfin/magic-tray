@@ -8,8 +8,8 @@ namespace MagicMouseTray.Tests;
 // read. Live 2026-09-16: one Magic Mouse 2024 had two BT col02 interfaces and a leftover USB
 // col02 interface; the one discovery kept answered [90 00 00] forever, so the tray showed
 // "Battery unavailable" while the mouse itself was fine. AdaptivePoller groups by DeviceName
-// and ranks a real percentage above -2 above -1 (AdaptivePoller.BestReading, scored by
-// AdaptivePoller.ReadingRank), so it only needs the candidates to reach it.
+// and ranks a real percentage above -2 above -1 (AdaptivePoller.BestReading), so it only needs
+// the candidates to reach it.
 public class DeviceRegistryTests
 {
     // The device identifiers in the paths below - Bluetooth address, USB serial - are
@@ -78,7 +78,10 @@ public class DeviceRegistryTests
     // alone, so with the per-PID collapse gone each HID collection of a v1/v2 mouse becomes its
     // own device. That amplification is deliberate, not an oversight: the read cost is bounded
     // by AdaptivePoller.BestReading, which walks a DeviceName group in discovery order and
-    // returns as soon as one interface answers a real percentage, so the rest go unread.
+    // returns as soon as one interface answers a real percentage OR one read times out, so a
+    // group costs at most one read budget per tick however many interfaces it holds. Without
+    // the timeout exit the bound would be a fiction in exactly the case that matters: an
+    // interface answering [90 00 00] never returns a real percentage.
     [Fact]
     public void Discover_030D_EveryCollection_BecomesItsOwnDevice()
     {
