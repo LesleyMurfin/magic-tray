@@ -169,7 +169,10 @@ html {
   scroll-padding-top: var(--header-h);
 }
 
-@media (min-width: 520px) {
+/* 480px, not 520px: the five links fit on one row from 480px up. Measured
+   header heights on this stylesheet -- 152px at 460px, 107px at 480px -- so
+   between 480 and 519 the old value overshot every fragment landing by 49px. */
+@media (min-width: 480px) {
   :root { --header-h: 7rem; }
 }
 @media (min-width: 1100px) {
@@ -292,10 +295,11 @@ code {
 }
 .site-header nav a:hover { color: var(--fg); }
 /* Underlined rather than box-shadowed, so the mark stays on the word instead
-   of drifting to the bottom of the link's new padding. Matches aria-current
-   "true" as well as "page", so a device sub-page can mark its hub as current
-   without lying that the hub is the page you are on. */
-.site-header nav a[aria-current] {
+   of drifting to the bottom of the link's new padding. Matched on "page"
+   only, as the footer does: a bare [aria-current] would also match
+   aria-current="false", which is ARIA's way of saying this is *not* the
+   current item. */
+.site-header nav a[aria-current="page"] {
   color: var(--fg);
   font-weight: 650;
   text-decoration: underline;
@@ -736,8 +740,6 @@ ul.plain {
 ul.plain strong { color: var(--fg); }
 ul.plain li { margin: 0.35rem 0; }
 
-dl.faq dt { font-weight: 650; margin-top: 1.1rem; }
-dl.faq dd { margin: 0.35rem 0 0; color: var(--muted); }
 
 table {
   width: 100%;
@@ -880,9 +882,6 @@ td code {
   margin-top: 0.2rem;
 }
 
-ol.steps { color: var(--muted); padding-left: 1.2rem; }
-ol.steps strong { color: var(--fg); }
-ol.steps li { margin: 0.4rem 0; }
 
 /* ---------- Stepper: numbered-circle sequential instructions ---------- */
 ol.stepper {
@@ -988,32 +987,6 @@ ol.stepper .step-body code { overflow-wrap: anywhere; }
 .accordion .a-body p { margin: 0.5rem 0 0; }
 .accordion .a-body p:first-child { margin-top: 0; }
 
-/* ---------- Badges: small status pills ---------- */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.18rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-}
-.badge-ok { background: rgba(74, 222, 128, 0.14); color: var(--ok); }
-.badge-accent { background: rgba(167, 139, 250, 0.14); color: var(--accent-2); }
-.badge-muted { background: var(--bg-3); color: var(--muted); border: 1px solid var(--line); }
-
-/* ---------- Stat grid: quick-fact cards ---------- */
-.stat-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(2, 1fr); margin: 1rem 0 1.6rem; }
-@media (min-width: 640px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
-.stat-card {
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.85rem 1rem;
-}
-.stat-card .value { font-weight: 700; font-size: 1rem; }
-.stat-card .label { font-size: 0.78rem; color: var(--faint); margin-top: 0.1rem; }
 
 .site-footer {
   border-top: 1px solid var(--line);
@@ -1356,7 +1329,24 @@ details code { font-family: var(--mono); font-size: 0.85rem; }
    links to #cost-list, a list within the #cost answer. Chromium opens the
    ancestor itself in that case, but that is its own behaviour and not a rule
    other engines share, so :has(:target) states it here and the reveal stops
-   depending on which browser the visitor brought. */
+   depending on which browser the visitor brought.
+
+   Known and accepted: while the fragment names it, the answer cannot be
+   clicked shut. Author declarations beat the user-agent closed state, so
+   toggling flips the `open` attribute under a slot this rule keeps visible.
+   Qualifying the selector with :not([open]) looks like the fix and is not
+   one - `[open]` shows the same content, so every state renders identically
+   and the extra selector buys nothing. Measured: arriving at #cost, then
+   three clicks, leaves the answer visible throughout.
+
+   It releases as soon as the fragment stops naming it - any other in-page
+   link, or the page with no hash, and the disclosure is an ordinary control
+   again (measured: content-visibility hidden with no hash). A disclosure the
+   visitor was sent to staying open while they are looking at it is the
+   behaviour to want; the alternative is the answer they followed a link for
+   being invisible on arrival, which is what this replaced. A hard close
+   needs the ids moved onto the headings above each disclosure, which costs
+   every published deep link. */
 details:is(:target, :has(:target))::details-content {
   content-visibility: visible;
   block-size: auto;
