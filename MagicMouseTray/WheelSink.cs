@@ -150,7 +150,7 @@ internal sealed class RawInputWheelSink : IWheelSink
     // reported as Void: no evidence is never rendered as inactivity, and no
     // consumer may read Void as a zero. The probe MUST answer for the sample
     // that just elapsed and never from memory: a verdict memoised over the last
-    // minute (DeviceDiagReader.cs:288) satisfies Void and ActiveDuration in full
+    // minute (DeviceDiagReader.cs:326) satisfies Void and ActiveDuration in full
     // on a mouse nobody touched, which is the one way this seam can manufacture
     // the evidence a fault verdict rests on. Sampled every ActiveTickInterval,
     // so it must be cheap.
@@ -163,7 +163,7 @@ internal sealed class RawInputWheelSink : IWheelSink
     // The 0323's pointer collection, e.g.
     //   \\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01#a&31e5d054&2a&0000
     // Col01 is the pointer collection by construction on this device
-    // (DeviceDiagReader.cs:862-876); Col02 is the vendor/battery collection and
+    // (DeviceDiagReader.cs:900-914); Col02 is the vendor/battery collection and
     // never carries a wheel.
     internal static bool IsTargetDevicePath(string? path) =>
         !string.IsNullOrEmpty(path)
@@ -389,7 +389,7 @@ internal sealed class RawInputWheelSink : IWheelSink
 // This app has no message-only window and no WndProc of its own to borrow - the
 // host is WPF (App.xaml.cs:47) hosting a WinForms NotifyIcon (TrayApp.cs:624,
 // :763), and the only other user32 P/Invoke in the app is DestroyIcon
-// (TrayApp.cs:3718). So the window is created here, and deliberately NOT on the
+// (TrayApp.cs:3739). So the window is created here, and deliberately NOT on the
 // WPF UI thread: this loop owns its thread's message queue for the length of an
 // observation, which would stall the tray menu.
 //
@@ -432,7 +432,7 @@ internal sealed class RawInputMouseSource : IRawMouseSource
     // first pump's window, and the unqualified RIDEV_REMOVE (:541) deregisters
     // the process rather than one window - whichever pump unwinds first silences
     // the other for the rest of its window. TrayApp's in-flight guard
-    // (TrayApp.cs:3000) keeps two PROBES from overlapping; this gate is what
+    // (TrayApp.cs:3021) keeps two PROBES from overlapping; this gate is what
     // keeps an ORPHANED pump - one the sink stopped waiting for after
     // PumpDrainTimeout and can no longer see - from overlapping the next one.
     static readonly SemaphoreSlim RegistrationGate = new(1, 1);

@@ -265,6 +265,36 @@ public class FilterDiagReaderTests
     }
 
     [Fact]
+    public void TouchStreamAdvanced_BuildMissingAnUnrelatedValue_StillAnswers()
+    {
+        var service = Unique("MagicMouseDriver204Partial");
+        // A filter build that does not publish ScrollStep: the exact shape
+        // MissingValue_IsUnknownNotZero pins as legitimate, and a value this
+        // question never reads. While the gate was Availability.Ok - which
+        // means all twelve values - one absent, unrelated value made the
+        // touch-stream question permanently unanswerable on that machine, so
+        // the truncation detector was silent there forever and the silence read
+        // as health.
+        var values = FullBlock(169000).Drop("ScrollStep");
+        var reader = ReaderFor(values, service);
+
+        var before = reader.Read();
+        values.Set("Rid12Count", Dword(169098));
+        var after = reader.Read();
+
+        Assert.Equal(DiagAvailability.ValueMissing, after.Availability);
+        Assert.True(IFilterDiagReader.TouchStreamAdvanced(before, after));
+
+        // And the whole rule answers, not just the predicate: a zero report
+        // beside a stream that climbed across this read is the finding.
+        values.Set("Rid12Count", Dword(169200));
+        var probe = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport: true, reader, before, T0);
+
+        Assert.True(RepairPlanner.BatteryAnswerTruncated(probe));
+    }
+
+    [Fact]
     public void TruncationCorroboration_RequiresTheControlChannelFrame()
     {
         var service = Unique("MagicMouseDriver204Corrob");
@@ -281,6 +311,12 @@ public class FilterDiagReaderTests
         values.Set("LastAclCapacity", Dword(1)).Set("LastAclReceived", Dword(78));
 
         Assert.True(ReaderFor(values, service).Read().TruncationCorroborated);
+
+        // The same slot, the same frame, on a build that publishes eleven of
+        // the twelve values. Requiring Availability.Ok here discarded the
+        // corroboration - and with it the measured percentage the finding's
+        // detail quotes - on every filter build that is not the reference one.
+        Assert.True(ReaderFor(values.Drop("ScrollStep"), service).Read().TruncationCorroborated);
     }
 
     [Fact]
@@ -369,53 +405,5 @@ public class FilterDiagReaderTests
         Assert.Null(DeviceDiagReader.LatestBatteryProbe(
             pid, T0 + DeviceDiagReader.BatteryProbeMaxAge.Add(TimeSpan.FromSeconds(1))));
         Assert.Null(DeviceDiagReader.LatestBatteryProbe(Unique("p"), T0));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Collapse_TruncationProbeWinsAgainstAnotherMinusTwo(bool truncationFirst)
-    {
-        // A v3 exposes three HID collections under one DeviceName and the poller
-        // collapses their readings to one. All four -2 producers rank equally,
-        // the comparison is strictly greater-than and DeviceRegistry.Discover is
-        // not collection-ordered, so without a tie-break the surviving probe -
-        // and therefore the fact the planner judges - was whichever collection
-        // the enumeration happened to reach first.
-        //
-        // COL02 truncating (zero report) versus COL01's failed IOCTL (nothing
-        // judgeable): the truncation must survive from either order.
-        int best = -1;
-        bool? bestFact = null;
-
-        (int Pct, bool? Fact)[] readings = truncationFirst
-            ? [(-2, true), (-2, null)]
-            : [(-2, null), (-2, true)];
-
-        foreach (var (pct, fact) in readings)
-        {
-            if (!AdaptivePoller.PrefersReading(pct, fact, best, bestFact))
-                continue;
-            best = pct;
-            bestFact = fact;
-        }
-
-        Assert.Equal(-2, best);
-        Assert.True(bestFact);
-    }
-
-    [Fact]
-    public void Collapse_RealPercentStillOutranksTheZeroReport()
-    {
-        // COL01 fails while COL02 answers a genuine percent: the existing
-        // ranking must stand, because the tie-break may only choose between
-        // readings the old rule considered equal. The surviving probe then
-        // carries ZeroReport false, so nothing can raise a truncation finding
-        // on a mouse that just told us 47 %.
-        Assert.True(AdaptivePoller.PrefersReading(47, false, -2, true));
-        Assert.False(AdaptivePoller.PrefersReading(-2, true, 47, false));
-        Assert.True(AdaptivePoller.PrefersReading(-2, true, -1, null));
-        // Nothing-judgeable never outranks a reading that answered.
-        Assert.False(AdaptivePoller.PrefersReading(-2, null, -2, true));
     }
 }

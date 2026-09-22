@@ -1182,6 +1182,11 @@ public class RepairPlannerTests
         // already mid-restart and prescribe another restart - a loop inside the
         // exact window FindingGate exists to damp. Only the well-formed-zero
         // fact may fire, so both of these are null and raise nothing.
+        //
+        // This is the CONSUMER half only, and the fact below is hand-written -
+        // so it cannot see the producer reclassifying an outcome. That half is
+        // pinned by MouseBatteryDeviceTests
+        // .ZeroReportFact_PinsEveryTerminalOutcomeOfA0x90Read.
         var neverAnswered = V3WithProbe(Probe(
             Diag(rid12: 2_095_000),
             Diag(rid12: 2_095_323),

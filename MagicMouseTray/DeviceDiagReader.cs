@@ -61,7 +61,7 @@ internal sealed record FilterDiagSnapshot(
     // identically (received 23, capacity 9, bytes A1 12 ...) on both a broken
     // and a restored filter build. They are surfaced as OPPORTUNISTIC
     // CORROBORATION ONLY, never as a health signal, and the rejection recorded
-    // at :309-323 stands for exactly that use: nothing may gate on them.
+    // at :347-361 stands for exactly that use: nothing may gate on them.
     // They become meaningful only as a probe's DiagAfter sample, read in the
     // same code path as the GET_REPORT that filled them.
     uint? LastAclReceived, uint? LastAclCapacity, uint? LastOutHdr, uint? LastOutBufferSize,
@@ -88,9 +88,18 @@ internal sealed record FilterDiagSnapshot(
     // overwrites the slot ~65 times a second. A caller may use this to enrich a
     // finding it has already decided on other evidence; it may never gate on
     // it, and it may never log its absence as evidence of health.
+    //
+    // The three values ARE the gate, and Availability is deliberately not:
+    // every comparison below is a LIFTED one that answers false on a null, so a
+    // sample that could not read the slot cannot corroborate anything. Also
+    // requiring Ok meant requiring all twelve values of the block, which made
+    // corroboration impossible on any filter build that publishes one fewer -
+    // a build DiagAvailability.ValueMissing (:28-31) explicitly calls
+    // legitimate - and silently dropped the measured percentage out of the
+    // finding's detail (RepairPlanner.cs:644-647) on those machines. Same
+    // over-strict gate as IFilterDiagReader.TouchStreamAdvanced had, same fix.
     internal bool TruncationCorroborated =>
-        Availability == DiagAvailability.Ok
-        && LastOutHdr == AclOutGetReportHeader
+        LastOutHdr == AclOutGetReportHeader
         && LastAclCapacity == TruncatedCapacity
         && LastAclReceived >= MinTruncatedFrame;
 }
@@ -116,11 +125,15 @@ internal interface IFilterDiagReader
 
     // Did the touch-report stream ADVANCE between these two samples?
     //
-    // true only when both samples are usable, the interval between them is
-    // short enough to be a claim about NOW, and the counter genuinely climbed.
-    // Everything else is false, and every "else" is a real case:
+    // true only when both samples exist, neither came from a key that answered
+    // for the whole block, the interval between them is short enough to be a
+    // claim about NOW, and the counter genuinely climbed. Everything else is
+    // false, and every "else" is a real case:
     //   either snapshot null ....... no pre-read sample, nothing to compare.
-    //   either not Ok .............. no measurement, so no delta.
+    //   nothing answered at all .... ServiceKeyMissing (no filter installed) or
+    //                                AccessDenied (a hardened token). Those
+    //                                snapshots carry no values whatsoever
+    //                                (:1352-1362), so there is no counter.
     //   either count null .......... the value is not published by this build.
     //   equal ...................... an idle mouse, or a re-read that fell
     //                                inside one Diag rewrite cadence.
@@ -140,7 +153,27 @@ internal interface IFilterDiagReader
     {
         if (before is null || after is null)
             return false;
-        if (before.Availability != DiagAvailability.Ok || after.Availability != DiagAvailability.Ok)
+
+        // Gate on the values this question CONSUMES - the two Rid12Count
+        // readings, nothing else - rather than on the block as a whole.
+        // Requiring Ok used to mean requiring all twelve values: Value() raises
+        // anyMissing for a single absent one (:1284-1285) and that downgrades
+        // the whole snapshot to ValueMissing (:1345-1350), so a filter build
+        // that merely does not publish ScrollStep - a value nothing in this
+        // rule reads - made the touch-stream question permanently unanswerable,
+        // and silence from a detector reads as health. This repo already calls
+        // that build legitimate: DiagAvailability.ValueMissing's own docstring
+        // (:28-31) says an older build simply publishes fewer, and
+        // FilterDiagReaderTests.MissingValue_IsUnknownNotZero pins exactly that
+        // shape while asserting the counters still answer.
+        //
+        // The two states rejected here are the ones where NOTHING answered, so
+        // there is no counter to compare in either sample. CounterAdvanced
+        // would reject them anyway on the null counts; saying it out loud is
+        // what keeps a later half-populated snapshot from being read as a
+        // measurement.
+        if (before.Availability is DiagAvailability.ServiceKeyMissing or DiagAvailability.AccessDenied
+            || after.Availability is DiagAvailability.ServiceKeyMissing or DiagAvailability.AccessDenied)
             return false;
 
         // A negative span means the two were handed over transposed, which is
@@ -170,14 +203,19 @@ internal sealed record BatteryProbe(
     // When the 0x90 GetInputReport returned.
     DateTimeOffset TakenAt,
     // true  - a WELL-FORMED 0x90 report whose percent byte is 0
-    //         (MouseBatteryDevice.IsBogusZeroReport:253-254, the :183-195 site).
+    //         (MouseBatteryDevice.IsBogusZeroReport:275-276, the :221-232 site).
     // false - a real percent came back.
-    // null  - nothing judgeable: MOUSE_RID90_BAD :201-203 (wrong report id) or
-    //         MOUSE_RID90_FAILED :214-216 (the IOCTL failed, e.g. err=21 while
+    // null  - nothing judgeable: MOUSE_RID90_BAD :234-238 (wrong report id) or
+    //         MOUSE_RID90_FAILED :196-211 (the IOCTL failed, e.g. err=21 while
     //         the device re-enumerates). These may NEVER be folded into true:
     //         the repair for the truncation fault is a device restart, so
     //         reading a mid-restart failure as the fault prescribes another
     //         restart - the loop FindingGate.cs:8-21 exists to stop.
+    //
+    // Which outcome carries which fact is decided in ONE place,
+    // MouseBatteryDevice.ZeroReportFact:295-303, reached from the single
+    // capture site at MouseBatteryDevice.cs:194 - so no outcome can be
+    // reclassified by editing a literal beside a log line.
     bool? ZeroReport,
     // Diag read IMMEDIATELY BEFORE the same GetInputReport went out, so the
     // interval the counter delta is measured across is this read and nothing
@@ -362,7 +400,7 @@ internal static class DeviceDiagReader
     //
     // The prompted scroll probe (TrayApp.StartScrollProbe) asks a different
     // question from the capability row's. Not "is this device's multitouch
-    // stream alive", which is what AliveMemory (:288) deliberately keeps
+    // stream alive", which is what AliveMemory (:326) deliberately keeps
     // answering for a minute after the last increment, but "is a hand on the
     // mouse during THIS tick" - and the user arrives at the probe having just
     // moved the mouse onto the tray icon and clicked a button, so the memo
@@ -1022,7 +1060,7 @@ internal static class DeviceDiagReader
     // this is "the probe the current poll cycle took"; anything older means the
     // poller has gone quiet and the snapshot carries null rather than a stale
     // claim. The pair inside the probe is bounded far tighter than this
-    // (PairMaxSpan, :281), and that bound is what makes the probe a claim about
+    // (PairMaxSpan, :319), and that bound is what makes the probe a claim about
     // the moment of the read rather than about the poll cycle.
     internal static readonly TimeSpan BatteryProbeMaxAge = TimeSpan.FromMinutes(5);
 
@@ -1063,10 +1101,15 @@ internal static class DeviceDiagReader
     }
 
     // Only the reading that SURVIVED the poller's per-device collapse may
-    // publish (AdaptivePoller.cs:191-192). A v3 exposes three HID collections
-    // under one DeviceName, so publishing per path would let COL01's failed
-    // open supply the zero-report fact while COL02 supplied the percent - the
-    // mis-pairing this whole record exists to eliminate.
+    // publish (AdaptivePoller.cs:173-174), so the published fact and the
+    // percent the tray shows always come from the same HID collection.
+    //
+    // What that does NOT rest on: a group holding several readable collections.
+    // It cannot - DeviceRegistry.TryClassify rejects every v3 path that is not
+    // the battery collection (DeviceRegistry.cs:121-122) and Discover keeps one
+    // device per PID (:46-50), so COL01 is not a device and the group is a
+    // single instance. Publishing from the survivor is how that stays true if
+    // the grouping ever widens, not a repair for something reachable today.
     internal static void PublishBatteryProbe(string pid, BatteryProbe probe)
     {
         if (string.IsNullOrEmpty(pid))
@@ -1123,7 +1166,7 @@ internal interface IDiagValueSource
 // The only part of the reader that touches the hive, and it makes no decisions.
 // Same idiom as every other registry reader here: Registry.LocalMachine
 // .OpenSubKey(..., writable: false), an absent key is a STATE and not an
-// exception, nothing is ever written (DeviceDiagReader.cs:790-791,
+// exception, nothing is ever written (DeviceDiagReader.cs:828-829,
 // DeviceSnapshotReader.cs:382-383, DriverClaimReader.cs:351-352).
 //
 // Measured on the reference PC at Medium IL (not elevated): the whole Diag
@@ -1161,11 +1204,11 @@ internal sealed class RegistryDiagValueSource : IDiagValueSource
             // deletion") when a reinstall or a device restart removes
             // Services\<svc> under the read, which is exactly what the repair
             // this evidence feeds does. IFilterDiagReader.Read never throws,
-            // and this sits inside the battery read (MouseBatteryDevice.cs:179)
+            // and this sits inside the battery read (MouseBatteryDevice.cs:158-159)
             // where an escape costs a percent that was already measured and
             // turns it into the -1 and then -3 sentinels. Same blanket-catch
             // convention as every other registry toucher in this file
-            // (:351-357, :544-550, :1383-1389).
+            // (:389-395, :582-588, :1426-1432).
             //
             // ValueMissing, not Denied or KeyMissing: what was learned is
             // nothing, and the other two assert facts that may not be true.

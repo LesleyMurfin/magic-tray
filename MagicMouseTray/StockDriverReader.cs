@@ -101,7 +101,7 @@ internal static class StockDriverReader
     const string ClassBase = @"SYSTEM\CurrentControlSet\Control\Class";
 
     // Bluetooth HID-profile transport GUID, same constant and same reason as
-    // DeviceDiagReader.cs:215 (private there, so not shareable without editing
+    // DeviceDiagReader.cs:253 (private there, so not shareable without editing
     // that file). A live BT HID child key carries it; the USB charge-cable
     // phantoms do not.
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
@@ -115,7 +115,7 @@ internal static class StockDriverReader
         ["HidBth", "BthEnum", "BthPort", "BTHUSB", "BthLEEnum", "BthMini"];
 
     // NORMAL = present devices only, same reason as DeviceStackReader.cs:37-40
-    // and DeviceDiagReader.cs:217-220: a charge-cable phantom or a stale pairing
+    // and DeviceDiagReader.cs:255-258: a charge-cable phantom or a stale pairing
     // record must never be allowed to answer a question about the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
     const uint CR_SUCCESS = 0x00000000;
@@ -361,11 +361,11 @@ internal static class StockDriverReader
 
     // EVERY collection of the live Bluetooth HID stack, which is why this is not
     // DeviceDiagReader.ClassifyPointerKey: that one answers "is this the POINTER
-    // child" and returns None for COL02 and above (DeviceDiagReader.cs:930-932).
+    // child" and returns None for COL02 and above (DeviceDiagReader.cs:968-970).
     // Here COL02/COL03 are legitimate nodes to report on.
     //
     // The VID_ / &MI_ / USB\ forms are the USB charge-cable phantoms and are
-    // rejected outright, same as DeviceDiagReader.cs:911-914: a phantom COL01
+    // rejected outright, same as DeviceDiagReader.cs:949-952: a phantom COL01
     // exists on the reference PC after any USB-C charge.
     internal static bool IsBluetoothHidChildKey(string? deviceKeyName, string pid)
     {
@@ -395,7 +395,7 @@ internal static class StockDriverReader
     //
     // (private there, so this is a second copy rather than an edit to a file
     // this change does not own; the P/Invoke declarations below are duplicated
-    // for the same reason DeviceDiagReader.cs:1005-1010 duplicates its own.)
+    // for the same reason DeviceDiagReader.cs:1043-1048 duplicates its own.)
     static (string? InfPath, string? Provider, string? Version) ReadSoftwareKey(
         RegistryKey instanceKey)
     {

@@ -100,7 +100,7 @@ internal static class SystemConfigChecker
     const string NestedSignatureOid = "1.3.6.1.4.1.311.2.4.1";
 
     // The watcher writes one "heartbeat alive" line every 5 minutes
-    // (DeviceDiagReader.cs:572-574). Four missed heartbeats is the threshold: a
+    // (DeviceDiagReader.cs:610-612). Four missed heartbeats is the threshold: a
     // single missed line is scheduler jitter, not a finding.
     internal static readonly TimeSpan WatcherStaleAfter = TimeSpan.FromMinutes(20);
 

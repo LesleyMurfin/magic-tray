@@ -149,7 +149,7 @@ $FilterService = 'MagicMouseDriver204Scroll'
 $DiagSubKey = "SYSTEM\CurrentControlSet\Services\$FilterService\Diag"
 $BatteryReportId = 0x90
 # Apple firmware reports 1..100; a successful read of exactly 0 is the zeroed
-# report, never a level (MagicMouseTray/MouseBatteryDevice.cs:244-248).
+# report, never a level (MagicMouseTray/MouseBatteryDevice.cs:259-263).
 $MinValidPercent = 1
 
 $ExitRepaired = 0
@@ -223,7 +223,7 @@ function ConvertTo-UInt32Value {
     param($Value)
     if ($null -eq $Value) { return $null }
     # REG_DWORD marshals to a signed int and these counters run past 2^31
-    # (MagicMouseTray/DeviceDiagReader.cs:803-805).
+    # (MagicMouseTray/DeviceDiagReader.cs:841-843).
     return [uint32](([int64][int]$Value) -band 0xFFFFFFFFL)
 }
 
@@ -297,9 +297,9 @@ function Write-DiagLine {
 
 # Counter movement is the only positive proof that the mouse is being touched,
 # and stillness is unknown rather than health - the same discipline as
-# DeviceDiagReader.MultitouchAdvancing (MagicMouseTray/DeviceDiagReader.cs:328-358).
+# DeviceDiagReader.MultitouchAdvancing (MagicMouseTray/DeviceDiagReader.cs:366-396).
 # AclTranslateCount first, Rid12Count as the fallback for a filter build that
-# does not publish it (DeviceDiagReader.cs:784-801). $null when either sample is
+# does not publish it (DeviceDiagReader.cs:822-839). $null when either sample is
 # unreadable or the counter went BACKWARDS: a driver reinstall resets every Diag
 # counter to 0, and a reset is not a stalled stream.
 function Test-TouchStreamAdvanced {
@@ -582,10 +582,10 @@ function Read-Col02Battery {
             #
             # Anything else in 101..255 is deliberately left as no evidence.
             # MouseBatteryDevice.IsBogusZeroReport is the authority for this
-            # fingerprint (MagicMouseTray/MouseBatteryDevice.cs:253-254) and it
+            # fingerprint (MagicMouseTray/MouseBatteryDevice.cs:275-276) and it
             # requires buf[2] == 0; a wrong-range byte falls past it into
-            # CaptureProbe(zeroReport: null), "unknown and NOT false"
-            # (MouseBatteryDevice.cs:198-203). The duplication between this
+            # ZeroReportFact's null branch, "unknown and NOT false"
+            # (MouseBatteryDevice.cs:295-303). The duplication between this
             # script and that reader is deliberate - the two must not drift,
             # because claiming the truncation fingerprint from a report that
             # does not carry it reports STILL-BROKEN on evidence the tray

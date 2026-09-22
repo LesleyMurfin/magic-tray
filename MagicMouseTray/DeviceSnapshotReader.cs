@@ -209,7 +209,7 @@ internal static class DeviceSnapshotReader
 
         // The correlated battery probe, taken at the 0x90 read that SURVIVED
         // the poller's per-device collapse and published from there
-        // (AdaptivePoller.cs:191-192). This reader still opens no HID handle:
+        // (AdaptivePoller.cs:173-174). This reader still opens no HID handle:
         // it only picks up what the battery poll already measured, and gets
         // null when that is absent or older than DeviceDiagReader
         // .BatteryProbeMaxAge.

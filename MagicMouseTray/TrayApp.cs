@@ -2964,6 +2964,23 @@ internal sealed class TrayApp : IDisposable
         if (snapshot is null)
             return;
 
+        // The consent text names the CAPTURE, not only the absence of change.
+        // Starting the probe registers this process for raw mouse input with no
+        // focus requirement (WheelSink.cs:509-511), so for the ten seconds of a
+        // leg Windows delivers a record for every mouse on the PC, button
+        // presses included (WheelSink.cs:262 masks 0x03FF) - and the first
+        // prompt asks the user to click (RepairPlanner.cs:829). A disclosure
+        // that enumerates everything the probe does NOT do, while saying
+        // nothing about "this reads mouse input", reads as complete when it is
+        // not, so the capture is stated in the same breath as the reassurances.
+        // What the text may claim is bounded by what the code does: only
+        // tallies are accumulated (WheelSink.cs:260-264), every non-target
+        // device is dropped when the observation is projected
+        // (WheelSink.cs:280, :299), the one thing kept beside the counts is the
+        // target's device path (WheelSink.cs:316, logged at :3097 below), and
+        // no keyboard is ever registered - the single RAWINPUTDEVICE is usage
+        // page 1 / usage 2 (WheelSink.cs:509-510) and a record that is not a
+        // mouse record is discarded undecoded (WheelSink.cs:595-596).
         var intro =
             "No problem was found with this mouse's driver or its connection - and that is not "
             + "an answer about the scroll wheel.\n\n"
@@ -2972,9 +2989,13 @@ internal sealed class TrayApp : IDisposable
             + "surface sends the same stream of touch reports as a hand scrolling, and a "
             + "working mouse spends most of its time sending no scroll at all. So the only "
             + "honest way to check is to measure two short gestures while you make them.\n\n"
-            + "It takes about twenty seconds, in two steps of ten. Nothing is installed, "
-            + "nothing is changed on this PC or on the mouse, no administrator prompt appears, "
-            + "and you can stop at any step.\n\n"
+            + "It takes about twenty seconds, in two steps of ten. During each step this app "
+            + "counts the movement, button and scroll messages Windows delivers from this "
+            + "mouse - and from any other mouse attached, because Windows hands it all of "
+            + "them - and keeps nothing but those counts and which mouse they came from: not "
+            + "which button was pressed, not where the pointer went. Nothing you type is read "
+            + "at all. Nothing is installed, nothing is changed on this PC or on the mouse, "
+            + "no administrator prompt appears, and you can stop at any step.\n\n"
             + "OK starts the test. Cancel changes nothing.";
         if (System.Windows.Forms.MessageBox.Show(
                 intro, TrayMenu.ProductName,
@@ -2992,7 +3013,7 @@ internal sealed class TrayApp : IDisposable
     // Measurement runs off the dispatcher - two ten-second windows plus dialogs
     // would otherwise freeze the tray - and every dialog is marshalled back,
     // with the same dispatcher-is-gone early-out the repair apply path uses
-    // (:3079-3084). A probe that resolves after the UI has gone logs and drops.
+    // (:3100-3105). A probe that resolves after the UI has gone logs and drops.
     // Exactly one probe at a time, because the tray stays clickable throughout:
     // see _scrollProbeRunning (:2938).
     void StartScrollProbe(DeviceSnapshot snapshot)
@@ -3006,7 +3027,7 @@ internal sealed class TrayApp : IDisposable
         var service = RepairPlanner.FilterServiceFor(snapshot);
         // MultitouchAdvancingFresh, not MultitouchAdvancing: the memoised verdict
         // answers true for a full minute after the last counter advance
-        // (DeviceDiagReader.cs:288), and the user arrives here having just moved
+        // (DeviceDiagReader.cs:326), and the user arrives here having just moved
         // the mouse to click the tray icon and an OK button. Every 250 ms tick of
         // a ten-second leg would therefore read true on a mouse nobody is
         // touching, which makes Void false and ActiveDuration a full ten seconds

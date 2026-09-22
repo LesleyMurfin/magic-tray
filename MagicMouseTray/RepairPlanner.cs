@@ -154,7 +154,7 @@ internal sealed record DeviceSnapshot(
     // other moment would accuse an idle mouse from an hours-old reading.
     // Keeping the set in one record makes that mis-pairing unrepresentable
     // rather than merely discouraged, and the probe travels with the HID
-    // collection that won AdaptivePoller's ReadingRank collapse (:169-192) so
+    // collection that won AdaptivePoller's ReadingRank collapse (:140-174) so
     // it can never be assembled from one collection's failure and another's
     // percentage.
     //
@@ -179,7 +179,7 @@ internal sealed record DeviceSnapshot(
     // channel's capacity 1. Its presence CONFIRMS; its absence says nothing
     // whatsoever, and no rule may gate on it. The same shared slot is why
     // LastAclReceived was rejected as a health signal outright
-    // (DeviceDiagReader.cs:309-323): the broken binary and the fixed binary both
+    // (DeviceDiagReader.cs:347-361): the broken binary and the fixed binary both
     // read LastAclReceived 23 with LastAclCapacity 9, so it separates nothing.
     BatteryProbe? BatteryProbe = null,
     // The PASSIVE wheel observation, and only that. It feeds the device row's
@@ -439,10 +439,10 @@ internal static class RepairPlanner
         // together:
         //
         //   BatteryProbe.ZeroReport - a well-formed 0x90 report whose percent
-        //   byte is 0 (MouseBatteryDevice.IsBogusZeroReport:253-254). HIDCLASS
+        //   byte is 0 (MouseBatteryDevice.IsBogusZeroReport:275-276). HIDCLASS
         //   pre-zeroes the caller's buffer and writes the report id into byte 0,
         //   so a truncated copy-back reads as a report of "0%" - which no Magic
-        //   Mouse sends (MouseBatteryDevice.cs:244-248).
+        //   Mouse sends (MouseBatteryDevice.cs:266-270).
         //
         //   A touch-report counter that CLIMBED across the pair taken either
         //   side of that same read (MouseBatteryDevice.ReadV3Rid90), which is
@@ -459,11 +459,11 @@ internal static class RepairPlanner
         // nicety.
         //
         // Why NOT LastBatteryPct == -2, which is what 2d reads: that sentinel
-        // covers three different outcomes on the v3 path alone - the zero
-        // report (MouseBatteryDevice.cs:183-195), a wrong report id
-        // (:201-203), and an IOCTL that failed three times (:214-216) - and it
-        // is additionally emitted by KeyboardBatteryDevice for the SDP case 2d
-        // routes and by MouseBatteryDevice's v1/v2 path at :353. The failed
+        // covers three v3 outcomes told apart only by ZeroReportFact:295-303 -
+        // the zero report (MouseBatteryDevice.cs:221-232), a wrong report id
+        // (:234-238), an IOCTL that failed three times (:196-211) - and it is
+        // also emitted by KeyboardBatteryDevice for the SDP case 2d routes and
+        // by MouseBatteryDevice's v1/v2 path at :402. The failed
         // IOCTL is what a mouse mid-re-enumeration returns; this finding's
         // remediation restarts that device, so firing on the sentinel would
         // build a restart loop inside exactly the window FindingGate.cs:11-18
@@ -614,7 +614,7 @@ internal static class RepairPlanner
         && IFilterDiagReader.TouchStreamAdvanced(probe.DiagBefore, probe.DiagAfter);
 
     // Corroboration is FilterDiagSnapshot.TruncationCorroborated
-    // (DeviceDiagReader.cs:91-95) - one truth about that shape, owned by the
+    // (DeviceDiagReader.cs:101-104) - one truth about that shape, owned by the
     // record that carries the bytes. Opportunistic, never a gate: the filter's
     // "last inbound" slot is shared with the 65-per-second interrupt channel,
     // so the shape is visible only when the slot was read immediately after the
