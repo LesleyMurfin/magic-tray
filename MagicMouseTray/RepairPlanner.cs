@@ -464,10 +464,12 @@ internal static class RepairPlanner
     // decide is whether the MOUSE battery percent is arriving, or whether the
     // wheel really scrolls: a mouse -2, -3 or -1 is deliberately silent, while
     // a connected keyboard reading -2 IS reported, by rule 2d. That rule reads
-    // the sentinel and the PID, never the pairing record itself: a missing SDP
-    // cap is the measured cause behind it and the one with a guided fix, but
-    // an interface answering 0 reaches -2 as well (KB_BATTERY_ZERO), so the
-    // finding is an inference the log can contradict.
+    // the sentinel and the PID, never the pairing record itself, and the
+    // sentinel now carries exactly one cause: KeyboardBatteryDevice answers -2
+    // only where the battery report is not exposed - no Feature cap
+    // (KB_BATTERY_BLOCKED) or a read that failed (KB_FEATURE_BLOCKED). A read
+    // that answered something other than a level is -1 (KB_BATTERY_ZERO,
+    // KB_BATTERY_BAD), so a live interface can no longer buy this finding.
     // DeviceSnapshot.MultitouchAdvancing is a tri-state that can raise no
     // problem row in any state: false never occurs and null means only "no
     // evidence", so a still counter is never a fault - nor is it necessarily

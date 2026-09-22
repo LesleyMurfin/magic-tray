@@ -90,12 +90,33 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         var resp = SendReceive(handle, req, reportLen);
         if (resp is null) return -1;
 
-        int pct = resp[4]; // % at offset 4 for both 0x1000 GetBatteryLevelStatus and 0x1004 GetStatus
-        // Same level contract as the Apple paths (MouseBatteryDevice.IsRealLevel). A real
-        // percentage ends AdaptivePoller.BestReading's scan of the group, so an unfloored 0
-        // from a dead interface would win over a live one's failure sentinel and alert at 0%.
-        return MouseBatteryDevice.IsRealLevel(pct) ? pct : -1;
+        // % at offset 4 for both 0x1000 GetBatteryLevelStatus and 0x1004 GetStatus.
+        var (pct, marker) = ClassifyLevelByte(resp[4]);
+        // GetBatteryPercent logs LOGI_BATTERY_OK once for whichever feature answered; the
+        // rejection has to be logged here, where the raw byte and the feature that produced it
+        // are still in hand. Before this it was silent, which made the IBatteryDevice contract's
+        // "each logs a distinct zero marker" false for this implementation.
+        if (pct < 0)
+            Logger.Log($"{marker} device={DeviceName} value={resp[4]} (HID++ feature 0x{featureId:X4} fn{funcIndex} answered outside 1-100)");
+        return pct;
     }
+
+    // The level decision for the HID++ battery byte, split out of the read so it is provable
+    // without Logitech hardware (the model is MouseBatteryDevice.ParseRid90Percent). Pure and
+    // allocation-free: the markers are literals and the tuple never leaves the stack.
+    //
+    // Same level contract as the Apple paths (MouseBatteryDevice.IsRealLevel), floor 1: a real
+    // percentage ends AdaptivePoller.BestReading's scan of the group, so an unfloored 0 from a
+    // dead interface would win over a live one's failure sentinel and alert at 0%.
+    //
+    // A rejected value is -1, never -2: -2 means "the battery report is not exposed", and a
+    // device that answered the Root feature query has demonstrably exposed it. (Nothing routes
+    // a Logitech device to a repair offer either way - RepairPlanner rule 2d is gated on
+    // DriverHealthChecker.IsKeyboardPid and TrayMenu.ShowFixKeyboard on DeviceKind.MagicKeyboard.)
+    internal static (int Pct, string Marker) ClassifyLevelByte(byte raw) =>
+        MouseBatteryDevice.IsRealLevel(raw)
+            ? (raw, "LOGI_BATTERY_OK")
+            : (-1, raw == 0 ? "LOGI_BATTERY_ZERO" : "LOGI_BATTERY_BAD");
 
     static byte[] NewReport(byte reportId, int len, byte featureIndex, byte funcByte, byte arg0, byte arg1)
     {

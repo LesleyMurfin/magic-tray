@@ -96,8 +96,9 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     }
 
     // Active read of the col02 Battery Strength Feature report (RID 0x47).
-    // Returns 1-100, -2 if present but the Feature cap/read is blocked (patch needed) or the read
-    // yields 0, -1 on open failure.
+    // Returns 1-100; -2 only when the battery report is not exposed (no Feature cap, or
+    // HidD_GetFeature itself failed - the patch is needed); -1 on open/caps failure or on a
+    // read that succeeded but answered with something that is not a level.
     public int GetBatteryPercent()
     {
         using var handle = HidNative.CreateFile(
@@ -174,27 +175,34 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
         }
 
         // Same level contract as every other IBatteryDevice (MouseBatteryDevice.IsRealLevel):
-        // Apple firmware reports 1..100, so a read that succeeds with exactly 0 came from a
-        // dead/phantom interface. The keyboard needs the floor now because
-        // DeviceRegistry.Discover keeps a paired keyboard's leftover USB col02 next to the
-        // live interface, and a real 0 would end AdaptivePoller.BestReading's scan of the
-        // group ahead of the live interface and fire the low-battery alert on a healthy
-        // keyboard. fbuf[1] is a byte, so the previous >= 0 bound rejected nothing.
-        int pct = fbuf[1];
-        if (MouseBatteryDevice.IsRealLevel(pct))
-        {
-            Logger.Log($"KB_BATTERY_OK device={DeviceName} pct={pct}% (Feature 0x{batteryReportId:X2})");
-            return pct;
-        }
-
-        // Distinct from KB_FEATURE_BLOCKED on purpose: the cap is present and the read
-        // succeeded, so "patch needed" would be false and GetLastWin32Error would be stale
-        // from an earlier call - and docs/TEST-PLAN.md D30 reads KB_FEATURE_BLOCKED as the
-        // evidence that the SDP cache is unpatched. Same split as the mouse, which separates
-        // MOUSE_BATTERY_ZERO (the phantom) from MOUSE_RID90_BAD (a report that is not a level).
-        Logger.Log(pct == 0
-            ? $"KB_BATTERY_ZERO device={DeviceName} (Feature 0x{batteryReportId:X2} answered 0 - a dead or phantom interface, not a real level)"
-            : $"KB_BATTERY_BAD device={DeviceName} value={pct} (Feature 0x{batteryReportId:X2} answered outside 1-100)");
-        return -2;
+        // the floor is 1, because Apple firmware reports 1..100, so a read that succeeds with
+        // exactly 0 came from a dead/phantom interface. The keyboard needs the floor because
+        // DeviceRegistry.Discover keeps a paired keyboard's leftover USB col02 next to the live
+        // interface, and a real 0 would end AdaptivePoller.BestReading's scan of the group ahead
+        // of the live interface and fire the low-battery alert on a healthy keyboard. fbuf[1] is
+        // a byte, so the previous >= 0 bound rejected nothing.
+        var (pct, marker) = ClassifyFeatureByte(fbuf[1]);
+        Logger.Log($"{marker} device={DeviceName} value={fbuf[1]} (Feature 0x{batteryReportId:X2})");
+        return pct;
     }
+
+    // The level decision for the Feature byte, split out of the read so it is provable without
+    // the hardware (the model is MouseBatteryDevice.ParseRid90Percent). Pure and allocation-free:
+    // the markers are literals and the tuple never leaves the stack.
+    //
+    // A read that SUCCEEDED but did not answer with a level is -1, never -2. -2 means "the
+    // battery report is not exposed", and it is the only value that opens the elevated SDP-cache
+    // patch offer (TrayMenu.ShowFixKeyboard, TrayApp.cs:271-272) and RepairPlanner rule 2d
+    // (RepairPlanner.cs:345-347). On this line the Feature cap is present and HidD_GetFeature
+    // returned true, so the pairing record is demonstrably intact: a phantom col02 answering 0
+    // must not buy a repair row that tells the user to re-patch a working keyboard. That is the
+    // same answer the mouse's unified-Feature path gives (MouseBatteryDevice.cs:280-294).
+    //
+    // The rejection markers stay distinct from KB_FEATURE_BLOCKED on purpose: "patch needed"
+    // would be false here, and GetLastWin32Error would be stale from an earlier call because
+    // this read succeeded.
+    internal static (int Pct, string Marker) ClassifyFeatureByte(byte raw) =>
+        MouseBatteryDevice.IsRealLevel(raw)
+            ? (raw, "KB_BATTERY_OK")
+            : (-1, raw == 0 ? "KB_BATTERY_ZERO" : "KB_BATTERY_BAD");
 }
