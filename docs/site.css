@@ -938,11 +938,27 @@ ol.stepper .step-body code { overflow-wrap: anywhere; }
 /* ---------- Accordion: collapsible FAQ, replaces plain dl.faq ---------- */
 .accordion { display: grid; gap: 0.6rem; margin: 1rem 0 1.6rem; }
 @media (min-width: 900px) { .accordion.two-col { grid-template-columns: 1fr 1fr; align-items: start; } }
+/* The bare-element `details` rules further down dress every disclosure on the
+   site, and they land on these entries too. Three of their defaults belong to
+   a technical disclosure and not to a question, so each is turned off once,
+   here, next to the declaration it would otherwise fight:
+
+     margin  - the grid owns the spacing between panels. Left on, the 1.1rem
+               block margin added to the 0.6rem gap and rows sat 44.8px apart
+               while the component declared 9.6px.
+     ::before - a summary here ships its own SVG chevron. Left on, every
+               question carried two markers that rotated opposite ways.
+     .a-body margin - it stacked on this component's padding and inset the
+               answer 31.2px against its own question's 16.8px.
+
+   No child paints to the border radius, so there is nothing to clip, and
+   `overflow: hidden` only ever truncated the summary's focus ring. It is
+   deliberately absent. */
 .accordion details {
+  margin: 0;
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  overflow: hidden;
 }
 .accordion summary {
   cursor: pointer;
@@ -956,6 +972,7 @@ ol.stepper .step-body code { overflow-wrap: anywhere; }
   gap: 0.75rem;
 }
 .accordion summary::-webkit-details-marker { display: none; }
+.accordion summary::before { content: none; }
 .accordion summary .chev {
   flex: none;
   width: 1.1rem;
@@ -967,7 +984,7 @@ ol.stepper .step-body code { overflow-wrap: anywhere; }
   transition: transform 0.15s var(--ease);
 }
 .accordion details[open] summary .chev { transform: rotate(180deg); }
-.accordion .a-body { padding: 0 1.05rem 0.95rem; color: var(--muted); font-size: 0.95rem; }
+.accordion .a-body { margin: 0; padding: 0 1.05rem 0.95rem; color: var(--muted); font-size: 0.95rem; }
 .accordion .a-body p { margin: 0.5rem 0 0; }
 .accordion .a-body p:first-child { margin-top: 0; }
 
@@ -1333,101 +1350,20 @@ details code { font-family: var(--mono); font-size: 0.85rem; }
    worse than it is now, so this needs no fallback.
 
    `content-visibility` alone leaves the slot at zero height while the closed
-   state still applies `block-size: 0`, so both are needed. */
-details:target::details-content {
+   state still applies `block-size: 0`, so both are needed.
+
+   A fragment can also name something *inside* a disclosure - drivers.html
+   links to #cost-list, a list within the #cost answer. Chromium opens the
+   ancestor itself in that case, but that is its own behaviour and not a rule
+   other engines share, so :has(:target) states it here and the reveal stops
+   depending on which browser the visitor brought. */
+details:is(:target, :has(:target))::details-content {
   content-visibility: visible;
   block-size: auto;
 }
 /* The marker would otherwise still point sideways at content that is open. */
-details:target > summary::before { transform: rotate(45deg); }
-.accordion details:target > summary .chev { transform: rotate(180deg); }
-
-
-/* ---------------------------------------------------------------------------
-   Device picker: one device visible at a time.
-
-   Radio inputs plus :checked sibling selectors, deliberately no JavaScript.
-   The production CSP is script-src 'none', so a scripted tab widget would be
-   dead on arrival. A radio group also gets keyboard support for free: arrow
-   keys move between devices and the browser handles the roving focus, which a
-   hand-rolled widget would have to reimplement and usually gets wrong.
-
-   Markup contract: every input is a direct child of .picker and comes BEFORE
-   .picker-tabs and .picker-panels, because ~ only reaches later siblings.
-   Panel ids mirror input ids with pk- swapped for pp-.
-   --------------------------------------------------------------------------- */
-.picker > input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.picker-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0 0 1.1rem;
-  padding: 0;
-}
-.picker-tabs label {
-  display: inline-flex;
-  align-items: center;
-  /* 2.75rem keeps the chip above the 24px minimum target size even at the
-     smallest step of the type scale. */
-  min-height: 2.75rem;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-3);
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease),
-    border-color 0.12s var(--ease);
-}
-.picker-tabs label:hover {
-  color: var(--fg);
-  border-color: var(--accent);
-}
-.picker-panel { display: none; }
-.picker-panel > .ident-card { margin: 0; }
-
-/* The selected chip and its panel. One selector pair per device: the :checked
-   input is matched by id, so these cannot be collapsed into a single rule. */
-#pk-v1:checked ~ .picker-tabs label[for="pk-v1"],
-#pk-v2:checked ~ .picker-tabs label[for="pk-v2"],
-#pk-v3:checked ~ .picker-tabs label[for="pk-v3"],
-#pk-awm:checked ~ .picker-tabs label[for="pk-awm"],
-#pk-kbd:checked ~ .picker-tabs label[for="pk-kbd"],
-#pk-kb11:checked ~ .picker-tabs label[for="pk-kb11"],
-#pk-tp:checked ~ .picker-tabs label[for="pk-tp"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg);
-  font-weight: 600;
-}
-/* The real input is off-screen, so its focus ring has to be drawn on the
-   label the user actually sees. Without this the picker is unusable by
-   keyboard: focus would move with no visible indication of where it is. */
-#pk-v1:focus-visible ~ .picker-tabs label[for="pk-v1"],
-#pk-v2:focus-visible ~ .picker-tabs label[for="pk-v2"],
-#pk-v3:focus-visible ~ .picker-tabs label[for="pk-v3"],
-#pk-awm:focus-visible ~ .picker-tabs label[for="pk-awm"],
-#pk-kbd:focus-visible ~ .picker-tabs label[for="pk-kbd"],
-#pk-kb11:focus-visible ~ .picker-tabs label[for="pk-kb11"],
-#pk-tp:focus-visible ~ .picker-tabs label[for="pk-tp"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-#pk-v1:checked ~ .picker-panels > #pp-v1,
-#pk-v2:checked ~ .picker-panels > #pp-v2,
-#pk-v3:checked ~ .picker-panels > #pp-v3,
-#pk-awm:checked ~ .picker-panels > #pp-awm,
-#pk-kbd:checked ~ .picker-panels > #pp-kbd,
-#pk-kb11:checked ~ .picker-panels > #pp-kb11,
-#pk-tp:checked ~ .picker-panels > #pp-tp {
-  display: block;
-}
+details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg); }
+.accordion details:is(:target, :has(:target)) > summary .chev { transform: rotate(180deg); }
 
 /* ---------------------------------------------------------------------------
    Agent install callout.
@@ -1524,6 +1460,15 @@ details:target > summary::before { transform: rotate(45deg); }
    than intended, never nothing. A rule that could blank the page is not worth
    the tidiness.
    --------------------------------------------------------------------------- */
+.picker-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+}
+.picker-panel { display: none; }
+.picker-panel > .ident-card { margin: 0; }
 .picker-panel:first-child { display: block; }
 .picker-panel:target { display: block; }
 .picker-panels:has(:target) > .picker-panel:first-child:not(:target) {
