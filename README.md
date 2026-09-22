@@ -368,7 +368,7 @@ The pipeline is already wired: `scripts/sign-app.ps1` runs on `v*` tags when `SI
 
 ## Credits
 
-The LowerFilter sandwich (app → Windows HID → **filter** → Bluetooth → mouse) is from [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows). That diagram is why the v1/v2 scroll path is understandable. **Please star their repo.** We redraw it on [the 2024 mouse page](https://magictray.app/v3.html#sbagirici). Their installer is for v1/v2 with Apple's signed `applewirelessmouse.sys`. The Magic Mouse 2024 (`0323`) needs a different driver, and the KMDF one in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) is [still being built](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) — nothing to install there yet.
+The LowerFilter sandwich (app → Windows HID → **filter** → Bluetooth → mouse) is from [sbagirici/apple-magic-mouse-scroll-fix-windows](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows). That diagram is why the v1/v2 scroll path is understandable. **Please star their repo.** We redraw it on [the 2024 mouse page](https://magictray.app/magic-mouse-2024.html#sbagirici). Their installer is for v1/v2 with Apple's signed `applewirelessmouse.sys`. The Magic Mouse 2024 (`0323`) needs a different driver, and the KMDF one in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) is [still being built](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) — nothing to install there yet.
 
 v1/v2 Boot Camp INF packaging: [tealtadpole/MagicMouse2DriversWin11x64](https://github.com/tealtadpole/MagicMouse2DriversWin11x64).
 

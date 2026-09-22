@@ -91,13 +91,23 @@ Every other page already names its subject in one word (`battery`, `keyboard`, `
 `devices`, `funding`), so they keep their URLs. A rename costs whatever ranking history the old
 URL had earned; it is only worth paying where the old name was meaningless.
 
-`docs/v3.html` still exists as a **redirect stub**: a zero-second `<meta http-equiv="refresh">`, a
-`<link rel="canonical">` at the new URL, a `location.replace` that preserves the `#fragment`, and a
-visible link for anyone whose browser does neither. GitHub Pages serves static files and cannot
-issue a real `301`, so this is the strongest available signal; Google treats an instant meta
-refresh as a permanent redirect, which is why the delay is `0` and not `1`. The visible fallback
-text does not weaken that. Keep the stub. Old Reddit and GitHub comments link the old URL and
-will not be edited.
+`docs/v3.html` still exists as a **redirect stub**: `noindex`, a zero-second
+`<meta http-equiv="refresh">`, and a visible link for anyone whose browser does not follow it.
+That is all it is. It carries no `<link rel="canonical">` — `scripts/check-aeo.ps1` rejects one on
+a `noindex` page, because canonical says "index that URL instead" while robots says "index
+nothing", and the crawler resolves the contradiction however it likes, sometimes by carrying the
+`noindex` across to the target. It runs no `location.replace` either: these pages ship no
+JavaScript, the production CSP is `script-src 'none'`, and the only `<script>` elements under
+`docs/` are `application/ld+json`.
+
+So the `#fragment` is dropped. An old `v3.html#community` link lands at the top of
+`magic-mouse-2024.html`, and in-repo links that used to rely on a fragment now point at the real
+page instead. GitHub Pages serves static files and cannot issue a `301`, so within this repository
+the instant meta refresh is the strongest available signal, and Google treats it as a permanent
+redirect — which is why the delay is `0` and not `1`. **A Cloudflare 301 is the better answer**: it
+preserves the fragment, passes link equity, and needs no `noindex` page at all. That belongs in the
+zone configuration (see `CLOUDFLARE.md`), not in this repository. Until then, keep the stub. Old
+Reddit and GitHub comments link the old URL and will not be edited.
 
 The stub is deliberately **not** in `sitemap.xml`. A sitemap is a list of URLs you want indexed,
 and this one exists only to hand visitors and crawlers on to the new URL. Note for whoever lands
@@ -275,8 +285,10 @@ What changed:
   constantly, and the site previously only denied being a clone.
 - **FAQ parity is now real.** `battery.html` and `v3.html` had `FAQPage` questions that existed
   nowhere on the page as a question; `index.html` had eight in schema and six on the page. Schema
-  that quotes text a reader cannot find is the failure mode Google penalises. Every page now has one
-  `dl.faq`, and each answer is condensed rather than a second copy of the body prose.
+  that quotes text a reader cannot find is the failure mode Google penalises. Every page now carries
+  one `div.accordion.two-col` — a `<details>` per question, the `<summary>` the question and the
+  `div.a-body` inside it the answer — and each answer is condensed rather than a second copy of the
+  body prose.
 - **New questions in the words people actually type**: how do I check my Magic Mouse battery on
   Windows 10 or 11, how do I check the trackpad, how do I see keyboard percent on Windows 11, why
   won't my Magic Mouse scroll on Windows 11, does the 2024 USB-C mouse work on Windows 11.
@@ -290,10 +302,12 @@ What changed:
 `scripts/check-aeo.ps1` (CI job `aeo-checks`) parses every page's graph and fails the build on: a
 missing or unparseable `ld+json` block, an `@id` reference with no declaration on the same page,
 two pages disagreeing about a shared `@id`, a `WebPage` url that contradicts the canonical link or
-the file path, a missing `dateModified`, FAQ text that differs between schema and page, and a
-`softwareVersion` that has drifted from the visible download links. It is read-only and runs on
-`ubuntu-latest`. It deliberately does not repeat the link, sitemap, robots and CNAME checks in
-`scripts/check-site.ps1`.
+the file path, a missing `dateModified`, FAQ text that differs between schema and page, an accordion
+entry whose `<summary>` and `div.a-body` it cannot read as a question and its answer — reported as an
+error rather than skipped in silence, so a visible question can no longer go missing from the graph
+because the gate never saw it — and a `softwareVersion` that has drifted from the visible download
+links. It is read-only and runs on `ubuntu-latest`. It deliberately does not repeat the link,
+sitemap, robots and CNAME checks in `scripts/check-site.ps1`.
 
 Validate the rendered result against Google as well — the gate checks the graph, not Google's
 eligibility rules:

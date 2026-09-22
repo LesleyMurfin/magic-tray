@@ -34,13 +34,12 @@ Three defects:
 1. **`script-src 'none'` killed analytics.** Cloudflare Web Analytics is enabled on this zone and
    the edge injects `static.cloudflareinsights.com/beacon.min.js` into every HTML response. The
    policy then blocked the script it had just injected. The site has therefore collected **zero**
-   analytics data for as long as both settings have coexisted, while `PRD.md` lists organic
-   traffic and SEO rank as success metrics. Verified over CDP: the beacon is present in the raw
-   response body and blocked at execution.
+   analytics data for as long as both settings have coexisted, while `docs/SEARCH.md` treats
+   organic search traffic and where the site ranks as the things this work is judged on. Verified
+   over CDP: the beacon is present in the raw response body and blocked at execution.
 
    If you would rather not run analytics, that is a legitimate choice — but then turn Web
-   Analytics **off** in the dashboard and delete the traffic metrics from the PRD. Do not leave an
-   injected script and a policy that blocks it.
+   Analytics **off** in the dashboard. Do not leave an injected script and a policy that blocks it.
 
 2. **No `font-src` — a latent break, not a live one.** With `font-src` absent it inherits
    `default-src 'none'`, so every `@font-face` fetch is blocked. This did not show up in
