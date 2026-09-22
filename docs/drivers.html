@@ -139,7 +139,7 @@
             "@type": "HowToStep",
             "position": 5,
             "name": "Install it",
-            "text": "Right-click AppleWirelessMouse and choose Install. Click Yes when Windows asks."
+            "text": "Open that folder. Right-click AppleWirelessMouse and choose Install. Click Yes when Windows asks."
           },
           {
             "@type": "HowToStep",
@@ -164,10 +164,34 @@
           },
           {
             "@type": "Question",
+            "name": "Which driver does my Apple Magic Mouse need on Windows 10 or 11?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) all take Apple's own driver. The 2024 USB-C mouse (0323) has no finished scroll fix to download yet."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway."
+            }
+          },
+          {
+            "@type": "Question",
             "name": "Will Magic Tray change my mouse driver without asking?",
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "No. It opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "My Magic Mouse still won't scroll. What do I check?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "If the Driver tab still says Microsoft, run the install again. If nothing changed after a restart, unpair the mouse in Windows Bluetooth settings and pair it again."
             }
           }
         ]
@@ -260,7 +284,7 @@
           <li><span class="num">2</span><div class="step-body"><strong>Click Boot Camp.</strong><p>Magic Tray opens Apple's download page.</p></div></li>
           <li><span class="num">3</span><div class="step-body"><strong>Click the green Code button,</strong><p>then <strong>Download ZIP</strong>.</p></div></li>
           <li><span class="num">4</span><div class="step-body"><strong>Open the download.</strong><p>Drag the <strong>AppleWirelessMouse</strong> folder to your desktop.</p></div></li>
-          <li><span class="num">5</span><div class="step-body"><strong>Right-click AppleWirelessMouse and choose Install.</strong><p>Click <strong>Yes</strong> when Windows asks.</p></div></li>
+          <li><span class="num">5</span><div class="step-body"><strong>Open that folder.</strong><p>Right-click <strong>AppleWirelessMouse</strong> and choose <strong>Install</strong>. Click <strong>Yes</strong> when Windows asks.</p></div></li>
           <li><span class="num">6</span><div class="step-body"><strong>Restart your PC,</strong><p>then scroll with one finger.</p></div></li>
         </ol>
         <p class="note">Without Magic Tray, the same files are on <a href="https://github.com/tealtadpole/MagicMouse2DriversWin11x64">tealtadpole's page</a>.</p>
@@ -316,8 +340,20 @@
           <div class="a-body"><p>Windows never reads the touch surface on top, so one-finger scrolling does nothing until you add a driver. The three older mice take <a href="#v1v2">Apple's own driver</a>. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix yet.</p></div>
         </details>
         <details>
+          <summary>Which driver does my Apple Magic Mouse need on Windows 10 or 11?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</p></div>
+        </details>
+        <details>
+          <summary>Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway.</p></div>
+        </details>
+        <details>
           <summary>Will Magic Tray change my mouse driver without asking?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body"><p>No. It opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything.</p></div>
+        </details>
+        <details>
+          <summary>My Magic Mouse still won't scroll. What do I check?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>If the Driver tab still says Microsoft, run the install again. If nothing changed after a restart, unpair the mouse in Windows Bluetooth settings and pair it again.</p></div>
         </details>
       </div>
 
@@ -340,7 +376,7 @@
           <a href="#only-moves">Why it won't scroll</a>
           <a href="#v1v2">AA, Lightning and Apple Wireless</a>
           <a href="#v3">The 2024 mouse</a>
-          <a href="#cost-list">What you give up</a>
+          <a href="#cost">What you give up</a>
           <a href="#stuck">Still no scrolling?</a>
         </nav>
       </div>

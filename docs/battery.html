@@ -148,10 +148,34 @@
         "mainEntity": [
           {
             "@type": "Question",
+            "name": "Which Apple devices show a battery percent?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock."
+            }
+          },
+          {
+            "@type": "Question",
             "name": "Can I see my Apple keyboard's battery percent on Windows?",
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "Yes, after a one-time unlock you run from the Magic Tray menu. Windows keeps its own keyboard driver. Only the 2011 Apple Wireless Keyboard is confirmed so far."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why is no battery percent showing?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Usually the device is asleep, or the icon is hiding behind the taskbar's ^ arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which Apple devices has a tester confirmed?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Three so far: the 2024 Magic Mouse (0323), the AA-battery Magic Mouse v1 (030D) and the 2011 Apple Wireless Keyboard (0239). The rest should work, but nobody has reported back yet."
             }
           },
           {
@@ -267,8 +291,20 @@
       <h2 id="faq">Common questions</h2>
       <div class="accordion two-col">
         <details>
+          <summary>Which Apple devices show a battery percent? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad the app recognises, on Windows 10 and 11. Only keyboards ask for anything extra, and that is the one-time unlock.</p></div>
+        </details>
+        <details id="keyboard-battery">
           <summary>Can I see my Apple keyboard's battery percent on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body"><p>Yes, after a <a href="keyboard.html#unlock">one-time unlock</a> you run from the Magic Tray menu. Windows keeps its own keyboard driver. Only the 2011 Apple Wireless Keyboard is confirmed so far.</p></div>
+        </details>
+        <details>
+          <summary>Why is no battery percent showing? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Usually the device is asleep, or the icon is hiding behind the taskbar's <code>^</code> arrow. On a keyboard it means the unlock hasn't been run; otherwise the model isn't one Magic Tray knows.</p></div>
+        </details>
+        <details>
+          <summary>Which Apple devices has a tester confirmed? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The rest should work, but nobody has reported back yet.</p></div>
         </details>
         <details>
           <summary>How do I check my Apple Magic Trackpad battery on Windows? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
