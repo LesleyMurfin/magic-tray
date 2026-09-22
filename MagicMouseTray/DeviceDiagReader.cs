@@ -61,9 +61,9 @@ internal sealed record FilterDiagSnapshot(
     // identically (received 23, capacity 9, bytes A1 12 ...) on both a broken
     // and a restored filter build. They are surfaced as OPPORTUNISTIC
     // CORROBORATION ONLY, never as a health signal, and the rejection recorded
-    // at :276-290 stands for exactly that use: nothing may gate on them.
-    // They become meaningful only in ReadAfterProbe, which samples them in the
-    // same code path as the probe that filled them.
+    // at :309-323 stands for exactly that use: nothing may gate on them.
+    // They become meaningful only as a probe's DiagAfter sample, read in the
+    // same code path as the GET_REPORT that filled them.
     uint? LastAclReceived, uint? LastAclCapacity, uint? LastOutHdr, uint? LastOutBufferSize,
     // REG_BINARY, raw. Never stringified: the percentage the truncation defect
     // discards was on the wire in these bytes (A1-90-04-16 = 22 %), so the
@@ -100,32 +100,38 @@ internal sealed record FilterDiagSnapshot(
 internal interface IFilterDiagReader
 {
     // One sample, now. Never throws: an unreadable key is an Availability, not
-    // an exception.
-    FilterDiagSnapshot Read();
-
-    // The sweep-to-sweep pair a counter delta needs. Before is the snapshot
-    // this reader took for the same service on a PREVIOUS sweep (null on the
-    // first one), After is a fresh sample.
+    // an exception. RegistryDiagValueSource degrades EVERY registry failure to
+    // a DiagValue for that reason - this runs inside the battery read, where an
+    // escape costs a percent that has already been measured.
     //
-    // This is also the correlated read: called immediately after a HID
-    // GET_REPORT (DeviceDiagReader.TakeBatteryProbe, from
-    // MouseBatteryDevice.cs:164-199), After is the only sample that can still
-    // catch the control-channel frame in the filter's shared last-inbound slot.
-    // Any later sample shows the interrupt channel's instead, which is why the
-    // LastAcl triple is corroboration and never a test.
-    (FilterDiagSnapshot? Before, FilterDiagSnapshot After) ReadPair();
+    // The battery path takes TWO of these around one HID GET_REPORT: one
+    // immediately BEFORE the request goes out and one immediately after it
+    // returns (MouseBatteryDevice.ReadV3Rid90 -> TakeBatteryProbe). That pair
+    // is the whole interval the touch-counter delta may be measured across, and
+    // the second sample is additionally the only one that can still catch the
+    // control-channel frame in the filter's shared last-inbound slot. Any later
+    // sample shows the interrupt channel's instead, which is why the LastAcl
+    // triple is corroboration and never a test.
+    FilterDiagSnapshot Read();
 
     // Did the touch-report stream ADVANCE between these two samples?
     //
-    // true only when both samples are usable and the counter genuinely climbed.
+    // true only when both samples are usable, the interval between them is
+    // short enough to be a claim about NOW, and the counter genuinely climbed.
     // Everything else is false, and every "else" is a real case:
-    //   either snapshot null ....... first sweep, nothing to compare.
+    //   either snapshot null ....... no pre-read sample, nothing to compare.
     //   either not Ok .............. no measurement, so no delta.
     //   either count null .......... the value is not published by this build.
-    //   equal ...................... an idle mouse, or a sub-second re-read.
+    //   equal ...................... an idle mouse, or a re-read that fell
+    //                                inside one Diag rewrite cadence.
     //   backwards .................. a driver reinstall zeroes every Diag
     //                                counter, so a lower number is a NEW
     //                                baseline, never a negative delta.
+    //   wider than PairMaxSpan ..... the counter moved at SOME point in a long
+    //                                window. That is not evidence about the
+    //                                read the pair was taken around, and
+    //                                treating it as such accused a mouse last
+    //                                touched hours earlier.
     // Static because the pure decision layer (RepairPlanner) must reach it
     // without owning a reader, a registry or a Windows type; the counter-reset
     // rule itself is DeviceDiagReader.CounterAdvanced, shared with
@@ -135,6 +141,13 @@ internal interface IFilterDiagReader
         if (before is null || after is null)
             return false;
         if (before.Availability != DiagAvailability.Ok || after.Availability != DiagAvailability.Ok)
+            return false;
+
+        // A negative span means the two were handed over transposed, which is
+        // not a measurement in either direction; the caller passes them by
+        // name for the same reason (TakeBatteryProbe).
+        var span = after.TakenAt - before.TakenAt;
+        if (span < TimeSpan.Zero || span > DeviceDiagReader.PairMaxSpan)
             return false;
 
         // Both counters came from REG_DWORDs widened through uint, so they
@@ -147,39 +160,36 @@ internal interface IFilterDiagReader
 // One battery read of the v3 with everything needed to judge it, captured at
 // the read itself. Plain data.
 //
-// The five members are the whole correlation. A percent byte of 0 means
+// The four members are the whole correlation. A percent byte of 0 means
 // NOTHING on its own: the mouse legitimately stops answering its vendor report
 // when the touch stream stops, which is the ordinary idle case the planner
 // already suppresses. It means the filter truncated the response only when the
-// touch stream was demonstrably alive across the same read.
+// touch stream was demonstrably alive ACROSS THIS READ - which is why the pair
+// below is taken around the GET_REPORT itself and not across poll cycles.
 internal sealed record BatteryProbe(
     // When the 0x90 GetInputReport returned.
     DateTimeOffset TakenAt,
     // true  - a WELL-FORMED 0x90 report whose percent byte is 0
-    //         (MouseBatteryDevice.IsBogusZeroReport:236-237, the :168-180 site).
+    //         (MouseBatteryDevice.IsBogusZeroReport:253-254, the :183-195 site).
     // false - a real percent came back.
-    // null  - nothing judgeable: MOUSE_RID90_BAD :186-188 (wrong report id) or
-    //         MOUSE_RID90_FAILED :199-201 (the IOCTL failed, e.g. err=21 while
+    // null  - nothing judgeable: MOUSE_RID90_BAD :201-203 (wrong report id) or
+    //         MOUSE_RID90_FAILED :214-216 (the IOCTL failed, e.g. err=21 while
     //         the device re-enumerates). These may NEVER be folded into true:
     //         the repair for the truncation fault is a device restart, so
     //         reading a mid-restart failure as the fault prescribes another
     //         restart - the loop FindingGate.cs:8-21 exists to stop.
     bool? ZeroReport,
-    // The Diag sample from a PREVIOUS sweep for the same service, so the pair
-    // spans a real interval. null on the first probe.
+    // Diag read IMMEDIATELY BEFORE the same GetInputReport went out, so the
+    // interval the counter delta is measured across is this read and nothing
+    // else. null when the pre-read sample could not be taken - no interval, no
+    // evidence, and no evidence raises nothing.
     FilterDiagSnapshot? DiagBefore,
     // Diag read IMMEDIATELY after the same GetInputReport call. This is the one
     // moment the filter's shared last-inbound slot can still show the
     // control-channel frame (LastOutHdr 0x41 / LastAclCapacity 1), and even
     // then only sometimes - the interrupt channel overwrites it ~65 times a
     // second. Corroboration, never a gate.
-    FilterDiagSnapshot? DiagAfter,
-    // When an advance of the touch-report counter was OBSERVED, from the fresh
-    // delta rather than the 60 s memoised MultitouchAdvancing verdict. The
-    // advance itself happened somewhere in the interval that ended at this
-    // sample, so this is an upper bound on how long ago the stream moved, not
-    // an instant. null = no evidence, and no evidence raises nothing.
-    DateTimeOffset? TouchAdvancedAt);
+    FilterDiagSnapshot? DiagAfter);
 
 // Per-capability health evidence the registration-only reader cannot supply:
 // is the multitouch report stream actually MOVING, is the Bluetooth pointer
@@ -198,7 +208,7 @@ internal static class DeviceDiagReader
 
     // Bluetooth HID-profile transport GUID. A live BT HID child key is
     //   {00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01
-    // (docs/ENABLE-DISABLE.md:46 shows the same device-key form under BTHENUM;
+    // (docs/ENABLE-DISABLE.md:52 shows the same device-key form under BTHENUM;
     // the Enum\HID children append a collection suffix only when the device
     // splits its collections - see ClassifyPointerKey for the v1 shape, which
     // has exactly one collection and therefore no suffix).
@@ -242,10 +252,33 @@ internal static class DeviceDiagReader
     // is exactly what the live log showed. The baseline is therefore only
     // replaced once it is at least BaselineMinAge old, so bursts measure
     // against a sample far enough back for the counter to have moved.
-    // internal: FilterDiagReader.ReadPair applies the same burst discipline to
-    // the snapshot pair it hands the planner, and there must be one interval
-    // rule, not two.
     internal static readonly TimeSpan BaselineMinAge = TimeSpan.FromSeconds(2);
+
+    // The widest a before/after Diag pair may be and still be a claim about
+    // NOW. Without an upper bound the pair spanned a whole battery poll
+    // interval - 5 minutes to 24 hours (AdaptivePoller.cs:20,
+    // DrainRateTracker.cs:24-26) - and any touch anywhere in that window read
+    // as "the mouse is in use right now", so a mouse last touched hours ago
+    // satisfied the truncation rule. Ten seconds is above anything one HID read
+    // can take (three IOCTL attempts with 50 ms sleeps, MouseBatteryDevice
+    // .ReadV3Rid90) and far below any poll interval, so it separates the two
+    // without being a second timing rule.
+    //
+    // What the bound COSTS, stated plainly because it is not free: the pair is
+    // now taken around one GET_REPORT, so it spans the read round trip -
+    // milliseconds - while the filter rewrites the whole Diag block only about
+    // once a second (Driver.c:164-180, 741-748, 862-953). The truncation rule
+    // therefore fires only when a rewrite lands inside that window, i.e. on a
+    // fraction of the truncated reads it used to fire on. Detection is
+    // probabilistic now and the rule WILL miss reads it could have caught.
+    // Buying that back by taking the pre-read sample a full rewrite cadence
+    // (~1.1 s) before the request was rejected on measurement grounds: it
+    // spends a second of the 5 s DeviceReadTimeout (AdaptivePoller.cs:32) on
+    // every v3 poll, and on a mouse that is re-enumerating - three attempts
+    // with sleeps - that is how a measured percent becomes the -1 and then -3
+    // sentinels. A false finding on healthy hardware is the failure mode this
+    // file is shaped around; a missed one is not.
+    internal static readonly TimeSpan PairMaxSpan = TimeSpan.FromSeconds(10);
 
     // Once movement is proven, it stays proven for this long. The counter only
     // climbs while a hand is on the mouse, so without this the same healthy
@@ -308,7 +341,7 @@ internal static class DeviceDiagReader
 
             var now = DateTime.UtcNow;
             var advancing = EvaluateCounterSample(boundFilterName, value.Value, now,
-                out var previous, out var lastAdvance);
+                out var previous, out var lastAdvance, out _);
 
             Logger.Log($"DEVICE_DIAG_MT svc={boundFilterName} advancing={Describe(advancing)} "
                 + $"counter={counter} value={value.Value} prev={(previous is null ? "none" : previous.Value)} "
@@ -324,6 +357,68 @@ internal static class DeviceDiagReader
         }
     }
 
+    // The same sample with NO memory: true only when this read's own delta
+    // climbed, null otherwise. Never false, for the reason above.
+    //
+    // The prompted scroll probe (TrayApp.StartScrollProbe) asks a different
+    // question from the capability row's. Not "is this device's multitouch
+    // stream alive", which is what AliveMemory (:288) deliberately keeps
+    // answering for a minute after the last increment, but "is a hand on the
+    // mouse during THIS tick" - and the user arrives at the probe having just
+    // moved the mouse onto the tray icon and clicked a button, so the memo
+    // would report touch through a leg the user spent reading the prompt. A leg
+    // with no touch in it has to come out void, not measured.
+    internal static bool? MultitouchAdvancingFresh(string boundFilterName)
+    {
+        if (!IsSafeFamilyServiceName(boundFilterName))
+            return null;
+
+        try
+        {
+            var (counter, value) = ReadCounter(boundFilterName);
+            if (counter is null || value is null)
+            {
+                LogFreshChange(boundFilterName, null, "counter=none");
+                return null;
+            }
+
+            EvaluateCounterSample(boundFilterName, value.Value, DateTime.UtcNow,
+                out var previous, out _, out var advancedNow);
+
+            bool? advancing = advancedNow ? true : null;
+            LogFreshChange(boundFilterName, advancing,
+                $"counter={counter} value={value.Value} "
+                + $"prev={(previous is null ? "none" : previous.Value)}");
+            return advancing;
+        }
+        catch (Exception ex)
+        {
+            // Same as above: nothing was learned, which is null and not a fault.
+            LogFreshChange(boundFilterName, null, $"err={ex.Message}");
+            return null;
+        }
+    }
+
+    static readonly object FreshLogLock = new();
+    static readonly Dictionary<string, bool?> LastFreshVerdict =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // One line per CHANGE of the fresh verdict, never one per call. The scroll
+    // probe polls MultitouchAdvancingFresh every 250 ms for a 10 s leg, so an
+    // unconditional line would write forty identical entries per leg and bury
+    // the transition that is the only thing worth reading in them.
+    static void LogFreshChange(string service, bool? advancing, string detail)
+    {
+        lock (FreshLogLock)
+        {
+            if (LastFreshVerdict.TryGetValue(service, out var last) && last == advancing)
+                return;
+            LastFreshVerdict[service] = advancing;
+        }
+
+        Logger.Log($"DEVICE_DIAG_MT_FRESH svc={service} advancing={Describe(advancing)} {detail}");
+    }
+
     // The whole multitouch decision, with the registry left outside: given the
     // counter value this read saw and the time it was read, fold it into the
     // per-service sampling state and answer the tri-state above. The registry
@@ -333,15 +428,20 @@ internal static class DeviceDiagReader
     //
     // previous / lastAdvanceAtUtc are what the caller's log line needs, handed
     // back rather than recomputed: the decision must not be made twice.
+    // advancedNow is that same rule for MultitouchAdvancingFresh - THIS
+    // sample's own delta, before the alive memory is folded into the verdict -
+    // and it is handed back for the same reason rather than re-derived from
+    // previous by a second caller.
     // Tests drive this directly with an injected nowUtc, and isolate through
     // distinct service names - there is deliberately no way to clear the state,
     // because nothing in a real run may ever forget a proven advance.
     internal static bool? EvaluateCounterSample(string service, long value, DateTime nowUtc,
-        out long? previous, out DateTime? lastAdvanceAtUtc)
+        out long? previous, out DateTime? lastAdvanceAtUtc, out bool advancedNow)
     {
         bool? advancing = null;
         previous = null;
         lastAdvanceAtUtc = null;
+        advancedNow = false;
 
         lock (SampleLock)
         {
@@ -351,6 +451,7 @@ internal static class DeviceDiagReader
                 if (CounterAdvanced(baseline.Value, value))
                 {
                     advancing = true;
+                    advancedNow = true;
                     LastAdvanceAtUtc[service] = nowUtc;
                     BaselineByService[service] = new CounterSample(value, nowUtc);
                 }
@@ -732,7 +833,7 @@ internal static class DeviceDiagReader
 
     // Two gates before a caller-supplied string is ever concatenated into a key
     // path: it must be one of the driver families the planner knows
-    // (RepairPlanner.cs:358-366), and it must look like a service name -
+    // (RepairPlanner.cs:911-919), and it must look like a service name -
     // no separators, no dots, nothing that could climb out of Services\.
     // internal: FilterDiagReader gates the service name it resolved through the
     // same two gates before concatenating it into a key path.
@@ -816,7 +917,7 @@ internal static class DeviceDiagReader
             return PointerKeyKind.None;
 
         // Apple VID plus this exact PID, through the one BTHENUM matcher the
-        // repo already has (DeviceSnapshotReader.cs:403-415, which covers both
+        // repo already has (DeviceSnapshotReader.cs:471-480, which covers both
         // _VID&000205ac_ and _VID&0001004c_ via DriverHealthChecker's
         // AppleVidSegments). No second copy of the VID table lives here.
         if (!DeviceSnapshotReader.BthenumKeyMatchesPid(deviceKeyName, pid))
@@ -920,48 +1021,35 @@ internal static class DeviceDiagReader
     // (AdaptivePoller.cs:20) and stretches to a day when nothing changes, so
     // this is "the probe the current poll cycle took"; anything older means the
     // poller has gone quiet and the snapshot carries null rather than a stale
-    // claim. The planner applies its own, tighter correlation bound on top.
+    // claim. The pair inside the probe is bounded far tighter than this
+    // (PairMaxSpan, :281), and that bound is what makes the probe a claim about
+    // the moment of the read rather than about the poll cycle.
     internal static readonly TimeSpan BatteryProbeMaxAge = TimeSpan.FromMinutes(5);
 
-    // Distinct baseline key for the Rid12Count series. MultitouchAdvancing
-    // feeds the SAME per-service dictionary with AclTranslateCount (ReadCounter
-    // prefers it, :687-699), and comparing one counter against the other's
-    // baseline would be garbage in both directions. The suffix keeps the two
-    // series independent, exactly as the tests' unique service names do.
-    const string Rid12SeriesSuffix = @"\Rid12Count";
-
-    // Builds the correlated record. Called from the battery read path
-    // IMMEDIATELY after HidD_GetInputReport returns (MouseBatteryDevice.cs:150)
-    // because that ordering is the only thing that gives the LastAcl triple any
-    // meaning at all - see BatteryProbe.DiagAfter.
-    internal static BatteryProbe TakeBatteryProbe(bool? zeroReport) =>
-        TakeBatteryProbe(zeroReport, new FilterDiagReader(), DateTimeOffset.UtcNow);
-
-    // Seam-taking overload: tests supply the reader and the clock, so the whole
-    // correlation is drivable with no driver, no mouse and no registry.
+    // Builds the correlated record from the pair the CALLER took around the HID
+    // read: before is the sample taken immediately before HidD_GetInputReport
+    // went out, after is taken here, immediately after it returned
+    // (MouseBatteryDevice.ReadV3Rid90). That ordering is the only thing that
+    // gives the LastAcl triple any meaning at all - see BatteryProbe.DiagAfter.
+    //
+    // The pair used to come from a static per-service store instead, which made
+    // before the sample from the PREVIOUS poll cycle: 5 minutes to 24 hours
+    // back, one slot shared by all three of the v3's collections, handed to
+    // whichever of them DeviceRegistry.Discover happened to read first. Both of
+    // those are gone with it - the interval is now this read, and every
+    // collection carries its own.
+    //
+    // Nothing is defaulted here. The production path already owns the reader
+    // and the clock - it has to, because the pre-read sample has to be taken on
+    // the far side of the IOCTL - so there is one entry point and the tests
+    // drive exactly it.
     internal static BatteryProbe TakeBatteryProbe(
-        bool? zeroReport, IFilterDiagReader reader, DateTimeOffset takenAt)
+        bool? zeroReport,
+        IFilterDiagReader reader,
+        FilterDiagSnapshot? before,
+        DateTimeOffset takenAt)
     {
-        var (before, after) = reader.ReadPair();
-
-        // The FRESH delta's recency, never the memoised MultitouchAdvancing
-        // verdict: AliveMemory (:255) holds that true for a full minute after
-        // the last increment, which is exactly the idle population the
-        // suppression at RepairPlanner.cs:404-414 protects. Folding this sample
-        // in also re-baselines a counter that went backwards (:357-361), which
-        // is the device-mid-restart signature.
-        DateTimeOffset? touchAdvancedAt = null;
-        if (after.Availability == DiagAvailability.Ok && after.Rid12Count is ulong rid12)
-        {
-            EvaluateCounterSample(
-                after.ServiceKeyName + Rid12SeriesSuffix,
-                unchecked((long)rid12),
-                takenAt.UtcDateTime,
-                out _,
-                out var lastAdvance);
-            if (lastAdvance is DateTime advanced)
-                touchAdvancedAt = new DateTimeOffset(advanced, TimeSpan.Zero);
-        }
+        var after = reader.Read();
 
         // DiagBefore/DiagAfter are adjacent and identically typed, so they are
         // passed BY NAME: transposing them would compile cleanly and silently
@@ -971,12 +1059,11 @@ internal static class DeviceDiagReader
             takenAt,
             zeroReport,
             DiagBefore: before,
-            DiagAfter: after,
-            TouchAdvancedAt: touchAdvancedAt);
+            DiagAfter: after);
     }
 
     // Only the reading that SURVIVED the poller's per-device collapse may
-    // publish (AdaptivePoller.cs:139-143). A v3 exposes three HID collections
+    // publish (AdaptivePoller.cs:191-192). A v3 exposes three HID collections
     // under one DeviceName, so publishing per path would let COL01's failed
     // open supply the zero-report fact while COL02 supplied the percent - the
     // mis-pairing this whole record exists to eliminate.
@@ -1036,8 +1123,8 @@ internal interface IDiagValueSource
 // The only part of the reader that touches the hive, and it makes no decisions.
 // Same idiom as every other registry reader here: Registry.LocalMachine
 // .OpenSubKey(..., writable: false), an absent key is a STATE and not an
-// exception, nothing is ever written (DeviceDiagReader.cs:689-690,
-// DeviceSnapshotReader.cs:370-371, DriverClaimReader.cs:351-352).
+// exception, nothing is ever written (DeviceDiagReader.cs:790-791,
+// DeviceSnapshotReader.cs:382-383, DriverClaimReader.cs:351-352).
 //
 // Measured on the reference PC at Medium IL (not elevated): the whole Diag
 // block reads fine from a normal user token, so AccessDenied is the
@@ -1068,6 +1155,24 @@ internal sealed class RegistryDiagValueSource : IDiagValueSource
         {
             return DiagValue.Denied;
         }
+        catch (Exception ex)
+        {
+            // OpenSubKey and GetValue also throw IOException ("marked for
+            // deletion") when a reinstall or a device restart removes
+            // Services\<svc> under the read, which is exactly what the repair
+            // this evidence feeds does. IFilterDiagReader.Read never throws,
+            // and this sits inside the battery read (MouseBatteryDevice.cs:179)
+            // where an escape costs a percent that was already measured and
+            // turns it into the -1 and then -3 sentinels. Same blanket-catch
+            // convention as every other registry toucher in this file
+            // (:351-357, :544-550, :1383-1389).
+            //
+            // ValueMissing, not Denied or KeyMissing: what was learned is
+            // nothing, and the other two assert facts that may not be true.
+            Logger.Log($"FILTER_DIAG_VALUE_FAILED svc={serviceKeyName} value={valueName} "
+                + $"err={ex.Message}");
+            return DiagValue.Missing;
+        }
     }
 }
 
@@ -1091,17 +1196,10 @@ internal sealed class FilterDiagReader : IFilterDiagReader
     // the live stack cannot be resolved. Composed from the catalog constant
     // rather than spelled out a second time - the family predicate
     // RepairPlanner.IsKmdfFamily is a prefix test on that same constant
-    // (RepairPlanner.cs:905-908), so the two can never disagree about what
+    // (RepairPlanner.cs:911-914), so the two can never disagree about what
     // "KMDF family" means.
     internal const string FallbackServiceKeyName =
         DriverPackageCatalog.PatchedKmdfServiceName + "204Scroll";
-
-    // Previous snapshot per resolved service name. Static and locked for the
-    // same reason DeviceDiagReader's counter baseline is (:259-261): the tray
-    // constructs readers freely and a delta must survive across them.
-    static readonly object PairLock = new();
-    static readonly Dictionary<string, FilterDiagSnapshot> PreviousByService =
-        new(StringComparer.OrdinalIgnoreCase);
 
     readonly IDiagValueSource _values;
     readonly Func<string?> _resolveServiceKeyName;
@@ -1235,34 +1333,6 @@ internal sealed class FilterDiagReader : IFilterDiagReader
             + $"acl_recv={Unknown(lastAclReceived)} step={Unknown(scrollStep)} "
             + $"corroborated={snapshot.TruncationCorroborated}");
         return snapshot;
-    }
-
-    public (FilterDiagSnapshot? Before, FilterDiagSnapshot After) ReadPair()
-    {
-        var after = Read();
-        FilterDiagSnapshot? before = null;
-
-        lock (PairLock)
-        {
-            if (PreviousByService.TryGetValue(after.ServiceKeyName, out var previous))
-            {
-                before = previous;
-
-                // Same burst discipline as the counter baseline
-                // (DeviceDiagReader.cs:236-248): a snapshot sweep reads the same
-                // PID several times inside one second, and replacing the stored
-                // sample every time would compare a counter against itself and
-                // report a standing stream as "not advancing".
-                if (after.TakenAt - previous.TakenAt >= DeviceDiagReader.BaselineMinAge)
-                    PreviousByService[after.ServiceKeyName] = after;
-            }
-            else
-            {
-                PreviousByService[after.ServiceKeyName] = after;
-            }
-        }
-
-        return (before, after);
     }
 
     // Which service's Diag key to read, and which path we got there by. The

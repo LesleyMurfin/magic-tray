@@ -222,7 +222,7 @@ internal static class TrayMenu
     // The devices whose driver story is Windows' own: a keyboard, a trackpad,
     // anything that is not one of this app's mice. They get no Driver submenu
     // and no DriverStatus worth showing - DriverHealthChecker deliberately
-    // skips them (DriverHealthChecker.cs:406, 494-498), and Classify would
+    // skips them (DriverHealthChecker.cs:385, 501-505), and Classify would
     // call a Magic Keyboard an "unknown Apple mouse" if it did not - so the
     // driver they are actually on has to be READ instead
     // (StockDriverReader.ForPid).
@@ -2919,8 +2919,23 @@ internal sealed class TrayApp : IDisposable
     // force the user to click every single time.
     IWheelSink? _wheelSink;
     // Whether any observation this process has taken proved the decoder. Drives
-    // the click-first wording, nothing else.
+    // the click-first wording, nothing else. It is read at :3045 and |= written
+    // at :3049, :3060 and :3067, all on the probe task; the unsynchronised
+    // read-modify-write is safe BECAUSE _scrollProbeRunning admits one probe
+    // task at a time, and for no other reason.
     bool _scrollDecoderValidated;
+    // 1 while a probe is running. The raw-input registration the sink's pump
+    // takes out is per PROCESS, not per window (WheelSink.cs:429-438), so a
+    // second overlapping probe does not measure a second window: it retargets
+    // WM_INPUT away from the first pump's window and then, on whichever pump
+    // finishes first, deregisters the process from under the survivor. A leg
+    // silenced after it had already resolved the target path and earned the
+    // sticky decoder proof reads downstream as a genuine zero-notch
+    // measurement, i.e. as "scroll is dead" on a healthy mouse. Reachable by
+    // hand: the tray menu is fully responsive during the twenty seconds of
+    // prompts, so a second click walks ShowRepairFlow -> OfferScrollProbe ->
+    // here while the first probe is mid-leg.
+    int _scrollProbeRunning;
 
     // Offered only where the driver state leaves a dead wheel UNEXPLAINED: a
     // live v3 whose filter is bound, running and actually in the device stack.
@@ -2945,13 +2960,6 @@ internal sealed class TrayApp : IDisposable
 
     void OfferScrollProbe()
     {
-        // A verdict already measured is reported instead of re-measured.
-        if (_scrollProbeFinding is not null)
-        {
-            _ = HandleFinding(_scrollProbeFinding);
-            return;
-        }
-
         var snapshot = ScrollProbeCandidate();
         if (snapshot is null)
             return;
@@ -2984,13 +2992,32 @@ internal sealed class TrayApp : IDisposable
     // Measurement runs off the dispatcher - two ten-second windows plus dialogs
     // would otherwise freeze the tray - and every dialog is marshalled back,
     // with the same dispatcher-is-gone early-out the repair apply path uses
-    // (:3050-3055). A probe that resolves after the UI has gone logs and drops.
+    // (:3079-3084). A probe that resolves after the UI has gone logs and drops.
+    // Exactly one probe at a time, because the tray stays clickable throughout:
+    // see _scrollProbeRunning (:2938).
     void StartScrollProbe(DeviceSnapshot snapshot)
     {
+        if (System.Threading.Interlocked.CompareExchange(ref _scrollProbeRunning, 1, 0) != 0)
+        {
+            Logger.Log($"SCROLL_PROBE_BUSY pid={snapshot.Pid}");
+            return;
+        }
+
         var service = RepairPlanner.FilterServiceFor(snapshot);
+        // MultitouchAdvancingFresh, not MultitouchAdvancing: the memoised verdict
+        // answers true for a full minute after the last counter advance
+        // (DeviceDiagReader.cs:288), and the user arrives here having just moved
+        // the mouse to click the tray icon and an OK button. Every 250 ms tick of
+        // a ten-second leg would therefore read true on a mouse nobody is
+        // touching, which makes Void false and ActiveDuration a full ten seconds
+        // for a leg the user sat out - the one input the verdict cannot afford to
+        // be wrong about, because "the surface was under a hand and no notch came
+        // out" is the entire argument for saying the wheel is dead. The sink
+        // samples it every ActiveTickInterval and asks only about the sample that
+        // just elapsed (WheelSink.cs:145-156).
         _wheelSink ??= new RawInputWheelSink(
             new RawInputMouseSource(),
-            () => DeviceDiagReader.MultitouchAdvancing(service));
+            () => DeviceDiagReader.MultitouchAdvancingFresh(service));
         var sink = _wheelSink;
 
         _ = Task.Run(async () =>
@@ -3002,6 +3029,10 @@ internal sealed class TrayApp : IDisposable
             catch (Exception ex)
             {
                 Logger.Log($"SCROLL_PROBE_FAIL pid={snapshot.Pid} err={ex.Message}");
+            }
+            finally
+            {
+                System.Threading.Volatile.Write(ref _scrollProbeRunning, 0);
             }
         });
     }
@@ -3403,7 +3434,7 @@ internal sealed class TrayApp : IDisposable
     //
     // Measured cause on the reference PC: the mouse emits its multitouch stream only after
     // it receives the Apple multitouch enable Feature report, which it forgets on power
-    // cycle and reconnect (docs/DESIGN-trackpad-tap.md:54). Only the mouse driver package
+    // cycle and reconnect (design/DESIGN-trackpad-tap.md:54). Only the mouse driver package
     // sends it. Magic Tray must not send it and must not re-implement the package's
     // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md:93-97) - so this
     // offers the power cycle, names the watcher, and stops there. Nothing here is elevated.

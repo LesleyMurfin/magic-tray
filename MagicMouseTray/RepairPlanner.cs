@@ -147,23 +147,27 @@ internal sealed record DeviceSnapshot(
     // filter publishes no Diag key at all), or no probe taken this sweep - is no
     // evidence and can raise nothing.
     //
-    // Why one record instead of loose fields: the two halves of this evidence
-    // are only meaningful TOGETHER. The battery number the tray normally holds
-    // is a cache (TrayApp.cs:639, written :1241-1243) that AdaptivePoller may
-    // not refresh for hours, so pairing it with a touch-advance sampled seconds
-    // ago would accuse an idle mouse from an hours-old reading. Keeping the set
-    // in one record makes that mis-pairing unrepresentable rather than merely
-    // discouraged, and the probe travels with the HID collection that won
-    // AdaptivePoller's ReadingRank collapse (:139-143) so it can never be
-    // assembled from one collection's failure and another's percentage.
+    // Why one record instead of loose fields: the halves of this evidence are
+    // only meaningful TOGETHER. The battery number the tray normally holds is a
+    // cache (TrayApp.cs:639, written :1241-1244) that AdaptivePoller may not
+    // refresh for hours, so pairing it with a touch delta measured at some
+    // other moment would accuse an idle mouse from an hours-old reading.
+    // Keeping the set in one record makes that mis-pairing unrepresentable
+    // rather than merely discouraged, and the probe travels with the HID
+    // collection that won AdaptivePoller's ReadingRank collapse (:169-192) so
+    // it can never be assembled from one collection's failure and another's
+    // percentage.
     //
-    // DiagBefore/DiagAfter are a PAIR, not a precomputed bool, because a driver
-    // reinstall zeroes the whole Diag block and a device mid-restart collapses
-    // it too (measured: Rid12Count 2095323 -> 521 across one restart). A
-    // counter that is not strictly increasing has to read as "no evidence",
-    // which is only decidable from before AND after.
-    // IFilterDiagReader.TouchStreamAdvanced is the single implementation of
-    // that comparison.
+    // DiagBefore/DiagAfter are a PAIR, not a precomputed bool, for two
+    // reasons. A driver reinstall zeroes the whole Diag block and a device
+    // mid-restart collapses it too (measured: Rid12Count 2095323 -> 521 across
+    // one restart), so a counter that is not strictly increasing has to read as
+    // "no evidence", which is only decidable from before AND after. And the two
+    // samples carry the INTERVAL the delta was measured across, which is what
+    // makes the delta a claim about this read instead of about the poll cycle:
+    // they are taken either side of the GET_REPORT itself
+    // (MouseBatteryDevice.ReadV3Rid90). IFilterDiagReader.TouchStreamAdvanced
+    // is the single implementation of both rules.
     //
     // Everything in those two samples except Availability, ServiceKeyName and
     // the counters is OPPORTUNISTIC, and one rule below depends on knowing why.
@@ -175,7 +179,7 @@ internal sealed record DeviceSnapshot(
     // channel's capacity 1. Its presence CONFIRMS; its absence says nothing
     // whatsoever, and no rule may gate on it. The same shared slot is why
     // LastAclReceived was rejected as a health signal outright
-    // (DeviceDiagReader.cs:98-112): the broken binary and the fixed binary both
+    // (DeviceDiagReader.cs:309-323): the broken binary and the fixed binary both
     // read LastAclReceived 23 with LastAclCapacity 9, so it separates nothing.
     BatteryProbe? BatteryProbe = null,
     // The PASSIVE wheel observation, and only that. It feeds the device row's
@@ -321,9 +325,9 @@ internal static class RepairPlanner
         // driver image is loaded on this PC, never proof that the filter
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
         // the property this repo's own capture script already trusts
-        // (scripts/capture-state.ps1:152-157) and the one V3RecycleManager
-        // calls authoritative (V3RecycleManager.cs:320-322). FilterInStack
-        // carries it into the planner. docs/TEST-PLAN.md:21 had already named
+        // (scripts/capture-state.ps1:146-155), and the only reading that can
+        // tell registration apart from attachment. FilterInStack
+        // carries it into the planner. docs/TEST-PLAN.md:22 had already named
         // this exact shape - wheel dead while the BOUND filter service
         // reports RUNNING - as a failure with no diagnosis attached.
         //
@@ -435,14 +439,15 @@ internal static class RepairPlanner
         // together:
         //
         //   BatteryProbe.ZeroReport - a well-formed 0x90 report whose percent
-        //   byte is 0 (MouseBatteryDevice.IsBogusZeroReport:187-188). HIDCLASS
+        //   byte is 0 (MouseBatteryDevice.IsBogusZeroReport:253-254). HIDCLASS
         //   pre-zeroes the caller's buffer and writes the report id into byte 0,
         //   so a truncated copy-back reads as a report of "0%" - which no Magic
-        //   Mouse sends (MouseBatteryDevice.cs:178-182).
+        //   Mouse sends (MouseBatteryDevice.cs:244-248).
         //
-        //   A touch stream that advanced across a REAL interval, which is the
-        //   proof that the report was produced at all, plus the last advance
-        //   being within MaxProbeCorrelation of the probe itself.
+        //   A touch-report counter that CLIMBED across the pair taken either
+        //   side of that same read (MouseBatteryDevice.ReadV3Rid90), which is
+        //   both the proof that the report was produced at all and the proof
+        //   that it was produced NOW rather than at some point in the last day.
         //
         // Why this may fire where 2d must not: 2d's suppressed population is
         // "no touch, therefore no vendor report, therefore -2". This rule
@@ -454,11 +459,11 @@ internal static class RepairPlanner
         // nicety.
         //
         // Why NOT LastBatteryPct == -2, which is what 2d reads: that sentinel
-        // covers three different outcomes on the v3 path alone
-        // (MouseBatteryDevice.cs:158-170) - the zero report, a wrong report id
-        // (:163-164), and an IOCTL that failed three times (:169-170) - and it
+        // covers three different outcomes on the v3 path alone - the zero
+        // report (MouseBatteryDevice.cs:183-195), a wrong report id
+        // (:201-203), and an IOCTL that failed three times (:214-216) - and it
         // is additionally emitted by KeyboardBatteryDevice for the SDP case 2d
-        // routes and by MouseBatteryDevice's v1/v2 path at :290. The failed
+        // routes and by MouseBatteryDevice's v1/v2 path at :353. The failed
         // IOCTL is what a mouse mid-re-enumeration returns; this finding's
         // remediation restarts that device, so firing on the sentinel would
         // build a restart loop inside exactly the window FindingGate.cs:11-18
@@ -580,44 +585,33 @@ internal static class RepairPlanner
         _ => $"{findings.Count} problems found",
     };
 
-    // How far apart the two halves of the battery evidence may be and still be
-    // one observation. The touch-advance timestamp comes from the fresh counter
-    // delta, and its baseline cannot be younger than DeviceDiagReader's
-    // BaselineMinAge (2 s, DeviceDiagReader.cs:70), so the bound has to be
-    // comfortably above that; it also has to be short enough that "the mouse is
-    // in use" is still true when the report is judged. Ten seconds is both.
-    // Without it the two readings are unrelated: the battery number reaching
-    // the tray is a cache (TrayApp.cs:639, written :1241-1243) that
-    // AdaptivePoller may not refresh for hours, so an hours-old zero would pair
-    // with a touch-advance from seconds ago and accuse an idle mouse.
-    internal static readonly TimeSpan MaxProbeCorrelation = TimeSpan.FromSeconds(10);
-
     // The report id the mouse answers the battery request on, as it appears on
     // the wire inside LastAclBytes (A1 90 04 16 on the reference PC: the ACL
     // HID-input header, the report id, a flags byte, then the percentage).
     const byte WireBatteryReportId = 0x90;
     const byte WireAclInputHeader = 0xA1;
 
-    // Both halves of the truncation evidence, and nothing else. Every absent
-    // input reads as no evidence: a null probe, a report that is not the
-    // well-formed zero, a touch stream that did not provably advance (which
-    // includes a counter that went BACKWARDS - a driver reinstall zeroes the
-    // whole Diag block, and a device mid-restart collapses it too, measured
-    // 2095323 -> 521 across one restart), or a touch advance too far from the
-    // probe to be describing the same moment.
-    internal static bool BatteryAnswerTruncated(BatteryProbe? probe)
-    {
-        if (probe is null || probe.ZeroReport != true)
-            return false;
-        if (!IFilterDiagReader.TouchStreamAdvanced(probe.DiagBefore, probe.DiagAfter))
-            return false;
-        if (probe.TouchAdvancedAt is not { } advancedAt)
-            return false;
-        var lag = probe.TakenAt - advancedAt;
-        if (lag < TimeSpan.Zero)
-            lag = lag.Negate();
-        return lag <= MaxProbeCorrelation;
-    }
+    // Both halves of the truncation evidence, and nothing else: a well-formed
+    // zero report, and a touch-report counter that climbed across the pair the
+    // probe took around that very read. Every absent input reads as no
+    // evidence - a null probe, a report that is not the well-formed zero, a
+    // missing pre-read sample, an unreadable Diag key, a counter that stood
+    // still or went BACKWARDS (a driver reinstall zeroes the whole Diag block,
+    // and a device mid-restart collapses it too, measured 2095323 -> 521 across
+    // one restart), or a pair too wide to be describing this read.
+    //
+    // ONE gate, deliberately. There used to be a second one here: the probe's
+    // TakenAt against a remembered "last advance" timestamp, bounded by ten
+    // seconds. It could reject nothing, because that timestamp was stamped with
+    // the sample clock and the difference was therefore zero by construction.
+    // The recency question it meant to ask is now answered where the
+    // measurement is made - PairMaxSpan bounds the interval inside
+    // TouchStreamAdvanced - so a second timing rule on top could only reject
+    // pairs that one has already rejected.
+    internal static bool BatteryAnswerTruncated(BatteryProbe? probe) =>
+        probe is not null
+        && probe.ZeroReport == true
+        && IFilterDiagReader.TouchStreamAdvanced(probe.DiagBefore, probe.DiagAfter);
 
     // Corroboration is FilterDiagSnapshot.TruncationCorroborated
     // (DeviceDiagReader.cs:91-95) - one truth about that shape, owned by the
@@ -717,15 +711,27 @@ internal static class RepairPlanner
         NotchesDelivered,
     }
 
+    // The least touch a leg may carry and still be the gesture the verdicts
+    // rest on. WheelObservation.Void is cleared by a single 250 ms tick of
+    // activity, so without a floor a quarter-second brush of the surface
+    // produced a full "Scroll wheel is dead" finding - whose own detail then
+    // rendered that touch as "0 seconds" through Seconds(ActiveDuration)
+    // (:770). The prompt asks for a deliberate ten-second slide
+    // (ScrollProbeLeg, :798); five seconds is half of it, which is generous to
+    // a user who started late and still nothing like a brush.
+    internal static readonly TimeSpan MinMeasuredTouch = TimeSpan.FromSeconds(5);
+
     // A leg only counts when the sink actually measured the right device with a
     // decoder it has proven: no observation, no target device, nobody touching
-    // the surface, or an unvalidated decoder are all "no measurement", and a
-    // zero from any of them is not a zero.
+    // the surface, an unvalidated decoder, or too little touch to have been the
+    // gesture at all are all "no measurement", and a zero from any of them is
+    // not a zero.
     static bool LegMeasured(WheelObservation? leg) =>
         leg is not null
         && !leg.Void
         && leg.TargetDevicePath is not null
-        && leg.DecoderValidated;
+        && leg.DecoderValidated
+        && leg.ActiveDuration >= MinMeasuredTouch;
 
     static bool LegSilent(WheelObservation leg) =>
         leg.WheelEvents == 0 && leg.HWheelEvents == 0;

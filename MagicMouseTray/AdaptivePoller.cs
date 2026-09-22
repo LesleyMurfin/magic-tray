@@ -68,9 +68,9 @@ internal sealed class AdaptivePoller : IDisposable
     // wins.
     //
     // Why the tie needs breaking at all. All four -2 producers rank identically
-    // at 1 - the v3 truncation (MouseBatteryDevice.cs:168-180), a wrong report
-    // id (:186-188), a failed IOCTL (:199-201) and the v1/v2
-    // MOUSE_UNIFIED_BLOCKED (:336) - the old comparison was strictly `>`, and
+    // at 1 - the v3 truncation (MouseBatteryDevice.cs:183-195), a wrong report
+    // id (:201-203), a failed IOCTL (:214-216) and the v1/v2
+    // MOUSE_UNIFIED_BLOCKED (:353) - the old comparison was strictly `>`, and
     // DeviceRegistry.Discover does not enumerate collections in any defined
     // order. So on the exact device shape the battery rule targets (COL01
     // failing while COL02 truncates) which -2 survived, and therefore which

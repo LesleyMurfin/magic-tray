@@ -39,12 +39,13 @@ if (-not (Test-Path -LiteralPath $PublishDir -PathType Container)) {
 
 # Source path in the repo -> file name beside the exe.
 $staged = [ordered]@{
-    'scripts/kbd-patch-cachedservices.ps1' = 'kbd-patch-cachedservices.ps1'
-    'scripts/Install-KeyboardBattery.cmd'  = 'Install-KeyboardBattery.cmd'
-    'scripts/capture-state.ps1'            = 'capture-state.ps1'
-    'diagnose-driver.ps1'                  = 'diagnose-driver.ps1'
-    'scripts/diagnose-and-recover.ps1'     = 'diagnose-and-recover.ps1'
-    'scripts/mm-bt-stack-snapshot.ps1'     = 'mm-bt-stack-snapshot.ps1'
+    'scripts/kbd-patch-cachedservices.ps1'  = 'kbd-patch-cachedservices.ps1'
+    'scripts/Install-KeyboardBattery.cmd'   = 'Install-KeyboardBattery.cmd'
+    'scripts/capture-state.ps1'             = 'capture-state.ps1'
+    'diagnose-driver.ps1'                   = 'diagnose-driver.ps1'
+    'scripts/diagnose-and-recover.ps1'      = 'diagnose-and-recover.ps1'
+    'scripts/mm-bt-stack-snapshot.ps1'      = 'mm-bt-stack-snapshot.ps1'
+    'scripts/repair-magicmouse-channel.ps1' = 'repair-magicmouse-channel.ps1'
 }
 
 foreach ($source in $staged.Keys) {

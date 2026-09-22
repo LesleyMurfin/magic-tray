@@ -30,8 +30,16 @@
 
     What it will never do: install, sign, remove or swap a driver package,
     touch bcdedit / Inf2Cat / signtool / any kmdf-204-sign artefact, unpair the
-    mouse, flip LowerFilters, or write a single file anywhere (no logs, no temp
-    files, nothing on C:). It restarts one devnode and reports.
+    mouse, flip LowerFilters, or write a log. It restarts one devnode and
+    reports.
+
+    It is not file-free, though: Initialize-HidReader compiles the HID reader
+    with Add-Type, and on the Windows PowerShell 5.1 host that
+    #Requires -Version 5 admits that goes out to csc.exe and leaves the source,
+    assembly and compiler logs in %TEMP% (PowerShell 7 builds it in memory and
+    leaves nothing). Those intermediates are the only bytes this script puts on
+    disk, and they are written under -WhatIf too, because the pre-restart read
+    runs before the plan is printed.
 
     CLI fallback, not a second truth: the in-app path for this restart is
     DeviceRepair.Apply (MagicMouseTray/DeviceRepair.cs:657). Its generated
@@ -44,7 +52,7 @@
 
     Missing key or missing value is reported as "unknown" and never as 0 - 0 is
     a real measurement here, same rule the tray's own reader follows
-    (MagicMouseTray/DeviceDiagReader.cs:98-112).
+    (MagicMouseTray/DeviceDiagReader.cs:14-17).
 
 .PARAMETER InstanceId
     Restart exactly this BTHENUM instance instead of the discovered one. Still
@@ -55,8 +63,16 @@
     Re-launch this script elevated (Start-Process -Verb RunAs) and return the
     child's exit code. Off by default, because the repo's own convention is to
     refuse and tell the user (scripts/diagnose-and-recover.ps1:330-333); an
-    already-elevated shell is the better way to run this, since the elevated
-    child gets its own console window and its report is not visible here.
+    already-elevated shell is the better way to run this, because the child's
+    report is printed in its own console window, which closes when the child
+    exits - only the exit code comes back here.
+
+    The child is deliberately NOT launched with -NoExit, which is how the tray
+    opens a script whose output the user is meant to read
+    (MagicMouseTray/DiagnosticScripts.cs:84). That launcher never reads an exit
+    code; this one does, and a child parked at a -NoExit prompt would never
+    exit, so the bounded WaitForExit below would expire every time and report
+    RESTART-FAILED over a successful repair.
 
 .PARAMETER ElevateTimeoutSeconds
     How long to wait for the elevated child before giving up. The wait is
@@ -99,6 +115,10 @@
                               (docs/TEST-PLAN.md D23). Unknown, not a verdict.
       6  DRY-RUN            - -WhatIf: the plan and the current state were
                               printed and nothing was restarted.
+      7  DECLINED           - a -Confirm prompt was answered no. Nothing was
+                              restarted and nothing was verified. Distinct from
+                              6 on purpose: the caller asked for the action and
+                              then refused it, which is not a request for a plan.
 
     Why the verdict is NOT gated on Diag LastAclCapacity = 1: LastAclReceived,
     LastAclCapacity and LastAclBytes are a SINGLE "last inbound" slot shared by
@@ -127,13 +147,9 @@ $AppleBtVids = @('0001004c', '000205ac')
 $HidUuidPrefix = '{00001124-0000-1000-8000-00805f9b34fb}'
 $FilterService = 'MagicMouseDriver204Scroll'
 $DiagSubKey = "SYSTEM\CurrentControlSet\Services\$FilterService\Diag"
-$HidInterfaceClass = 'SYSTEM\CurrentControlSet\Control\DeviceClasses\{4d1e55b2-f16f-11cf-88cb-001111000030}'
 $BatteryReportId = 0x90
-# MouseBatteryDevice.ReadV3Rid90 uses max(InputReportByteLength, 64) and the
-# live 0323 answers inside that floor (MagicMouseTray/MouseBatteryDevice.cs:138).
-$ReportLength = 64
 # Apple firmware reports 1..100; a successful read of exactly 0 is the zeroed
-# report, never a level (MagicMouseTray/MouseBatteryDevice.cs:173-184).
+# report, never a level (MagicMouseTray/MouseBatteryDevice.cs:244-248).
 $MinValidPercent = 1
 
 $ExitRepaired = 0
@@ -143,6 +159,7 @@ $ExitDeviceNotPresent = 3
 $ExitRestartFailed = 4
 $ExitUnverified = 5
 $ExitDryRun = 6
+$ExitDeclined = 7
 
 function Write-Log {
     param([string]$Text, [string]$Color = '')
@@ -206,7 +223,7 @@ function ConvertTo-UInt32Value {
     param($Value)
     if ($null -eq $Value) { return $null }
     # REG_DWORD marshals to a signed int and these counters run past 2^31
-    # (MagicMouseTray/DeviceDiagReader.cs:524-528).
+    # (MagicMouseTray/DeviceDiagReader.cs:803-805).
     return [uint32](([int64][int]$Value) -band 0xFFFFFFFFL)
 }
 
@@ -280,9 +297,9 @@ function Write-DiagLine {
 
 # Counter movement is the only positive proof that the mouse is being touched,
 # and stillness is unknown rather than health - the same discipline as
-# DeviceDiagReader.MultitouchAdvancing (MagicMouseTray/DeviceDiagReader.cs:117-147).
+# DeviceDiagReader.MultitouchAdvancing (MagicMouseTray/DeviceDiagReader.cs:328-358).
 # AclTranslateCount first, Rid12Count as the fallback for a filter build that
-# does not publish it (DeviceDiagReader.cs:505-521). $null when either sample is
+# does not publish it (DeviceDiagReader.cs:784-801). $null when either sample is
 # unreadable or the counter went BACKWARDS: a driver reinstall resets every Diag
 # counter to 0, and a reset is not a stalled stream.
 function Test-TouchStreamAdvanced {
@@ -301,6 +318,7 @@ function Test-TouchStreamAdvanced {
 
 $HidReaderSource = @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -309,6 +327,12 @@ public static class MagicMouseChannelHid
     const uint FILE_SHARE_READ  = 0x00000001;
     const uint FILE_SHARE_WRITE = 0x00000002;
     const uint OPEN_EXISTING    = 3;
+    const uint DIGCF_PRESENT         = 0x02;
+    const uint DIGCF_DEVICEINTERFACE = 0x10;
+    const int  HIDP_STATUS_SUCCESS   = 0x00110000;
+
+    static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+    static readonly Guid HidGuid = new Guid("4d1e55b2-f16f-11cf-88cb-001111000030");
 
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     static extern SafeFileHandle CreateFile(string lpFileName, uint dwDesiredAccess,
@@ -319,17 +343,122 @@ public static class MagicMouseChannelHid
     static extern bool HidD_GetInputReport(SafeFileHandle HidDeviceObject,
         byte[] ReportBuffer, int ReportBufferLength);
 
+    [DllImport("hid.dll")]
+    static extern bool HidD_GetPreparsedData(SafeFileHandle HidDeviceObject,
+        out IntPtr PreparsedData);
+
+    [DllImport("hid.dll")]
+    static extern bool HidD_FreePreparsedData(IntPtr PreparsedData);
+
+    [DllImport("hid.dll")]
+    static extern int HidP_GetCaps(IntPtr PreparsedData, ref HIDP_CAPS Capabilities);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, string Enumerator,
+        IntPtr hwndParent, uint Flags);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    static extern bool SetupDiEnumDeviceInterfaces(IntPtr DeviceInfoSet,
+        IntPtr DeviceInfoData, ref Guid InterfaceClassGuid, uint MemberIndex,
+        ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData);
+
+    [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr DeviceInfoSet,
+        ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData,
+        ref SP_DEVICE_INTERFACE_DETAIL_DATA DeviceInterfaceDetailData,
+        uint DeviceInterfaceDetailDataSize, out uint RequiredSize, IntPtr DeviceInfoData);
+
+    [DllImport("setupapi.dll")]
+    static extern bool SetupDiDestroyDeviceInfoList(IntPtr DeviceInfoSet);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct SP_DEVICE_INTERFACE_DATA
+    {
+        public uint cbSize;
+        public Guid InterfaceClassGuid;
+        public uint Flags;
+        public IntPtr Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    struct SP_DEVICE_INTERFACE_DETAIL_DATA
+    {
+        public uint cbSize;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
+        public string DevicePath;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct HIDP_CAPS
+    {
+        public ushort Usage;
+        public ushort UsagePage;
+        public ushort InputReportByteLength;
+        public ushort OutputReportByteLength;
+        public ushort FeatureReportByteLength;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)]
+        public ushort[] Reserved;
+        public ushort NumberLinkCollectionNodes;
+        public ushort NumberInputButtonCaps;
+        public ushort NumberInputValueCaps;
+        public ushort NumberInputDataIndices;
+        public ushort NumberOutputButtonCaps;
+        public ushort NumberOutputValueCaps;
+        public ushort NumberOutputDataIndices;
+        public ushort NumberFeatureButtonCaps;
+        public ushort NumberFeatureValueCaps;
+        public ushort NumberFeatureDataIndices;
+    }
+
+    // Line-for-line the same question HidNative.EnumerateHidPaths asks
+    // (MagicMouseTray/HidNative.cs:101-126): DIGCF_PRESENT is the presence
+    // gate, and SetupDiGetDeviceInterfaceDetail hands back DevicePath already
+    // in \\?\HID#... form, so no interface path is ever assembled by hand.
+    // The cbSize on the detail struct is the documented 8/6 lie - it is the
+    // size of the fixed header the API expects, not of this declaration.
+    public static string[] EnumeratePaths()
+    {
+        var found = new List<string>();
+        Guid guid = HidGuid;
+        IntPtr devs = SetupDiGetClassDevs(ref guid, null, IntPtr.Zero,
+            DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        if (devs == IntPtr.Zero || devs == INVALID_HANDLE_VALUE) return found.ToArray();
+        try
+        {
+            for (uint index = 0; ; index++)
+            {
+                SP_DEVICE_INTERFACE_DATA iface = new SP_DEVICE_INTERFACE_DATA();
+                iface.cbSize = (uint)Marshal.SizeOf(typeof(SP_DEVICE_INTERFACE_DATA));
+                if (!SetupDiEnumDeviceInterfaces(devs, IntPtr.Zero, ref guid, index, ref iface))
+                    break;
+
+                SP_DEVICE_INTERFACE_DETAIL_DATA detail = new SP_DEVICE_INTERFACE_DETAIL_DATA();
+                detail.cbSize = IntPtr.Size == 8 ? 8u : 6u;
+                uint required;
+                SetupDiGetDeviceInterfaceDetail(devs, ref iface, ref detail, 512,
+                    out required, IntPtr.Zero);
+
+                if (!string.IsNullOrEmpty(detail.DevicePath)) found.Add(detail.DevicePath);
+            }
+        }
+        finally
+        {
+            SetupDiDestroyDeviceInfoList(devs);
+        }
+        return found.ToArray();
+    }
+
     // Zero desired access, exactly as the tray opens these interfaces: it reads
     // the report without GENERIC_READ and so without elevation, and avoids err=5
     // on a mouhid-owned interface (MagicMouseTray/MouseBatteryDevice.cs:106-109).
-    public static byte[] ReadInputReport(string path, byte reportId, int length, out int error)
+    public static byte[] ReadInputReport(string path, byte reportId, out int error)
     {
         error = 0;
         using (SafeFileHandle handle = CreateFile(path, 0,
             FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
         {
             if (handle.IsInvalid) { error = Marshal.GetLastWin32Error(); return null; }
-            byte[] buffer = new byte[length];
+            byte[] buffer = new byte[InputReportLength(handle)];
             buffer[0] = reportId;
             if (!HidD_GetInputReport(handle, buffer, buffer.Length))
             {
@@ -337,6 +466,30 @@ public static class MagicMouseChannelHid
                 return null;
             }
             return buffer;
+        }
+    }
+
+    // max(InputReportByteLength, 64), the rule MouseBatteryDevice.ReadV3Rid90
+    // follows (MagicMouseTray/MouseBatteryDevice.cs:131-138). It is not
+    // cosmetic: HidD_GetInputReport rejects a buffer shorter than the
+    // collection's input report, so a hard-coded 64 would fail every read on
+    // any COL02 whose report is longer - indistinguishable in the output from
+    // "the channel is dead". The C# gives up when the caps cannot be read; here
+    // the 64 floor is used instead, because reporting UNVERIFIED without having
+    // attempted the read is the worse answer for a one-shot CLI.
+    static int InputReportLength(SafeFileHandle handle)
+    {
+        IntPtr preparsed;
+        if (!HidD_GetPreparsedData(handle, out preparsed)) return 64;
+        try
+        {
+            HIDP_CAPS caps = new HIDP_CAPS();
+            if (HidP_GetCaps(preparsed, ref caps) != HIDP_STATUS_SUCCESS) return 64;
+            return Math.Max((int)caps.InputReportByteLength, 64);
+        }
+        finally
+        {
+            HidD_FreePreparsedData(preparsed);
         }
     }
 }
@@ -348,31 +501,38 @@ function Initialize-HidReader {
     }
 }
 
-# The COL02 device-interface paths for this PID, read from the HID interface
-# class key: a subkey named ##?#HID#...&Col02#...#{guid} IS the symbolic link
-# with '#' for '\', so no SetupDi enumeration is needed to build it.
+# The COL02 device-interface paths for this PID, enumerated through
+# SetupDiGetClassDevs(DIGCF_PRESENT | DIGCF_DEVICEINTERFACE) - the same
+# question the tray asks (MagicMouseTray/HidNative.cs:101-126).
+#
+# NOT read out of Control\DeviceClasses, for two reasons. A subkey name there
+# escapes only its leading '\\?\' as '##?#'; every other '#' is a literal
+# separator in the symbolic-link name, so a blanket '#'->'\' replace produces a
+# path the object manager cannot resolve and CreateFile fails on all of them.
+# And that hive has no usable presence gate: measured on the reference PC, it
+# lists the unified BT interface AND both collection interfaces for this PID at
+# the same time, with the per-interface presence flag under a #\Properties
+# subkey an unelevated read cannot open (MagicMouseTray/ModeFlip.cs:977-984).
+# Read-Col02Battery returns on the first interface that answers, so a stale
+# COL02 from a previous pairing would be reported as this one's battery.
 function Get-Col02InterfacePath {
     $paths = New-Object System.Collections.Generic.List[string]
-    $root = $null
     try {
-        $root = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($HidInterfaceClass, $false)
-        if ($null -eq $root) { return $paths }
-        foreach ($name in $root.GetSubKeyNames()) {
-            $low = $name.ToLowerInvariant()
-            if (-not $low.StartsWith('##?#hid#')) { continue }
+        Initialize-HidReader
+        foreach ($p in [MagicMouseChannelHid]::EnumeratePaths()) {
+            $low = $p.ToLowerInvariant()
+            if (-not $low.StartsWith('\\?\hid#')) { continue }
             if (-not $low.Contains('col02')) { continue }
             if (-not ($low.Contains('pid&' + $TargetPid) -or $low.Contains('pid_' + $TargetPid))) { continue }
-            $vidOk = $false
             foreach ($v in $AppleBtVids) {
-                if ($low.Contains('vid&' + $v) -or $low.Contains('vid_' + $v)) { $vidOk = $true }
+                if ($low.Contains('vid&' + $v) -or $low.Contains('vid_' + $v)) {
+                    [void]$paths.Add($p)
+                    break
+                }
             }
-            if (-not $vidOk) { continue }
-            [void]$paths.Add($name.Replace('#', '\'))
         }
     } catch {
         Write-Log ("  COL02 interface lookup failed: {0}" -f $_.Exception.Message) 'Yellow'
-    } finally {
-        if ($null -ne $root) { $root.Dispose() }
     }
     return $paths
 }
@@ -396,7 +556,7 @@ function Read-Col02Battery {
             $err = 0
             $buf = $null
             try {
-                $buf = [MagicMouseChannelHid]::ReadInputReport($path, [byte]$BatteryReportId, $ReportLength, [ref]$err)
+                $buf = [MagicMouseChannelHid]::ReadInputReport($path, [byte]$BatteryReportId, [ref]$err)
             } catch {
                 $lastError = $_.Exception.Message
                 continue
@@ -416,11 +576,26 @@ function Read-Col02Battery {
                 $result.Percent = $pct
                 return $result
             }
-            # A well-formed report whose percent byte is 0 - the truncation
-            # signature, and also what an idle mouse produces. The caller needs
-            # the Diag fingerprint to tell those apart.
-            $result.Zeroed = $true
-            $lastError = 'zeroed 0x90 report'
+            # A well-formed report whose percent byte is EXACTLY 0 - the
+            # truncation signature, and also what an idle mouse produces. The
+            # caller needs the Diag fingerprint to tell those apart.
+            #
+            # Anything else in 101..255 is deliberately left as no evidence.
+            # MouseBatteryDevice.IsBogusZeroReport is the authority for this
+            # fingerprint (MagicMouseTray/MouseBatteryDevice.cs:253-254) and it
+            # requires buf[2] == 0; a wrong-range byte falls past it into
+            # CaptureProbe(zeroReport: null), "unknown and NOT false"
+            # (MouseBatteryDevice.cs:198-203). The duplication between this
+            # script and that reader is deliberate - the two must not drift,
+            # because claiming the truncation fingerprint from a report that
+            # does not carry it reports STILL-BROKEN on evidence the tray
+            # refuses to judge.
+            if ($pct -eq 0) {
+                $result.Zeroed = $true
+                $lastError = 'zeroed 0x90 report'
+            } else {
+                $lastError = ("percent byte {0} outside 1..100 and not 0 - nothing judgeable" -f $pct)
+            }
         }
         if ((Get-Date) -ge $deadline) { break }
         Start-Sleep -Milliseconds 500
@@ -452,11 +627,23 @@ function Invoke-SelfElevated {
         Write-Log 'Cannot resolve this PowerShell host executable to re-launch it elevated. Open an elevated PowerShell and run this script there.' 'Red'
         return $ExitNotElevated
     }
-    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
+    if ([string]::IsNullOrEmpty($PSCommandPath)) {
+        Write-Log 'Cannot resolve this script file to re-launch it elevated. Open an elevated PowerShell and run this script there.' 'Red'
+        return $ExitNotElevated
+    }
+    # Every element MUST carry its own quotes. Windows PowerShell 5.1 joins an
+    # -ArgumentList array with single spaces and quotes nothing, so a repo
+    # checked out under C:\Users\Firstname Lastname\ would hand the child
+    # '-File C:\Users\Firstname' plus a stray argument; the child dies before it
+    # runs and its exit 1 surfaces here as STILL-BROKEN - this script's loudest
+    # "nothing in this repo can fix that" verdict, for a quoting bug. All five
+    # C# elevation sites quote the same way (MagicMouseTray/DeviceRepair.cs:594,
+    # DeviceEnable.cs:496, DriverInstaller.cs:269/487/590).
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath),
         '-SettleSeconds', [string]$SettleSeconds)
-    if ($InstanceId) { $argList += @('-InstanceId', $InstanceId) }
+    if ($InstanceId) { $argList += @('-InstanceId', ('"{0}"' -f $InstanceId)) }
 
-    Write-Log 'Requesting Administrator permission (one UAC prompt). The elevated run reports in its OWN console window.'
+    Write-Log 'Requesting Administrator permission (one UAC prompt). The elevated run prints its report in its own console window, which closes when it finishes; only its exit code comes back here.'
     $proc = $null
     try {
         $proc = Start-Process -FilePath $host_ -ArgumentList $argList -Verb RunAs -PassThru -ErrorAction Stop
@@ -488,7 +675,7 @@ function Invoke-SelfElevated {
     }
     # Always bounded: an unanswered prompt must not hang this script.
     if (-not $proc.WaitForExit($ElevateTimeoutSeconds * 1000)) {
-        Write-Log ("The elevated run did not finish within {0}s. It may still be running in its own window; check that window for the verdict." -f $ElevateTimeoutSeconds) 'Red'
+        Write-Log ("The elevated run did not finish within {0}s. It may still be running in its own window - watch that window for the verdict, because it closes as soon as the run ends." -f $ElevateTimeoutSeconds) 'Red'
         return $ExitRestartFailed
     }
     $code = [int]$proc.ExitCode
@@ -575,7 +762,7 @@ foreach ($id in $targets) {
 }
 
 if ($dryRun) {
-    Write-Log 'DRY RUN: nothing was restarted and nothing was written. Re-run elevated without -WhatIf to apply the reprieve.' 'Cyan'
+    Write-Log 'DRY RUN: nothing was restarted. Re-run elevated without -WhatIf to apply the reprieve.' 'Cyan'
     exit $ExitDryRun
 }
 if ($restarted -eq 0) {
@@ -583,8 +770,12 @@ if ($restarted -eq 0) {
         Write-Log 'restart-device failed on every target; the channel was not re-armed.' 'Red'
         exit $ExitRestartFailed
     }
-    Write-Log 'No restart was performed (the action was declined), so nothing changed.' 'Yellow'
-    exit $ExitDryRun
+    # A declined -Confirm prompt is NOT a dry run: -WhatIf was never passed
+    # ($dryRun is provably false here, the branch above already exited on it),
+    # so a caller keying on 6 to mean "someone asked for a plan" would be
+    # misinformed about what the operator actually did.
+    Write-Log 'No restart was performed (the action was declined), so nothing changed and nothing was verified.' 'Yellow'
+    exit $ExitDeclined
 }
 
 # --- Verify ---------------------------------------------------------------

@@ -143,6 +143,21 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         }
 
         var buf = new byte[inLen];
+
+        // The probe's touch evidence is a counter delta, and a delta is only
+        // evidence about NOW if the interval it spans is short. This sample is
+        // taken immediately BEFORE the request goes out, so the pair the
+        // planner judges spans THIS read - the three attempts and their sleeps
+        // included - instead of the 5 min .. 24 h gap back to the previous poll
+        // cycle, which is what let a mouse last touched hours ago read as "in
+        // use right now". The bound and what it costs in detection are recorded
+        // at DeviceDiagReader.PairMaxSpan.
+        //
+        // One reader for both samples: it resolves the bound filter service
+        // once, and the pair must come from the same service either way.
+        var diag = new FilterDiagReader();
+        var diagBefore = diag.Read();
+
         for (int attempt = 0; attempt < 3; attempt++)
         {
             Array.Clear(buf, 0, buf.Length);
@@ -155,13 +170,13 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 // and each one captures a DIFFERENT fact. The -2 sentinel is
                 // left exactly as it was - three of these paths still return it
                 // and two other classes emit it for unrelated reasons
-                // (KeyboardBatteryDevice's blocked SDP cap, and :336 below), so
+                // (KeyboardBatteryDevice's blocked SDP cap, and :353 below), so
                 // the fact is carried BESIDE the sentinel and never instead of
                 // it. Redefining -2 would silently change the keyboard rule at
-                // RepairPlanner.cs:412-426 and the repair script behind it.
+                // RepairPlanner.cs:416-430 and the repair script behind it.
                 if (pct is >= 0)
                 {
-                    CaptureProbe(zeroReport: false);
+                    CaptureProbe(zeroReport: false, diag, diagBefore);
                     Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
                     return pct.Value;
                 }
@@ -175,7 +190,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                     // other being this defect. Which one it is is not decidable
                     // here; it is decided by the planner from the probe's
                     // correlation with a live touch stream.
-                    CaptureProbe(zeroReport: true);
+                    CaptureProbe(zeroReport: true, diag, diagBefore);
                     Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)");
                     return -2;
                 }
@@ -183,7 +198,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 // Wrong report id: nothing judgeable came back, so the fact is
                 // unknown and NOT false - claiming "a real percent arrived"
                 // would be as wrong as claiming the zero.
-                CaptureProbe(zeroReport: null);
+                CaptureProbe(zeroReport: null, diag, diagBefore);
                 Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
                 return -2;
             }
@@ -196,7 +211,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         // Folding that into the zero-report fact would diagnose the truncation
         // defect - whose repair is a device restart - from the evidence of a
         // restart in progress, i.e. a loop.
-        CaptureProbe(zeroReport: null);
+        CaptureProbe(zeroReport: null, diag, diagBefore);
         Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
         return -2;
     }
@@ -212,12 +227,14 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // can never hold a reading from an earlier cycle.
     internal BatteryProbe? LastProbe { get; private set; }
 
-    // Taken IMMEDIATELY after HidD_GetInputReport returned, in the same code
-    // path, because that is the only moment the filter's shared last-inbound
-    // slot can still hold the control-channel frame this read caused
-    // (BatteryProbe.DiagAfter).
-    void CaptureProbe(bool? zeroReport) =>
-        LastProbe = DeviceDiagReader.TakeBatteryProbe(zeroReport);
+    // The after-sample is taken IMMEDIATELY after HidD_GetInputReport returned,
+    // in the same code path, because that is the only moment the filter's
+    // shared last-inbound slot can still hold the control-channel frame this
+    // read caused (BatteryProbe.DiagAfter). before is the pre-read sample from
+    // the same reader, so the pair is bounded by the read itself.
+    void CaptureProbe(bool? zeroReport, IFilterDiagReader diag, FilterDiagSnapshot? before) =>
+        LastProbe = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport, diag, before, DateTimeOffset.UtcNow);
 
     internal static int? ParseRid90Percent(byte[] buf)
     {

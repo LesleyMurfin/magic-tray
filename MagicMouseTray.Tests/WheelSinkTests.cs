@@ -35,48 +35,33 @@ public class WheelSinkTests
             [Other] = OtherMousePath,
         }, records);
 
-    // A window in which the touch stream never moved is VOID: it is not a
-    // negative result and consumers must not read it as one. The reference run
-    // that forced this had all 305 of its mouse records in the first 5 s of a
-    // 60 s window with the filter's report counter flat throughout.
+    // A prompted leg does not wait for anything - but a user who never touched
+    // the surface must still come back VOID, with no active time, never as a
+    // zero-wheel measurement. The reference run that forced this had all 305 of
+    // its mouse records in the first 5 s of a 60 s window with the filter's
+    // report counter flat throughout.
     [Fact]
-    public async Task NoTouchActivity_IsVoidWithNoCounts()
+    public async Task PromptedLeg_WithoutTouchActivity_IsVoid()
     {
         var sink = new RawInputWheelSink(Source(Wheel(Target, 120)), () => false);
 
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
+        var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.True(obs.Void);
         Assert.Equal(TimeSpan.Zero, obs.ActiveDuration);
-        Assert.Equal(0, obs.MouseRecords);
-        Assert.Equal(0, obs.WheelEvents);
-        Assert.False(obs.DecoderValidated);
-        Assert.Null(obs.TargetDevicePath);
     }
 
     // No evidence (the seam's null) is not inactivity, but it is still not a
     // measurement: the window stays void rather than being reported as a zero.
     [Fact]
-    public async Task UnknownTouchActivity_IsVoid()
-    {
-        var sink = new RawInputWheelSink(Source(Wheel(Target, 120)), () => null);
-
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
-
-        Assert.True(obs.Void);
-        Assert.Equal(0, obs.WheelEvents);
-    }
-
-    // A prompted leg does not wait to arm - but a user who never touched the
-    // surface must still come back VOID, never as a zero-wheel measurement.
-    [Fact]
-    public async Task PromptedLeg_WithoutTouchActivity_IsVoid()
+    public async Task PromptedLeg_WithUnknownTouchActivity_IsVoid()
     {
         var sink = new RawInputWheelSink(Source(Wheel(Target, 120)), () => null);
 
         var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.True(obs.Void);
+        Assert.Equal(TimeSpan.Zero, obs.ActiveDuration);
     }
 
     [Fact]
@@ -103,7 +88,7 @@ public class WheelSinkTests
                 Motion(Target, 5, -7)),
             () => true);
 
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
+        var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.False(obs.Void);
         Assert.Equal(TargetPath, obs.TargetDevicePath);
@@ -125,7 +110,7 @@ public class WheelSinkTests
                 Button(Other, 0x0001)),
             () => true);
 
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
+        var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.Equal(TargetPath, obs.TargetDevicePath);
         Assert.Equal(1, obs.MouseRecords);
@@ -146,7 +131,7 @@ public class WheelSinkTests
             Source(Wheel(Target, 120), HWheel(Target, 120), Motion(Target, 1, 1)),
             () => true);
 
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
+        var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.False(obs.DecoderValidated);
         Assert.Equal(0, obs.ButtonEvents);
@@ -159,7 +144,7 @@ public class WheelSinkTests
             Source(Button(Target, 0x0001), Button(Target, 0x0002)),
             () => true);
 
-        var obs = await sink.ObserveAsync(Window, CancellationToken.None);
+        var obs = await sink.ObservePromptedAsync(Window, CancellationToken.None);
 
         Assert.True(obs.DecoderValidated);
         Assert.Equal(2, obs.ButtonEvents);
@@ -175,12 +160,12 @@ public class WheelSinkTests
         var source = new FakeMouseSource(paths, [Button(Target, 0x0001)]);
         var sink = new RawInputWheelSink(source, () => true);
 
-        var clicked = await sink.ObserveAsync(Window, CancellationToken.None);
+        var clicked = await sink.ObservePromptedAsync(Window, CancellationToken.None);
         Assert.True(clicked.DecoderValidated);
 
         // A later window on the same device with no click in it at all.
         source.Script(Wheel(Target, 120));
-        var later = await sink.ObserveAsync(Window, CancellationToken.None);
+        var later = await sink.ObservePromptedAsync(Window, CancellationToken.None);
         Assert.Equal(0, later.ButtonEvents);
         Assert.True(later.DecoderValidated);
 
@@ -188,12 +173,15 @@ public class WheelSinkTests
         // reports the same window as unvalidated.
         var unproven = await new RawInputWheelSink(
             new FakeMouseSource(paths, [Wheel(Target, 120)]), () => true)
-            .ObserveAsync(Window, CancellationToken.None);
+            .ObservePromptedAsync(Window, CancellationToken.None);
         Assert.False(unproven.DecoderValidated);
     }
 
-    // A cancelled poll tick is not an error: the half-measured window is still
-    // evidence, so the sink returns what it has instead of throwing.
+    // A cancelled window is not an error: the sink returns what it counted
+    // instead of throwing. It is still VOID, because cancellation landed before
+    // the first activity sample of the window completed, and a window with no
+    // completed sample has no evidence that anyone touched the surface - the
+    // counts are reported, the verdict is withheld.
     [Fact]
     public async Task Cancellation_ReturnsPartialObservation()
     {
@@ -201,9 +189,10 @@ public class WheelSinkTests
             Source(Wheel(Target, 120), Motion(Target, 2, 2)), () => true);
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(120));
 
-        var obs = await sink.ObserveAsync(TimeSpan.FromSeconds(30), cts.Token);
+        var obs = await sink.ObservePromptedAsync(TimeSpan.FromSeconds(30), cts.Token);
 
-        Assert.False(obs.Void);
+        Assert.True(obs.Void);
+        Assert.Equal(TimeSpan.Zero, obs.ActiveDuration);
         Assert.Equal(TargetPath, obs.TargetDevicePath);
         Assert.Equal(2, obs.MouseRecords);
         Assert.Equal(1, obs.WheelEvents);

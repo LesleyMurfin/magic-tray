@@ -21,10 +21,11 @@ namespace MagicMouseTray.Tests;
 //
 // Isolation is by unique service name per test, the convention this repo already
 // uses for DeviceDiagReader's per-service sampling state
-// (DeviceDiagReaderTests.cs:20-24): FilterDiagReader.ReadPair and
-// EvaluateCounterSample both keep static per-service history on purpose - a real
-// run must never forget a proven advance - so distinct names, not a reset hook,
-// are what keep tests out of each other's state.
+// (DeviceDiagReaderTests.cs:20-24): that state keeps static per-service history
+// on purpose - a real run must never forget a proven advance - so distinct
+// names, not a reset hook, are what keep tests out of each other's state. The
+// battery probe no longer keeps any: its pair is taken around one read and
+// handed in, which is what these tests drive.
 public class FilterDiagReaderTests
 {
     static string Unique(string prefix) => prefix + Guid.NewGuid().ToString("N");
@@ -120,9 +121,9 @@ public class FilterDiagReaderTests
 
         Assert.Equal(DiagAvailability.Ok, snapshot.Availability);
         // REG_BINARY stays bytes. The percentage the truncation defect throws
-        // away is in this frame, so a consumer has to be able to read byte 3.
+        // away is in this frame, so a consumer gets the frame verbatim rather
+        // than a stringified value it can no longer parse.
         Assert.Equal(TruncationFrame, snapshot.LastAclBytes);
-        Assert.Equal(0x16, snapshot.LastAclBytes![3]);
     }
 
     [Fact]
@@ -283,66 +284,82 @@ public class FilterDiagReaderTests
     }
 
     [Fact]
-    public void BatteryProbe_PairsTheZeroReportWithAFreshDelta()
+    public void BatteryProbe_PairsTheZeroReportWithTheReadsOwnInterval()
     {
         var service = Unique("MagicMouseDriver204Probe");
         var values = FullBlock(169000);
         var reader = ReaderFor(values, service);
 
-        // First probe: there is no previous sample, so there is no interval and
-        // no advance - and therefore no finding, whatever the report said.
-        var first = DeviceDiagReader.TakeBatteryProbe(zeroReport: true, reader, T0);
-        Assert.Null(first.DiagBefore);
-        Assert.False(IFilterDiagReader.TouchStreamAdvanced(first.DiagBefore, first.DiagAfter));
+        // No pre-read sample: no interval, so there is nothing to say about the
+        // zero report whatever the counter reads.
+        var blind = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport: true, reader, before: null, T0);
 
-        // Second probe, counter climbed: the zero report now sits beside a
-        // stream that is demonstrably alive, which is the whole discriminator
-        // between the truncation defect and an idle mouse.
+        Assert.Null(blind.DiagBefore);
+        Assert.False(RepairPlanner.BatteryAnswerTruncated(blind));
+
+        // The production shape: one sample immediately before the GET_REPORT,
+        // one immediately after, and the counter climbed in between. The zero
+        // report now sits beside a stream that was alive across THIS read,
+        // which is the whole discriminator between the truncation defect and an
+        // idle mouse.
+        var before = reader.Read();
         values.Set("Rid12Count", Dword(169098));
-        var second = DeviceDiagReader.TakeBatteryProbe(
-            zeroReport: true, reader, T0.AddSeconds(3));
+        var probe = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport: true, reader, before, T0.AddSeconds(3));
 
-        Assert.True(second.ZeroReport);
-        Assert.True(IFilterDiagReader.TouchStreamAdvanced(second.DiagBefore, second.DiagAfter));
-        Assert.Equal(T0.AddSeconds(3), second.TouchAdvancedAt);
+        Assert.True(probe.ZeroReport);
+        Assert.Same(before, probe.DiagBefore);
+        Assert.True(RepairPlanner.BatteryAnswerTruncated(probe));
+
+        // The same climb measured from a sample one poll interval old is the
+        // false positive: this is the pair the old static store handed over, and
+        // it accused a mouse that had been untouched for the whole interval.
+        // Back-dating the pre-read sample is all it takes to reproduce it.
+        var stalePair = DeviceDiagReader.TakeBatteryProbe(
+            zeroReport: true,
+            reader,
+            before with { TakenAt = before.TakenAt - TimeSpan.FromMinutes(5) },
+            T0.AddSeconds(3));
+
+        Assert.True(stalePair.ZeroReport);
+        Assert.False(RepairPlanner.BatteryAnswerTruncated(stalePair));
     }
 
     [Fact]
-    public void BatteryProbe_AfterDeviceRestart_HasNoAdvanceEvenThoughTheMemoRemembers()
+    public void BatteryProbe_AfterDeviceRestart_HasNoAdvance()
     {
         var service = Unique("MagicMouseDriver204Restart");
         var values = FullBlock(2095323);
         var reader = ReaderFor(values, service);
 
-        DeviceDiagReader.TakeBatteryProbe(zeroReport: false, reader, T0);
+        var before = reader.Read();
         values.Set("Rid12Count", Dword(2095999));
         var advancing = DeviceDiagReader.TakeBatteryProbe(
-            zeroReport: false, reader, T0.AddSeconds(3));
+            zeroReport: false, reader, before, T0);
+
         Assert.True(IFilterDiagReader.TouchStreamAdvanced(
             advancing.DiagBefore, advancing.DiagAfter));
 
         // Now the device restarts: Rid12Count collapsed 2095323 -> 521 within
-        // ~14 s of a MOUSE_RID90_FAILED err=21 on this machine. The memoised
-        // MultitouchAdvancing verdict would still say true for a full minute
-        // after the last increment (AliveMemory), which is why the rule reads
-        // the fresh pair instead - a restart must not be diagnosed as a defect
-        // whose repair is another restart.
+        // ~14 s of a MOUSE_RID90_FAILED err=21 on this machine. A lower number
+        // is a new baseline, never a negative delta - a restart must not be
+        // diagnosed as a defect whose repair is another restart.
+        var beforeRestart = reader.Read();
         values.Set("Rid12Count", Dword(521));
         var restarted = DeviceDiagReader.TakeBatteryProbe(
-            zeroReport: null, reader, T0.AddSeconds(6));
+            zeroReport: null, reader, beforeRestart, T0.AddSeconds(6));
 
         Assert.Null(restarted.ZeroReport);
         Assert.False(IFilterDiagReader.TouchStreamAdvanced(
             restarted.DiagBefore, restarted.DiagAfter));
-        // The memo is genuinely still warm - that is exactly the trap.
-        Assert.Equal(T0.AddSeconds(3), restarted.TouchAdvancedAt);
     }
 
     [Fact]
     public void PublishedProbe_ExpiresRatherThanGoingStale()
     {
         var pid = Unique("p");
-        var probe = new BatteryProbe(T0, ZeroReport: true, null, null, null);
+        var probe = new BatteryProbe(T0, ZeroReport: true, null, null);
         DeviceDiagReader.PublishBatteryProbe(pid, probe);
 
         Assert.Same(probe, DeviceDiagReader.LatestBatteryProbe(pid, T0.AddMinutes(1)));

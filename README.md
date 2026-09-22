@@ -339,6 +339,7 @@ scripts/capture-state.ps1
 scripts/diagnose-driver.ps1
 scripts/diagnose-and-recover.ps1
 scripts/mm-bt-stack-snapshot.ps1
+scripts/repair-magicmouse-channel.ps1
 README.txt
 SHA256SUMS
 ```

@@ -111,7 +111,7 @@ try {
   $exeName = 'MagicMouseTray.exe'
   $ps1Name = 'kbd-patch-cachedservices.ps1'
   $cmdName = 'Install-KeyboardBattery.cmd'
-  $shipNames = @($exeName, $ps1Name, $cmdName, 'capture-state.ps1', 'diagnose-driver.ps1', 'diagnose-and-recover.ps1', 'mm-bt-stack-snapshot.ps1')
+  $shipNames = @($exeName, $ps1Name, $cmdName, 'capture-state.ps1', 'diagnose-driver.ps1', 'diagnose-and-recover.ps1', 'mm-bt-stack-snapshot.ps1', 'repair-magicmouse-channel.ps1')
   $exePath = Join-Path $PublishDir $exeName
   $ps1Path = Join-Path $PublishDir $ps1Name
   $cmdPath = Join-Path $PublishDir $cmdName
@@ -238,7 +238,8 @@ try {
     'scripts/diagnose-driver.ps1',
     'scripts/diagnose-and-recover.ps1',
     'scripts/kbd-patch-cachedservices.ps1',
-    'scripts/mm-bt-stack-snapshot.ps1'
+    'scripts/mm-bt-stack-snapshot.ps1',
+    'scripts/repair-magicmouse-channel.ps1'
   )
   $expectedScripts = @($expectedEntries | Where-Object { $_ -like 'scripts/*' })
 

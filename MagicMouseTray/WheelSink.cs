@@ -85,15 +85,12 @@ internal sealed record WheelObservation(
 
 internal interface IWheelSink
 {
-    // Passive path. Observes for at most `window`, measuring only once the touch
-    // stream moves. Returns a partial observation when ct is cancelled - it never
-    // throws OperationCanceledException, because a half-measured window is still
-    // evidence and the caller is a poll tick, not a user request.
-    Task<WheelObservation> ObserveAsync(TimeSpan window, CancellationToken ct);
-
-    // Prompted path. The user has just been asked to scroll, so the whole window
-    // is measured with no arming wait. Void still means "the surface was never
-    // touched" - a user who ignored the prompt must not be scored as broken.
+    // The user has just been asked to scroll, so the whole window is measured.
+    // Void still means "the surface was never touched" - a user who ignored the
+    // prompt must not be scored as broken. Returns a partial observation when ct
+    // is cancelled and never throws OperationCanceledException: a half-measured
+    // window is still evidence of what it counted, and it reports Void unless a
+    // touch sample completed inside it.
     Task<WheelObservation> ObservePromptedAsync(TimeSpan window, CancellationToken ct);
 }
 
@@ -115,10 +112,11 @@ internal interface IRawMouseSource
     string? ResolveDevicePath(IntPtr device);
 }
 
-// Arms on activity, counts wheel events on the 0323 pointer collection, and
-// reports what it saw. No registry access of its own: the activity question
-// arrives as a Func<bool> so the Diag counter semantics (including the reinstall
-// reset, which is only decidable from a before/after pair) stay in one place.
+// Measures one prompted window, counts wheel events on the 0323 pointer
+// collection, and reports what it saw. No registry access of its own: the
+// activity question arrives as a Func<bool?> so the Diag counter semantics
+// (including the reinstall reset, which is only decidable from a before/after
+// pair) stay in one place.
 internal sealed class RawInputWheelSink : IWheelSink
 {
     // RI_MOUSE_* bits in RAWMOUSE.usButtonFlags.
@@ -131,7 +129,6 @@ internal sealed class RawInputWheelSink : IWheelSink
 
     // The activity probe is sampled at this cadence, clamped to what is left of
     // the window. 250 ms is the cadence the reference measurement ran at.
-    internal static readonly TimeSpan ArmPollInterval = TimeSpan.FromMilliseconds(250);
     internal static readonly TimeSpan ActiveTickInterval = TimeSpan.FromMilliseconds(250);
     // How long the sink waits for the pump thread to unwind after cancelling it,
     // so a wedged source cannot hang a tray poll tick.
@@ -149,10 +146,14 @@ internal sealed class RawInputWheelSink : IWheelSink
     // previous call, false when it provably did not, and NULL when there is no
     // evidence either way - Diag key missing, access denied, no usable baseline
     // yet, or a counter that went backwards because the device is mid-restart.
-    // Null and false both mean "not armed" here, which is reported as Void: no
-    // evidence is never rendered as inactivity, and nothing downstream gates a
-    // fault on this seam. The fault path is the prompted probe, where the user's
-    // intent is known. Sampled every ArmPollInterval, so it must be cheap.
+    // Null and false both mean "the surface was not under a hand", which is
+    // reported as Void: no evidence is never rendered as inactivity, and no
+    // consumer may read Void as a zero. The probe MUST answer for the sample
+    // that just elapsed and never from memory: a verdict memoised over the last
+    // minute (DeviceDiagReader.cs:288) satisfies Void and ActiveDuration in full
+    // on a mouse nobody touched, which is the one way this seam can manufacture
+    // the evidence a fault verdict rests on. Sampled every ActiveTickInterval,
+    // so it must be cheap.
     internal RawInputWheelSink(IRawMouseSource source, Func<bool?> touchAdvanced)
     {
         _source = source;
@@ -162,46 +163,21 @@ internal sealed class RawInputWheelSink : IWheelSink
     // The 0323's pointer collection, e.g.
     //   \\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01#a&31e5d054&2a&0000
     // Col01 is the pointer collection by construction on this device
-    // (DeviceDiagReader.cs:556-567); Col02 is the vendor/battery collection and
+    // (DeviceDiagReader.cs:862-876); Col02 is the vendor/battery collection and
     // never carries a wheel.
     internal static bool IsTargetDevicePath(string? path) =>
         !string.IsNullOrEmpty(path)
         && V3RecycleManager.IsV3Path(path)
         && path.Contains("col01", StringComparison.OrdinalIgnoreCase);
 
-    // Passive path: nothing is measured until the touch stream moves, so a window
-    // nobody touched comes back Void instead of as a zero.
-    public Task<WheelObservation> ObserveAsync(TimeSpan window, CancellationToken ct) =>
-        MeasureAsync(window, armOnActivity: true, ct);
-
-    // Prompted path: intent is known, so there is nothing to wait for.
-    public Task<WheelObservation> ObservePromptedAsync(TimeSpan window, CancellationToken ct) =>
-        MeasureAsync(window, armOnActivity: false, ct);
-
-    async Task<WheelObservation> MeasureAsync(TimeSpan window, bool armOnActivity, CancellationToken ct)
+    // Prompted path: intent is known, so there is nothing to wait for. There is
+    // no passive path here on purpose - an unprompted window that carried no
+    // notch cannot be told apart from a window in which nobody chose to scroll,
+    // and on the WORKING binary 83 of 84 active touch seconds carried none.
+    public async Task<WheelObservation> ObservePromptedAsync(TimeSpan window, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var sawActivity = false;
-
-        if (armOnActivity)
-        {
-            // --- arm phase ---
-            while (true)
-            {
-                if (TouchAdvanced() == true)
-                {
-                    sawActivity = true;
-                    break;
-                }
-
-                var left = window - sw.Elapsed;
-                if (left <= TimeSpan.Zero) break;
-                if (!await QuietDelay(Shorter(ArmPollInterval, left), ct)) break;
-            }
-
-            if (!sawActivity)
-                return new WheelObservation(sw.Elapsed, TimeSpan.Zero, 0, 0, 0, 0, 0, null, false, Void: true);
-        }
 
         // --- measured window ---
         var gate = new object();
@@ -209,7 +185,13 @@ internal sealed class RawInputWheelSink : IWheelSink
         var active = TimeSpan.Zero;
         var lastTick = sw.Elapsed;
 
-        using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Deliberately NOT `using`: the drain in the finally below is bounded by
+        // PumpDrainTimeout, so when the timeout wins this method returns while the
+        // pump thread is still alive and still about to read ct.WaitHandle (:526).
+        // Disposing the source under it throws ObjectDisposedException out of the
+        // pump, which is caught and logged as WHEEL_SINK_PUMP_FAILED - a failure
+        // line for a shutdown that in fact worked.
+        var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var pump = StartPump(byDevice, gate, pumpCts.Token);
         try
         {
@@ -234,7 +216,12 @@ internal sealed class RawInputWheelSink : IWheelSink
         finally
         {
             pumpCts.Cancel();
-            await Task.WhenAny(pump, Task.Delay(PumpDrainTimeout, CancellationToken.None));
+            // Disposed only once nothing can observe it again: inline when the
+            // pump won the race, otherwise handed to the pump's own continuation.
+            if (await Task.WhenAny(pump, Task.Delay(PumpDrainTimeout, CancellationToken.None)) == pump)
+                pumpCts.Dispose();
+            else
+                _ = pump.ContinueWith(_ => pumpCts.Dispose(), TaskScheduler.Default);
         }
 
         lock (gate)
@@ -402,7 +389,7 @@ internal sealed class RawInputWheelSink : IWheelSink
 // This app has no message-only window and no WndProc of its own to borrow - the
 // host is WPF (App.xaml.cs:47) hosting a WinForms NotifyIcon (TrayApp.cs:624,
 // :763), and the only other user32 P/Invoke in the app is DestroyIcon
-// (TrayApp.cs:3433). So the window is created here, and deliberately NOT on the
+// (TrayApp.cs:3718). So the window is created here, and deliberately NOT on the
 // WPF UI thread: this loop owns its thread's message queue for the length of an
 // observation, which would stall the tray menu.
 //
@@ -439,6 +426,17 @@ internal sealed class RawInputMouseSource : IRawMouseSource
     // physical notches (24 events summing to +2640 = 22 notches at 120/notch).
     static readonly int HeaderSize = 8 + 2 * IntPtr.Size;
 
+    // The raw-input registration below is per PROCESS, not per window: Windows
+    // keeps one hwndTarget per (usagePage, usage) per process, so a second pump's
+    // RegisterRawInputDevices (:513) silently retargets WM_INPUT away from the
+    // first pump's window, and the unqualified RIDEV_REMOVE (:541) deregisters
+    // the process rather than one window - whichever pump unwinds first silences
+    // the other for the rest of its window. TrayApp's in-flight guard
+    // (TrayApp.cs:3000) keeps two PROBES from overlapping; this gate is what
+    // keeps an ORPHANED pump - one the sink stopped waiting for after
+    // PumpDrainTimeout and can no longer see - from overlapping the next one.
+    static readonly SemaphoreSlim RegistrationGate = new(1, 1);
+
     public Task PumpAsync(Action<RawMouseRecord> onRecord, CancellationToken ct)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -468,6 +466,30 @@ internal sealed class RawInputMouseSource : IRawMouseSource
     }
 
     static void Pump(Action<RawMouseRecord> onRecord, CancellationToken ct)
+    {
+        try
+        {
+            RegistrationGate.Wait(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled while waiting for the previous pump to let go of the
+            // process registration: an empty window, which is no verdict, and not
+            // a failure worth a log line.
+            return;
+        }
+
+        try
+        {
+            PumpRegistered(onRecord, ct);
+        }
+        finally
+        {
+            RegistrationGate.Release();
+        }
+    }
+
+    static void PumpRegistered(Action<RawMouseRecord> onRecord, CancellationToken ct)
     {
         var hwnd = CreateWindowExW(0, "STATIC", "mm-wheel-sink", 0, 0, 0, 0, 0,
             HwndMessage, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
@@ -550,14 +572,24 @@ internal sealed class RawInputMouseSource : IRawMouseSource
 
         if (size > bufferSize)
         {
+            // Allocate BEFORE letting go of the old buffer. Freeing first leaves
+            // `buffer` dangling and `bufferSize` already committed to the larger
+            // size when the allocation throws, so the finally at :544 double-frees
+            // it and every later record that fits is written by the OS into freed
+            // heap - corruption, not a leak.
+            var grown = Marshal.AllocHGlobal((int)size);
             Marshal.FreeHGlobal(buffer);
+            buffer = grown;
             bufferSize = (int)size;
-            buffer = Marshal.AllocHGlobal(bufferSize);
         }
 
         var got = size;
         var read = GetRawInputData(hRawInput, RidInput, buffer, ref got, (uint)HeaderSize);
-        if (read == unchecked((uint)-1) || read < (uint)HeaderSize)
+        // HeaderSize + 20, not HeaderSize: lLastY below is read at HeaderSize + 16
+        // and is four bytes wide, so a shorter record passing a HeaderSize-only
+        // check decodes up to 20 bytes of stale heap into ButtonFlags/LastX/LastY
+        // - the exact fields the zero-notch claim is read out of.
+        if (read == unchecked((uint)-1) || read < (uint)(HeaderSize + 20))
             return null;
 
         if ((uint)Marshal.ReadInt32(buffer, 0) != RimTypeMouse)
@@ -573,20 +605,31 @@ internal sealed class RawInputMouseSource : IRawMouseSource
 
     public string? ResolveDevicePath(IntPtr device)
     {
+        // The sizing call's return is load-bearing: on failure it is (uint)-1 and
+        // leaves `chars` untouched, which would then be trusted as a size.
         uint chars = 0;
-        GetRawInputDeviceInfoW(device, RidiDeviceName, IntPtr.Zero, ref chars);
+        if (GetRawInputDeviceInfoW(device, RidiDeviceName, IntPtr.Zero, ref chars)
+            == unchecked((uint)-1))
+            return null;
         if (chars == 0 || chars > 8192) return null;
 
         var p = Marshal.AllocHGlobal(((int)chars + 1) * 2);
         try
         {
             var got = chars;
-            if (GetRawInputDeviceInfoW(device, RidiDeviceName, p, ref got) == unchecked((uint)-1))
+            // Returns the number of characters copied, so 0 is a failure too:
+            // nothing was written, and decoding the buffer anyway scans
+            // uninitialised heap to the first NUL and hands a fabricated path to
+            // IsTargetDevicePath and to the operator log.
+            var n = GetRawInputDeviceInfoW(device, RidiDeviceName, p, ref got);
+            if (n == unchecked((uint)-1) || n == 0)
             {
                 Logger.Log($"WHEEL_SINK_DEVNAME_FAILED gle={Marshal.GetLastWin32Error()}");
                 return null;
             }
-            return Marshal.PtrToStringUni(p);
+            // Bounded by what was actually written; the count includes the
+            // terminating NUL, which the path must not carry.
+            return Marshal.PtrToStringUni(p, (int)Math.Min(n, chars)).TrimEnd('\0');
         }
         finally
         {
