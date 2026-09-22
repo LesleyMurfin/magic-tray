@@ -454,6 +454,7 @@ function Get-FaqPair {
             $hasDefinition = $pair.Groups['definition'].Success
             [pscustomobject]@{
                 IsFaqList     = $isFaq
+                Unparseable   = $false
                 Term          = (Convert-HtmlToText -Html $pair.Groups['term'].Value)
                 HasDefinition = $hasDefinition
                 Definition    = if ($hasDefinition) { Convert-HtmlToText -Html $pair.Groups['definition'].Value } else { '' }
@@ -471,17 +472,49 @@ function Get-FaqPair {
     # <details> it started in. A plain `.*?` let a non-FAQ <details> -- a spec
     # table, an aside -- swallow everything up to the next accordion's a-body
     # and report the whole slab as one unanswered question.
+    #
+    # The rest of the shape is read loosely on purpose: any element may carry
+    # the a-body class, its attributes may be quoted either way, and the answer
+    # need not be the last thing inside the <details>. Strictness here was never
+    # a safety feature. An entry this pattern could not read simply vanished,
+    # and the page-to-graph half of the parity check can only compare what it
+    # was handed, so a page was free to drift away from its own schema with the
+    # build still green. Breadth here, and the sweep below, close that.
+    $bodyOpen = '(?<tag>[a-z][\w-]*)\b[^>]*\bclass\s*=\s*(?<q>["''])(?<bodyclass>[^"'']*)\k<q>'
     $accordion = '<details\b[^>]*>\s*<summary\b[^>]*>(?<term>(?:(?!</summary>).)*?)</summary>\s*' +
-        '<div\b[^>]*\bclass="(?<bodyclass>[^"]*)"[^>]*>(?<definition>(?:(?!</details>).)*?)</div>\s*</details>'
+        "<$bodyOpen[^>]*>(?<definition>(?:(?!</details>).)*?)</\k<tag>>" +
+        '(?:(?!</details>).)*</details>'
+
+    $read = [System.Collections.Generic.HashSet[int]]::new()
     foreach ($entry in [regex]::Matches($Html, $accordion, 'Singleline, IgnoreCase')) {
         if ((($entry.Groups['bodyclass'].Value -split '\s+') -notcontains 'a-body')) { continue }
+        [void]$read.Add($entry.Groups['definition'].Index)
         [pscustomobject]@{
             IsFaqList      = $true
+            Unparseable    = $false
             Term           = (Convert-HtmlToText -Html $entry.Groups['term'].Value)
             HasDefinition  = $true
             Definition     = (Convert-HtmlToText -Html $entry.Groups['definition'].Value)
             TermLine       = (Get-LineNumber -Text $Html -Offset $entry.Index)
             DefinitionLine = (Get-LineNumber -Text $Html -Offset $entry.Groups['definition'].Index)
+        }
+    }
+
+    # An a-body is the site's own mark for "this is the answer to a question",
+    # so every one of them owes this function an entry. Any the pattern did not
+    # reach is handed back flagged, to be reported at its own line, because a
+    # question that is invisible to the check is worse than one that fails it.
+    foreach ($mark in [regex]::Matches($Html, "<$bodyOpen[^>]*>", 'IgnoreCase')) {
+        if ((($mark.Groups['bodyclass'].Value -split '\s+') -notcontains 'a-body')) { continue }
+        if ($read.Contains($mark.Index + $mark.Length)) { continue }
+        [pscustomobject]@{
+            IsFaqList      = $true
+            Unparseable    = $true
+            Term           = ''
+            HasDefinition  = $false
+            Definition     = ''
+            TermLine       = (Get-LineNumber -Text $Html -Offset $mark.Index)
+            DefinitionLine = (Get-LineNumber -Text $Html -Offset $mark.Index)
         }
     }
 }
@@ -983,8 +1016,11 @@ function Test-PageIdentity {
 function Test-FaqParity {
     <#
     .SYNOPSIS
-        Check 5: every FAQPage Question is on the page as a <dt>/<dd> pair with
-        the same text, and every dl.faq <dt> is in the graph.
+        Check 5: every FAQPage Question is on the page as a question with the
+        same text -- a dl.faq <dt>/<dd> pair or an accordion <summary> and its
+        div.a-body -- and every visible question is in the graph. An entry that
+        cannot be read at all is reported too, so this check cannot pass by
+        simply failing to see something.
     #>
     [OutputType([pscustomobject])]
     param(
@@ -997,6 +1033,7 @@ function Test-FaqParity {
         $pairs = @(Get-FaqPair -Html $page.Html)
         $byTerm = @{}
         foreach ($pair in $pairs) {
+            if ($pair.Unparseable) { continue }
             if (-not $byTerm.ContainsKey($pair.Term)) { $byTerm[$pair.Term] = $pair }
         }
 
@@ -1048,6 +1085,11 @@ function Test-FaqParity {
         }
 
         foreach ($pair in @($pairs | Where-Object { $_.IsFaqList })) {
+            if ($pair.Unparseable) {
+                New-Finding -Severity 'error' -Path $page.Relative -Line $pair.TermLine `
+                    -Message 'this div.a-body could not be read as a question and its answer, so the entry was never compared with the FAQPage graph'
+                continue
+            }
             if ($pair.Term -eq '') { continue }
             if ($questions.Contains($pair.Term)) { continue }
             New-Finding -Severity 'error' -Path $page.Relative -Line $pair.TermLine `
