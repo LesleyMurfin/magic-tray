@@ -21,7 +21,9 @@
   <meta name="twitter:title" content="Help fund a Magic Mouse driver checked for Windows 10 and 11">
   <meta name="twitter:description" content="Magic Tray is free and stays free. Star the projects, test a device, or help pay for the Microsoft check on the driver.">
   <meta name="twitter:image" content="https://magictray.app/og.png">
-  <link rel="icon" href="screenshot-tray.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#0f0f14">
   <link rel="stylesheet" href="site.css">
   <meta name="application-name" content="Magic Tray">
   <script type="application/ld+json">
@@ -48,6 +50,9 @@
         "softwareVersion": "1.1.0",
         "url": "https://magictray.app/",
         "downloadUrl": "https://github.com/LesleyMurfin/magic-tray/releases/latest",
+        "sameAs": [
+          "https://github.com/LesleyMurfin/magic-tray"
+        ],
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@id": "https://magictray.app/#person" },
@@ -83,7 +88,7 @@
             "name": "Why does Windows warn me when I run Magic Tray?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Windows SmartScreen warns about newly published or unrecognized executable files that have not built reputation. The warning is a security and file-reputation signal for unsigned software. To ensure the file is authentic and untampered, download the official release from GitHub and verify its published SHA-256 checksum before running it. Every line of code is open source on GitHub."
+              "text": "Windows SmartScreen warns about newly published files it does not recognise. Check the release's published SHA-256 before you run it."
             }
           }
         ]
@@ -102,7 +107,7 @@
         "publisher": { "@id": "https://magictray.app/#person" },
         "breadcrumb": { "@id": "https://magictray.app/funding.html#breadcrumb" },
         "inLanguage": "en",
-        "dateModified": "2026-09-15"
+        "dateModified": "2026-09-21"
       },
       {
         "@type": "BreadcrumbList",
@@ -136,32 +141,63 @@
         <a href="battery.html">See my battery</a>
         <a href="devices.html">Which device?</a>
         <a href="drivers.html">Make it scroll</a>
-        <a href="keyboard.html">Keyboard battery</a>
-        <a href="magic-mouse-2024.html">The 2024 mouse</a>
-        <a href="funding.html" aria-current="page">Support</a>
         <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
       </nav>
     </div>
   </header>
 
   <div class="shell">
-    <article id="content" class="primary">
+    <main id="content" class="primary" tabindex="-1">
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · support</p>
         <h1>Help fund a Magic Mouse driver checked for Windows 10 and 11</h1>
-        <p class="lead">Magic Tray is free and always will be, and so is the driver. Nobody has paid for Microsoft's check on that driver, the software Windows uses to talk to your mouse.</p>
+        <p class="lead">Magic Tray and the driver are free. Nobody has paid for Microsoft's check on the driver.</p>
       </header>
 
-      <h2 id="goal">What would the money buy?</h2>
-      <p>Paying for Microsoft's check on the Magic Mouse driver removes the security warning when you install it, and removes the Windows startup setting you currently have to change to make the 2024 mouse scroll. It would work for everyone, not only donors. Magic Tray itself stays free regardless.</p>
+      <h2 id="goal">What the money buys</h2>
+      <p>Microsoft's check removes the security warning when you install the driver, and the Windows startup setting you must change to make the 2024 mouse scroll. Everyone gets that, not only donors.</p>
+      <p id="pay">No sponsor button yet: GitHub hasn't approved the page. Donations would pay for that check; nothing is held back if nobody donates.</p>
 
       <h2 id="help">Free ways to help</h2>
-      <p>Most people won't pay a penny, and these free actions help as much as money. Star Magic Tray and the 2024 mouse fix on GitHub. Tell us your Apple device works so it joins the tested list. Test a Magic Keyboard or a Magic Trackpad nobody has confirmed.</p>
+      <ul class="star-links">
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star Magic Tray <span class="repo">LesleyMurfin/magic-tray</span>
+          </a>
+        </li>
+        <li>
+          <a class="star-link" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
+            <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star the 2024 mouse fix <span class="repo">LesleyMurfin/magic-mouse-v3-windows-fix</span>
+          </a>
+        </li>
+      </ul>
+      <ul class="plain">
+        <li>Report that your device works, for the <a href="tested.html">tested list</a>.</li>
+        <li>Test a keyboard or trackpad nobody has confirmed.</li>
+      </ul>
 
       <h2 id="test-devices">Devices that need a tester</h2>
-      <p>Only three Apple devices have ever been confirmed by a real tester: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). Every Magic Keyboard and every Magic Trackpad should work, but nobody has confirmed one yet.</p>
-      <div class="table-scroll" tabindex="0">
+      <p>No Magic Keyboard and no Magic Trackpad has been confirmed yet.</p>
+      <div class="grid grid-2">
+        <figure class="photo pos-center">
+          <picture>
+            <source srcset="img/magic-trackpad-2010-aa-battery-tube.webp" type="image/webp">
+            <img src="img/magic-trackpad-2010-aa-battery-tube.jpg" width="1600" height="900" loading="lazy" decoding="async" alt="A Magic Trackpad from 2010. A round cap on the back edge unscrews to reach the AA batteries.">
+          </picture>
+        </figure>
+        <figure class="photo pos-bottom">
+          <picture>
+            <source srcset="img/magic-trackpad-2-rear-lightning.webp" type="image/webp">
+            <img src="img/magic-trackpad-2-rear-lightning.jpg" width="1600" height="1200" loading="lazy" decoding="async" alt="A rechargeable Magic Trackpad, seen from the front. A small port sits in the middle of the near edge.">
+          </picture>
+        </figure>
+      </div>
+      <p class="credit">Photos via Wikimedia Commons: © Raimond Spekking / CC BY-SA 4.0 (via Wikimedia Commons); Josh Kehn at English Wikipedia, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>.</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Trackpads that need a tester, scrollable table">
       <table>
+        <caption>Every Magic Trackpad nobody has confirmed yet</caption>
         <thead><tr><th>Trackpad</th><th>Code Windows shows</th></tr></thead>
         <tbody>
           <tr><td>Magic Trackpad, AA batteries</td><td><code>030E</code></td></tr>
@@ -170,42 +206,81 @@
         </tbody>
       </table>
       </div>
-      <p class="note"><a href="keyboard.html#test">Keyboards that need a tester</a></p>
+      <p class="note"><a href="keyboard.html#test">Keyboards need testers too</a></p>
       <p class="cta"><a class="primary" href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">Send a test report</a></p>
 
-      <h2 id="pay">Paid ways to help</h2>
-      <p>Magic Tray has no sponsor button yet. GitHub hasn't approved the page.</p>
-
       <h2 id="faq">Questions</h2>
-      <dl class="faq">
-        <dt>Is Magic Tray free?</dt>
-        <dd>Yes. Magic Tray costs nothing and always will. It is MIT licensed, every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, and there is no subscription, no trial and no account. Money donated here pays for Microsoft's check on the Magic Mouse driver, and nothing is held back if nobody ever donates a penny.</dd>
-        <dt>Why does Windows warn me when I run Magic Tray?</dt>
-        <dd>Windows SmartScreen warns about newly published or unrecognized executable files that have not built reputation. The warning is a security and file-reputation signal for unsigned software. To ensure the file is authentic and untampered, download the official release from <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">GitHub</a> and verify its published SHA-256 checksum before running it. Every line of code is open source on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>.</dd>
-      </dl>
-    </article>
+      <div class="accordion two-col">
+        <details>
+          <summary>Is Magic Tray free?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Yes. Magic Tray costs nothing and always will. It is MIT licensed, every line is public on <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>, and there is no subscription, no trial and no account. Money donated here pays for Microsoft's check on the Magic Mouse driver, and nothing is held back if nobody ever donates a penny.</p></div>
+        </details>
+        <details>
+          <summary>Why does Windows warn me when I run Magic Tray?<svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="a-body"><p>Windows SmartScreen warns about newly published files it does not recognise. Check the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">release</a>'s published SHA-256 before you run it.</p></div>
+        </details>
+      </div>
+    </main>
 
     <aside class="rail">
       <div class="rail-card">
-        <p class="cta">
-          <a class="primary" href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-          <a class="ghost" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">Star the 2024 fix</a>
-        </p>
+        <h2>Costs nothing</h2>
+        <ul class="star-links">
+          <li>
+            <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+              <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+              Star Magic Tray
+            </a>
+          </li>
+          <li>
+            <a class="star-link" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
+              <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+              Star the 2024 fix
+            </a>
+          </li>
+        </ul>
       </div>
     </aside>
   </div>
 
   <footer class="site-footer">
     <div class="bar">
+      <nav aria-label="All pages">
+        <p>
+          <a href="./">Home</a>
+          ·
+          <a href="battery.html">See my battery</a>
+          ·
+          <a href="devices.html">Which device?</a>
+          ·
+          <a href="drivers.html">Make it scroll</a>
+          ·
+          <a href="keyboard.html">Keyboard battery</a>
+          ·
+          <a href="trackpad.html">Trackpad</a>
+          ·
+          <a href="magic-mouse-2024.html">The 2024 mouse</a>
+          ·
+          <a href="tested.html">Tested devices</a>
+          ·
+          <a href="funding.html" aria-current="page">Support</a>
+          ·
+          <a href="https://github.com/LesleyMurfin/magic-tray">GitHub</a>
+        </p>
+      </nav>
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
+      <div class="star-links">
+        <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star Magic Tray
+        </a>
+      </div>
       <p>
-        <a href="https://github.com/LesleyMurfin/magic-tray">Star Magic Tray</a>
-        ·
-        <a href="tested.html">Hardware reports</a>
-        ·
         <a href="llms.txt">llms.txt</a>
+        ·
+        <a href="https://drivers.magictray.app/">Driver downloads</a>
       </p>
-      <p class="updated">Last updated <time datetime="2026-09-15">15 September 2026</time></p>
+      <p class="updated">Last updated <time datetime="2026-09-21">21 September 2026</time></p>
     </div>
   </footer>
 </body>
