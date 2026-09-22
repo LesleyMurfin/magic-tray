@@ -126,9 +126,10 @@ public class FindingGateTests
         gate.Confirm(Raw(fault), T0);
         gate.Confirm(Raw(fault), T0 + Hold);
 
-        // The menu row must not flicker between the fault and "No problems
-        // found" from one open to the next, so a confirmed pair stays confirmed
-        // for as long as it keeps appearing - including on a burst refresh.
+        // The menu row must not flicker between the fault and "No driver or
+        // connection problems found" from one open to the next, so a confirmed
+        // pair stays confirmed for as long as it keeps appearing - including on
+        // a burst refresh.
         var again = gate.Confirm(Raw(fault), T0 + Hold + TimeSpan.FromMilliseconds(200));
         Assert.Equal(new[] { fault }, again.Confirmed);
         Assert.Empty(again.Pending);

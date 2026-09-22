@@ -680,7 +680,7 @@ internal sealed class TrayApp : IDisposable
     IReadOnlyList<RepairFinding> _findings = Array.Empty<RepairFinding>();
     // Raw findings the gate is still holding. Never shown as a fault and never
     // toasted, but an explicit user-initiated check reports them rather than
-    // answering "No problems found" while a real fault is mid-confirmation.
+    // answering with the all-clear row while a real fault is mid-confirmation.
     IReadOnlyList<RepairFinding> _pendingFindings = Array.Empty<RepairFinding>();
     // The snapshots the current _findings were planned from, so the device rows
     // can state per-capability health without a second read.
@@ -744,7 +744,7 @@ internal sealed class TrayApp : IDisposable
     // Written by the mouse driver package's multitouch watcher. Magic Tray only
     // ever names this path in guidance: parsing it belongs to DeviceDiagReader,
     // and re-implementing the watcher is an explicit non-goal
-    // (docs/ENABLE-DISABLE.md:93-97).
+    // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
     const string MultitouchWatcherLogPath = @"C:\ProgramData\MagicMouseDriver\auto-f1-watcher.log";
 
     internal TrayApp(Config config)
@@ -2818,8 +2818,8 @@ internal sealed class TrayApp : IDisposable
     /// language before anything is changed; Cancel stops the walk.
     ///
     /// This is the answer to a direct user question - the top-of-menu row and
-    /// "Check for problems now" both land here - so it must never say "No problems
-    /// found" while the gate is still holding one. It must not bypass the gate
+    /// "Check for problems now" both land here - so it must never report an
+    /// all-clear while the gate is still holding one. It must not bypass the gate
     /// either: an unconfirmed fault is offered a repair that elevates and runs
     /// pnputil /restart-device, and during a driver install that fights the
     /// install. Asking does not make a 900 ms fault real. So the honest answer is
@@ -2846,7 +2846,10 @@ internal sealed class TrayApp : IDisposable
                     + "reported if it is still there.");
                 return;
             }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+            // The same words as the top-of-menu row, taken from the row's own
+            // label, so the answer to "Check for problems now" cannot claim a
+            // wider all-clear than the row directly above it.
+            ToastNotifier.Show(TrayMenu.ProductName, $"{RepairPlanner.MenuLabel(_findings)}.");
             return;
         }
 
@@ -2871,7 +2874,8 @@ internal sealed class TrayApp : IDisposable
         // Guidance only. Nothing here is elevated, nothing is written to the mouse, and
         // the multitouch enable Feature report is never sent: the mouse driver package
         // owns that, and a second implementation in Magic Tray is an explicit non-goal
-        // (docs/ENABLE-DISABLE.md:93-97). PlanOne does not raise this action today - the
+        // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
+        // PlanOne does not raise this action today - the
         // symptom is user-asserted from the device row - but a finding carrying it must
         // still reach real help instead of falling through the switch below.
         if (finding.Action == RepairAction.RecommendMultitouchWatcher)
@@ -3152,7 +3156,8 @@ internal sealed class TrayApp : IDisposable
     // it receives the Apple multitouch enable Feature report, which it forgets on power
     // cycle and reconnect (docs/DESIGN-trackpad-tap.md:54). Only the mouse driver package
     // sends it. Magic Tray must not send it and must not re-implement the package's
-    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md:93-97) - so this
+    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md, "Magic Tray
+    // does not send F1, and must not start") - so this
     // offers the power cycle, names the watcher, and stops there. Nothing here is elevated.
     void ShowScrollGuidance(string pid)
     {

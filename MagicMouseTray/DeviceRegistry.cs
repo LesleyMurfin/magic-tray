@@ -1,4 +1,5 @@
-// Discovers all connected Apple HID battery devices by scanning the HID device interface list.
+// Discovers connected Apple HID battery interfaces by scanning the HID device interface list.
+// One IBatteryDevice per matched interface path, so one physical device can yield several.
 // Returns a fresh snapshot per call — no caching. AdaptivePoller drives the poll cadence.
 
 namespace MagicMouseTray;
@@ -6,7 +7,13 @@ namespace MagicMouseTray;
 internal static class DeviceRegistry
 {
     /// <summary>
-    /// Scans all present HID interfaces and returns one IBatteryDevice per matched Apple device.
+    /// Scans all present HID interfaces and returns one IBatteryDevice per matched Apple
+    /// interface PATH, not one per physical device. The multiplicity is deliberate: a single
+    /// mouse exposes several interfaces that pass the same gate and only some of them answer
+    /// a battery read, so every candidate is handed to AdaptivePoller, which groups by
+    /// DeviceName and takes the FIRST interface in the group that answers with a real
+    /// percentage, ranking only the failure sentinels when none does. Only identical path
+    /// strings collapse.
     /// Matching priority: mouse VID/PID checked first, then keyboard VID/PID.
     /// </summary>
     public static IReadOnlyList<IBatteryDevice> Discover(bool enableThirdParty = false)
@@ -16,76 +23,58 @@ internal static class DeviceRegistry
     internal static IReadOnlyList<IBatteryDevice> DiscoverFromPaths(
         IEnumerable<string> paths, bool enableThirdParty = false)
     {
-        var matched = new List<(string Path, IBatteryDevice Device)>();
+        var results = new List<IBatteryDevice>();
+
+        // Collapse only genuinely identical interface paths. Windows enumerated the same
+        // USB col02 path twice in one cycle (live log 2026-09-16: two identical
+        // DISCOVER_SKIP_DUPLICATE lines for ...&mi_01&col02#a&16288706&0&0001), so the
+        // same path string must not produce two devices.
+        //
+        // Everything else survives. One physical mouse exposes several distinct live col02
+        // interfaces: the discovery capture of 2026-09-16 listed two Bluetooth col02 paths
+        // for one Magic Mouse 2024 plus a leftover USB col02 path after a USB-C charge, and
+        // only some of them answer HidD_GetInputReport with a real level; the rest return
+        // [90 00 00]. (REPAIR_SNAPSHOT's bt=/usb= counters are not evidence for this: bt= is
+        // the BTHENUM registry instance count and usb= the USB phantom count - see
+        // DeviceSnapshotReader - and neither one is collection-aware.)
+        //
+        // Discovery cannot tell which interface is which without reading, so it keeps them
+        // all and AdaptivePoller picks the winner: it groups by DeviceName and returns the
+        // FIRST interface that answers with a real percentage, ranking only the two failure
+        // sentinels when none does, -2 over -1 (AdaptivePoller.BestReading). It stops there,
+        // and also - when an interface wedges - at the first read that times out, so the
+        // amplification costs at most one read budget per group per tick. Dropping candidates
+        // here ran before that scan and could leave only an interface that never reports.
+        //
+        // There is deliberately no transport preference and no one-device-per-PID rule. The
+        // false 0% from a charge-cable phantom that those rules were written for is rejected
+        // at parse level instead: every IBatteryDevice read path gates on
+        // MouseBatteryDevice.IsRealLevel, and each logs the rejected zero under its own marker
+        // (MOUSE_BATTERY_ZERO, KB_BATTERY_ZERO, LOGI_BATTERY_ZERO) rather than a blocked-read
+        // marker. All three implementations need that floor because a real 0 outranks -2 and -1
+        // in AdaptivePoller.BestReading and ends its scan, so without it a dead interface
+        // answering zero would beat the live interface's failure sentinel.
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {
             var device = TryClassify(path, enableThirdParty);
-            if (device is not null)
-                matched.Add((path, device));
-        }
-
-        // One entry per physical device. After a USB-C charge Windows leaves phantom
-        // HID\VID_05AC&PID_xxxx&MI_yy&COLzz interfaces behind (live: all CM_PROB_PHANTOM);
-        // they still answer HidD_GetInputReport, with a zero percent byte, so the same
-        // Magic Mouse was listed twice and the dead cable interface reported a false 0%.
-        // Prefer the live Bluetooth interface; keep USB only when it is the sole transport
-        // for that PID (a genuinely cabled mouse must still report battery).
-        var results = new List<IBatteryDevice>(matched.Count);
-        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, device) in matched)
-        {
-            var pid = ExtractPid(path);
-            bool bluetooth = IsBluetoothTransportPath(path);
-
-            if (!bluetooth && IsUsbTransportPath(path) && HasBluetoothTransport(matched, pid))
-            {
-                Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport=usb path={path}");
+            if (device is null)
                 continue;
-            }
 
-            if (!claimed.Add(pid))
+            // Renamed from DISCOVER_SKIP_DUPLICATE: that marker used to cover skipped
+            // transports and extra interfaces as well, which is no longer what happens.
+            // This one fires only for a repeated path string, and only below TryClassify so
+            // that only a path that really classified as an Apple battery interface is
+            // reported - a repeated dock or non-Apple keyboard path writes nothing.
+            if (!seenPaths.Add(path))
             {
-                Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport={(bluetooth ? "bt" : "usb")} path={path}");
+                Logger.Log($"DISCOVER_SKIP_SAME_PATH pid={ExtractPid(path)} path={path}");
                 continue;
             }
 
             results.Add(device);
         }
         return results;
-    }
-
-    static bool HasBluetoothTransport(List<(string Path, IBatteryDevice Device)> matched, string pid)
-    {
-        foreach (var (path, _) in matched)
-        {
-            if (IsBluetoothTransportPath(path) &&
-                ExtractPid(path).Equals(pid, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    // A Bluetooth / HID-over-GATT interface carries the BT service GUID plus the
-    // "_vid&<bt-vid>_pid&<pid>" form, e.g.
-    // \\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col02#...
-    // 0001004C = Bluetooth SIG Apple vendor id, 000205AC = USB-IF Apple vendor id over BT.
-    static readonly string[] BluetoothVidForms = ["_vid&0001004c_", "_vid&000205ac_"];
-
-    internal static bool IsBluetoothTransportPath(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return false;
-        if (!path.Contains("_pid&", StringComparison.OrdinalIgnoreCase)) return false;
-        return Array.Exists(BluetoothVidForms,
-            form => path.Contains(form, StringComparison.OrdinalIgnoreCase));
-    }
-
-    // A USB interface carries the "vid_xxxx&pid_yyyy" form (plus mi_/col for the
-    // charge-cable phantoms), e.g. \\?\hid#vid_05ac&pid_0323&mi_01&col02#...
-    internal static bool IsUsbTransportPath(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return false;
-        return path.Contains("vid_", StringComparison.OrdinalIgnoreCase)
-            && path.Contains("pid_", StringComparison.OrdinalIgnoreCase);
     }
 
     // iPhone Hands-Free / HFP exposes a WMI battery (live 60%) that is not the mouse.

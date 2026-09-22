@@ -74,6 +74,31 @@ internal static class BatteryAlertPolicy
         {
             if (aa)
             {
+                // The 0 in this pattern is unreachable from the shipping writer.
+                // lastGoodPct is only ever TrayApp.ApplyBatteryAlert's "if (pct >= 0)
+                // _lastGoodPct[name] = pct", pct comes from AdaptivePoller.BestReading,
+                // and BestReading returns a device value only when it is >= 0 - which
+                // every IBatteryDevice now floors at MouseBatteryDevice.MinValidPercent
+                // (1). So in the app this value is 1..100, or int.MinValue for a name
+                // never read. The literal stays as a guard, not as live policy: Evaluate
+                // is pure and has no floor of its own, so a 0 handed in by a caller that
+                // did not floor must still read as a dead cell rather than as silence.
+                //
+                // The trade that floor makes is recorded here because this is the arm
+                // that pays it. A Magic Keyboard is the one AA-powered device that can
+                // genuinely reach a low cell through this read path, and flooring at 1
+                // makes a genuinely flat cell and a dead interface indistinguishable in
+                // a single read: a keyboard that answers 0 is now KB_BATTERY_ZERO and
+                // -1, so it no longer opens the AA-death modal on the spot the way a
+                // 0 percent did. Death now fires off a 1 - the last rung a draining
+                // cell still reports - either while connected (the pct <= 1 arm below)
+                // or on the disconnect that follows (this arm, on a last good 1). What
+                // is given up is the cell that goes from above 1 straight to 0: that
+                // reads as a failed read and stays silent. Suppressing a false 0%
+                // alert on a healthy keyboard, whose leftover USB col02 sits in the
+                // same BestReading group and answers 0 (the floor note on
+                // KeyboardBatteryDevice.GetBatteryPercent), is worth more than that
+                // one-poll head start, so that is the accepted default.
                 if (lastGoodPct is 0 or 1 && !fired.Contains(EventDeath))
                     return Modal(title, AaDeathBody(name), EventDeath);
                 return None();

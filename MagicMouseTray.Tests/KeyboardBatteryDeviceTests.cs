@@ -62,4 +62,23 @@ public class KeyboardBatteryDeviceTests
         Assert.Equal("0239", found[0].Pid);
         Assert.Equal("Apple Wireless Keyboard (2011)", found[0].DeviceName);
     }
+
+    // Pins the two decisions the col02 Feature byte carries, at their boundaries.
+    // raw=0 and raw=101 kill relaxing the gate to `raw is >= 0 and <= 100` (the bound this
+    // path shipped with, which rejects nothing at all since fbuf[1] is a byte); raw=1 and
+    // raw=100 kill over-tightening it. The expected -1 kills the -2 sentinel swap: -2 is
+    // "battery report not exposed" and is what opens the elevated SDP-cache offer
+    // (TrayMenu.ShowFixKeyboard) and RepairPlanner rule 2d, so a read that succeeded must
+    // never produce it. The marker kills folding a rejected value into KB_FEATURE_BLOCKED,
+    // which would claim the SDP patch is missing on a keyboard whose Feature read worked.
+    [Theory]
+    [InlineData(0, -1, "KB_BATTERY_ZERO")]
+    [InlineData(1, 1, "KB_BATTERY_OK")]
+    [InlineData(100, 100, "KB_BATTERY_OK")]
+    [InlineData(101, -1, "KB_BATTERY_BAD")]
+    public void ClassifyFeatureByte_FloorIsOne_AndRejectionsAreMinusOne(
+        byte raw, int expectedPct, string expectedMarker)
+    {
+        Assert.Equal((expectedPct, expectedMarker), KeyboardBatteryDevice.ClassifyFeatureByte(raw));
+    }
 }

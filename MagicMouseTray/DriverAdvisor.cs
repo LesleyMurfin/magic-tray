@@ -433,8 +433,8 @@ internal static class DriverAdvisor
     //                    10.0.26100.8972, stack \Driver\kbdclass,
     //                    \Driver\kbdhid, \Driver\HidBth; filters EMPTY
     //   ...&COL02/03   : hidserv.inf, Microsoft, stack \Driver\HidBth; the
-    //                    battery Feature cap lives on COL02
-    //                    (DeviceRegistry.cs:138-140)
+    //                    battery Feature cap lives on COL02 (the col02 gate
+    //                    in DeviceRegistry.TryClassify)
     // So the honest line for that row is affirmative and specific, and this is
     // where it is written.
     //
@@ -527,8 +527,8 @@ internal static class DriverAdvisor
     // "Present and problem-free" is the whole claim because it is the whole of
     // what was measured. StockDriverReader.NodeOk is
     // problem == 0 && (status & DN_HAS_PROBLEM) == 0 and never reads DN_STARTED
-    // (StockDriverReader.cs:442-472, where that omission is recorded as a
-    // measured decision): the reference PC's BTHENUM {00001200} SDP parent
+    // (that omission is recorded as a measured decision in NodeOk's own
+    // comment): the reference PC's BTHENUM {00001200} SDP parent
     // counts toward AllNodesOk=true on status word 0x01802000 with DN_STARTED
     // CLEAR, because that profile node carries no function driver to start
     // while the keyboard types perfectly. So neither branch may say "started" -
@@ -551,8 +551,8 @@ internal static class DriverAdvisor
     // Three states, three sentences, and the Unknown one is the reason this
     // function exists: it must not read as "the patch is missing". The offer
     // it points NotApplied at is the existing orange "Fix battery reads" item
-    // on the device row (TrayApp.cs:1493-1496), which is still gated on the
-    // -2 the keyboard reports until the patch lands.
+    // TrayApp builds on the device row under TrayMenu.ShowFixKeyboard, which
+    // is still gated on the -2 the keyboard reports until the patch lands.
     //
     // The Applied branch also has to cover one real, non-broken state that
     // looks like a failure: patch present in CachedServices but the HID read
@@ -719,9 +719,9 @@ internal static class DriverAdvisor
     // identify one. Mirrors TrayMenu's selected-radio mapping so the advice line
     // and the checked radio always agree:
     //   v3:    PatchedKmdf -> KMDF, PathAPatched -> Patched Apple,
-    //          StockKmdf -> Stock Windows (TrayApp.cs:120-125)
+    //          StockKmdf -> Stock Windows (TrayMenu.V3CheckedDriverRadio)
     //   v1/v2: Ok -> Boot Camp, NotInstalled -> Stock Windows
-    //          (TrayApp.cs:139-143)
+    //          (TrayMenu.V1V2CheckedDriverRadio)
     // Every other DriverStatus member is deliberately null: NotBound (package
     // present, nothing bound), Error (transient registry failure),
     // UnknownAppleMouse (PID outside the catalog), plus any status belonging to
