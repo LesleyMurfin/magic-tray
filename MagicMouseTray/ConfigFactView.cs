@@ -17,7 +17,7 @@ namespace MagicMouseTray;
 // ---------------------------------------------------------------
 // A RepairPlanner finding is a measured fault on the device in front of the
 // user right now: the pointer child is missing, the filter is bound but
-// stopped, two filters are registered (RepairPlanner.cs:5-17). A ConfigFact is
+// stopped, two filters are registered (RepairPlanner.RepairProblem). A ConfigFact is
 // a property of the PC that at most EXPLAINS such a fault - Test Mode off does
 // not break anything by itself, it only means Windows will refuse to load a
 // self-signed driver if one is there. So the device fault is the more specific,
@@ -101,8 +101,9 @@ internal static class ConfigFactView
         if (blocking > 0)
         {
             // Only the two signing-policy facts can reach Blocking today
-            // (SystemConfigChecker.cs:255, 300), so "settings" is accurate; the
-            // singular branch prints the title and needs no such assumption.
+            // (SystemConfigChecker.TestModeFact and MemoryIntegrityFact, whose
+            // severity comes from SigningSeverity), so "settings" is accurate;
+            // the singular branch prints the title and needs no such assumption.
             return blocking == 1
                 ? $"{SectionPrefix}: {Ordered(facts)[0].Title}"
                 : $"{SectionPrefix}: {blocking} settings on this PC are blocking this driver";
@@ -187,9 +188,11 @@ internal static class ConfigFactView
             "The driver package. Magic Tray offers the install from its own driver step, and "
             + "nothing is installed until you confirm it there.",
 
-        // Fault B in docs/ENABLE-DISABLE.md:93-99. The Apple multitouch enable
+        // Fault B in docs/ENABLE-DISABLE.md, "Which dead-wheel fault is this -
+        // read the stack before you chase filters". The Apple multitouch enable
         // FEATURE report is owned by the driver package's watcher, and a second
-        // sender inside Magic Tray is an explicit NON-GOAL (RepairPlanner.cs:28-34).
+        // sender inside Magic Tray is an explicit NON-GOAL
+        // (RepairPlanner.RepairAction.RecommendMultitouchWatcher).
         // So this line names the package as the owner and must never grow into
         // an instruction for the tray to send the report itself.
         SystemConfigChecker.WatcherFactId =>

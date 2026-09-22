@@ -27,8 +27,9 @@ internal enum RepairAction
     RemoveStaleFilter,
     // Guidance only. The Apple multi-touch enable FEATURE report {F1,02,01} is
     // owned by the driver package's own scripts (mm-f1-once.ps1, and the
-    // MmAutoF1Watcher scheduled task around it); docs/ENABLE-DISABLE.md:93-97
-    // names a second implementation in Magic Tray an explicit NON-GOAL. So this
+    // MmAutoF1Watcher scheduled task around it); docs/ENABLE-DISABLE.md,
+    // "Magic Tray does not send F1, and must not start", names a second
+    // implementation in Magic Tray an explicit NON-GOAL. So this
     // action never sends F1, never elevates and never runs a script: it tells
     // the user which component switches multitouch back on.
     RecommendMultitouchWatcher,

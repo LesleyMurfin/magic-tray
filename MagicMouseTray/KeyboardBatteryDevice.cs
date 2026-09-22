@@ -192,8 +192,8 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     //
     // A read that SUCCEEDED but did not answer with a level is -1, never -2. -2 means "the
     // battery report is not exposed", and it is the only value that opens the elevated SDP-cache
-    // patch offer (TrayMenu.ShowFixKeyboard, TrayApp.cs:271-272) and RepairPlanner rule 2d
-    // (RepairPlanner.cs:345-347). On this line the Feature cap is present and HidD_GetFeature
+    // patch offer (TrayMenu.ShowFixKeyboard, TrayApp.cs:271-272) and RepairPlanner.PlanOne rule 2d.
+    // On this line the Feature cap is present and HidD_GetFeature
     // returned true, so the pairing record is demonstrably intact: a phantom col02 answering 0
     // must not buy a repair row that tells the user to re-patch a working keyboard. That is the
     // same answer the mouse's unified-Feature path gives (MouseBatteryDevice.cs:280-294).

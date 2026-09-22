@@ -23,7 +23,8 @@ internal static class DeviceDiagReader
 
     // Bluetooth HID-profile transport GUID. A live BT HID child key is
     //   {00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01
-    // (docs/ENABLE-DISABLE.md:46 shows the same device-key form under BTHENUM;
+    // (docs/ENABLE-DISABLE.md, "Two scroll drivers registered on one mouse",
+    // shows the same device-key form under BTHENUM in its worked example;
     // the Enum\HID children append a collection suffix only when the device
     // splits its collections - see ClassifyPointerKey for the v1 shape, which
     // has exactly one collection and therefore no suffix).
@@ -284,8 +285,9 @@ internal static class DeviceDiagReader
 
     // What the driver package's multitouch watcher looks like from outside.
     // The tray never sends F1 and never reimplements the watcher
-    // (docs/ENABLE-DISABLE.md:93-97 makes a second sender an explicit
-    // non-goal); it may only READ this state and recommend.
+    // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not
+    // start", makes a second sender an explicit non-goal); it may only READ
+    // this state and recommend.
     //
     // Installed       - mm-auto-f1-watcher.ps1 present in C:\ProgramData\
     //                   MagicMouseDriver\, where mm-auto-f1-watcher-install.ps1

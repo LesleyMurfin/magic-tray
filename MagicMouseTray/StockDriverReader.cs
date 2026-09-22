@@ -101,9 +101,9 @@ internal static class StockDriverReader
     const string ClassBase = @"SYSTEM\CurrentControlSet\Control\Class";
 
     // Bluetooth HID-profile transport GUID, same constant and same reason as
-    // DeviceDiagReader.cs:30 (private there, so not shareable without editing
-    // that file). A live BT HID child key carries it; the USB charge-cable
-    // phantoms do not.
+    // DeviceDiagReader.BtTransportGuid (private there, so not shareable without
+    // editing that file). A live BT HID child key carries it; the USB
+    // charge-cable phantoms do not.
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
 
     // The Bluetooth transport and enumerator services. HidBth is the BT HID
@@ -115,8 +115,9 @@ internal static class StockDriverReader
         ["HidBth", "BthEnum", "BthPort", "BTHUSB", "BthLEEnum", "BthMini"];
 
     // NORMAL = present devices only, same reason as DeviceStackReader.cs:41-44
-    // and DeviceDiagReader.cs:32-35: a charge-cable phantom or a stale pairing
-    // record must never be allowed to answer a question about the live stack.
+    // and DeviceDiagReader.CM_LOCATE_DEVNODE_NORMAL: a charge-cable phantom or
+    // a stale pairing record must never be allowed to answer a question about
+    // the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
     const uint CR_SUCCESS = 0x00000000;
     const uint CR_NO_SUCH_DEVNODE = 0x0000000D;
@@ -540,8 +541,8 @@ internal static class StockDriverReader
             + $"version={info.Version ?? "none"} nodes={nodes.Count} resolved={resolved}";
     }
 
-    // devpkey.h line 156 (Windows SDK), same key DeviceStackReader.cs:29-37
-    // declares:
+    // devpkey.h line 156 (Windows SDK), the same key
+    // DeviceStackReader.DevpkeyDeviceStack declares:
     //   DEFINE_DEVPROPKEY(DEVPKEY_Device_Stack,
     //     0x540b947e, 0x8b40, 0x45bc, 0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2,
     //     14);   // DEVPROP_TYPE_STRING_LIST

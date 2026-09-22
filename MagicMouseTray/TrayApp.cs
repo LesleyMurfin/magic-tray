@@ -744,7 +744,7 @@ internal sealed class TrayApp : IDisposable
     // Written by the mouse driver package's multitouch watcher. Magic Tray only
     // ever names this path in guidance: parsing it belongs to DeviceDiagReader,
     // and re-implementing the watcher is an explicit non-goal
-    // (docs/ENABLE-DISABLE.md:93-97).
+    // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
     const string MultitouchWatcherLogPath = @"C:\ProgramData\MagicMouseDriver\auto-f1-watcher.log";
 
     internal TrayApp(Config config)
@@ -2874,7 +2874,8 @@ internal sealed class TrayApp : IDisposable
         // Guidance only. Nothing here is elevated, nothing is written to the mouse, and
         // the multitouch enable Feature report is never sent: the mouse driver package
         // owns that, and a second implementation in Magic Tray is an explicit non-goal
-        // (docs/ENABLE-DISABLE.md:93-97). PlanOne does not raise this action today - the
+        // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
+        // PlanOne does not raise this action today - the
         // symptom is user-asserted from the device row - but a finding carrying it must
         // still reach real help instead of falling through the switch below.
         if (finding.Action == RepairAction.RecommendMultitouchWatcher)
@@ -3155,7 +3156,8 @@ internal sealed class TrayApp : IDisposable
     // it receives the Apple multitouch enable Feature report, which it forgets on power
     // cycle and reconnect (docs/DESIGN-trackpad-tap.md:54). Only the mouse driver package
     // sends it. Magic Tray must not send it and must not re-implement the package's
-    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md:93-97) - so this
+    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md, "Magic Tray
+    // does not send F1, and must not start") - so this
     // offers the power cycle, names the watcher, and stops there. Nothing here is elevated.
     void ShowScrollGuidance(string pid)
     {
