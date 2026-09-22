@@ -260,5 +260,82 @@ public class MouseBatteryDeviceTests
         Assert.Equal(!bluetooth && path.Length > 0, DeviceRegistry.IsUsbTransportPath(path));
     }
 
+    // Live BT stack shape for a Magic Mouse v2: a pointer collection and a vendor collection
+    // on the same PID. Nothing in either PATH says which of them answers a battery read.
+    const string Bt0269Col01 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col01#a&1f2e3d4c&0&0000";
+    const string Bt0269Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col02#a&1f2e3d4c&0&0001";
+    const string Usb0269Col02 = @"\\?\hid#vid_05ac&pid_0269&mi_01&col02#a&16288706&0&0001";
 
+    // Regression for issue #124: one tester with a Magic Mouse v2 reported that Magic Tray
+    // finds no battery while Apple's driver is bound. Discovery used to keep the first
+    // interface per PID and discard the rest, so if Windows enumerated the pointer
+    // collection first the other collection was thrown away and no read could ever reach
+    // it. The tray still lists ONE mouse, so one device leaves discovery - but it now
+    // carries every collection of that mouse as an ordered read candidate.
+    [Fact]
+    public void Discover_V2_KeepsAllCollectionsOfOneMouseAsCandidates()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV2, mouse.Kind);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Bt0269Col01, mouse.DevicePath);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // Candidates are the live device's own collections, never resurrected charge-cable
+    // phantoms: USB still loses to Bluetooth for the same PID, and the dropped USB path
+    // does not come back as a candidate.
+    [Fact]
+    public void Discover_V2_UsbPhantom_IsNotKeptAsCandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02, Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // A genuinely cabled mouse has no Bluetooth interface and must still be discovered.
+    [Fact]
+    public void Discover_V2_UsbOnly_IsStillOneDevice()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Usb0269Col02, mouse.DevicePath);
+    }
+
+    // The v3 gate is untouched by the candidate rule: COL01 is the pointer collection and is
+    // rejected at classify time, so it can never become a read candidate.
+    [Fact]
+    public void Discover_0323_Col01_IsNeverACandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0323Col01, Bt0323Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV3, mouse.Kind);
+        Assert.Equal(new[] { Bt0323Col02 }, mouse.CandidatePaths);
+    }
+
+    // Keyboards keep the old rule - col02 only, one device per PID. The candidate list is a
+    // mouse-only answer to #124; a keyboard's battery channel is already known to be col02.
+    [Fact]
+    public void Discover_Keyboard_IsUnchanged_OneDevicePerPid()
+    {
+        const string kbdCol01 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col01#a&2b3c4d5e&0&0000";
+        const string kbdCol02 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col02#a&2b3c4d5e&0&0001";
+        const string kbdCol03 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col03#a&2b3c4d5e&0&0002";
+
+        var found = DeviceRegistry.DiscoverFromPaths([kbdCol01, kbdCol02, kbdCol03]);
+        Assert.Single(found);
+        Assert.Equal(DeviceKind.MagicKeyboard, found[0].Kind);
+        Assert.Equal("0239", found[0].Pid);
+    }
 }

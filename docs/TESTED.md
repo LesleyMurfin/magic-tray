@@ -4,7 +4,7 @@ This file is **who tested what**. It is not the device catalog.
 
 ## Help us test
 
-Only **three** devices have ever been confirmed by a tester. Everything else in the catalog should work. Nobody has confirmed it yet.
+Only **three** devices have ever been confirmed by a tester. A fourth, the Magic Mouse v2 `0269`, has a single field report covering part of the picture ([#124](https://github.com/LesleyMurfin/magic-tray/issues/124)); it is in the reports table below, it is a report rather than a confirmation, and half of it is still an open question. Everything else in the catalog should work. Nobody has confirmed it yet.
 
 Got an Apple mouse, keyboard or trackpad? [Send a test report](https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md). It's a short table, and "it didn't work" is just as useful as "it worked".
 
@@ -55,7 +55,7 @@ Open a PR that adds **one row**. Sign the commit (`git commit -s`).
 | Driver | badge text, or `n/a` |
 | SDP | `patched` / `unpatched` / `n/a` |
 
-One row per (PID, transport, Magic Tray version).
+One row per (PID, transport, Magic Tray version, driver). Tried the device on more than one driver? Send one row per driver, because battery and scroll can differ between them.
 
 ## Reports
 
@@ -64,3 +64,7 @@ One row per (PID, transport, Magic Tray version).
 | Magic Mouse 2024 (USB-C, v3) | `0323` | Bluetooth | 1.1.0 | Windows 11 | ok (30%) | KMDF | n/a | LesleyMurfin | 2026-09-02 | Live tray |
 | Magic Mouse v1 | `030D` | Bluetooth | 1.1.0 | Windows 11 | ok (100%) | Boot Camp | n/a | LesleyMurfin | 2026-09-01 | Live tray; unified Feature 0x47 after poll |
 | Apple Wireless Keyboard (2011) | `0239` | Bluetooth | 1.1.0 | Windows 11 | ok (16%) | n/a | patched | LesleyMurfin | 2026-09-02 | Live tray |
+| Magic Mouse v2 | `0269` | Bluetooth | not stated | not stated | no reading | Boot Camp | n/a | @centralcaetite | 2026-09-07 | Reported in [#124](https://github.com/LesleyMurfin/magic-tray/issues/124): scroll works on Apple's driver, tray found no battery. Taken before the battery-discovery fix, so the cause is open |
+| Magic Mouse v2 | `0269` | Bluetooth | not stated | not stated | ok (percent not stated) | Stock | n/a | @centralcaetite | 2026-09-07 | Same report: percent shows on stock Windows, no scrolling at all |
+
+The two `0269` rows are a **report, not a confirmation**. They cover which driver was bound, whether the wheel scrolled and whether a percent appeared. They do not cover the percent itself, the Magic Tray version or the Windows version. They also predate a fix on this branch: Magic Tray's device discovery kept only one HID interface per device, so a mouse whose battery lives on a second interface could be reported as having no battery at all. That fault alone could produce the Boot Camp row, so nothing here says Apple's driver costs a v2 its percent. A `0269` report on the next version, on each driver, is what would settle it. Nothing here is copied to the Apple Wireless Mouse `0310`, which still has no report at all.

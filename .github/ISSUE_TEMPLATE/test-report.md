@@ -8,7 +8,7 @@ assignees: ''
 
 Thanks for testing. Only three devices have ever been confirmed by a tester, so this really helps.
 
-Fill in the table. Skip any row that isn't your device. Guesses are worse than blanks.
+Fill in the tables. Skip any row that isn't your device. Guesses are worse than blanks.
 
 Magic Tray shows **nothing at all** for your device? Use the [missing device form](https://github.com/LesleyMurfin/magic-tray/issues/new?template=missing-device.md) instead.
 
@@ -24,8 +24,17 @@ Magic Tray shows **nothing at all** for your device? Use the [missing device for
 | Did a battery percent appear, and what did it say? | |
 | **Keyboards:** percent before **Fix battery reads** | |
 | **Keyboards:** percent after **Fix battery reads** | |
-| **Mice:** does scrolling work? | yes / no |
 | **Mice:** driver name in the tray menu | KMDF / Boot Camp / Stock / Patched Apple / Not bound |
+| **Mice:** does scrolling work on that driver? | yes / no |
+
+**Mice: did you try more than one driver?** Both answers can change with it, so fill in a line for each driver you used and delete the rest.
+
+| Driver in the tray menu | Did it scroll? | Battery percent |
+|---|---|---|
+| Boot Camp | yes / no | percent, or none |
+| Stock | yes / no | percent, or none |
+| KMDF | yes / no | percent, or none |
+| Patched Apple | yes / no | percent, or none |
 
 Trackpads: the battery rows above are all we need. Magic Tray does not offer a driver change for a trackpad, so there is nothing to report there.
 
@@ -36,5 +45,6 @@ Trackpads: the battery rows above are all we need. Magic Tray does not offer a d
 - **Magic Tray version.** Bottom of the tray menu, or right-click `MagicMouseTray.exe`, Properties, Details.
 - **Battery percent.** Right-click the Magic Tray icon, then **Refresh Now**. Copy what it says.
 - **Keyboards.** **Fix battery reads** is in the tray menu, under your keyboard. It asks before it changes anything. Try the battery before you run it and again after.
+- **Mice, changing driver.** The tray menu's **Driver** item switches between them, and it asks before it changes anything. Check the battery percent and the scrolling again after each switch, because one can work while the other does not.
 
 Anything else you noticed:

@@ -82,7 +82,7 @@ public class DriverAdvisorTests
         Assert.Equal(DriverAdvisor.IdBootCamp, rec!.Id);
         Assert.Equal(TrayMenu.V1V2RadioBootCamp, rec.Label);
         Assert.Equal(CapabilityExpectation.Works, rec.Scroll);
-        // Battery differs per model now - see the two tests below.
+        // Battery differs per model now - see the per-model tests below.
     }
 
     // Driver repo issue #22 asked whether the battery percent can be read on
@@ -132,40 +132,45 @@ public class DriverAdvisorTests
         Assert.Contains("the wheel stays dead", line);
     }
 
-    // Nothing but the 030D has been measured, so nothing but the 030D may claim
-    // a battery - and the claim is keyed on the PID, not on the DeviceKind
-    // (#137). 0310 matters here twice over: it is the Apple Wireless Mouse, a
-    // device this project has never seen, and discovery hands it over as
+    // Nothing this project has never seen may claim a battery, or deny one, and
+    // the claim is keyed on the PID rather than on the DeviceKind (#137). 0310
+    // matters here twice over: it is the Apple Wireless Mouse, a device this
+    // project has never seen, and discovery hands it over as
     // DeviceKind.MagicMouseV1 on purpose (its battery chemistry is the v1's AA
-    // cells). Before this fix that shared kind pulled the 030D's measured
-    // Works cell and its "measured on a paired v1" sentence onto a mouse nobody
-    // has ever read a percent from. The 030D's Feature 0x47 result is a
-    // different report descriptor on a different mouse and may not be copied
-    // across - that copy is exactly the guess these rows exist to block.
+    // cells). Before that fix the shared kind pulled the 030D's measured Works
+    // cell and its "measured on a paired v1" sentence onto a mouse nobody has
+    // ever read a percent from. Neither that measurement nor the 0269's field
+    // report (#124) may be copied across: a different report descriptor on a
+    // different mouse, and one tester's observation of a different model, are
+    // somebody else's evidence, and borrowing either is exactly the guess these
+    // rows exist to block.
     [Theory]
-    [InlineData(DeviceKind.MagicMouseV2, "0269")]
     [InlineData(DeviceKind.MagicMouseV1, "0310")]
     [InlineData(DeviceKind.MagicMouseV2, "0310")]
-    // No PID at all is not the measured model either: it is no evidence.
+    // No PID at all, and a PID outside this app's catalog, are not evidence
+    // either, and reach the same table for the same reason.
     [InlineData(DeviceKind.MagicMouseV1, null)]
-    public void Only_the_measured_030d_claims_a_battery(DeviceKind kind, string? pid)
+    [InlineData(DeviceKind.MagicMouseV2, "ZZZZ")]
+    public void A_model_with_no_evidence_at_all_neither_claims_nor_denies_a_battery(
+        DeviceKind kind, string? pid)
     {
         Assert.False(DriverAdvisor.HasMeasuredBattery(pid));
+        Assert.False(DriverAdvisor.HasFieldReportedBattery(pid));
         var options = DriverAdvisor.OptionsFor(kind, pid);
         Assert.Equal(2, options.Count);
 
         foreach (var option in options)
         {
             Assert.Equal(CapabilityExpectation.Unknown, option.Battery);
-            Assert.NotEqual(CapabilityExpectation.Works, option.Battery);
             // Unknown means "cannot be predicted", never "broken".
             Assert.NotEqual(CapabilityExpectation.Dead, option.Battery);
             Assert.Contains("not confirmed", option.Why);
             Assert.DoesNotContain("0x47", option.Why);
             // The 030D's measurement wording may not appear on an unmeasured
-            // model, in any of its forms.
+            // model in any of its forms, and neither may the 0269's report.
             Assert.DoesNotContain("measured on a paired", option.Why);
             Assert.DoesNotContain("reads too", option.Why);
+            Assert.DoesNotContain("#124", option.Why);
         }
 
         // The unknown is about the battery only: Boot Camp is still recommended
@@ -176,6 +181,110 @@ public class DriverAdvisorTests
         Assert.Equal(
             CapabilityExpectation.Dead,
             options.Single(o => o.Id == DriverAdvisor.IdStockWindows).Scroll);
+    }
+
+    // Issue #124 is the first time this app has been run against a Magic Mouse
+    // v2 (0269) at all. One tester, 2026-09-07: "Scroll works through bootcamp,
+    // however magicmousetray cannot find battery, if I change to Stock Windows
+    // magicmousetray finds battery but scroll is not working at all." The
+    // public report descriptor for this model backs the second half - it has a
+    // vendor Input report that can carry a percent, and no Generic Device
+    // Controls battery Feature at all - so Stock Windows may claim Works. The
+    // first half is NOT a capability claim, and the test below is the reason
+    // why. Boot Camp keeps the wheel either way, which is why it stays the
+    // recommendation.
+    [Fact]
+    public void A_v2_keeps_its_wheel_on_boot_camp_and_its_percent_on_stock_windows()
+    {
+        var options = DriverAdvisor.OptionsFor(DeviceKind.MagicMouseV2, "0269");
+        var bootCamp = options.Single(o => o.Id == DriverAdvisor.IdBootCamp);
+        var stock = options.Single(o => o.Id == DriverAdvisor.IdStockWindows);
+
+        Assert.Equal(CapabilityExpectation.Works, bootCamp.Pointer);
+        Assert.Equal(CapabilityExpectation.Works, bootCamp.Scroll);
+        Assert.True(bootCamp.Recommended);
+
+        Assert.Equal(CapabilityExpectation.Works, stock.Pointer);
+        Assert.Equal(CapabilityExpectation.Dead, stock.Scroll);
+        Assert.Equal(CapabilityExpectation.Works, stock.Battery);
+        Assert.False(stock.Recommended);
+    }
+
+    // The cell this whole slice turns on. One tester saw no percent on Apple's
+    // driver - but at that moment this app had a discovery defect that could
+    // hide the percent by keeping the wrong HID interface for the PID, and that
+    // defect is fixed in this version. So the missing percent has two candidate
+    // causes, Apple's driver and this app's own bug, and nothing distinguishes
+    // them. Dead would publish our bug as Apple's behaviour and would outlive
+    // the fix; Unknown is the defined "cannot be predicted", which is exactly
+    // the state. The copy has to hold that line too: it may not promise the
+    // percent, and it may not declare it impossible.
+    [Fact]
+    public void A_v2_on_boot_camp_cannot_predict_its_battery_and_says_neither_yes_nor_no()
+    {
+        var bootCamp = DriverAdvisor.OptionsFor(DeviceKind.MagicMouseV2, "0269")
+            .Single(o => o.Id == DriverAdvisor.IdBootCamp);
+
+        Assert.Equal(CapabilityExpectation.Unknown, bootCamp.Battery);
+        Assert.NotEqual(CapabilityExpectation.Dead, bootCamp.Battery);
+        Assert.NotEqual(CapabilityExpectation.Works, bootCamp.Battery);
+
+        // What was seen, whose account it is, and the app's own fault named
+        // rather than blamed on the driver.
+        Assert.Contains("no battery percent appears", bootCamp.Why);
+        Assert.Contains("issue #124", bootCamp.Why);
+        Assert.Contains("a fault of its own", bootCamp.Why);
+        Assert.Contains("fixed in this version", bootCamp.Why);
+        // Neither verdict is reached.
+        Assert.Contains("has not been seen on Apple's driver", bootCamp.Why);
+        Assert.Contains("has not been shown to be impossible", bootCamp.Why);
+    }
+
+    // Both cells rest on other people's evidence, and the copy has to say whose
+    // - a reader who cannot tell a field report from a measurement cannot weigh
+    // it. The 030D's Feature 0x47 measurement belongs to the 030D and is absent
+    // from this model's descriptor entirely, so it may never appear in a 0269
+    // string. The mechanics that ARE known (report ids, collections, which
+    // branch of the read fires) belong in the source comments: a tray string
+    // that explained them would be unreadable and would still not be a reading
+    // of this project's own.
+    [Fact]
+    public void The_v2_cells_name_their_source_and_borrow_no_measurement()
+    {
+        foreach (var option in DriverAdvisor.OptionsFor(DeviceKind.MagicMouseV2, "0269"))
+        {
+            Assert.Contains("issue #124", option.Why);
+            Assert.Contains("one tester", option.Why, StringComparison.OrdinalIgnoreCase);
+
+            Assert.DoesNotContain("measured", option.Why, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("measured on a paired", option.Why);
+            foreach (var mechanism in new[]
+                     { "0x47", "0x90", "Feature", "collection", "descriptor", "COL02" })
+                Assert.DoesNotContain(mechanism, option.Why, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // A 0269 on Boot Camp is on the recommended driver AND may not get the
+    // percent the other driver was reported to give. Saying only the first half
+    // hides the trade, so the affirmative line has to carry the doubt and name
+    // the rival route; the reverse line is the same trade read the other way.
+    [Fact]
+    public void A_v2_is_told_the_trade_from_whichever_driver_it_is_on()
+    {
+        var bootCampLine = DriverAdvisor.AdviceLine(
+            DeviceKind.MagicMouseV2, "0269", DriverStatus.Ok)!;
+
+        Assert.Contains("You are on the recommended driver", bootCampLine);
+        Assert.Contains("no battery percent appears", bootCampLine);
+        Assert.Contains(TrayMenu.V1V2RadioStockWindows, bootCampLine);
+        Assert.Contains("issue #124", bootCampLine);
+        Assert.Contains("has not been shown to be impossible", bootCampLine);
+
+        var stockLine = DriverAdvisor.AdviceLine(
+            DeviceKind.MagicMouseV2, "0269", DriverStatus.NotInstalled)!;
+
+        Assert.Contains("the pointer and the battery percent work", stockLine);
+        Assert.Contains("the wheel stays dead", stockLine);
     }
 
     // The measured cell is the 030D's and travels with the PID, so a 030D keeps
@@ -334,14 +443,15 @@ public class DriverAdvisorTests
     // The bug this exists to kill: silence once the device is bound. Every
     // DriverStatus member, plus no status at all, must produce a usable line
     // that names the recommended driver, so a future enum member cannot fall
-    // through to null. Every family with a driver story is covered, not just
-    // the v3 mouse: the v1/v2 rows changed when their battery cell became
-    // Unknown, and StayingCost reads the capability cells, so a cell edit can
-    // silence a whole family's advice.
+    // through to null. Every family with a driver story is covered, and so is
+    // every one of the three v1/v2 battery tables - measured (030d), field
+    // reported (0269, #124) and unconfirmed (0310) - because StayingCost reads
+    // the capability cells, so a cell edit can silence a whole family's advice.
     [Theory]
     [InlineData(DeviceKind.MagicMouseV3, "0323", TrayMenu.V3RadioKmdf)]
     [InlineData(DeviceKind.MagicMouseV1, "030d", TrayMenu.V1V2RadioBootCamp)]
     [InlineData(DeviceKind.MagicMouseV2, "0269", TrayMenu.V1V2RadioBootCamp)]
+    [InlineData(DeviceKind.MagicMouseV1, "0310", TrayMenu.V1V2RadioBootCamp)]
     [InlineData(DeviceKind.MagicKeyboard, "0320", TrayMenu.V3RadioStockWindows)]
     [InlineData(DeviceKind.MagicTrackpadV2, "0265", TrayMenu.V3RadioStockWindows)]
     public void Every_driver_status_yields_an_advice_line_naming_the_recommendation(
