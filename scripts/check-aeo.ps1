@@ -420,21 +420,15 @@ function Get-FaqPair {
     .SYNOPSIS
         Extracts the page's visible question/answer pairs, with line numbers.
     .DESCRIPTION
-        Two markups carry a question and its answer, and both are checked.
+        The site's FAQ is a <details> accordion: <summary> is the question and
+        the <div class="a-body"> after it is the answer. The a-body wrapper is
+        what separates an FAQ entry from the other ten <details> on the site,
+        which collapse a spec table or an aside rather than answer a question,
+        and which must not be reported as missing from the FAQPage graph.
 
-        A <dl>: pairs are collected per list so each one knows whether its list
-        is the site's FAQ list (class contains the token 'faq'). Both directions
-        of the parity check need that: a Question may be answered by any
-        definition list on the page, but only a dl.faq entry is expected to
-        exist in the graph, so a glossary elsewhere is not reported as missing.
-
-        A <details> accordion: <summary> is the question and the <div
-        class="a-body"> after it is the answer. The a-body wrapper is what
-        separates an FAQ entry from the other ten <details> on the site, which
-        collapse a spec table or an aside rather than answer a question, and
-        which must not be reported as missing from the FAQPage graph. An
-        accordion entry counts as being in the FAQ list, so it is expected in
-        the graph exactly as a dl.faq <dt> is.
+        The <dl class="faq"> this replaced is gone from every page, and the
+        branch that read it went with it rather than being left to describe a
+        shape the site no longer has.
 
         The question text is run through Convert-HtmlToText, which drops the
         chevron <svg> that sits inside every <summary>.
@@ -443,30 +437,6 @@ function Get-FaqPair {
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Html
     )
-
-    foreach ($list in [regex]::Matches($Html, '<dl\b(?<attrs>[^>]*)>(?<body>.*?)</dl>', 'Singleline, IgnoreCase')) {
-        $classMatch = [regex]::Match($list.Groups['attrs'].Value, 'class\s*=\s*"(?<class>[^"]*)"', 'IgnoreCase')
-        $isFaq = $classMatch.Success -and (($classMatch.Groups['class'].Value -split '\s+') -contains 'faq')
-        $body = $list.Groups['body'].Value
-        $bodyOffset = $list.Groups['body'].Index
-
-        foreach ($pair in [regex]::Matches($body, '<dt\b[^>]*>(?<term>.*?)</dt>(?<gap>\s*)(?:<dd\b[^>]*>(?<definition>.*?)</dd>)?', 'Singleline, IgnoreCase')) {
-            $hasDefinition = $pair.Groups['definition'].Success
-            [pscustomobject]@{
-                IsFaqList     = $isFaq
-                Unparseable   = $false
-                Term          = (Convert-HtmlToText -Html $pair.Groups['term'].Value)
-                HasDefinition = $hasDefinition
-                Definition    = if ($hasDefinition) { Convert-HtmlToText -Html $pair.Groups['definition'].Value } else { '' }
-                TermLine      = (Get-LineNumber -Text $Html -Offset ($bodyOffset + $pair.Index))
-                DefinitionLine = if ($hasDefinition) {
-                    Get-LineNumber -Text $Html -Offset ($bodyOffset + $pair.Groups['definition'].Index)
-                } else {
-                    Get-LineNumber -Text $Html -Offset ($bodyOffset + $pair.Index)
-                }
-            }
-        }
-    }
 
     # Every quantifier is tempered so a match cannot run past the end of the
     # <details> it started in. A plain `.*?` let a non-FAQ <details> -- a spec
