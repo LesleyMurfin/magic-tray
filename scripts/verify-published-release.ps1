@@ -56,10 +56,22 @@
          it lists is really attached to the release. A checksum file naming an
          asset nobody can download is the same class of bug as v1.1.0's
          manifest pointing at a ZIP nobody can download.
-      5. The release body quotes the ZIP's digest. This is the check that
+      5. The SHA-256 computed over the downloaded MagicMouseTray.exe equals the
+         digest SHA256SUMS gives for it. docs/install.txt, step 2, tells an AI
+         agent to hash that exe and to STOP if it disagrees with the published
+         checksum, so a wrong line there is not a cosmetic defect: it turns a
+         correct download into a refusal on every agent that follows the
+         instructions we publish.
+      6. The release body quotes the ZIP's digest. This is the check that
          catches v1.1.0 exactly: its notes were an auto-generated PR list, so
          the "compare it with the line below" instructions the site and
          install.txt give a visitor had nothing to compare against.
+
+    None of that is worth saying when the network merely stumbled. Both network
+    paths - the gh api call and every asset download - retry a 408, a 429, a
+    5xx or a connection that never produced a response, four attempts with 2s,
+    4s and 8s between them. Everything else, a 404 and a 401 and a 403 and a
+    digest that does not match, fails the moment it is seen.
 
 .PARAMETER Tag
     Release tag to verify, including the leading v. Defaults to
@@ -121,75 +133,156 @@ function Write-Check {
     Write-Host ('::error::{0}' -f $text)
 }
 
+# Statuses that mean "ask again shortly", not "this release is wrong". A 408,
+# a 429 or any 5xx from api.github.com or from objects.githubusercontent.com is
+# the far end having a bad minute; the bytes it is refusing to serve right now
+# are the same bytes it served a moment ago. Everything this script does on a
+# failure - a failed check, exit 1, and a summary whose remedy for a wrong asset
+# set or a bad digest is "delete the release AND the tag and re-cut" - is
+# irreversible and aimed at a release that is already public. So the two places
+# that talk to the network retry on these, and on a connection that never
+# produced a response at all, and on nothing else: a 404, a 401, a 403, a digest
+# that does not match or a file that is not the one named all fail on the first
+# attempt, because retrying a real defect only delays the truth.
+# Four attempts with 2s, 4s and 8s between them costs 14 seconds on a release
+# that is genuinely broken and saves a correct one from being deleted over a
+# transport fault.
+$script:RetryableStatus = @(408, 429, 500, 502, 503, 504)
+
 # gh writes its diagnostics (and a 404 body) to stderr. Redirecting that stream
 # to a file keeps ErrorActionPreference = Stop from turning a plain HTTP error
 # into a thrown exception, so the failure can be reported as a check with the
 # API's own words attached.
+#
+# It retries for the same reason the download does: this is the call that
+# decides whether the release exists at all, and api.github.com serves a 502 or
+# a 503 for a few seconds often enough to matter. A 403 is deliberately not
+# retryable even though rate limiting wears that number: that limit resets on
+# the hour, so three doublings would change nothing except how long the run
+# takes to report the same thing.
 function Invoke-GhApi {
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)] [string] $ApiPath,
-        [Parameter(Mandatory)] [string] $StderrPath
+        [Parameter(Mandatory)] [string] $StderrPath,
+        [Parameter()]          [int]    $MaxAttempts = 4
     )
 
-    $global:LASTEXITCODE = 0
-    $out = & gh api $ApiPath --header 'Accept: application/vnd.github+json' 2> $StderrPath
-    if ($LASTEXITCODE -ne 0) {
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $global:LASTEXITCODE = 0
+        $out = & gh api $ApiPath --header 'Accept: application/vnd.github+json' 2> $StderrPath
+        if ($LASTEXITCODE -eq 0) { return (@($out) -join "`n") }
+
         $detail = ''
         if (Test-Path -LiteralPath $StderrPath -PathType Leaf) {
             $detail = (Get-Content -LiteralPath $StderrPath -Raw).Trim()
         }
-        throw "gh api $ApiPath exited $LASTEXITCODE. $detail"
+        $failure = "gh api $ApiPath exited $LASTEXITCODE. $detail"
+
+        # gh prints the status as '(HTTP 502)'. With no status at all the
+        # request never became a response, and gh passes Go's own transport
+        # wording through - that is a network fault and is retried. No status
+        # and no transport wording is a local problem (bad arguments, no
+        # credentials) which would fail identically four times over.
+        $status = 0
+        $matched = [regex]::Match($detail, '\(HTTP (\d{3})\)')
+        if ($matched.Success) { $status = [int]$matched.Groups[1].Value }
+        $mayRetry =
+            if ($status -ne 0) { $script:RetryableStatus -contains $status }
+            else { $detail -match 'dial tcp|no such host|connection reset|connection refused|i/o timeout|TLS handshake|EOF' }
+
+        if (-not $mayRetry -or $attempt -eq $MaxAttempts) {
+            throw $(if ($mayRetry) { "$failure (still failing after $MaxAttempts attempts)" } else { $failure })
+        }
+        $wait = [int][math]::Pow(2, $attempt)
+        Write-Host ('RETRY {0}; attempt {1} of {2}, waiting {3}s' -f $failure, $attempt, $MaxAttempts, $wait)
+        Start-Sleep -Seconds $wait
     }
-    return (@($out) -join "`n")
 }
 
 # Download to disk without ever holding the body in memory: the ZIP is ~190 MB
 # and the loose exe is larger still, so the response is read headers-first and
 # the content stream is copied straight into a FileStream.
+#
+# A large download is the likeliest thing here to meet a transient fault, and
+# the failure it produces is indistinguishable, to the caller, from an asset
+# that is genuinely wrong - which is why it is this function that must tell the
+# two apart. See $script:RetryableStatus above for what counts as which.
 function Save-AssetFile {
     [CmdletBinding()]
     [OutputType([long])]
     param(
         [Parameter(Mandatory)] [string] $Url,
-        [Parameter(Mandatory)] [string] $Path
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter()]          [int]    $MaxAttempts = 4
     )
 
-    $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $Url)
-    try {
-        # A token is only needed for a private repository. .NET drops the
-        # Authorization header when it follows a redirect to another origin, so
-        # sending it here neither leaks the token to the asset CDN nor breaks
-        # the pre-signed URL that the CDN redirect hands back.
-        if ($env:GH_TOKEN) {
-            $request.Headers.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $env:GH_TOKEN)
-        }
-        $response = $script:HttpClient.SendAsync(
-            $request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $failure = ''
+        $mayRetry = $false
+        $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $Url)
         try {
-            if (-not $response.IsSuccessStatusCode) {
-                throw ('GET {0} returned {1} {2}' -f $Url, [int]$response.StatusCode, $response.ReasonPhrase)
+            # A token is only needed for a private repository. .NET drops the
+            # Authorization header when it follows a redirect to another origin,
+            # so sending it here neither leaks the token to the asset CDN nor
+            # breaks the pre-signed URL that the CDN redirect hands back.
+            if ($env:GH_TOKEN) {
+                $request.Headers.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $env:GH_TOKEN)
             }
-            $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $response = $null
             try {
-                $target = [IO.File]::Create($Path)
+                $response = $script:HttpClient.SendAsync(
+                    $request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+            } catch {
+                # No status line came back at all: DNS, a refused or reset
+                # connection, the 15-minute ceiling. Transport by definition,
+                # so it says nothing about the release and is worth asking again.
+                $failure = 'GET {0} failed with no response: {1}' -f $Url, $_.Exception.Message
+                $mayRetry = $true
+            }
+            if ($null -ne $response) {
                 try {
-                    $source.CopyTo($target, 1048576)
+                    if (-not $response.IsSuccessStatusCode) {
+                        $status = [int]$response.StatusCode
+                        $failure = 'GET {0} returned {1} {2}' -f $Url, $status, $response.ReasonPhrase
+                        $mayRetry = $script:RetryableStatus -contains $status
+                    } else {
+                        $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                        try {
+                            $target = [IO.File]::Create($Path)
+                            try {
+                                $source.CopyTo($target, 1048576)
+                            } finally {
+                                $target.Dispose()
+                            }
+                        } finally {
+                            $source.Dispose()
+                        }
+                        return (Get-Item -LiteralPath $Path).Length
+                    }
+                } catch {
+                    # Headers were fine and the body came apart underneath the
+                    # copy. Half a ZIP hashes to a digest nobody published, so
+                    # the bytes are fetched again rather than hashed and blamed
+                    # on the release. The next attempt truncates $Path.
+                    $failure = 'GET {0} broke off mid-body: {1}' -f $Url, $_.Exception.Message
+                    $mayRetry = $true
                 } finally {
-                    $target.Dispose()
+                    $response.Dispose()
                 }
-            } finally {
-                $source.Dispose()
             }
         } finally {
-            $response.Dispose()
+            $request.Dispose()
         }
-    } finally {
-        $request.Dispose()
-    }
 
-    return (Get-Item -LiteralPath $Path).Length
+        if (-not $mayRetry -or $attempt -eq $MaxAttempts) {
+            throw $(if ($mayRetry) { "$failure (still failing after $MaxAttempts attempts)" } else { $failure })
+        }
+        $wait = [int][math]::Pow(2, $attempt)
+        Write-Host ('RETRY {0}; attempt {1} of {2}, waiting {3}s' -f $failure, $attempt, $MaxAttempts, $wait)
+        Start-Sleep -Seconds $wait
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($Tag)) {
@@ -343,6 +436,11 @@ try {
         Write-Check -Ok $false -Name 'zip matches sidecar' -Detail "cannot check: $zipName or $sidecarName is not attached to $Tag"
     }
 
+    # Hoisted out of check 4 so the exe check below can read the line
+    # SHA256SUMS gives for the exe. Left empty when SHA256SUMS is missing or
+    # never parsed, which check 4 will already have reported in its own words.
+    $declaredSums = [ordered]@{}
+
     # 4. SHA256SUMS. It is the file a visitor, and install.txt's AI agent, are
     # told to check a single download against, so it has to parse and it has to
     # describe assets that exist. It never lists itself.
@@ -350,7 +448,6 @@ try {
         $sumsPath = Join-Path $workDir $sumsName
         try {
             [void](Save-AssetFile -Url ([string]$byName[$sumsName].browser_download_url) -Path $sumsPath)
-            $declaredSums = [ordered]@{}
             $sumsReasons = @()
             foreach ($line in (Get-Content -LiteralPath $sumsPath)) {
                 if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -398,7 +495,44 @@ try {
         Write-Check -Ok $false -Name 'SHA256SUMS' -Detail "cannot check: $sumsName is not attached to $Tag"
     }
 
-    # 5. The notes quote the ZIP's digest. Compared against the digest computed
+    # 5. MagicMouseTray.exe against the line SHA256SUMS gives for it. Check 4
+    # proves that line names an asset that exists; it does not prove the digest
+    # on it belongs to that asset's bytes. docs/install.txt, step 2, tells an AI
+    # agent to compute the SHA-256 of the exe it has just downloaded and to
+    # STOP, delete the download and tell the user the checksum did not match if
+    # it disagrees with the published digest. So a wrong exe line does no harm
+    # here - the name is attached, the ZIP still matches its sidecar - and sends
+    # every agent following install.txt into its STOP branch on a download that
+    # was perfectly good. install.txt and this script are supposed to be
+    # checking the same bytes against the same line; until now only one of them
+    # was. The exe is another ~190 MB on the wire and on the runner's disk, and
+    # it is the asset most people click, which is what makes it worth them.
+    if ($byName.ContainsKey($exeName) -and $declaredSums.Contains($exeName)) {
+        $exePath = Join-Path $workDir $exeName
+        try {
+            $exeBytes = Save-AssetFile -Url ([string]$byName[$exeName].browser_download_url) -Path $exePath
+            $exeHash = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $exeDeclared = [string]$declaredSums[$exeName]
+            Write-Check -Ok ($exeDeclared -eq $exeHash) -Name 'exe matches SHA256SUMS' -Detail $(
+                if ($exeDeclared -eq $exeHash) { '{0} ({1:N0} bytes) = {2}' -f $exeName, $exeBytes, $exeHash }
+                else {
+                    "digest mismatch ($sumsName says $exeDeclared, the downloaded file is $exeHash). " +
+                    'install.txt tells an agent to hash this exact file and STOP when the two disagree, ' +
+                    'so every agent that follows it will refuse this release.'
+                }
+            )
+        } catch {
+            Write-Check -Ok $false -Name 'exe matches SHA256SUMS' -Detail "download failed: $_"
+        }
+    } elseif (-not $byName.ContainsKey($exeName)) {
+        Write-Check -Ok $false -Name 'exe matches SHA256SUMS' -Detail "cannot check: $exeName is not attached to $Tag"
+    } elseif ($declaredSums.Count -eq 0) {
+        Write-Check -Ok $false -Name 'exe matches SHA256SUMS' -Detail "cannot check: no usable $sumsName, so there is no published digest for $exeName to compare a download against"
+    } else {
+        Write-Check -Ok $false -Name 'exe matches SHA256SUMS' -Detail "$sumsName carries no line for $exeName, so an agent told to compare its download against the published checksum has a checksum file with nothing in it to compare"
+    }
+
+    # 6. The notes quote the ZIP's digest. Compared against the digest computed
     # from the downloaded bytes rather than the one in the sidecar, so notes
     # that quote a stale-but-self-consistent digest fail too. On v1.1.0 the body
     # was an auto-generated pull-request list and contained no digest at all.
@@ -421,8 +555,9 @@ try {
     exit 1
 } finally {
     $script:HttpClient.Dispose()
-    # Runner disks are small and the ZIP is large; never leave it behind, but
-    # never let a locked temp file be the reason a verified release fails.
+    # Runner disks are small and the ZIP and the exe are ~190 MB each; never
+    # leave them behind, but never let a locked temp file be the reason a
+    # verified release fails.
     Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -444,7 +579,7 @@ if ($script:ProblemCount -gt 0) {
             'The release exists but is a draft, so nothing is downloadable and every other failure above is a symptom of that. Publish it (gh release edit <tag> --draft=false) and re-run this script against the tag; only if it still fails should the release and the tag be deleted and re-cut.'
         } elseif ($script:FailedCheck -contains 'asset set') {
             'The published asset set is wrong, which means the workflow that ran was not the one in this tree. Delete the release AND the tag, then re-cut from a tree whose .github/workflows/release.yml is current. Do not attach the missing files by hand: a hand-attached ZIP still leaves notes with no digest table and a SHA256SUMS that never covered it, and that half-fix is what left v1.1.0 with a winget manifest pointing at an asset nobody can download.'
-        } elseif (($script:FailedCheck -contains 'zip matches sidecar') -or ($script:FailedCheck -contains 'SHA256SUMS')) {
+        } elseif (($script:FailedCheck -contains 'zip matches sidecar') -or ($script:FailedCheck -contains 'SHA256SUMS') -or ($script:FailedCheck -contains 'exe matches SHA256SUMS')) {
             'Every required asset is attached, but the published bytes and the published digests disagree. That is never a notes problem and it cannot be edited away: delete the release AND the tag and re-cut, then work out how the packaging step and the upload came apart.'
         } elseif (($script:FailedCheck -contains 'notes quote the zip digest') -and ($script:FailedCheck.Count -eq 1)) {
             'The asset set and every checksum are good and only the notes are wrong, so this one is repairable in place: rewrite the body to include the digest table (gh release edit <tag> --notes-file <file>) and re-run this script against the tag to confirm.'
