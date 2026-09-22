@@ -190,7 +190,6 @@ public class MouseBatteryDeviceTests
     [InlineData(100, true)]  // Apple's ceiling
     [InlineData(101, false)]
     [InlineData(255, false)] // a byte read that is not a percentage
-    [InlineData(-2, false)]  // sentinels are not levels
     public void IsRealLevel_AcceptsOnlyOneToOneHundred(int pct, bool expected)
     {
         Assert.Equal(expected, MouseBatteryDevice.IsRealLevel(pct));

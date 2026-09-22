@@ -230,7 +230,7 @@ internal static class SdpPatchReader
     // (...&E806884B0741_C00000000) and DriverInstaller.ParseMacFromInstance is
     // the repo's one parser for it - reused verbatim here rather than copied.
     // The PID matcher is DeviceSnapshotReader.BthenumKeyMatchesPid, the repo's
-    // single BTHENUM convention (DeviceStackReader.cs:153,
+    // single BTHENUM convention (DeviceStackReader.ReadDeviceStack,
     // DriverClaimReader.cs:131).
     //
     // Deliberately PID-targeted: DriverInstaller.TryDiscoverKeyboardMac returns
@@ -320,7 +320,7 @@ internal static class SdpPatchReader
         return -1;
     }
 
-    // One line per query, the shape DeviceStackReader.cs:98-99 established.
+    // One line per query, the shape DeviceStackReader's REPAIR_STACK logging established.
     // values = candidate records only (blobs carrying RID 0x47); the patched/
     // stock split is printed so a mixed cache is visible in the log.
     static void Log(string mac, SdpPatchState state, int values, int patched, int stock, int markerOffset)

@@ -8,14 +8,18 @@ namespace MagicMouseTray.Tests;
 // read. Live 2026-09-16: one Magic Mouse 2024 had two BT col02 interfaces and a leftover USB
 // col02 interface; the one discovery kept answered [90 00 00] forever, so the tray showed
 // "Battery unavailable" while the mouse itself was fine. AdaptivePoller groups by DeviceName
-// and ranks a real percentage above -2 above -1 (AdaptivePoller.BestReading), so it only needs
-// the candidates to reach it.
+// and returns the first interface in the group that answers with a real percentage, ranking
+// only the failure sentinels - -2 over -1 - when none does (AdaptivePoller.BestReading), so it
+// only needs the candidates to reach it.
 public class DeviceRegistryTests
 {
     // The device identifiers in the paths below - Bluetooth address, USB serial - are
     // synthetic. They keep the shape of the captured ones (12 hex digits, same-length serial)
     // so every path still parses identically, but a real hardware identifier does not belong
-    // in a repo file: Logger.RedactMacs keeps exactly this shape out of debug.log.
+    // in a repo file. Only the Bluetooth half has a scrubber behind it: Logger.RedactMacs
+    // strips the 12-hex instance tail between '&' and '_' (its MacTail rule) out of debug.log.
+    // Nothing matches the synthetic USB serial, which is exactly why a captured one must not
+    // be committed here.
 
     // Live BT stack for the 0323 (both CM_PROB_OK, both pass the col02 battery gate).
     const string BtCol02A =
@@ -42,10 +46,10 @@ public class DeviceRegistryTests
         return paths;
     }
 
-    // The path set captured in the live log of 2026-09-16, in the bt=2 usb=6 state right after
-    // a USB-C charge. It is that capture's interface set, not a claim about what the machine
-    // enumerates now: every distinct col02 interface in the capture must survive, and nothing
-    // else may. Keeping only one of them is what hid the working interface.
+    // The path set captured in the live log of 2026-09-16, right after a USB-C charge left the
+    // phantom USB nodes behind. It is that capture's interface set, not a claim about what the
+    // machine enumerates now: every distinct col02 interface in the capture must survive, and
+    // nothing else may. Keeping only one of them is what hid the working interface.
     [Fact]
     public void Discover_0323_LiveLogPathSet_KeepsEveryDistinctCol02Interface()
     {

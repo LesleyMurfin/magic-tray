@@ -59,7 +59,7 @@ internal sealed record DeviceSnapshot(
     //   null  - no evidence (nothing readable). Never a finding, ever.
     // This field exists because FilterServiceRunning cannot answer the
     // question: it is the word "RUNNING" in sc query output
-    // (DriverHealthChecker.cs:324-345), which proves only that the driver
+    // (DriverHealthChecker.KernelServiceRunning), which proves only that the driver
     // IMAGE is loaded on this PC, never that the filter attached to this
     // mouse's stack. After a Windows restart PnP can rebuild the BTHENUM
     // stack without the filter while LowerFilters still names it and the
@@ -246,14 +246,13 @@ internal static class RepairPlanner
         // was byte-identical to a healthy mouse.
         //
         // FilterServiceRunning cannot see this. It is the word "RUNNING" in
-        // sc query output (DriverHealthChecker.cs:320-347): proof that the
+        // sc query output (DriverHealthChecker.KernelServiceRunning): proof that the
         // driver image is loaded on this PC, never proof that the filter
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
         // the property this repo's own capture script reads on the live
         // BTHENUM instance, noting there that LowerFilters and sc query only
         // prove registration (scripts/capture-state.ps1:212-221, with the name
-        // match against the returned string list in Test-StackHasFilter at
-        // scripts/capture-state.ps1:146-155), and the one the recovery script
+        // match against the returned string list in Test-StackHasFilter), and the one the recovery script
         // names the discriminator for this exact post-reboot case
         // (scripts/diagnose-and-recover.ps1:266-268). FilterInStack carries it
         // into the planner. The A5/A6 pass rule in

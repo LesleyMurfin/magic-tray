@@ -11,7 +11,9 @@ internal static class DeviceRegistry
     /// interface PATH, not one per physical device. The multiplicity is deliberate: a single
     /// mouse exposes several interfaces that pass the same gate and only some of them answer
     /// a battery read, so every candidate is handed to AdaptivePoller, which groups by
-    /// DeviceName and keeps the best-ranked reading. Only identical path strings collapse.
+    /// DeviceName and takes the FIRST interface in the group that answers with a real
+    /// percentage, ranking only the failure sentinels when none does. Only identical path
+    /// strings collapse.
     /// Matching priority: mouse VID/PID checked first, then keyboard VID/PID.
     /// </summary>
     public static IReadOnlyList<IBatteryDevice> Discover(bool enableThirdParty = false)
@@ -29,15 +31,20 @@ internal static class DeviceRegistry
         // same path string must not produce two devices.
         //
         // Everything else survives. One physical mouse exposes several distinct live col02
-        // interfaces (live REPAIR_SNAPSHOT pid=0323: bt=2 usb=6 after a USB-C charge) and
+        // interfaces: the discovery capture of 2026-09-16 listed two Bluetooth col02 paths
+        // for one Magic Mouse 2024 plus a leftover USB col02 path after a USB-C charge, and
         // only some of them answer HidD_GetInputReport with a real level; the rest return
-        // [90 00 00]. Discovery cannot tell which is which without reading, so it keeps them
-        // all and AdaptivePoller picks the winner: it groups by DeviceName and ranks a real
-        // percentage above -2 above -1 (AdaptivePoller.BestReading), and stops reading a group's
-        // remaining interfaces once one answers with a real percentage - or, when one wedges,
-        // once the first read times out, so the amplification costs at most one read budget per
-        // group per tick. Dropping candidates here ran before that ranking and could leave only
-        // an interface that never reports.
+        // [90 00 00]. (REPAIR_SNAPSHOT's bt=/usb= counters are not evidence for this: bt= is
+        // the BTHENUM registry instance count and usb= the USB phantom count - see
+        // DeviceSnapshotReader - and neither one is collection-aware.)
+        //
+        // Discovery cannot tell which interface is which without reading, so it keeps them
+        // all and AdaptivePoller picks the winner: it groups by DeviceName and returns the
+        // FIRST interface that answers with a real percentage, ranking only the two failure
+        // sentinels when none does, -2 over -1 (AdaptivePoller.BestReading). It stops there,
+        // and also - when an interface wedges - at the first read that times out, so the
+        // amplification costs at most one read budget per group per tick. Dropping candidates
+        // here ran before that scan and could leave only an interface that never reports.
         //
         // There is deliberately no transport preference and no one-device-per-PID rule. The
         // false 0% from a charge-cable phantom that those rules were written for is rejected

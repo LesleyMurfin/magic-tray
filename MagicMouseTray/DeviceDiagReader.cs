@@ -30,7 +30,7 @@ internal static class DeviceDiagReader
     // has exactly one collection and therefore no suffix).
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
 
-    // NORMAL = present devices only, same reason as DeviceStackReader.cs:41-44:
+    // NORMAL = present devices only, same reason as DeviceStackReader's CM_LOCATE_DEVNODE_NORMAL:
     // a charge-cable phantom must never be allowed to answer a question about
     // the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
@@ -619,7 +619,7 @@ internal static class DeviceDiagReader
             return PointerKeyKind.None;
 
         // Apple VID plus this exact PID, through the one BTHENUM matcher the
-        // repo already has (DeviceSnapshotReader.cs:403-415, which covers both
+        // repo already has (DeviceSnapshotReader.BthenumKeyMatchesPid, which covers both
         // _VID&000205ac_ and _VID&0001004c_ via DriverHealthChecker's
         // AppleVidSegments). No second copy of the VID table lives here.
         if (!DeviceSnapshotReader.BthenumKeyMatchesPid(deviceKeyName, pid))
@@ -704,7 +704,7 @@ internal static class DeviceDiagReader
     static string Describe(bool? value) =>
         value is null ? "unknown" : value.Value ? "true" : "false";
 
-    // Duplicate of the declaration in DeviceStackReader.cs:215-216, which is
+    // Duplicate of the CM_Get_DevNode_PropertyW declaration in DeviceStackReader, which is
     // private to that class. Keeping it private here avoids editing that file;
     // if the two are ever merged, the shared home is a P/Invoke holder, not
     // either reader.

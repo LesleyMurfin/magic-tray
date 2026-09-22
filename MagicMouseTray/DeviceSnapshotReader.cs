@@ -162,7 +162,7 @@ internal static class DeviceSnapshotReader
         // Registration is not attachment. LowerFilters plus a RUNNING service
         // both read healthy after a reboot that rebuilt the stack without the
         // filter, so the live device stack is asked directly - the same property
-        // scripts/capture-state.ps1:152-157 measures. Only asked when there is
+        // Test-StackHasFilter (scripts/capture-state.ps1) measures. Only asked when there is
         // something to prove: no live BTHENUM instance, or nothing bound, means
         // a PC with no Apple mouse never pays for a CM query.
         bool? filterInStack = bth.InstanceCount > 0 && bound is not null

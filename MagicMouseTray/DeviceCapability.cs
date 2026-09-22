@@ -224,10 +224,23 @@ internal static class DeviceCapability
         {
             if (f.LastPct >= 0 && f.Sdp == SdpPatchState.Applied)
                 return $"Battery: {f.LastPct}% (SDP patch)";
-            // -2 is KeyboardBatteryDevice's "present but blocked" sentinel
-            // (the KB_BATTERY_BLOCKED return in
-            // KeyboardBatteryDevice.GetBatteryPercent), which is exactly what
-            // an unpatched SDP record produces.
+            // -2 is KeyboardBatteryDevice's "present but the report is not
+            // arriving" sentinel, and it has two producers, not one: the
+            // KB_BATTERY_BLOCKED return (no battery Feature cap, which IS the
+            // stock SDP record) and the KB_FEATURE_BLOCKED return (the cap is
+            // there but HidD_GetFeature failed, which a patched keyboard with a
+            // wedged interface also reaches). A rejected zero or a junk byte is
+            // -1 now (KeyboardBatteryDevice.ClassifyFeatureByte), so those no
+            // longer land here - but the two blocked arms are still not
+            // distinguishable from the sentinel alone. That is what the
+            // f.Sdp == SdpPatchState.NotApplied gate is for: the patch state is
+            // independent evidence (SdpPatchReader reads the Bluetooth service
+            // cache and only answers NotApplied on a record that carries RID
+            // 0x47 with the untouched COL02 close), not something inferred from
+            // the read that just failed, so the row names the patch only where
+            // the record is known to be missing it. Unknown - no MAC, no
+            // readable subtree, no candidate record - and Applied both fall
+            // through to the neutral wording below.
             if (f.LastPct == -2 && f.Sdp == SdpPatchState.NotApplied)
                 return $"{BatteryLabel(f.LastPct)} (needs the SDP patch)";
         }

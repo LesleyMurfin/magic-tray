@@ -114,7 +114,7 @@ internal static class StockDriverReader
     static readonly string[] TransportServices =
         ["HidBth", "BthEnum", "BthPort", "BTHUSB", "BthLEEnum", "BthMini"];
 
-    // NORMAL = present devices only, same reason as DeviceStackReader.cs:41-44
+    // NORMAL = present devices only, same reason as DeviceStackReader's CM_LOCATE_DEVNODE_NORMAL
     // and DeviceDiagReader.CM_LOCATE_DEVNODE_NORMAL: a charge-cable phantom or
     // a stale pairing record must never be allowed to answer a question about
     // the live stack.
@@ -122,7 +122,7 @@ internal static class StockDriverReader
     const uint CR_SUCCESS = 0x00000000;
     const uint CR_NO_SUCH_DEVNODE = 0x0000000D;
     // cfgmgr32.h: the size-probe return of the two-call read in ReadDriverStack,
-    // and the value DeviceStackReader.cs:47 declares for the identical pattern.
+    // and the value DeviceStackReader declares for the identical pattern.
     // 0x00000001 is CR_DEFAULT, which the probe never returns, so the size check
     // never matched and every stack read came back empty.
     const uint CR_BUFFER_SMALL = 0x0000001A;
@@ -473,7 +473,7 @@ internal static class StockDriverReader
     }
 
     // DEVPKEY_Device_Stack, the repo's existing ground truth for what is
-    // ATTACHED (DeviceStackReader.cs:19-26), reduced to LEAF driver names:
+    // ATTACHED (DeviceStackReader's file header), reduced to LEAF driver names:
     // "\Driver\kbdclass" -> "kbdclass". The leaf is what a caller can render and
     // what the family predicates elsewhere are written against; the "\Driver\"
     // prefix carries no information for either.
