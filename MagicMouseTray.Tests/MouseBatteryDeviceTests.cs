@@ -268,7 +268,8 @@ public class MouseBatteryDeviceTests
         @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col02#a&1f2e3d4c&0&0001";
     const string Usb0269Col02 = @"\\?\hid#vid_05ac&pid_0269&mi_01&col02#a&16288706&0&0001";
 
-    // Regression for issue #124: one tester with a Magic Mouse v2 reported that Magic Tray
+    // Regression for issues #124 and #164: two testers with a Magic Mouse v2 reported,
+    // independently and on the same shipped build, that Magic Tray
     // finds no battery while Apple's driver is bound. Discovery used to keep the first
     // interface per PID and discard the rest, so if Windows enumerated the pointer
     // collection first the other collection was thrown away and no read could ever reach

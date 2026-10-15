@@ -26,27 +26,29 @@
 //       https://github.com/svartalf/hid-magicmouse2/blob/master/dumps/debugfs-rdesc.log
 //       Numeric facts re-parsed from that byte string only: the repo is kernel-derived,
 //       so no prose, code or comments are copied from it (same rule as hid-ids.h).
-//       This project has never read a 0269 itself - one tester reported that Magic Tray
-//       finds no battery on the Boot Camp route (issue #124). The descriptor is also why
-//       discovery must keep EVERY collection of a mouse as a read candidate: collapse a
-//       0269 onto its pointer collection and neither channel has anywhere to answer from.
+//       This project has never read a 0269 itself - two testers, independently, reported
+//       that Magic Tray finds no battery on the Boot Camp route and does find one on
+//       Stock Windows, the second of them 83% (issues #124 and #164, both on 1.1.0, which
+//       predates this fix). The descriptor is also why discovery must keep EVERY
+//       collection of a mouse as a read candidate: collapse a 0269 onto its pointer
+//       collection and neither channel has anywhere to answer from.
 //     0310 (Apple Wireless Mouse): never read here, no descriptor ever seen, unknown.
 //   BLE v2 is VID 0001004C PID&0269 (#73).
 //   Of this family only the 030D has ever been measured here (97%, unified Feature 0x47),
 //   so DriverAdvisor keys its battery CLAIM on the PID and not on Kind (#137), and the
 //   trackpad prose describes this probe rather than the v3's fixed 0x90 (#134).
 //
-// PROBE, LEARN, RELEARN (issue #124 follow-up). The descriptor is no longer allowed to VETO a
-// channel, only to order the attempts: ReadV1V2Feature tries the declared channel first
-// because it is the cheapest likely hit, then tries the other one anyway. An Apple device
-// answering a report it never declared is ordinary behaviour, and this project cannot predict
-// per-model channels - the three shapes it knows disagree (030D unified Feature on one
-// interface and 0323 Input 0x90 on col02, both measured here; 0269 Input 0x90 on col02, from
-// its public descriptor, never read by this project). Apple's driver choice changes the shape
-// again (measured on the 0323: filter bound = one unified node with no readable battery,
-// filter removed = &col02 appears and reads). So the app stops guessing: it probes, logs
-// EVERY attempt with its outcome, remembers the pair that worked in config.ini
-// (BatteryChannelMemory, one battery call per poll from then on), and
+// PROBE, LEARN, RELEARN (issues #124 / #164 follow-up). The descriptor is no longer allowed
+// to VETO a channel, only to order the attempts: ReadV1V2Feature tries the declared channel
+// first because it is the cheapest likely hit, then tries the other one anyway. An Apple
+// device answering a report it never declared is ordinary behaviour, and this project
+// cannot predict per-model channels - the three shapes it knows disagree (030D unified
+// Feature on one interface and 0323 Input 0x90 on col02, both measured here; 0269 Input
+// 0x90 on col02, from its public descriptor, never read by this project). Apple's driver
+// choice changes the shape again (measured on the 0323: filter bound = one unified node
+// with no readable battery, filter removed = &col02 appears and reads). So the app stops
+// guessing: it probes, logs EVERY attempt with its outcome, remembers the pair that worked
+// in config.ini (BatteryChannelMemory, one battery call per poll from then on), and
 // throws that memory away the moment it stops working - which is what makes a Boot Camp to
 // Stock driver switch self-healing without the user doing anything.
 using System.Runtime.InteropServices;
@@ -122,8 +124,9 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // Ordered read candidates for ONE physical mouse, primary first. A mouse usually has a
     // single interface, but a v1/v2 can expose several collections (pointer plus vendor) and
     // discovery hands all of them over: nothing in the PATH says which collection carries
-    // the battery report, only opening the node and reading its descriptor can (issue #124,
-    // where a tester's Magic Mouse v2 reported no battery at all on the Boot Camp route).
+    // the battery report, only opening the node and reading its descriptor can (issues #124
+    // and #164, two testers whose Magic Mouse v2 reported no battery at all on the Boot
+    // Camp route).
     readonly IReadOnlyList<string> _candidates;
 
     // Index into _candidates of the interface that last produced a real percent. Sticky, so
@@ -404,7 +407,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // decides which goes first. A declared Generic Device battery-strength Feature cap leads
     // because it is the cheapest likely hit (030D), otherwise the vendor Input 0x90 leads
     // (0269, 0323 shape). A descriptor that declares neither is a reason to probe, never a
-    // reason to report the device as having no battery - which is the bug in issue #124.
+    // reason to report the device as having no battery - the bug in issues #124 and #164.
     internal static ChannelAttempt[] AttemptOrder(byte? declaredFeatureRid, bool declaredVendorInput)
     {
         var feature = new ChannelAttempt(
@@ -440,7 +443,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         // completely AND name what was attempted: a remote reporter's log has to separate "the
         // wrong collection was opened" from "this device really has no battery report", and
         // since this build no longer trusts the descriptor, "no cap declared" alone would be a
-        // claim the app did not observe (issue #124).
+        // claim the app did not observe (issues #124, #164).
         Logger.Log($"MOUSE_NO_BATTERY_CAP device={DeviceName} pid={Pid} col={col} tried={BatteryChannelAnswer.Input90},{BatteryChannelAnswer.Feature47} usage=0x{node.UsagePage:X4}/0x{node.Usage:X4} featcaps={node.FeatureValueCaps} featlen={node.FeatureLen} inlen={node.InputLen} path={path}");
         return best;
     }

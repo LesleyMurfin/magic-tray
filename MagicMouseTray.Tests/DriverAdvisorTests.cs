@@ -140,10 +140,10 @@ public class DriverAdvisorTests
     // cells). Before that fix the shared kind pulled the 030D's measured Works
     // cell and its "measured on a paired v1" sentence onto a mouse nobody has
     // ever read a percent from. Neither that measurement nor the 0269's field
-    // report (#124) may be copied across: a different report descriptor on a
-    // different mouse, and one tester's observation of a different model, are
-    // somebody else's evidence, and borrowing either is exactly the guess these
-    // rows exist to block.
+    // reports (#124, #164) may be copied across: a different report descriptor
+    // on a different mouse, and two testers' observations of a different
+    // model, are somebody else's evidence, and borrowing any of it is exactly
+    // the guess these rows exist to block.
     [Theory]
     [InlineData(DeviceKind.MagicMouseV1, "0310")]
     [InlineData(DeviceKind.MagicMouseV2, "0310")]
@@ -232,7 +232,7 @@ public class DriverAdvisorTests
         // What was seen, whose account it is, and the app's own fault named
         // rather than blamed on the driver.
         Assert.Contains("no battery percent appears", bootCamp.Why);
-        Assert.Contains("issue #124", bootCamp.Why);
+        Assert.Contains("issues #124 and #164", bootCamp.Why);
         Assert.Contains("a fault of its own", bootCamp.Why);
         Assert.Contains("fixed in this version", bootCamp.Why);
         // Neither verdict is reached.
@@ -253,8 +253,12 @@ public class DriverAdvisorTests
     {
         foreach (var option in DriverAdvisor.OptionsFor(DeviceKind.MagicMouseV2, "0269"))
         {
-            Assert.Contains("issue #124", option.Why);
-            Assert.Contains("one tester", option.Why, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("#124", option.Why);
+            Assert.Contains("#164", option.Why);
+            Assert.Contains("two testers", option.Why, StringComparison.OrdinalIgnoreCase);
+            // One report must never read as two, and two must never read as a
+            // measurement: both halves of the grade are pinned here.
+            Assert.DoesNotContain("one tester", option.Why, StringComparison.OrdinalIgnoreCase);
 
             Assert.DoesNotContain("measured", option.Why, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("measured on a paired", option.Why);
@@ -277,7 +281,7 @@ public class DriverAdvisorTests
         Assert.Contains("You are on the recommended driver", bootCampLine);
         Assert.Contains("no battery percent appears", bootCampLine);
         Assert.Contains(TrayMenu.V1V2RadioStockWindows, bootCampLine);
-        Assert.Contains("issue #124", bootCampLine);
+        Assert.Contains("issues #124 and #164", bootCampLine);
         Assert.Contains("has not been shown to be impossible", bootCampLine);
 
         var stockLine = DriverAdvisor.AdviceLine(

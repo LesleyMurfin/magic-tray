@@ -403,12 +403,12 @@ public class DriverAdviceViewTests
         Assert.Equal("Boot Camp: pointer, scroll, battery (recommended)",
             DriverAdviceView.OptionRowsShort(DeviceKind.MagicMouseV1, "030d")[0]);
 
-        // v2 (0269), issue #124: one tester saw the percent on Stock Windows,
-        // where the wheel is dead, so that row claims it outright. On Boot Camp
-        // the same tester saw none - but this app's own pre-fix discovery
-        // defect could have caused that, so the row keeps the question mark
-        // rather than hardening into "no battery" and blaming Apple's driver
-        // for our bug.
+        // v2 (0269), issues #124 and #164: two testers saw the percent on Stock
+        // Windows, where the wheel is dead, so that row claims it outright. On
+        // Boot Camp both saw none - but this app's own pre-fix discovery defect
+        // could have caused that, and both of them were running the build that
+        // carries it, so the row keeps the question mark rather than hardening
+        // into "no battery" and blaming Apple's driver for our bug.
         var v2 = DriverAdviceView.OptionRowsShort(DeviceKind.MagicMouseV2, "0269");
         Assert.Equal("Boot Camp: pointer, scroll, battery? (recommended)", v2[0]);
         Assert.Equal("Stock Windows: pointer, battery, no scroll", v2[1]);

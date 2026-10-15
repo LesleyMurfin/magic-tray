@@ -37,12 +37,13 @@ hex digits after `PID_`). Then:
   [the two install routes](#the-two-install-routes-for-the-apple-filter).
 - **Magic Mouse v2 (Lightning) `0269`.** Same driver, same signatures, same no-security-setting
   answer. Scroll works: one tester confirmed the wheel on Apple's driver. The percent is the
-  open question - that same tester saw none while Apple's driver was bound, and one on stock
-  Windows ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)) - but Magic Tray
-  itself had a battery-discovery fault at the time, now fixed, which could produce exactly that
-  on its own. Install Apple's driver for the wheel, and on the next version look again before
-  concluding the percent is gone:
-  [the v2 section](#magic-mouse-v2-0269-reported-by-one-tester-issue-124).
+  open question - two testers saw none while Apple's driver was bound, and a percent on stock
+  Windows, 83% in the second report ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124),
+  [issue #164](https://github.com/LesleyMurfin/magic-tray/issues/164)) - but both ran a Magic
+  Tray that had a battery-discovery fault at the time, now fixed, which could produce exactly
+  that on its own. Install Apple's driver for the wheel, and on the next version look again
+  before concluding the percent is gone:
+  [the v2 section](#magic-mouse-v2-0269-reported-by-two-testers-issues-124-and-164).
 - **Magic Keyboard / Apple Wireless Keyboard.** There is nothing to scroll and no driver to
   install. Battery percent needs one **registry patch** you run once:
   [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1).
@@ -56,9 +57,10 @@ itself, through a HID report.** That is why the two can be in different states a
 What that does **not** settle is whether the bound driver can get between the tray and that
 report. Read the per-PID row, never the family: on the `030D` the percent demonstrably survives
 either driver (measured on both), on the `0323` the driver choice decides it outright, and on the
-`0269` there is one report and no verdict - a tester saw a percent on stock Windows and none on
-Apple's driver ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)) while the
-tray carried a fault that could hide a percent by itself.
+`0269` there are two reports and no verdict - two testers saw a percent on stock Windows, 83% in
+the second, and none on Apple's driver ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124),
+[issue #164](https://github.com/LesleyMurfin/magic-tray/issues/164)) while the tray carried a
+fault that could hide a percent by itself.
 
 ---
 
@@ -68,8 +70,8 @@ tray carried a fault that could hide a percent by itself.
 |---|---|---|---|---|
 | Magic Mouse 2024 / v3 (`0323`) | Windows' own Bluetooth HID stack (`HidBth` + `mouhid` on the COL01 pointer collection). No vendor driver involved. **MEASURED** | A vendor filter driver bound as `LowerFilters` on the Bluetooth instance. Two exist: the **KMDF** driver, which generates scroll from the touch surface and has a tunable speed, or **Apple's `applewirelessmouse` filter**, which gives Apple-style scroll. Stock Windows gives **no** scroll at all. **MEASURED** | Depends on the driver. KMDF: direct read of HID **Input report `0x90` on COL02**. Apple filter: the same report, but only reachable in Mode A, so it needs a temporary [Mode A/B flip](#magic-mouse-2024-on-the-apple-filter-same-report-mode-a-only). Stock Windows: the percent usually still reads. **MEASURED** | Only for the **KMDF** driver, and for the legacy byte-patched Apple binary. Apple's unmodified filter needs none. See [signing](#magic-mouse-2024-0323-what-each-driver-actually-does) |
 | Magic Mouse v1, AA batteries (`030D`) | Windows' own Bluetooth HID stack, on the mouse's **single collection-less** HID node. **MEASURED** | Apple's own `applewirelessmouse.sys`, bound as a lower filter. Apple's INF lists `030D`, so the INF route binds it automatically; the manual service route reaches the same end state. **MEASURED** | HID **Feature report `0x47`** (UsagePage `0x0006`, Usage `0x0020`, logical 0..100) on that same single collection. Read by the tray off HID directly, so it does **not** depend on which scroll filter is bound. **MEASURED: 97% on live hardware** | No, on either install route |
-| Magic Mouse v2, Lightning (`0269`) | Windows' own Bluetooth HID stack. **DOCUMENTED** | Apple's own `applewirelessmouse.sys` as a lower filter. Apple's INF lists `0269`. **DOCUMENTED**, and one tester reports the wheel does scroll on it (**REPORTED**, [issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)) | HID **Input report `0x90`** on the mouse's **vendor top-level collection** (UsagePage `0xFF00`, Usage `0x0014`), which Windows exposes as the `&Col02` interface; this model declares **no** Generic Device Controls battery-strength Feature at all, so the v1's `0x47` channel does not exist here. **DOCUMENTED** from a public Magic Mouse 2 report-descriptor dump ([debugfs-rdesc.log](https://github.com/svartalf/hid-magicmouse2/blob/master/dumps/debugfs-rdesc.log)), re-parsed here. Stock Windows: a tester saw the percent (**REPORTED**, [issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)). Apple's driver: the same tester saw none, but the tray's own battery-discovery fault could produce that by itself, so this stays **Unknown, not Dead**. See [the v2 section](#magic-mouse-v2-0269-reported-by-one-tester-issue-124) | No, on either install route |
-| Apple Wireless Mouse, AA (`0310`) | Windows' own Bluetooth HID stack. **DOCUMENTED** | Apple's own `applewirelessmouse.sys` as a lower filter. Apple's INF lists `0310`. **DOCUMENTED** | **UNMEASURED.** No `0310` has been read here and none has been reported. Neither the v1 measurement nor the v2 report may be copied across - different mice, different report descriptors. Driver-repo [issue #22](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/issues/22) stays open here. Unknown means untested, never broken | No, on either install route |
+| Magic Mouse v2, Lightning (`0269`) | Windows' own Bluetooth HID stack. **DOCUMENTED** | Apple's own `applewirelessmouse.sys` as a lower filter. Apple's INF lists `0269`. **DOCUMENTED**, and one tester reports the wheel does scroll on it (**REPORTED**, [issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)) | HID **Input report `0x90`** on the mouse's **vendor top-level collection** (UsagePage `0xFF00`, Usage `0x0014`), which Windows exposes as the `&Col02` interface; this model declares **no** Generic Device Controls battery-strength Feature at all, so the v1's `0x47` channel does not exist here. **DOCUMENTED** from a public Magic Mouse 2 report-descriptor dump ([debugfs-rdesc.log](https://github.com/svartalf/hid-magicmouse2/blob/master/dumps/debugfs-rdesc.log)), re-parsed here. Stock Windows: two testers saw the percent, one of them **83%** (**REPORTED**, [issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124), [issue #164](https://github.com/LesleyMurfin/magic-tray/issues/164)). Apple's driver: both of those testers saw none, but the tray's own battery-discovery fault could produce that by itself, so this stays **Unknown, not Dead**. See [the v2 section](#magic-mouse-v2-0269-reported-by-two-testers-issues-124-and-164) | No, on either install route |
+| Apple Wireless Mouse, AA (`0310`) | Windows' own Bluetooth HID stack. **DOCUMENTED** | Apple's own `applewirelessmouse.sys` as a lower filter. Apple's INF lists `0310`. **DOCUMENTED** | **UNMEASURED.** No `0310` has been read here and none has been reported. Neither the v1 measurement nor the two v2 reports may be copied across - different mice, different report descriptors. Driver-repo [issue #22](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/issues/22) stays open here. Unknown means untested, never broken | No, on either install route |
 | Magic Keyboard / Apple Wireless Keyboard (`0239` and the other keyboard PIDs) | **Not applicable - a keyboard has no pointer.** The keys themselves work on Windows' own Bluetooth HID keyboard driver with nothing installed | **Nothing - a keyboard has no scroll concept at all.** There is no scroll driver for a keyboard and none is needed. Not a fault, not a gap | The one-time **SDP cache patch**, not a driver: `scripts/kbd-patch-cachedservices.ps1` rewrites the `BTHPORT` pairing record so Battery Strength (`0x47`) is exposed as a **Feature** report. **MEASURED** | No. There is no kernel driver on this path |
 | Magic Trackpad (`030E`, `0265`, `0324`) | Windows' own Bluetooth HID stack. **DOCUMENTED** | **Nothing applies.** No vendor scroll filter in this project covers a trackpad, and no gesture driver is shipped | Windows exposing the percent; the tray reads it like any other battery. **UNMEASURED here** - no trackpad has been hardware-tested in this project | No |
 
@@ -148,9 +150,10 @@ request, not a collection that appears and disappears with a filter. Second, on 
 read does **not depend on which scroll filter is bound** - the percent was there on Apple's
 driver and on stock Windows alike. That second finding is a `030D` measurement and nothing more.
 It cannot be carried to the `0269`, whose percent does not ride a Feature report at all
-([see below](#magic-mouse-v2-0269-reported-by-one-tester-issue-124)), and where the one tester on
-record did not see the same thing
-([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)). That is why these rows are
+([see below](#magic-mouse-v2-0269-reported-by-two-testers-issues-124-and-164)), and where neither
+tester on record saw the same thing
+([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124),
+[issue #164](https://github.com/LesleyMurfin/magic-tray/issues/164)). That is why these rows are
 kept per PID.
 
 This answers driver-repo
@@ -158,9 +161,10 @@ This answers driver-repo
 not the way the issue was framed. The question was whether the pre-`0323` mice can be read at all
 given they pre-date the COL02 vendor collection. They can; through a different report entirely.
 
-### Magic Mouse v2 (`0269`): REPORTED by one tester, issue #124
+### Magic Mouse v2 (`0269`): REPORTED by two testers, issues #124 and #164
 
-**The channel is DOCUMENTED. The behaviour is REPORTED, once, and the cause is open.**
+**The channel is DOCUMENTED. The behaviour is REPORTED, twice and independently, and the cause
+is open.**
 
 **Documented: where the percent lives.** A public report-descriptor dump of a Magic Mouse 2,
 [`debugfs-rdesc.log`](https://github.com/svartalf/hid-magicmouse2/blob/master/dumps/debugfs-rdesc.log),
@@ -193,44 +197,50 @@ one: its percent lives on a separate vendor collection, which is the kind of thi
 has **measured** appearing and disappearing with the bound driver - on the `0323`. That is the
 strongest honest sentence available here: the v2 is **shaped like** the model where the driver
 choice does decide the percent, and unlike the model where it does not. It is still not a reading
-of a `0269`. **Nobody has read one**, on either driver, and the cell stays a report plus an open
-question.
+of a `0269`. **Nobody has read one**, on either driver, and the cell stays two reports plus an
+open question.
 
-**Reported: what one tester saw.** Once, on 2026-09-07, in
-[issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124):
+**Reported: what two testers saw.** Independently, on 2026-09-07 in
+[issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124), and on 2026-10-12 in
+[issue #164](https://github.com/LesleyMurfin/magic-tray/issues/164), the second on Magic Tray
+1.1.0 under Windows 11 Pro 26H2, with screenshots:
 
-- **Apple's driver bound** (the tray's `Boot Camp` radio): the wheel scrolls, and Magic Tray
-  found no battery.
-- **Stock Windows bound:** Magic Tray showed a battery percent, and the wheel did not scroll.
+- **Apple's driver bound** (the tray's `Boot Camp` radio): Magic Tray found no battery - the row
+  reads "Battery unavailable" in the second report. The first tester also saw the wheel scroll
+  there; the second did not say either way.
+- **Stock Windows bound:** Magic Tray showed a battery percent - **83%** in the second report,
+  the first number anyone has quoted from a `0269` - and the wheel did not scroll.
 
-**Why the first of those is Unknown and not Dead.** At the time of that report Magic Tray had a
+**Why the first of those is Unknown and not Dead.** At the time of both reports Magic Tray had a
 fault of its own: device discovery kept only **one HID interface per device**, so a mouse whose
 pointer collection enumerated first had its battery collection discarded and the tray reported no
-battery. That fault is fixed on this branch, and it alone is enough to explain what the tester
+battery. That fault is fixed on this branch, and it alone is enough to explain what either tester
 saw on Apple's driver, on a device whose percent lives on a second collection. So the tray's
 `0269` Boot Camp battery cell reads **Unknown**, never Dead: nothing has shown the percent to be
-impossible on Apple's driver, and nothing has shown the driver to be involved at all. The stock
-Windows half stays as reported: the percent was there.
+impossible on Apple's driver, and nothing has shown the driver to be involved at all. Two reports
+agreeing do not pick a side here, because both were taken on a build carrying that fault. The
+stock Windows half stays as reported, and now by two testers: the percent was there.
 
 **What is still not claimed.** No mechanism, in either direction. This document does not say
 Apple's filter hides, blocks or replaces the vendor collection on a v2, and it does not say the
-filter is innocent either. One tester's before-and-after, taken against a build with a known
-battery-discovery fault, is not a finding about a driver.
+filter is innocent either. Two testers' before-and-after, both taken against a build with a known
+battery-discovery fault, are not a finding about a driver, and repeating an outcome does not
+promote it to a measurement.
 
 **What would settle it**, from anyone with a `0269`: run the **next version**, on **each** driver,
 and report the percent plus a HID interface capture from the tray's Diagnostics. A `0269` owner
 who saw no percent on Apple's driver should retry on the fixed build before concluding anything.
 
 **Which driver to pick on a v2 meanwhile: Apple's.** Scroll is the only thing that driver exists
-to fix, the tester confirmed the wheel works there, and the percent may well come back on the
+to fix, a tester confirmed the wheel works there, and the percent may well come back on the
 fixed build. Stock Windows is the choice only when the percent matters more than the wheel does.
 
 ### Apple Wireless Mouse (`0310`): UNMEASURED
 
 **Not measured, and never reported.** No `0310` has been read off hardware here and no tester has
-sent one in. Neither the v1's `0x47` reading nor the v2's issue #124 report may be copied across:
-different mice, different report descriptors, and a field report on one model is not a family
-result. Driver-repo
+sent one in. Neither the v1's `0x47` reading nor the v2's issue #124 and #164 reports may be
+copied across: different mice, different report descriptors, and field reports on one model are
+not a family result. Driver-repo
 [issue #22](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/issues/22) remains open for
 this model. **Unknown here means untested hardware, never a missing or broken capability.**
 Nothing in this project claims a `0310` battery works, and nothing claims it fails.
@@ -425,8 +435,8 @@ place, by hand.
 Two honesty rules this document follows, the same ones the tray follows: **unknown renders as
 unknown and is never a fault**, and **a reading is never claimed that was not taken**. That is why
 the `0310` battery cells say Unknown instead of copying the v1's 97%, why the `0269`
-Boot Camp battery cell says Unknown rather than Dead - one tester saw no percent there, on a
-build whose own battery discovery was faulty - and why a battery row on a mouse that is switched
+Boot Camp battery cell says Unknown rather than Dead - two testers saw no percent there, both on
+builds whose own battery discovery was faulty - and why a battery row on a mouse that is switched
 off in the tray says it is switched off rather than "no reading".
 
 ---

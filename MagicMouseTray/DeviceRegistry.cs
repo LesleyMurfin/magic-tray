@@ -38,8 +38,8 @@ internal static class DeviceRegistry
         // won and the rest were discarded as if they were cable phantoms. If the winner
         // was the pointer collection the mouse reported no battery forever, and
         // AdaptivePoller's best-of-collections collapse could never fire because discovery
-        // had already collapsed the PID (issue #124: a tester's Magic Mouse v2 found no
-        // battery on the Boot Camp route). So: group the survivors by PID, and hand a
+        // had already collapsed the PID (issues #124 and #164: two testers' Magic Mouse v2
+        // found no battery on the Boot Camp route). So: group the survivors by PID, and hand a
         // mouse ALL of its collections as ordered read candidates. Exactly one
         // IBatteryDevice per PID still leaves this method, which is what the poller, the
         // tray menu and the alert policy assume.

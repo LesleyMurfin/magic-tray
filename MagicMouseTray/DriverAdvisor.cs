@@ -219,10 +219,11 @@ internal static class DriverAdvisor
     //
     // BATTERY: keyed on the PID, because the PID is the only thing the
     // evidence is keyed on. The 030D is MEASURED on this project's own
-    // hardware; the 0269 has a field report plus a public report-descriptor
-    // dump and no reading of its own (#124); the 0310 has never been seen at
-    // all - three different grades of knowledge, so three tables, split by PID
-    // rather than by DeviceKind (#137 - see HasMeasuredBattery and
+    // hardware; the 0269 has two field reports plus a public report-descriptor
+    // dump and no reading of its own (#124, #164); the 0310 has never been
+    // seen at all - three different grades of knowledge, so three tables,
+    // split by PID rather than by DeviceKind (#137 - see HasMeasuredBattery
+    // and
     // HasFieldReportedBattery below).
     // Driver repo issue #22 asked whether the battery percent can be read on
     // these pre-0323 models at all, because the percent this app reads on the
@@ -329,9 +330,10 @@ internal static class DriverAdvisor
             // does NOT generalise across the family: the 0269's own descriptor
             // dump (quoted below) has no Generic Device Controls
             // battery-strength Feature at all, so it cannot answer on this
-            // channel, and issue #124 reports one whose percent appeared only
-            // on Stock Windows. "The read does not depend on the filter" is
-            // true of the mouse that was measured and of no other.
+            // channel, and issues #124 and #164 report two whose percent
+            // appeared only on Stock Windows. "The read does not depend on
+            // the filter" is true of the mouse that was measured and of no
+            // other.
             Battery: CapabilityExpectation.Works,
             Recommended: false,
             Why: "Windows' own driver. The pointer works and the battery percent still reads "
@@ -339,18 +341,31 @@ internal static class DriverAdvisor
                + "0x47 report - but the wheel does nothing."),
     ];
 
-    // --- Magic Mouse v2 / PID 0269: two pieces of evidence, no reading ------
+    // --- Magic Mouse v2 / PID 0269: two field reports, no reading ----------
     //
     // NOTHING BELOW IS A READING TAKEN BY THIS PROJECT. No 0269 has ever been
     // paired to the PC this app is developed against, under either driver.
-    // There are two pieces of outside evidence, and they do not agree on a
-    // cause.
+    // The outside evidence is two independent field reports plus one public
+    // report descriptor, and it still does not settle the cause.
     //
-    // 1. FIELD REPORT. Issue #124, one tester, one Magic Mouse v2 (0269),
-    //    2026-09-07:
+    // 1. FIELD REPORTS. Two testers, two PCs, the same shape both times, and
+    //    both taken on builds that predate the fix in this version.
+    //    Issue #124, @centralcaetite, 2026-09-07:
     //      "Scroll works through bootcamp, however magicmousetray cannot find
     //       battery, if I change to Stock Windows magicmousetray finds battery
     //       but scroll is not working at all."
+    //    Issue #164, @AlecMakarov, 2026-10-12 - Magic Tray 1.1.0 on Windows 11
+    //    Pro 26H2 (26300.9550), model A1657, with a tray screenshot of each
+    //    route: the row reads "Battery unavailable" beside the Boot Camp
+    //    badge, and "83%" beside "Not bound", where scrolling does nothing.
+    //    Three things #124 did not carry and #164 does: the Magic Tray
+    //    version, the Windows version, and a PERCENTAGE. 83% is the first
+    //    actual number anyone has reported off a 0269 - #124 said only that a
+    //    percent appeared. What #164 does NOT state in so many words is the
+    //    wheel on Boot Camp; that is implied by its contrast ("However, if the
+    //    stock Windows driver is selected ... scrolling does not work") and
+    //    stated outright only by #124, so the Scroll cell below still rests on
+    //    #124 alone.
     //
     // 2. PUBLIC REPORT DESCRIPTOR of a Magic Mouse 2, re-parsed byte by byte
     //    from the dump at
@@ -390,8 +405,8 @@ internal static class DriverAdvisor
     //
     // WHY THE BOOT CAMP BATTERY CELL IS Unknown AND NOT Dead
     // -------------------------------------------------------
-    // The tester's missing percent has TWO candidate causes, and nothing in
-    // either piece of evidence distinguishes them:
+    // The missing percent has TWO candidate causes, and nothing in the
+    // evidence distinguishes them:
     //   a. Apple's filter hiding or merging that vendor collection. This is a
     //      real mechanism on the 0323, where it IS measured - but it has never
     //      been observed on a 0269, and a mechanism measured on one model is
@@ -402,6 +417,12 @@ internal static class DriverAdvisor
     //      opened the battery collection at all - returning -1 with no log
     //      line, which is precisely "cannot find battery". That is reproduced
     //      on the pre-fix build, and it is fixed in this version.
+    // A SECOND REPORT DOES NOT PICK BETWEEN THEM. #164 agrees with #124 line
+    // for line, and that is exactly what cause b predicts: 1.1.0 is the
+    // shipped release, 1.1.0 carries the collapse, so both testers ran the
+    // defect. Two machines reproducing this app's own bug is still this app's
+    // own bug. What would separate a from b is one report from a build that
+    // has the fix, and no such report exists yet.
     // Publishing Dead here would bake this app's own bug into a capability
     // claim about Apple's driver, and it would survive the bug. Unknown is the
     // honest cell, and it is Unknown in its exact defined sense: per the
@@ -409,11 +430,12 @@ internal static class DriverAdvisor
     // never "broken". The percent has not been seen on Apple's driver, and it
     // has not been shown to be impossible there either.
     //
-    // The Stock Windows row is a different claim with different backing: the
-    // tester SAW the percent there, and the descriptor shows a channel that
-    // can deliver it (Input 0x90 on the vendor collection, the splitVendor
-    // branch). An observation plus a mechanism is enough for Works; it is
-    // still not a reading of this project's own, and the copy says who saw it.
+    // The Stock Windows row is a different claim with different backing: both
+    // testers SAW the percent there, one of them 83%, and the descriptor shows
+    // a channel that can deliver it (Input 0x90 on the vendor collection, the
+    // splitVendor branch). Two independent observations plus a mechanism are
+    // enough for Works; it is still not a reading of this project's own, and
+    // the copy says who saw it.
     //
     // Never copied here, in any form: the 030D's Feature 0x47 measurement - a
     // different model's descriptor, and this dump shows that channel is absent
@@ -422,16 +444,17 @@ internal static class DriverAdvisor
     // collections, no branch names. The mechanics live in this comment.
     //
     // Boot Camp stays recommended. The wheel is the reason that driver exists
-    // and the tester confirmed the wheel works on it; the battery sentence
-    // names the rival route and names this app's own past fault, so the user
-    // weighs the trade instead of being steered.
+    // and #124 confirmed the wheel works on it; the battery sentence names the
+    // rival route and names this app's own past fault, so the user weighs the
+    // trade instead of being steered.
     static readonly DriverOption[] FieldReportedV2Options =
     [
         new(IdBootCamp,
             TrayMenu.V1V2RadioBootCamp,
             Pointer: CapabilityExpectation.Works,
             // Works: the half of #124 that is good news, and the half the whole
-            // driver exists for.
+            // driver exists for. #124 only - #164 implies the wheel by
+            // contrast and never states it.
             Scroll: CapabilityExpectation.Works,
             // Unknown, NOT Dead - see the two candidate causes above. One of
             // them is this app's own pre-fix discovery defect, so a Dead cell
@@ -455,29 +478,31 @@ internal static class DriverAdvisor
                + "driver, either from the INF package or with a script that registers the "
                + "driver directly - both end with the same Apple driver file doing the same "
                + "job, so the result is the same either way. This app only opens the download "
-               + "page for the INF package; it installs nothing itself. One tester with a "
-               + "Magic Mouse v2 reported that the wheel scrolls on this driver but no "
-               + "battery percent appears (issue #124); the same tester saw the percent on "
-               + "Stock Windows, where the wheel is dead. At the time of that report this app "
-               + "had a fault of its own that could hide the percent by reading the wrong "
-               + "part of the mouse, and that fault is fixed in this version, so which of the "
-               + "two was to blame is not known: the percent has not been seen on Apple's "
-               + "driver, and it has not been shown to be impossible there either."),
+               + "page for the INF package; it installs nothing itself. Two testers with a "
+               + "Magic Mouse v2 have reported that the wheel scrolls on this driver but no "
+               + "battery percent appears (issues #124 and #164); both saw the percent on "
+               + "Stock Windows instead, where the wheel is dead, and one of them read 83% "
+               + "there. Both were running a version of this app that had a fault of its own "
+               + "that could hide the percent by reading the wrong part of the mouse, and "
+               + "that fault is fixed in this version, so which of the two was to blame is "
+               + "still not known: the percent has not been seen on Apple's driver, and it "
+               + "has not been shown to be impossible there either."),
         new(IdStockWindows,
             TrayMenu.V1V2RadioStockWindows,
             // README.md:201, as for every mouse in this family: no Apple
-            // filter, no wheel - and #124 says the same from the field.
+            // filter, no wheel - and #124 and #164 both say the same from the
+            // field.
             Pointer: CapabilityExpectation.Works,
             Scroll: CapabilityExpectation.Dead,
-            // Works: the percent the tester actually saw, on this route, and
-            // the descriptor above shows the channel it can have arrived on -
-            // Input 0x90 on the FF00/0014 vendor collection, never the 030D's
-            // Feature 0x47, which this model does not have.
+            // Works: the percent both testers actually saw, on this route, one
+            // of them 83%, and the descriptor above shows the channel it can
+            // have arrived on - Input 0x90 on the FF00/0014 vendor collection,
+            // never the 030D's Feature 0x47, which this model does not have.
             Battery: CapabilityExpectation.Works,
             Recommended: false,
-            Why: "Windows' own driver. The pointer works and the battery percent reads - one "
-               + "tester with a Magic Mouse v2 reported it (issue #124) - but the wheel does "
-               + "nothing."),
+            Why: "Windows' own driver. The pointer works and the battery percent reads - two "
+               + "testers with a Magic Mouse v2 have reported it, one of them 83% (issues "
+               + "#124 and #164) - but the wheel does nothing."),
     ];
 
     // The table for a v1/v2-family PID this project has NO evidence about at
@@ -840,12 +865,14 @@ internal static class DriverAdvisor
     internal static bool HasMeasuredBattery(string? pid) =>
         pid is not null && pid.Equals("030d", StringComparison.OrdinalIgnoreCase);
 
-    // The one PID this project has a FIELD REPORT about and no measurement: the
-    // 0269 of issue #124. Deliberately a second gate rather than another arm of
-    // HasMeasuredBattery, because the two are different grades of evidence and
-    // must not be able to collapse into each other - the 030D was read on this
-    // project's own desk, the 0269 was reported by one tester on a PC nobody
-    // here has seen, and only the former may ever claim a measured channel.
+    // The one PID this project has FIELD REPORTS about and no measurement: the
+    // 0269 of issues #124 and #164. Deliberately a second gate rather than
+    // another arm of HasMeasuredBattery, because the two are different grades
+    // of evidence and must not be able to collapse into each other - the 030D
+    // was read on this project's own desk, the 0269 was reported by two
+    // testers on two PCs nobody here has seen, and only the former may ever
+    // claim a measured channel. Reports do not accumulate into a measurement:
+    // a third and a fourth would still land on this gate, not the other one.
     internal static bool HasFieldReportedBattery(string? pid) =>
         pid is not null && pid.Equals("0269", StringComparison.OrdinalIgnoreCase);
 
@@ -858,7 +885,7 @@ internal static class DriverAdvisor
         // Every PID in the v1/v2 family shares the same two choices and the
         // same scroll story; only the battery cell differs, and it differs by
         // MODEL, which is the PID - not by DeviceKind. 030D was measured here,
-        // 0269 was reported once from the field (#124), and 0310 has been
+        // 0269 was reported twice from the field (#124, #164), and 0310 has
         // neither. An unrecognised or missing PID has been neither either, so
         // it falls to the unconfirmed table rather than inheriting another
         // model's evidence.
