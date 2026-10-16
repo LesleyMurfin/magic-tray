@@ -45,9 +45,11 @@ listed below, and each carries the credit it requires.
 On the pages themselves the credits are consolidated: one `.credit` line under each photo grid
 names every author and licence in that grid, which satisfies the same obligation with less
 clutter than a caption under every image. After the September 2026 site rewrite the photographs
-appear on `docs/devices.html` and `docs/keyboard.html`. Two entries below mandate an exact credit
-string; the consolidated line must reproduce those character for character. This file is the
-authoritative per-file record.
+appear on `docs/battery.html`, `docs/devices.html`, `docs/drivers.html`, `docs/funding.html`,
+`docs/keyboard.html`, `docs/magic-mouse-2024.html`, `docs/tested.html` and `docs/trackpad.html`,
+and four shipped files are on no page at all — each says so in its own entry below. Two entries
+below mandate an exact credit string; the consolidated line must reproduce those character for
+character. This file is the authoritative per-file record.
 
 Licence texts:
 
@@ -62,6 +64,9 @@ Licence texts:
 - Source: <https://commons.wikimedia.org/wiki/File:Magic_Mouse_3_2019-02-16.jpg>
 - Required credit: `Photo: FASTILY, via Wikimedia Commons, CC BY-SA 4.0`
 - Shows: underside of a Magic Mouse v1 (PID `030D`), AA battery door, no charging port.
+- **Not displayed on any page**, after the September 2026 trims to the identification cards. The
+  file is retained in `docs/img/` (with its `.webp`) and still ships, so this entry stays: the
+  credit above still applies, and covers the file again the moment a page uses it.
 
 ### `docs/img/magic-mouse-v1-cover-off-aa.jpg`
 
@@ -94,6 +99,9 @@ Licence texts:
 - **Modification:** a crop of the file above, made by this project so the etched `Model: A1657`
   text is readable. CC0 carries no share-alike obligation, so cropping a CC0 file creates no
   downstream licence duty. No CC BY-SA file in this repo has been cropped.
+- **Not displayed on any page**, after the September 2026 trims to the identification cards. The
+  file is retained in `docs/img/` (with its `.webp`) and still ships, so this entry stays: the
+  credit above still applies, and covers the file again the moment a page uses it.
 
 ### `docs/magic-mouse-v2-lightning.jpg`
 
@@ -122,6 +130,9 @@ Licence texts:
 - Source: <https://commons.wikimedia.org/wiki/File:Apple-wireless-keyboard-aluminum-2007-side-view.jpg>
 - Required credit: `Photo: Roadmr, via Wikimedia Commons, CC BY-SA 4.0`
 - Shows: the end of the keyboard, where a round slotted cap unscrews to reach the AA batteries.
+- **Not displayed on any page**, after the September 2026 trims to the identification cards. The
+  file is retained in `docs/img/` (with its `.webp`) and still ships, so this entry stays: the
+  credit above still applies, and covers the file again the moment a page uses it.
 
 ### `docs/img/magic-keyboard-rechargeable-top.jpg`
 
@@ -145,7 +156,8 @@ Licence texts:
   reading the shipped pixels, not the filename: speaker, eject, padlock and power glyphs are all
   absent. A cable enters the rear centre and its connector is out of frame, so the **port type is
   not claimable** from this photo and the page never names it.
-- Used on `docs/keyboard.html`, beside the tester table that asks for `0267` / `026C` reports.
+- Used on `docs/keyboard.html#test`, in the `0267` / `026C` identification card that asks for a
+  test report.
 - A matching macro of the fingerprint key was downloaded and **not shipped**: the crop showed no
   chassis, no legends and no branding, so the pixels could not establish that the key belonged to
   a Magic Keyboard rather than a MacBook. Do not add one back without that evidence.
@@ -174,8 +186,10 @@ Licence texts:
   `Designed by Apple in California  Assembled in China  Model No.: A1339 … FCC ID: BCGA1339 and
   IC: 579C-A1339 … © 2009 Apple Inc.` A red `INVENTAR-NR.: 00111` inventory sticker from the
   photographer's own institution is in frame; it is part of the photograph, not our marking.
-- Used on `docs/devices.html#model` as the worked example of reading a model number off a
-  keyboard or trackpad rather than a mouse.
+- Used on `docs/trackpad.html#pp-t3`, the "Model number" panel of the `#which` picker, as the
+  worked example of reading a model number off a keyboard or trackpad rather than a mouse.
+  `docs/devices.html#model` still exists — it is the accordion entry "Which Apple Magic Mouse do I
+  have?" — but it is text only and shows no photograph, so it is no longer where this file is used.
 - Same author and the same mandated string as `magic-trackpad-2010-aa-battery-tube.jpg`, so a
   `.credit` line covering both needs that string once.
 
@@ -215,7 +229,8 @@ Licence texts:
   strips, the optical sensor and a status LED near the top, a small oval USB-C port on the bottom
   edge, and the etched block `Designed by Apple in California  Assembled in China  Model A3204
   FCC ID: BCGA3204  IC: 579C-A3204`.
-- Used on `docs/devices.html#identify`, in the `0323` identification card.
+- Used on `docs/devices.html#identify`, in the `0323` identification card, and again on
+  `docs/drivers.html` and `docs/magic-mouse-2024.html`.
 - **If you redistribute this repository** you are redistributing Apple's photograph. It is included
   because no freely licensed photograph of this device exists (see the section below), and it should
   be swapped out for a CC0 contributor photo as soon as one is offered.

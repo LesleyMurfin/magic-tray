@@ -24,7 +24,7 @@ nothing.
 | `Workflow lint` | `actionlint.yml` | every PR; push `main` on `.github/workflows/**`; dispatch | ubuntu-latest | yes |
 | `CodeQL (csharp)` | `codeql.yml` | every PR, push `main`, Mondays 07:23 UTC, dispatch | ubuntu-latest | yes |
 | `Site checks` | `site.yml` | every PR; push `main` on `docs/**`; dispatch | ubuntu-latest | yes |
-| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`; dispatch | ubuntu-latest | yes |
+| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`, `docs/install.txt`; dispatch | ubuntu-latest | yes |
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
 | `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
 | `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |
@@ -70,7 +70,16 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 - **Purpose**: on a `v*` tag: test, publish single-file self-contained win-x64,
   optionally Authenticode-sign, package the portable ZIP, verify it, write the
-  release notes, and create the GitHub release with the ZIP first.
+  release notes, create the GitHub release with the ZIP first, then re-verify
+  that release as published.
+- **Two verification steps, and they are not redundant**:
+  `scripts/verify-release.ps1` gates the artefacts on the runner's disk before
+  anything is uploaded; `scripts/verify-published-release.ps1` runs after
+  `gh release create` and re-reads the release through the GitHub API and the
+  public asset URLs. Only the second one can notice that the wrong asset set
+  was published, which is how the v1.1.0 run went green while shipping no ZIP
+  and no checksum. It is a hard gate — no `continue-on-error`. The whole
+  release procedure is in [`RELEASING.md`](../../RELEASING.md).
 - **Permissions**: `contents: write` (needed by `gh release create`).
   **Timeout**: 30 min. **No concurrency group** — a tag build must never be
   cancelled by a later one.
@@ -126,12 +135,14 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 ## packaging.yml — `Version sync`, `Winget manifest`
 
-- **Purpose**: the version appears in four independent places. `Version sync`
+- **Purpose**: the version appears in five independent places. `Version sync`
   (`scripts/check-version-sync.ps1`) enforces the real rule — published metadata
-  (the three winget manifests, the three version strings in `docs/index.html`)
-  tracks the **latest release**, while the csproj may run ahead of it as the next
-  version in development. It also derives the expected ZIP asset name from
-  `scripts/package-release.ps1` rather than hardcoding it. `Winget manifest`
+  (the three winget manifests, the three version strings in `docs/index.html`,
+  and the illustrative release tag in the agent install guide
+  `docs/install.txt`) tracks the **latest release**, while the csproj may run
+  ahead of it as the next version in development. It also derives the expected
+  ZIP asset name from `scripts/package-release.ps1` rather than hardcoding it.
+  `Winget manifest`
   (`scripts/check-winget-manifest.py`) parses the manifest set offline and
   asserts the keys winget-pkgs will require of every `Installers` entry,
   accepting the deliberate 64-zero installer digest.

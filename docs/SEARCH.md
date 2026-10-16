@@ -91,13 +91,23 @@ Every other page already names its subject in one word (`battery`, `keyboard`, `
 `devices`, `funding`), so they keep their URLs. A rename costs whatever ranking history the old
 URL had earned; it is only worth paying where the old name was meaningless.
 
-`docs/v3.html` still exists as a **redirect stub**: a zero-second `<meta http-equiv="refresh">`, a
-`<link rel="canonical">` at the new URL, a `location.replace` that preserves the `#fragment`, and a
-visible link for anyone whose browser does neither. GitHub Pages serves static files and cannot
-issue a real `301`, so this is the strongest available signal; Google treats an instant meta
-refresh as a permanent redirect, which is why the delay is `0` and not `1`. The visible fallback
-text does not weaken that. Keep the stub. Old Reddit and GitHub comments link the old URL and
-will not be edited.
+`docs/v3.html` still exists as a **redirect stub**: `noindex`, a zero-second
+`<meta http-equiv="refresh">`, and a visible link for anyone whose browser does not follow it.
+That is all it is. It carries no `<link rel="canonical">` — `scripts/check-aeo.ps1` rejects one on
+a `noindex` page, because canonical says "index that URL instead" while robots says "index
+nothing", and the crawler resolves the contradiction however it likes, sometimes by carrying the
+`noindex` across to the target. It runs no `location.replace` either: these pages ship no
+JavaScript, the production CSP is `script-src 'none'`, and the only `<script>` elements under
+`docs/` are `application/ld+json`.
+
+So the `#fragment` is dropped. An old `v3.html#community` link lands at the top of
+`magic-mouse-2024.html`, and in-repo links that used to rely on a fragment now point at the real
+page instead. GitHub Pages serves static files and cannot issue a `301`, so within this repository
+the instant meta refresh is the strongest available signal, and Google treats it as a permanent
+redirect — which is why the delay is `0` and not `1`. **A Cloudflare 301 is the better answer**: it
+preserves the fragment, passes link equity, and needs no `noindex` page at all. That belongs in the
+zone configuration (see `CLOUDFLARE.md`), not in this repository. Until then, keep the stub. Old
+Reddit and GitHub comments link the old URL and will not be edited.
 
 The stub is deliberately **not** in `sitemap.xml`. A sitemap is a list of URLs you want indexed,
 and this one exists only to hand visitors and crawlers on to the new URL. Note for whoever lands
@@ -106,30 +116,39 @@ and this one exists only to hand visitors and crawlers on to the new URL. Note f
 deliberately absent — this redirect stub and `docs/404.html` — or it will fail them on
 purpose-built behaviour.
 
-### Why not drivers.magictray.app
+### Why drivers.magictray.app
 
-A `drivers.` subdomain with `/mouse`, `/keyboard`, `/trackpad` under it was considered and
-rejected, on two counts:
+**Decided 2026-09-16 by Lesley Murfin (CEO). This is settled; do not reopen it.**
 
-1. **It splits the site in two.** Google evaluates a subdomain as its own host. The trust that
-   `magictray.app` has accumulated does not transfer in full, and a brand-new host starts cold —
-   for a site this small, that is the whole budget. Subdirectories on one host keep it pooled.
-2. **GitHub Pages allows one custom domain per site.** `docs/CNAME` holds exactly one hostname, so
-   a second host means a second repository, a second Pages deployment, a second certificate, a
-   second Search Console property, and a second sitemap — for the same handful of pages.
+The driver hub ships on `drivers.magictray.app`, served from the
+`magic-mouse-v3-windows-fix` repository with its own `docs/CNAME`. Driver pages do **not** move
+to `magictray.app/drivers/*.html`.
 
-A third count used to stand here: that a `/trackpad` route would be a page with nothing on it. That
-is no longer true, and the correction is worth recording. `vitoplantamura/MagicTrackpad2ForWindows`
-is a Precision Touchpad driver for the Magic Trackpad 2 on Windows 11, GPL-2.0, **signed by
-Microsoft** — so it needs no Test Mode, unlike the 2024 mouse route — with its `v2.0` release published in February 2026. Together with the "does my trackpad do gestures
-on Windows" demand, that is real content, so `docs/trackpad.html` exists on **this** host. It is not
-ours and we have not tested it: the page names it, states what it targets, and links its repo
-rather than repeating its steps.
+An earlier revision of this file recorded the opposite conclusion. It was never approved and is
+overturned. Recording the reasoning so the argument is not relitigated:
 
-The lesson is the one that rejected the subdomain in the first place. A route earns a URL when
-there is something true to put on it, not when it completes a pattern. If the driver content ever
-outgrows one page, the move is `magictray.app/drivers/mouse-2024.html` style paths on this host —
-same authority, same deployment, real content per path.
+1. **The two sites have different jobs.** `magictray.app` sells a tray app that reads battery
+   percent. The driver hub is a certification and download project with its own roadmap, funding
+   state and release cadence. Separate hosts let them ship on separate schedules without one
+   repository's release gate blocking the other's.
+2. **Two repositories already exist.** The driver content lives in
+   `magic-mouse-v3-windows-fix` today and is deployed from there. A subdomain matches the
+   deployment boundary that is already real; subdirectory paths would mean either merging the
+   repositories or proxying one through the other.
+3. **Search Console cost is nil.** `magictray.app` is verified as a **Domain** property, not a
+   URL-prefix property, so `drivers.magictray.app` is covered by the existing DNS TXT
+   verification with no second property and no second verification step.
+
+The cost is real and accepted: `drivers.magictray.app` is evaluated by Google as its own host and
+starts without the trust `magictray.app` has accumulated. Mitigation is cross-linking — every
+driver page links back to the apex, and the apex links out to the hub — plus a shared
+`SoftwareApplication` entity in the JSON-LD on both hosts so the two are read as one project.
+
+`docs/trackpad.html` stays on this host. It is written for the "does my trackpad do gestures on
+Windows" query and points at `vitoplantamura/MagicTrackpad2ForWindows`, a Microsoft-signed
+Precision Touchpad driver for the Magic Trackpad 2 on Windows 11, GPL-2.0, `v2.0` released
+February 2026. It is not ours and we have not tested it: the page names it, states what it
+targets, and links its repo rather than repeating its steps.
 
 ## Search Console
 
@@ -266,8 +285,10 @@ What changed:
   constantly, and the site previously only denied being a clone.
 - **FAQ parity is now real.** `battery.html` and `v3.html` had `FAQPage` questions that existed
   nowhere on the page as a question; `index.html` had eight in schema and six on the page. Schema
-  that quotes text a reader cannot find is the failure mode Google penalises. Every page now has one
-  `dl.faq`, and each answer is condensed rather than a second copy of the body prose.
+  that quotes text a reader cannot find is the failure mode Google penalises. Every page now carries
+  one `div.accordion.two-col` — a `<details>` per question, the `<summary>` the question and the
+  `div.a-body` inside it the answer — and each answer is condensed rather than a second copy of the
+  body prose.
 - **New questions in the words people actually type**: how do I check my Magic Mouse battery on
   Windows 10 or 11, how do I check the trackpad, how do I see keyboard percent on Windows 11, why
   won't my Magic Mouse scroll on Windows 11, does the 2024 USB-C mouse work on Windows 11.
@@ -281,10 +302,12 @@ What changed:
 `scripts/check-aeo.ps1` (CI job `aeo-checks`) parses every page's graph and fails the build on: a
 missing or unparseable `ld+json` block, an `@id` reference with no declaration on the same page,
 two pages disagreeing about a shared `@id`, a `WebPage` url that contradicts the canonical link or
-the file path, a missing `dateModified`, FAQ text that differs between schema and page, and a
-`softwareVersion` that has drifted from the visible download links. It is read-only and runs on
-`ubuntu-latest`. It deliberately does not repeat the link, sitemap, robots and CNAME checks in
-`scripts/check-site.ps1`.
+the file path, a missing `dateModified`, FAQ text that differs between schema and page, an accordion
+entry whose `<summary>` and `div.a-body` it cannot read as a question and its answer — reported as an
+error rather than skipped in silence, so a visible question can no longer go missing from the graph
+because the gate never saw it — and a `softwareVersion` that has drifted from the visible download
+links. It is read-only and runs on `ubuntu-latest`. It deliberately does not repeat the link,
+sitemap, robots and CNAME checks in `scripts/check-site.ps1`.
 
 Validate the rendered result against Google as well — the gate checks the graph, not Google's
 eligibility rules:
