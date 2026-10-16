@@ -452,7 +452,7 @@ public class DriverAdvisorTests
     // The read stock driver: keyboards and trackpads
     // -----------------------------------------------------------------------
     // DriverHealthChecker never looks at these kinds (skipNonScroll: true,
-    // DriverHealthChecker.cs:406, gate at :494-498), so their DriverStatus is
+    // DriverHealthChecker.cs:385, gate at :501-505), so their DriverStatus is
     // null or a cross-family leftover forever - and the advice used to say
     // "The driver bound to this device has not been read yet". On a Magic
     // Keyboard that is false: the driver is readable, and it is Microsoft's

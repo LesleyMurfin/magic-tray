@@ -64,7 +64,14 @@ public class RepairPlannerTests
         // reading, -2 present but blocked, -3 three consecutive no-readings).
         // null - never measured - is the default, so no battery rule can fire
         // in a test that is not about the battery.
-        int? lastBatteryPct = null)
+        int? lastBatteryPct = null,
+        // batteryProbe: the ONE correlated 0x90 observation. null - no probe
+        // this sweep - is the default, so no truncation rule can fire in a test
+        // that is not about it.
+        BatteryProbe? batteryProbe = null,
+        // wheel: the PASSIVE wheel observation. Feeds the device row's
+        // observational scroll line only; no rule reads it.
+        WheelObservation? wheel = null)
         => new(
             pid,
             bthenumLiveCount,
@@ -80,7 +87,135 @@ public class RepairPlannerTests
             pointerChildLive,
             multitouchAdvancing,
             scrollWatcherHealthy,
-            lastBatteryPct);
+            lastBatteryPct,
+            BatteryProbe: batteryProbe,
+            Wheel: wheel);
+
+    // ---- Fixtures for the two filter defects ----------------------------
+    //
+    // Both defects are measured facts about the shipped KMDF filter, and both
+    // are invisible to every registration-level check: the battery answer comes
+    // back STATUS_SUCCESS with a zeroed percent, and the wheel simply never
+    // emits. So these fixtures are the records those seams hand over - the
+    // battery probe's Diag pair, taken either side of one HID read, and a
+    // raw-input wheel sink driven through IWheelSink - built exactly the way
+    // the battery read and DeviceSnapshotReader build them.
+
+    private const string DiagService = BoundKmdfVariant;
+    private static readonly DateTimeOffset T0 =
+        new(2026, 9, 16, 23, 37, 42, TimeSpan.Zero);
+
+    // The truncating control-channel frame as it was measured on the wire:
+    // A1 (ACL HID input header), 90 (the battery report id), 04, 16 = 22 %.
+    private static readonly byte[] TruncatedWireFrame = [0xA1, 0x90, 0x04, 0x16];
+
+    private static FilterDiagSnapshot Diag(
+        ulong? rid12,
+        DiagAvailability availability = DiagAvailability.Ok,
+        uint? lastAclReceived = null,
+        uint? lastAclCapacity = null,
+        uint? lastOutHdr = null,
+        byte[]? lastAclBytes = null,
+        DateTimeOffset? takenAt = null)
+        => new(
+            takenAt ?? T0,
+            availability,
+            DiagService,
+            rid12, rid12, null, null,
+            lastAclReceived, lastAclCapacity, lastOutHdr, null,
+            lastAclBytes, null, null, null);
+
+    // The planner judges the probe RECORD, so the fixture is the pair as the
+    // battery read hands it over: one Diag sample taken immediately before the
+    // GET_REPORT, one immediately after, and the fact that read produced. Both
+    // samples default to T0, i.e. one read's worth of interval apart, because
+    // that is the only interval a delta may be measured across
+    // (DeviceDiagReader.PairMaxSpan).
+    private static BatteryProbe Probe(
+        FilterDiagSnapshot? before,
+        FilterDiagSnapshot after,
+        bool? zeroReport,
+        DateTimeOffset? takenAt = null)
+        => new(takenAt ?? T0, zeroReport, before, after);
+
+    // The whole measured fingerprint: a well-formed 0x90 report whose percent
+    // byte is 0 and a touch counter that really climbed across the read.
+    // corroborate:false is the COMMON live case - the filter's last-inbound
+    // slot is shared with the ~65/s interrupt channel, so a sample normally
+    // shows capacity 9 and not capacity 1.
+    private static BatteryProbe TruncationProbe(bool corroborate = true)
+        => Probe(
+            Diag(rid12: 2_095_000),
+            corroborate
+                ? Diag(
+                    rid12: 2_095_323,
+                    lastAclReceived: 78,
+                    lastAclCapacity: 1,
+                    lastOutHdr: 0x41,
+                    lastAclBytes: TruncatedWireFrame)
+                : Diag(rid12: 2_095_323, lastAclReceived: 23, lastAclCapacity: 9),
+            zeroReport: true);
+
+    private static DeviceSnapshot V3WithProbe(BatteryProbe? probe, int? lastBatteryPct = -2)
+        => Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            lastBatteryPct: lastBatteryPct,
+            batteryProbe: probe);
+
+    // The naive rule this batch replaced: "-2 and the touch stream looks
+    // alive". Asserted directly in the loop-hazard test so that test cannot be
+    // satisfied by a planner that simply stopped reading the battery.
+    private static bool NaiveTruncationPredicate(DeviceSnapshot s) =>
+        s.LastBatteryPct == -2
+        && IFilterDiagReader.TouchStreamAdvanced(
+            s.BatteryProbe?.DiagBefore, s.BatteryProbe?.DiagAfter);
+
+    private static WheelObservation Leg(
+        int wheelEvents = 0,
+        int hWheelEvents = 0,
+        int mouseRecords = 694,
+        bool decoderValidated = true,
+        bool @void = false,
+        string? targetDevicePath = TargetPath,
+        int activeSeconds = 10)
+        => new(
+            WallDuration: TimeSpan.FromSeconds(10),
+            ActiveDuration: TimeSpan.FromSeconds(activeSeconds),
+            MouseRecords: mouseRecords,
+            WheelEvents: wheelEvents,
+            HWheelEvents: hWheelEvents,
+            ButtonEvents: decoderValidated ? 2 : 0,
+            AbsMotionSum: 12_485,
+            TargetDevicePath: targetDevicePath,
+            DecoderValidated: decoderValidated,
+            Void: @void);
+
+    private const string TargetPath =
+        @"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01";
+
+    // A wheel sink with two scripted legs, driven through IWheelSink.
+    private sealed class FakeWheelSink(params WheelObservation[] legs) : IWheelSink
+    {
+        private int _next;
+
+        public Task<WheelObservation> ObservePromptedAsync(TimeSpan window, CancellationToken ct) =>
+            Task.FromResult(legs[Math.Min(_next++, legs.Length - 1)]);
+    }
+
+    private static async Task<(WheelObservation Control, WheelObservation Probe)> RunLegsAsync(
+        IWheelSink sink)
+    {
+        var control = await sink.ObservePromptedAsync(
+            RepairPlanner.ScrollProbeLeg, CancellationToken.None);
+        var probe = await sink.ObservePromptedAsync(
+            RepairPlanner.ScrollProbeLeg, CancellationToken.None);
+        return (control, probe);
+    }
 
     [Fact]
     public void PlanOne_V3StoppedButBoundAfterCharge_IsAutoFixableParentRestart()
@@ -950,5 +1085,393 @@ public class RepairPlannerTests
         var label = RepairPlanner.MenuLabel([v3, v1]);
         Assert.False(string.IsNullOrWhiteSpace(label));
         Assert.NotEqual(RepairPlanner.MenuLabel([]), label);
+    }
+
+    // ================= Battery: the truncated answer =====================
+
+    [Fact]
+    public void PlanOne_ZeroPercentWhileTouchStreamAdvancing_NamesTheMitigationScript()
+    {
+        // The measured defect. The filter gates its inbound scratch diversion
+        // on BufferSize > 0, HidBth reads the control channel header-first with
+        // BufferSize == 1, so the filter takes the whole GET_REPORT response
+        // onto a 78-byte scratch and copies ONE byte back. HIDCLASS pre-zeroes
+        // the caller's buffer and writes the report id into byte 0, so the read
+        // succeeds and userspace sees 90 00 00 while the percentage (22 %) was
+        // on the wire.
+        var finding = RepairPlanner.PlanOne(V3WithProbe(TruncationProbe()));
+
+        Assert.NotNull(finding);
+        Assert.Equal("0323", finding.Pid);
+        Assert.Equal(RepairProblem.BatteryResponseTruncated, finding.Problem);
+        Assert.Equal(RepairAction.RunChannelRepairScript, finding.Action);
+        Assert.False(finding.AutoFixable);
+
+        // What a user has to be able to act on: that the mouse answered, that
+        // the answer was cut off, and the name of the one thing that helps.
+        Assert.Contains("scripts/repair-magicmouse-channel.ps1", finding.Detail);
+        Assert.Contains("1 byte long while 78 bytes", finding.Detail);
+        Assert.Contains("22%", finding.Detail);
+        // It must not imply the pointer or the wheel are broken too.
+        Assert.Contains("only the battery reading is", finding.Detail);
+    }
+
+    [Fact]
+    public void PlanOne_ZeroPercentWithNoCorroboratingSlotSample_StillFires()
+    {
+        // The COMMON live case, and the reason corroboration may never gate:
+        // the filter's last-inbound slot is shared with the interrupt channel
+        // at ~65 reports/s, so a sweep-time sample shows capacity 9. Both the
+        // broken and the fixed binary read received 23 / capacity 9 there, so
+        // that shape separates nothing - while the zero percent plus a live
+        // touch stream still does.
+        var uncorroborated = RepairPlanner.PlanOne(
+            V3WithProbe(TruncationProbe(corroborate: false)));
+
+        Assert.NotNull(uncorroborated);
+        Assert.Equal(RepairProblem.BatteryResponseTruncated, uncorroborated.Problem);
+        Assert.Contains("scripts/repair-magicmouse-channel.ps1", uncorroborated.Detail);
+        // Nothing may be asserted about bytes that were not sampled.
+        Assert.DoesNotContain("bytes had come back", uncorroborated.Detail);
+    }
+
+    [Fact]
+    public void PlanOne_ZeroPercentOnAnIdleMouse_RaisesNothing()
+    {
+        // The whole point of the touch-stream precondition. An idle mouse stops
+        // sending its vendor report, so a zero answer from one is silence, not
+        // a fault - and a rule that fired here would nag every Magic Mouse on
+        // every desk. Counter identical between the two sweeps = the stream did
+        // not advance.
+        var stalled = Probe(
+            Diag(rid12: 2_095_323),
+            Diag(rid12: 2_095_323),
+            zeroReport: true);
+
+        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(stalled)));
+    }
+
+    [Fact]
+    public void PlanOne_ZeroPercentWithCountersResetBetweenSweeps_RaisesNothing()
+    {
+        // A driver reinstall zeroes every Diag counter, and a device mid-restart
+        // collapses them too (measured: Rid12Count 2095323 -> 521 across one
+        // restart). A lower number is a NEW BASELINE, never a negative delta
+        // and never proof of touch - so this must read as no evidence.
+        var reinstalled = Probe(
+            Diag(rid12: 2_095_323),
+            Diag(rid12: 0),
+            zeroReport: true);
+        var midRestart = Probe(
+            Diag(rid12: 2_095_323),
+            Diag(rid12: 521),
+            zeroReport: true);
+
+        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(reinstalled)));
+        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(midRestart)));
+    }
+
+    [Fact]
+    public void PlanOne_BatteryReadThatNeverAnswered_RaisesNothingAndCannotLoop()
+    {
+        // THE LOOP HAZARD. MOUSE_RID90_FAILED (the IOCTL failing three times,
+        // observed as err=21 at 23:37:42 while the device was re-enumerating)
+        // and MOUSE_RID90_BAD (a wrong report id) both return the SAME -2
+        // sentinel as the truncation case. This finding's remediation restarts
+        // the device, so a rule keyed on -2 would diagnose a mouse that is
+        // already mid-restart and prescribe another restart - a loop inside the
+        // exact window FindingGate exists to damp. Only the well-formed-zero
+        // fact may fire, so both of these are null and raise nothing.
+        //
+        // This is the CONSUMER half only, and the fact below is hand-written -
+        // so it cannot see the producer reclassifying an outcome. That half is
+        // pinned by MouseBatteryDeviceTests
+        // .ZeroReportFact_PinsEveryTerminalOutcomeOfA0x90Read.
+        var neverAnswered = V3WithProbe(Probe(
+            Diag(rid12: 2_095_000),
+            Diag(rid12: 2_095_323),
+            zeroReport: null));
+
+        Assert.Null(RepairPlanner.PlanOne(neverAnswered));
+
+        // And the fixture really is the trap: it satisfies the naive predicate
+        // this rule replaced, so a planner that went back to reading -2 - or
+        // that widened ZeroReport to a two-state bool - fails here instead of
+        // passing by having stopped looking at the battery altogether.
+        Assert.True(NaiveTruncationPredicate(neverAnswered));
+
+        // Same shape with a real percentage: not a fault either.
+        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(Probe(
+            Diag(rid12: 2_095_000),
+            Diag(rid12: 2_095_323),
+            zeroReport: false))));
+    }
+
+    [Fact]
+    public void PlanOne_ZeroPercentWithACounterThatClimbedAcrossPollCycles_RaisesNothing()
+    {
+        // The false positive the interval bound exists to stop. The pair used to
+        // come from a static per-service store, so before was the PREVIOUS poll
+        // cycle's sample - 5 minutes to 24 hours back - and any touch anywhere
+        // in that window read as "the mouse is in use right now" on a mouse
+        // nobody had touched for hours.
+        var pollCycleApart = Probe(
+            Diag(rid12: 169_000, takenAt: T0 - TimeSpan.FromMinutes(5)),
+            Diag(rid12: 400_000),
+            zeroReport: true);
+
+        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(pollCycleApart)));
+
+        // The identical climb measured across the read itself still fires: the
+        // discriminator is the interval, not the numbers.
+        var acrossTheRead = Probe(
+            Diag(rid12: 169_000, takenAt: T0 - TimeSpan.FromMilliseconds(120)),
+            Diag(rid12: 400_000),
+            zeroReport: true);
+
+        Assert.Equal(
+            RepairProblem.BatteryResponseTruncated,
+            RepairPlanner.PlanOne(V3WithProbe(acrossTheRead))!.Problem);
+    }
+
+    // ================= Scroll: the prompted two-leg probe ================
+
+    [Fact]
+    public async Task PlanScrollProbe_ControlCarriesNotchesAndDiscriminatorDoesNot_Fires()
+    {
+        // The measured defect: the gesture engine emits notches only for the
+        // lowest-id contact in drag state, so a resting finger holding a low
+        // slot id kills scroll while every other finger's travel is discarded.
+        // Control leg nonzero proves two-finger contact was registered and that
+        // notches can reach Windows at all; the discriminator's zero is then
+        // the defect and not a lifted finger.
+        var (control, probe) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 12, hWheelEvents: 2, mouseRecords: 5_714),
+            Leg(wheelEvents: 0, hWheelEvents: 0, mouseRecords: 694)));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.NotchesMissing,
+            RepairPlanner.JudgeScrollProbe(control, probe));
+
+        var finding = RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, probe);
+
+        Assert.NotNull(finding);
+        Assert.Equal(RepairProblem.ScrollNotchesNotDelivered, finding.Problem);
+        Assert.Equal(RepairAction.RecommendFilterUpdate, finding.Action);
+        Assert.False(finding.AutoFixable);
+
+        // Reports in versus notches out, from THIS run - never a hardcoded
+        // number - plus the cause and the fact that nothing here can fix it.
+        Assert.Contains("694 input records", finding.Detail);
+        Assert.Contains("not one scroll notch", finding.Detail);
+        Assert.Contains("14", finding.Detail);
+        Assert.Contains("resting on the surface", finding.Detail);
+        Assert.Contains("scroll-step setting makes no difference", finding.Detail);
+    }
+
+    [Fact]
+    public async Task PlanScrollProbe_BothLegsSilent_IsInconclusiveNotAFault()
+    {
+        // THE test that earns the two-leg design. Notch emission needs two
+        // contacts registered (GestureEngine.c:152-156 re-anchors and skips the
+        // notch path below that), so a resting finger the pad never felt looks
+        // exactly like dead scroll. A single-leg rule FIRES here; this one must
+        // not, because the control leg proved nothing.
+        var (control, probe) = await RunLegsAsync(new FakeWheelSink(Leg(), Leg()));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(control, probe));
+        Assert.Null(RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, probe));
+    }
+
+    [Fact]
+    public async Task PlanScrollProbe_DiscriminatorCarriesNotches_IsNoFindingAndNoHealthClaim()
+    {
+        // Nonzero never asserts health: the broken rule still emits notches for
+        // a symmetric drag (7 per 60 touch units, 14 on a correct build), so all
+        // this rules out is this one fault.
+        var (control, probe) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14), Leg(wheelEvents: 7)));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.NotchesDelivered,
+            RepairPlanner.JudgeScrollProbe(control, probe));
+        Assert.Null(RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, probe));
+        Assert.DoesNotContain("working", RepairPlanner.ScrollProbeNoFaultFound);
+        Assert.Contains("not a clean bill of health", RepairPlanner.ScrollProbeNoFaultFound);
+    }
+
+    [Fact]
+    public async Task PlanScrollProbe_NoTouchInALeg_IsInconclusive()
+    {
+        // A user who ignored the prompt must never be scored as broken, and a
+        // sink that never saw the 0323 has measured nothing about it - a second
+        // mouse may not fill in for this one's zero.
+        var (voidControl, probe) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14, @void: true), Leg()));
+        var (control, voidProbe) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14), Leg(@void: true)));
+        var (control2, noTarget) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14), Leg(targetDevicePath: null)));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(voidControl, probe));
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(control, voidProbe));
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(control2, noTarget));
+        Assert.Null(RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, voidProbe));
+    }
+
+    [Fact]
+    public async Task PlanScrollProbe_ATouchTooShortToBeTheGesture_IsInconclusive()
+    {
+        // WheelObservation.Void is cleared by a single 250 ms tick of activity,
+        // so without a floor a brush of the surface scored as a measured leg and
+        // produced a full "Scroll wheel is dead" finding - whose own detail then
+        // rendered that touch as "0 seconds". The verdict rests on the
+        // deliberate ten-second slide the prompt asks for.
+        var (control, brushed) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14), Leg(activeSeconds: 1)));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(control, brushed));
+        Assert.Null(RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, brushed));
+    }
+
+    [Fact]
+    public async Task PlanScrollProbe_DecoderNeverValidated_IsInconclusive()
+    {
+        // A zero read by a decoder that has never been proven is not a zero.
+        // Validation is sticky per device path and can only be set by decoding a
+        // real non-wheel button flag, which is why the first prompt asks for a
+        // click when it is still unset.
+        var (control, probe) = await RunLegsAsync(new FakeWheelSink(
+            Leg(wheelEvents: 14, decoderValidated: false),
+            Leg(decoderValidated: false)));
+
+        Assert.Equal(
+            RepairPlanner.ScrollProbeVerdict.Inconclusive,
+            RepairPlanner.JudgeScrollProbe(control, probe));
+        Assert.Null(RepairPlanner.PlanScrollProbe(V3WithProbe(probe: null), control, probe));
+    }
+
+    [Fact]
+    public void ScrollProbePrompts_AskForMechanicsAndOnlyDemandAClickWhenUnproven()
+    {
+        // The wording is load-bearing. "Scroll normally" was rejected: most
+        // people's natural two-finger scroll is one dominant finger with the
+        // other trailing, which IS the asymmetric case and reads zero under the
+        // broken rule - so the control would fail on exactly the population it
+        // controls for. The discriminator must demand a still finger that is
+        // still in contact.
+        var unproven = RepairPlanner.ScrollProbeControlPrompt(decoderValidated: false);
+        var proven = RepairPlanner.ScrollProbeControlPrompt(decoderValidated: true);
+
+        Assert.StartsWith("Click once, then ", unproven);
+        Assert.DoesNotContain("Click once", proven);
+        foreach (var control in new[] { unproven, proven })
+        {
+            Assert.Contains("side by side", control);
+            Assert.Contains("same distance at the same speed", control);
+            Assert.DoesNotContain("normally", control);
+        }
+
+        Assert.Contains("still", RepairPlanner.ScrollProbeDiscriminatorPrompt);
+        Assert.Contains("pressed down", RepairPlanner.ScrollProbeDiscriminatorPrompt);
+        Assert.Contains("the other finger", RepairPlanner.ScrollProbeDiscriminatorPrompt);
+
+        // The retry says what to CHANGE, and says the flow ends after it.
+        Assert.NotEqual(RepairPlanner.ScrollProbeControlRetryPrompt, proven);
+        Assert.Contains("side by side", RepairPlanner.ScrollProbeControlRetryPrompt);
+        Assert.Contains("stops without reporting", RepairPlanner.ScrollProbeControlRetryPrompt);
+
+        // Inconclusive names what was not established, and never passes.
+        Assert.Contains("could not confirm two-finger contact", RepairPlanner.ScrollProbeInconclusive);
+        Assert.Contains("Run it again", RepairPlanner.ScrollProbeInconclusive);
+    }
+
+    // ================= The rows the findings have to reach ===============
+
+    [Fact]
+    public void ScrollRow_MeasuredSilence_ReadsAsUnverifiedAndNotAsWorking()
+    {
+        // Reachability, not plumbing: the row is what the user sees, and before
+        // this change it claimed "Scroll: working" from counter movement alone -
+        // a statement about ACL frames being translated, not about a notch ever
+        // reaching Windows, which is exactly the defect. A measured window on
+        // this device that saw no notch must outrank that claim.
+        var facts = new DeviceCapability.CapabilityFacts(
+            Kind: DeviceKind.MagicMouseV3,
+            Pid: "0323",
+            LastPct: 47,
+            BoundFilter: BoundKmdfVariant,
+            FilterPackagePresent: true,
+            FilterServiceRunning: true,
+            FilterInStack: true,
+            PointerChildLive: true,
+            MultitouchAdvancing: true,
+            Problem: null,
+            EnabledInApp: true);
+
+        // No observation: unchanged behaviour, the old line stands.
+        Assert.Equal("Scroll: working", DeviceCapability.ScrollRow(facts));
+
+        var observed = DeviceCapability.ScrollRow(facts with { Wheel = Leg() });
+        Assert.Equal("Scroll: no scrolling seen yet (unverified)", observed);
+        Assert.True(observed.Length <= DeviceCapability.RowMax);
+        Assert.Contains(observed, DeviceCapability.Rows(facts with { Wheel = Leg() }));
+
+        // Notches were seen: the positive line is allowed again.
+        Assert.Equal(
+            "Scroll: working",
+            DeviceCapability.ScrollRow(facts with { Wheel = Leg(wheelEvents: 14) }));
+
+        // An unmeasured window is not evidence and must not displace anything.
+        Assert.Equal(
+            "Scroll: working",
+            DeviceCapability.ScrollRow(facts with { Wheel = Leg(@void: true) }));
+        Assert.Equal(
+            "Scroll: working",
+            DeviceCapability.ScrollRow(facts with { Wheel = Leg(decoderValidated: false) }));
+    }
+
+    [Fact]
+    public void Rows_MeasuredFaults_RenderTheirOwnLines()
+    {
+        // Both new findings have to be visible on the device row, not only in
+        // the headline. A finding whose row still read "working" would be the
+        // same out-claiming this change exists to remove.
+        var facts = new DeviceCapability.CapabilityFacts(
+            Kind: DeviceKind.MagicMouseV3,
+            Pid: "0323",
+            LastPct: -2,
+            BoundFilter: BoundKmdfVariant,
+            FilterPackagePresent: true,
+            FilterServiceRunning: true,
+            FilterInStack: true,
+            PointerChildLive: true,
+            MultitouchAdvancing: true,
+            Problem: RepairProblem.BatteryResponseTruncated,
+            EnabledInApp: true);
+
+        var batteryRow = DeviceCapability.BatteryRow(facts);
+        Assert.Equal("Battery: answer cut off by the scroll driver", batteryRow);
+        Assert.True(batteryRow.Length <= DeviceCapability.RowMax);
+        Assert.Contains(batteryRow, DeviceCapability.Rows(facts));
+
+        var scrollFacts = facts with
+        {
+            Problem = RepairProblem.ScrollNotchesNotDelivered,
+            LastPct = 47,
+        };
+        var scrollRow = DeviceCapability.ScrollRow(scrollFacts);
+        Assert.Equal("Scroll: not working (driver drops scroll it reads)", scrollRow);
+        Assert.Contains(scrollRow, DeviceCapability.Rows(scrollFacts));
     }
 }

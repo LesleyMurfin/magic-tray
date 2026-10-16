@@ -45,8 +45,10 @@ No bounty is offered. Please give a fix a reasonable window before disclosing pu
 - **The registry / SDP patch script** `scripts/kbd-patch-cachedservices.ps1`, which edits the
   cached Bluetooth service record for a paired Magic Keyboard.
 - **The elevated diagnostic scripts** `scripts/capture-state.ps1`,
-  `scripts/mm-bt-stack-snapshot.ps1` and `diagnose-driver.ps1` — including anything they leak
-  into a snapshot that was supposed to be redacted.
+  `scripts/mm-bt-stack-snapshot.ps1`, `diagnose-driver.ps1` and
+  `scripts/repair-magicmouse-channel.ps1` — including anything they leak into a snapshot that
+  was supposed to be redacted, and the one elevated `pnputil /restart-device` the last of those
+  performs on the live Bluetooth instance.
 - **Release artifacts** — `MagicTray-<tag>-win-x64.zip`, the `SHA256SUMS` file inside it, the
   `.zip.sha256` sidecar, the winget manifests under `packaging/winget/`, and the workflows that
   produce them.
