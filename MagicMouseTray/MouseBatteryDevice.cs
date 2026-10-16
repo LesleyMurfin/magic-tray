@@ -77,14 +77,20 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // Apple firmware reports 1..100; 0 is only ever seen from a dead/phantom interface.
     internal const int MinValidPercent = 1;
 
+    // The IBatteryDevice level contract in one place. Every implementation's read path
+    // asks this before returning a percentage, so the floor cannot drift per device:
+    // a real 0 would end AdaptivePoller.BestReading's scan of a group and outrank a live
+    // interface's failure sentinel.
+    internal static bool IsRealLevel(int pct) => pct is >= MinValidPercent and <= 100;
+
     readonly string _path;
 
     public string DeviceName { get; }
     public string Pid { get; }
     public DeviceKind Kind { get; }
 
-    // The HID interface this instance reads. Lets discovery tests assert which transport
-    // survived de-duplication.
+    // The HID interface this instance reads. Discovery returns one device per interface
+    // path, so tests use this to assert which interfaces survived.
     internal string DevicePath => _path;
 
     internal MouseBatteryDevice(string path, string displayName, DeviceKind kind)
@@ -179,7 +185,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         // comes from a dead charge-cable/phantom interface, never from a connected mouse
         // (live: 30 of 63 reads pct=0 on a just-charged Magic Mouse 2024). A failed read
         // must stay a failed read so last-known-good and the poller handle it.
-        if (pct is < MinValidPercent or > 100) return null;
+        if (!IsRealLevel(pct)) return null;
         return pct;
     }
 
@@ -274,7 +280,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             if (HidNative.HidD_GetFeature(handle, fbuf, fbuf.Length))
             {
                 int pct = fbuf[1];
-                if (pct is >= MinValidPercent and <= 100)
+                if (IsRealLevel(pct))
                 {
                     Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (unified Feature 0x{unifiedRid:X2})");
                     return pct;

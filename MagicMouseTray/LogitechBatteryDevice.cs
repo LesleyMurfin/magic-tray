@@ -90,9 +90,33 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         var resp = SendReceive(handle, req, reportLen);
         if (resp is null) return -1;
 
-        int pct = resp[4]; // % at offset 4 for both 0x1000 GetBatteryLevelStatus and 0x1004 GetStatus
-        return pct is >= 0 and <= 100 ? pct : -1;
+        // % at offset 4 for both 0x1000 GetBatteryLevelStatus and 0x1004 GetStatus.
+        var (pct, marker) = ClassifyLevelByte(resp[4]);
+        // GetBatteryPercent logs LOGI_BATTERY_OK once for whichever feature answered; the
+        // rejection has to be logged here, where the raw byte and the feature that produced it
+        // are still in hand. Before this it was silent, which made the IBatteryDevice contract's
+        // "each logs a distinct zero marker" false for this implementation.
+        if (pct < 0)
+            Logger.Log($"{marker} device={DeviceName} value={resp[4]} (HID++ feature 0x{featureId:X4} fn{funcIndex} answered outside 1-100)");
+        return pct;
     }
+
+    // The level decision for the HID++ battery byte, split out of the read so it is provable
+    // without Logitech hardware (the model is MouseBatteryDevice.ParseRid90Percent). Pure and
+    // allocation-free: the markers are literals and the tuple never leaves the stack.
+    //
+    // Same level contract as the Apple paths (MouseBatteryDevice.IsRealLevel), floor 1: a real
+    // percentage ends AdaptivePoller.BestReading's scan of the group, so an unfloored 0 from a
+    // dead interface would win over a live one's failure sentinel and alert at 0%.
+    //
+    // A rejected value is -1, never -2: -2 means "the battery report is not exposed", and a
+    // device that answered the Root feature query has demonstrably exposed it. (Nothing routes
+    // a Logitech device to a repair offer either way - RepairPlanner rule 2d is gated on
+    // DriverHealthChecker.IsKeyboardPid and TrayMenu.ShowFixKeyboard on DeviceKind.MagicKeyboard.)
+    internal static (int Pct, string Marker) ClassifyLevelByte(byte raw) =>
+        MouseBatteryDevice.IsRealLevel(raw)
+            ? (raw, "LOGI_BATTERY_OK")
+            : (-1, raw == 0 ? "LOGI_BATTERY_ZERO" : "LOGI_BATTERY_BAD");
 
     static byte[] NewReport(byte reportId, int len, byte featureIndex, byte funcByte, byte arg0, byte arg1)
     {
@@ -123,7 +147,16 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
                 if ((uint)Marshal.GetLastWin32Error() != HidNative.ERROR_IO_PENDING) return null;
                 if (HidNative.WaitForSingleObject(evt, TIMEOUT_MS) != HidNative.WAIT_OBJECT_0)
                 {
+                    // CancelIo only REQUESTS cancellation: the read can still be in flight when
+                    // it returns. Without waiting for the cancelled I/O to finish, the finally
+                    // below closes the event and this frame returns while the kernel still owns
+                    // `ov` (a local on a frame that is going away) and `buf` (an unpinned managed
+                    // array) - it would later signal a closed-and-possibly-reused handle and
+                    // write into memory this frame no longer owns. GetOverlappedResult with
+                    // bWait=true blocks until the cancellation has actually completed; the result
+                    // is uninteresting, only the completion is.
                     HidNative.CancelIo(handle);
+                    HidNative.GetOverlappedResult(handle, ref ov, out _, true);
                     return null;
                 }
             }
