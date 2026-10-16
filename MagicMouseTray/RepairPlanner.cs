@@ -181,18 +181,7 @@ internal sealed record DeviceSnapshot(
     // LastAclReceived was rejected as a health signal outright
     // (DeviceDiagReader.cs:347-361): the broken binary and the fixed binary both
     // read LastAclReceived 23 with LastAclCapacity 9, so it separates nothing.
-    BatteryProbe? BatteryProbe = null,
-    // The PASSIVE wheel observation, and only that. It feeds the device row's
-    // observational scroll line and nothing else: no rule may derive a scroll
-    // fault from it, because one window cannot. Measured on the FIXED binary:
-    // 84 active touch seconds of which 83 were zero-wheel, all 32 events inside
-    // a single 1.34 s burst - so a zero here is the normal state of a healthy
-    // mouse nobody happened to scroll on. The fault verdict needs the two
-    // PROMPTED legs compared against each other (RepairPlanner.JudgeScrollProbe),
-    // which the tray holds locally for the length of the probe flow and never
-    // stores here. null is "never observed"; Void is "nobody touched the
-    // surface", which is not a negative result either.
-    WheelObservation? Wheel = null);
+    BatteryProbe? BatteryProbe = null);
 
 internal sealed record RepairFinding(
     string Pid,

@@ -27,7 +27,7 @@ internal static class DeviceSnapshotReader
 
     readonly record struct HidLayer(int PhantomCount, bool Col01, bool Col02);
 
-    internal static IReadOnlyList<DeviceSnapshot> Read(Config config) => Read(config, null, null);
+    internal static IReadOnlyList<DeviceSnapshot> Read(Config config) => Read(config, null);
 
     // lastBatteryByPid: the tray's most recent battery reading per PID, with
     // the MouseBatteryDevice / KeyboardBatteryDevice sentinels intact (-1 no
@@ -35,14 +35,9 @@ internal static class DeviceSnapshotReader
     // PID absent from the map has not been measured and stays null, which the
     // planner must never turn into a finding. Passed in rather than polled
     // here: this reader never opens a HID handle.
-    // lastWheel: the newest measured wheel observation from the raw-input sink,
-    // or null when none has been taken. Threaded in exactly like the battery
-    // readings above and for the same reason - this reader creates no window,
-    // registers no raw-input device and waits for nothing.
     internal static IReadOnlyList<DeviceSnapshot> Read(
         Config config,
-        IReadOnlyDictionary<string, int>? lastBatteryByPid,
-        WheelObservation? lastWheel = null)
+        IReadOnlyDictionary<string, int>? lastBatteryByPid)
     {
         // sc query spawns a process, so each distinct bound service name is
         // queried once for the whole menu open.
@@ -60,7 +55,7 @@ internal static class DeviceSnapshotReader
         {
             try
             {
-                snapshots.Add(ReadPid(pid, config, serviceCache, watcher, lastBatteryByPid, lastWheel));
+                snapshots.Add(ReadPid(pid, config, serviceCache, watcher, lastBatteryByPid));
             }
             catch (Exception ex)
             {
@@ -77,7 +72,6 @@ internal static class DeviceSnapshotReader
             config,
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase),
             ReadWatcherHealth(),
-            null,
             null);
 
     // How stale the watcher's heartbeat may be before it counts as stopped.
@@ -117,8 +111,7 @@ internal static class DeviceSnapshotReader
         Config config,
         Dictionary<string, bool> serviceCache,
         bool? watcherHealthy,
-        IReadOnlyDictionary<string, int>? lastBatteryByPid,
-        WheelObservation? lastWheel)
+        IReadOnlyDictionary<string, int>? lastBatteryByPid)
     {
         pid = pid.ToLowerInvariant();
         bool v3 = DriverHealthChecker.IsV3Pid(pid);
@@ -222,12 +215,6 @@ internal static class DeviceSnapshotReader
                 ? DeviceDiagReader.LatestBatteryProbe(pid, DateTimeOffset.UtcNow)
                 : null;
 
-        // The wheel observation is measured by the raw-input sink on its own
-        // thread over a window the user was prompted for. It describes the one
-        // HID instance the sink targeted - the 0323 - so no other PID may claim
-        // it, and a second mouse can never answer for this one.
-        WheelObservation? wheel = v3 ? lastWheel : null;
-
         // Null means there is no enabled_<pid> line at all, which the planner
         // reads as "this PC does not own this catalog device".
         bool? configEnabled = config.HasDeviceEnabledEntry(pid)
@@ -250,7 +237,7 @@ internal static class DeviceSnapshotReader
                 + $"pointer={Tri(pointerChildLive)} mt_advancing={Tri(multitouchAdvancing)} "
                 + $"watcher={Tri(watcherHealthy)} "
                 + $"batt={(lastBatteryPct?.ToString() ?? "unknown")} "
-                + $"probe={DescribeProbe(batteryProbe)} wheel={DescribeWheel(wheel)}");
+                + $"probe={DescribeProbe(batteryProbe)}");
         }
 
         return new DeviceSnapshot(
@@ -280,13 +267,11 @@ internal static class DeviceSnapshotReader
             // Machine-wide watcher state, read once per sweep.
             watcherHealthy,
             lastBatteryPct,
-            // By NAME, not position: these two are the trailing optional fields
-            // of a fifteen-argument record and both are nullable references, so
-            // a transposition would compile silently. The probe is the winning
-            // collection's or nothing - null is no evidence and raises no
-            // finding.
-            BatteryProbe: batteryProbe,
-            Wheel: wheel);
+            // By NAME, not position: the probe is the record's trailing
+            // optional field, so a misplaced positional argument would compile
+            // silently. It is the winning collection's or nothing - null is no
+            // evidence and raises no finding.
+            BatteryProbe: batteryProbe);
     }
 
     static string Tri(bool? value) => value switch
@@ -317,15 +302,6 @@ internal static class DeviceSnapshotReader
         probe.DiagBefore is { } before && probe.DiagAfter is { } after
             ? ((int)(after.TakenAt - before.TakenAt).TotalMilliseconds).ToString() + "ms"
             : "none";
-
-    // A void window is NOT a zero-wheel window: nobody touched the mouse, so
-    // it carries no verdict either way and must not read like a measurement.
-    static string DescribeWheel(WheelObservation? wheel) => wheel is null
-        ? "none"
-        : wheel.Void
-            ? "void"
-            : $"w={wheel.WheelEvents},h={wheel.HWheelEvents},rec={wheel.MouseRecords}"
-                + $",validated={wheel.DecoderValidated}";
 
     // Every filter-family service named on the live stack, kept verbatim so a
     // repair acts on the names the device really loads. Order is the caller's

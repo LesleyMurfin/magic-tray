@@ -2774,11 +2774,7 @@ internal sealed class TrayApp : IDisposable
             MultitouchAdvancing: snapshot?.MultitouchAdvancing,
             Problem: FindFinding(pid)?.Problem,
             EnabledInApp: EnabledInApp(pid),
-            Sdp: sdp,
-            // The passive observation, so the scroll line cannot claim
-            // "working" off counter movement while a measured window on this
-            // very device saw no notch reach Windows.
-            Wheel: snapshot?.Wheel);
+            Sdp: sdp);
     }
 
     // Tri-state, deliberately: true on, false switched off in this app, null
@@ -2976,11 +2972,15 @@ internal sealed class TrayApp : IDisposable
         // What the text may claim is bounded by what the code does: only
         // tallies are accumulated (WheelSink.cs:260-264), every non-target
         // device is dropped when the observation is projected
-        // (WheelSink.cs:280, :299), the one thing kept beside the counts is the
-        // target's device path (WheelSink.cs:316, logged at :3097 below), and
-        // no keyboard is ever registered - the single RAWINPUTDEVICE is usage
-        // page 1 / usage 2 (WheelSink.cs:509-510) and a record that is not a
-        // mouse record is discarded undecoded (WheelSink.cs:595-596).
+        // (WheelSink.cs:280, :299), and no keyboard is ever registered - the
+        // single RAWINPUTDEVICE is usage page 1 / usage 2
+        // (WheelSink.cs:509-510) and a record that is not a mouse record is
+        // discarded undecoded (WheelSink.cs:595-596). Two things survive
+        // beside the message counts and must be named rather than implied:
+        // the target's device path (WheelSink.cs:316, logged at :3100 below)
+        // and the summed pointer travel abs(lLastX)+abs(lLastY)
+        // (WheelSink.cs:261, :304, carried on the observation at :316) - a
+        // single total, not positions, but still more than "counts".
         var intro =
             "No problem was found with this mouse's driver or its connection - and that is not "
             + "an answer about the scroll wheel.\n\n"
@@ -2989,13 +2989,16 @@ internal sealed class TrayApp : IDisposable
             + "surface sends the same stream of touch reports as a hand scrolling, and a "
             + "working mouse spends most of its time sending no scroll at all. So the only "
             + "honest way to check is to measure two short gestures while you make them.\n\n"
-            + "It takes about twenty seconds, in two steps of ten. During each step this app "
-            + "counts the movement, button and scroll messages Windows delivers from this "
-            + "mouse - and from any other mouse attached, because Windows hands it all of "
-            + "them - and keeps nothing but those counts and which mouse they came from: not "
-            + "which button was pressed, not where the pointer went. Nothing you type is read "
-            + "at all. Nothing is installed, nothing is changed on this PC or on the mouse, "
-            + "no administrator prompt appears, and you can stop at any step.\n\n"
+            + "It takes about twenty seconds, in two steps of ten - and if the first step "
+            + "sends nothing through, it offers that step once more, which you can turn "
+            + "down. During each step this app counts the movement, button and scroll "
+            + "messages Windows delivers from this mouse - and from any other mouse "
+            + "attached, because Windows hands it all of them - and keeps nothing but those "
+            + "counts, one total of how far the pointer moved, and which mouse they came "
+            + "from: not which button was pressed, not where the pointer was. Nothing you "
+            + "type is read at all. Nothing is installed, nothing is changed on this PC or "
+            + "on the mouse, no administrator prompt appears, and you can stop at any "
+            + "step.\n\n"
             + "OK starts the test. Cancel changes nothing.";
         if (System.Windows.Forms.MessageBox.Show(
                 intro, TrayMenu.ProductName,

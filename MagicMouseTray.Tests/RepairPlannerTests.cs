@@ -68,10 +68,7 @@ public class RepairPlannerTests
         // batteryProbe: the ONE correlated 0x90 observation. null - no probe
         // this sweep - is the default, so no truncation rule can fire in a test
         // that is not about it.
-        BatteryProbe? batteryProbe = null,
-        // wheel: the PASSIVE wheel observation. Feeds the device row's
-        // observational scroll line only; no rule reads it.
-        WheelObservation? wheel = null)
+        BatteryProbe? batteryProbe = null)
         => new(
             pid,
             bthenumLiveCount,
@@ -88,8 +85,7 @@ public class RepairPlannerTests
             multitouchAdvancing,
             scrollWatcherHealthy,
             lastBatteryPct,
-            BatteryProbe: batteryProbe,
-            Wheel: wheel);
+            BatteryProbe: batteryProbe);
 
     // ---- Fixtures for the two filter defects ----------------------------
     //
@@ -1397,49 +1393,6 @@ public class RepairPlannerTests
     }
 
     // ================= The rows the findings have to reach ===============
-
-    [Fact]
-    public void ScrollRow_MeasuredSilence_ReadsAsUnverifiedAndNotAsWorking()
-    {
-        // Reachability, not plumbing: the row is what the user sees, and before
-        // this change it claimed "Scroll: working" from counter movement alone -
-        // a statement about ACL frames being translated, not about a notch ever
-        // reaching Windows, which is exactly the defect. A measured window on
-        // this device that saw no notch must outrank that claim.
-        var facts = new DeviceCapability.CapabilityFacts(
-            Kind: DeviceKind.MagicMouseV3,
-            Pid: "0323",
-            LastPct: 47,
-            BoundFilter: BoundKmdfVariant,
-            FilterPackagePresent: true,
-            FilterServiceRunning: true,
-            FilterInStack: true,
-            PointerChildLive: true,
-            MultitouchAdvancing: true,
-            Problem: null,
-            EnabledInApp: true);
-
-        // No observation: unchanged behaviour, the old line stands.
-        Assert.Equal("Scroll: working", DeviceCapability.ScrollRow(facts));
-
-        var observed = DeviceCapability.ScrollRow(facts with { Wheel = Leg() });
-        Assert.Equal("Scroll: no scrolling seen yet (unverified)", observed);
-        Assert.True(observed.Length <= DeviceCapability.RowMax);
-        Assert.Contains(observed, DeviceCapability.Rows(facts with { Wheel = Leg() }));
-
-        // Notches were seen: the positive line is allowed again.
-        Assert.Equal(
-            "Scroll: working",
-            DeviceCapability.ScrollRow(facts with { Wheel = Leg(wheelEvents: 14) }));
-
-        // An unmeasured window is not evidence and must not displace anything.
-        Assert.Equal(
-            "Scroll: working",
-            DeviceCapability.ScrollRow(facts with { Wheel = Leg(@void: true) }));
-        Assert.Equal(
-            "Scroll: working",
-            DeviceCapability.ScrollRow(facts with { Wheel = Leg(decoderValidated: false) }));
-    }
 
     [Fact]
     public void Rows_MeasuredFaults_RenderTheirOwnLines()
