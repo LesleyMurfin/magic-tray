@@ -260,5 +260,191 @@ public class MouseBatteryDeviceTests
         Assert.Equal(!bluetooth && path.Length > 0, DeviceRegistry.IsUsbTransportPath(path));
     }
 
+    // Live BT stack shape for a Magic Mouse v2: a pointer collection and a vendor collection
+    // on the same PID. Nothing in either PATH says which of them answers a battery read.
+    const string Bt0269Col01 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col01#a&1f2e3d4c&0&0000";
+    const string Bt0269Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col02#a&1f2e3d4c&0&0001";
+    const string Usb0269Col02 = @"\\?\hid#vid_05ac&pid_0269&mi_01&col02#a&16288706&0&0001";
 
+    // Regression for issues #124 and #164: two testers with a Magic Mouse v2 reported,
+    // independently and on the same shipped build, that Magic Tray
+    // finds no battery while Apple's driver is bound. Discovery used to keep the first
+    // interface per PID and discard the rest, so if Windows enumerated the pointer
+    // collection first the other collection was thrown away and no read could ever reach
+    // it. The tray still lists ONE mouse, so one device leaves discovery - but it now
+    // carries every collection of that mouse as an ordered read candidate.
+    [Fact]
+    public void Discover_V2_KeepsAllCollectionsOfOneMouseAsCandidates()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV2, mouse.Kind);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Bt0269Col01, mouse.DevicePath);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // Candidates are the live device's own collections, never resurrected charge-cable
+    // phantoms: USB still loses to Bluetooth for the same PID, and the dropped USB path
+    // does not come back as a candidate.
+    [Fact]
+    public void Discover_V2_UsbPhantom_IsNotKeptAsCandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02, Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // A genuinely cabled mouse has no Bluetooth interface and must still be discovered.
+    [Fact]
+    public void Discover_V2_UsbOnly_IsStillOneDevice()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Usb0269Col02, mouse.DevicePath);
+    }
+
+    // The v3 gate is untouched by the candidate rule: COL01 is the pointer collection and is
+    // rejected at classify time, so it can never become a read candidate.
+    [Fact]
+    public void Discover_0323_Col01_IsNeverACandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0323Col01, Bt0323Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV3, mouse.Kind);
+        Assert.Equal(new[] { Bt0323Col02 }, mouse.CandidatePaths);
+    }
+
+    // Keyboards keep the old rule - col02 only, one device per PID. The candidate list is a
+    // mouse-only answer to #124; a keyboard's battery channel is already known to be col02.
+    [Fact]
+    public void Discover_Keyboard_IsUnchanged_OneDevicePerPid()
+    {
+        const string kbdCol01 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col01#a&2b3c4d5e&0&0000";
+        const string kbdCol02 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col02#a&2b3c4d5e&0&0001";
+        const string kbdCol03 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col03#a&2b3c4d5e&0&0002";
+
+        var found = DeviceRegistry.DiscoverFromPaths([kbdCol01, kbdCol02, kbdCol03]);
+        Assert.Single(found);
+        Assert.Equal(DeviceKind.MagicKeyboard, found[0].Kind);
+        Assert.Equal("0239", found[0].Pid);
+    }
+
+    // The descriptor orders the attempts, it does not veto one. A node that declares the
+    // unified Generic Device battery-strength Feature is read there first because that is the
+    // cheapest likely hit (030D), and Input 0x90 is STILL attempted afterwards.
+    [Fact]
+    public void AttemptOrder_DeclaredFeatureLeads_InputIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(0x47, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Feature47, BatteryChannelAnswer.Input90 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.Equal(0x47, (int)order[0].ReportId);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[1].ReportId);
+    }
+
+    // The 0269 / 0323 shape: a vendor top level (0xFF00/0x0014) and no Feature battery cap at
+    // all. Input 0x90 leads, and the Feature channel is still tried afterwards at the fallback
+    // id, flagged as the guess it is.
+    [Fact]
+    public void AttemptOrder_DeclaredVendorInputLeads_FeatureIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: true);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // Issue #124: the node that declares NEITHER channel is exactly the one the old build gave
+    // up on with MOUSE_NO_BATTERY_CAP. Both channels must still be attempted - an Apple device
+    // answering a report it never declared is the case this whole probe exists for.
+    [Fact]
+    public void AttemptOrder_NothingDeclared_StillTriesBothChannels()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.All(order, a => Assert.False(a.Declared));
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[0].ReportId);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // The learned answer is keyed on this token, so it has to come off a real interface path -
+    // including the 030D shape, which has no collection fragment at all.
+    [Theory]
+    [InlineData(Bt0269Col02, "col02")]
+    [InlineData(@"\\?\HID#VID_05AC&PID_0269&MI_01&COL02#a&16288706&0&0001", "col02")]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&030d#9&bt", "none")]
+    [InlineData(@"\\?\hid#vid_05ac&pid_030d&col#7&odd", "none")]
+    [InlineData("", "none")]
+    public void CollectionToken_IsTheStablePartOfThePath(string path, string expected)
+    {
+        Assert.Equal(expected, MouseBatteryDevice.CollectionToken(path));
+    }
+
+    // A remembered answer that stops working must not keep failing: it is forgotten, so the
+    // next read probes both channels again and can learn the new one. This is what makes a
+    // Boot Camp to Stock driver switch heal itself with no user action.
+    [Fact]
+    public void LearnedAnswer_IsForgottenWhenItStopsWorking()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-chan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0269", learned);
+            Assert.Equal(learned, BatteryChannelMemory.Get("0269"));
+            Assert.Equal(learned, Config.Load(file).GetBatteryChannel("0269"));
+
+            BatteryChannelMemory.Forget("0269", learned, "read_failed");
+            Assert.Null(BatteryChannelMemory.Get("0269"));
+            Assert.Null(Config.Load(file).GetBatteryChannel("0269"));
+
+            // And the new shape is remembered in its place.
+            var relearned = new BatteryChannelAnswer(
+                BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47);
+            BatteryChannelMemory.Learn("0269", relearned);
+            Assert.Equal(relearned, Config.Load(file).GetBatteryChannel("0269"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // Nothing attached (any read that happens without a poller) must degrade to "no memory,
+    // just probe" rather than throw.
+    [Fact]
+    public void LearnedAnswer_WithoutASink_IsSilentlyAbsent()
+    {
+        BatteryChannelMemory.Attach(null);
+        BatteryChannelMemory.Learn("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
+        Assert.Null(BatteryChannelMemory.Get("0269"));
+    }
 }

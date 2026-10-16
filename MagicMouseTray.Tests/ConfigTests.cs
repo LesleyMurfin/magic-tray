@@ -235,4 +235,83 @@ public class ConfigTests : IDisposable
         Assert.Equal(1, cfg.GetThreshold("0323"));
         Assert.Equal(5, cfg.GetThreshold("030d"));
     }
+
+    // The learned battery answer is what lets the tray read a figured-out mouse with one HID
+    // call instead of a probe walk, so it has to survive the restart that throws the in-memory
+    // device objects away.
+    [Fact]
+    public void BatteryChannel_RoundTripsThroughTheFile()
+    {
+        var cfg = Config.Load(_path);
+        Assert.Null(cfg.GetBatteryChannel("0269"));
+
+        Assert.True(cfg.SetBatteryChannel("0269",
+            new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90)));
+        Assert.True(cfg.SetBatteryChannel("030d",
+            new BatteryChannelAnswer(BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47)));
+
+        var reloaded = Config.Load(_path);
+        Assert.Equal(new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90),
+            reloaded.GetBatteryChannel("0269"));
+        Assert.Equal(new BatteryChannelAnswer(BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47),
+            reloaded.GetBatteryChannel("030d"));
+        Assert.Null(reloaded.GetBatteryChannel("0323"));
+    }
+
+    // Clearing is how a driver switch heals itself: the stale answer must be gone from the
+    // file too, or the next run would read the channel that has just stopped working.
+    [Fact]
+    public void BatteryChannel_Cleared_IsGoneFromTheFileAndReportsWhetherItHadAnything()
+    {
+        var cfg = Config.Load(_path);
+        cfg.SetBatteryChannel("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
+
+        Assert.True(cfg.ClearBatteryChannel("0269"));
+        Assert.Null(cfg.GetBatteryChannel("0269"));
+        Assert.Null(Config.Load(_path).GetBatteryChannel("0269"));
+
+        // Nothing left to forget - the caller uses this to log one relearn, not one per poll.
+        Assert.False(cfg.ClearBatteryChannel("0269"));
+    }
+
+    // The poll loop runs every 30 seconds and calls this after every successful read.
+    // Re-learning the same answer must not touch the file: deleting it and finding it still
+    // gone proves no write happened.
+    [Fact]
+    public void BatteryChannel_UnchangedAnswer_IsNotWrittenAgain()
+    {
+        var cfg = Config.Load(_path);
+        var answer = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+        cfg.SetBatteryChannel("0269", answer);
+        File.Delete(_path);
+
+        Assert.False(cfg.SetBatteryChannel("0269", answer));
+        Assert.False(File.Exists(_path));
+
+        // A genuinely different answer - the driver switched and the mouse moved channel - is
+        // written.
+        Assert.True(cfg.SetBatteryChannel("0269",
+            new BatteryChannelAnswer(BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47)));
+        Assert.Contains("battery_channel_0269=none:feature47:0x47", File.ReadAllText(_path));
+    }
+
+    // config.ini is a text file a user may edit and an older build may have written. A value
+    // this app cannot understand is ignored - Load must not throw, and must not lose the rest
+    // of the file with it.
+    [Theory]
+    [InlineData("col02:input90")]            // missing report id
+    [InlineData("col02:wmi:0x90")]           // channel this app never reads
+    [InlineData("mouse:input90:0x90")]       // collection token that matches no interface
+    [InlineData("col02:input90:zz")]         // report id that is not hex
+    [InlineData("col02:input90:0x1234")]     // report id that is not a byte
+    [InlineData("")]
+    public void BatteryChannel_UnusableValue_IsIgnored(string value)
+    {
+        File.WriteAllText(_path, $"threshold=5\nbattery_channel_0269={value}\nstar_clicked=true\n");
+
+        var cfg = Config.Load(_path);
+        Assert.Null(cfg.GetBatteryChannel("0269"));
+        Assert.Equal(5, cfg.GlobalThreshold);
+        Assert.True(cfg.StarClicked);
+    }
 }

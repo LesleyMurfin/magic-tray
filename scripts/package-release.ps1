@@ -45,6 +45,7 @@ $ScriptPayload = [ordered]@{
   'scripts/diagnose-driver.ps1'          = 'diagnose-driver.ps1'
   'scripts/diagnose-and-recover.ps1'     = 'scripts/diagnose-and-recover.ps1'
   'scripts/mm-bt-stack-snapshot.ps1'     = 'scripts/mm-bt-stack-snapshot.ps1'
+  'scripts/mm-hid-report.ps1'            = 'scripts/mm-hid-report.ps1'
 }
 
 function Get-CsprojVersion {

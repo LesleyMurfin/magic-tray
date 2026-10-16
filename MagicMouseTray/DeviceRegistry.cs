@@ -30,8 +30,23 @@ internal static class DeviceRegistry
         // Magic Mouse was listed twice and the dead cable interface reported a false 0%.
         // Prefer the live Bluetooth interface; keep USB only when it is the sole transport
         // for that PID (a genuinely cabled mouse must still report battery).
-        var results = new List<IBatteryDevice>(matched.Count);
-        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        //
+        // What this pass may NOT do is throw away the other COLLECTIONS of a surviving
+        // mouse. A v1/v2 mouse has no collection gate at all (the col02 gate below is
+        // keyboards only, and Is0323BatteryCollectionPath is scoped to the v3), so keeping
+        // the first path per PID meant that whichever collection Windows enumerated first
+        // won and the rest were discarded as if they were cable phantoms. If the winner
+        // was the pointer collection the mouse reported no battery forever, and
+        // AdaptivePoller's best-of-collections collapse could never fire because discovery
+        // had already collapsed the PID (issues #124 and #164: two testers' Magic Mouse v2
+        // found no battery on the Boot Camp route). So: group the survivors by PID, and hand a
+        // mouse ALL of its collections as ordered read candidates. Exactly one
+        // IBatteryDevice per PID still leaves this method, which is what the poller, the
+        // tray menu and the alert policy assume.
+        var order = new List<string>();
+        var groups = new Dictionary<string, List<(string Path, IBatteryDevice Device)>>(
+            StringComparer.OrdinalIgnoreCase);
+
         foreach (var (path, device) in matched)
         {
             var pid = ExtractPid(path);
@@ -43,13 +58,50 @@ internal static class DeviceRegistry
                 continue;
             }
 
-            if (!claimed.Add(pid))
+            if (!groups.TryGetValue(pid, out var group))
             {
-                Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport={(bluetooth ? "bt" : "usb")} path={path}");
+                group = [];
+                groups[pid] = group;
+                order.Add(pid);
+            }
+            group.Add((path, device));
+        }
+
+        var results = new List<IBatteryDevice>(order.Count);
+        foreach (var pid in order)
+        {
+            var group = groups[pid];
+            var primaryDevice = group[0].Device;
+
+            // Keyboards (and the flag-gated Logitech path) keep the old rule: one path per
+            // PID, the rest logged as duplicates. A keyboard is already gated to col02, so a
+            // second path here is a genuine duplicate interface, not another read channel.
+            if (primaryDevice is not MouseBatteryDevice mouse)
+            {
+                for (int i = 1; i < group.Count; i++)
+                {
+                    var dup = group[i].Path;
+                    Logger.Log($"DISCOVER_SKIP_DUPLICATE pid={pid} transport={(IsBluetoothTransportPath(dup) ? "bt" : "usb")} path={dup}");
+                }
+                results.Add(primaryDevice);
                 continue;
             }
 
-            results.Add(device);
+            if (group.Count == 1)
+            {
+                results.Add(primaryDevice);
+                continue;
+            }
+
+            var candidates = new List<string>(group.Count);
+            foreach (var (path, _) in group)
+                candidates.Add(path);
+
+            // Logged once per multi-collection mouse (never for the single-path common case,
+            // which would be 30s noise): this one line is what makes the next #124-style
+            // report readable, because it says which interfaces the read may choose from.
+            Logger.Log($"DISCOVER_CANDIDATES pid={pid} n={candidates.Count} primary={candidates[0]} also={string.Join('|', candidates.GetRange(1, candidates.Count - 1))}");
+            results.Add(new MouseBatteryDevice(candidates, mouse.DeviceName, mouse.Kind));
         }
         return results;
     }
