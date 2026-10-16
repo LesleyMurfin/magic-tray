@@ -442,6 +442,77 @@ public class DriverPackageCatalogTests
         Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
     }
 
+    // Issue #162: the first run patched the cache, every later click re-ran a
+    // script whose landmark that first run had consumed, and the only thing
+    // the user was ever shown was "powershell.exe exited 1". The script's exit
+    // codes now carry what happened, and these are the words they turn into.
+    [Fact]
+    public void KeyboardSdpPatch_FailureNamesTheCauseTheLogAndTheBytes()
+    {
+        var noRecord = DriverInstaller.KeyboardSdpFailureMessage(
+            DriverInstaller.KeyboardPatchExitNoRecord, @"C:\logs\kbd-patch.log", null);
+        Assert.Contains("No Bluetooth record for this keyboard carries the battery report",
+            noRecord, StringComparison.Ordinal);
+        Assert.Contains("so nothing was changed", noRecord, StringComparison.Ordinal);
+        Assert.Contains(@"Log: C:\logs\kbd-patch.log", noRecord, StringComparison.Ordinal);
+
+        var unknownShape = DriverInstaller.KeyboardSdpFailureMessage(
+            DriverInstaller.KeyboardPatchExitNotPatched,
+            @"C:\logs\kbd-patch.log",
+            "[CachedServices\\00010000] bytes around RID 0x47");
+        Assert.Contains("layout the unlock does not recognise", unknownShape,
+            StringComparison.Ordinal);
+        // the tail is quoted, because the elevated console is hidden and this
+        // dialog is the only place the script's own words can appear
+        Assert.Contains("bytes around RID 0x47", unknownShape, StringComparison.Ordinal);
+
+        // An exit code this app does not know is reported as itself, never
+        // dressed up as a cause it cannot prove.
+        var unknownCode = DriverInstaller.KeyboardSdpFailureMessage(7, @"C:\logs\x.log", null);
+        Assert.Contains("exit code 7", unknownCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("No Bluetooth record", unknownCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("does not recognise", unknownCode, StringComparison.Ordinal);
+    }
+
+    // Both halves of "it already worked": the state where nothing ran, and the
+    // state where the run just finished. Each has to name the radio cycle,
+    // because the registry write alone never produces a percent - hidbth
+    // re-reads CachedServices only when Bluetooth cycles.
+    [Fact]
+    public void KeyboardSdpPatch_BothOutcomesNameTheBluetoothCycle()
+    {
+        var already = DriverInstaller.KeyboardSdpAlreadyAppliedMessage();
+        Assert.Contains("already in this keyboard's Bluetooth record", already,
+            StringComparison.Ordinal);
+        Assert.Contains("nothing was run", already, StringComparison.Ordinal);
+        Assert.Contains("turn Bluetooth off", already, StringComparison.Ordinal);
+        Assert.Contains("Re-pairing the keyboard erases the unlock", already,
+            StringComparison.Ordinal);
+
+        var done = DriverInstaller.KeyboardSdpNextStepMessage();
+        Assert.Contains("turn Bluetooth off and on again", done, StringComparison.Ordinal);
+        Assert.Contains("Running this again later is safe", done, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void KeyboardSdpPatch_LogTailIsTheLastLines_AndAMissingLogIsNotAnError()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"mt-kbd-patch-{Guid.NewGuid():N}.log");
+        Assert.Null(DriverInstaller.ReadPatchLogTail(path));
+
+        try
+        {
+            File.WriteAllLines(path, ["one", "two", "three", "four"]);
+            var tail = DriverInstaller.ReadPatchLogTail(path, maxLines: 2);
+            Assert.Equal("three\nfour", tail);
+            Assert.Equal("one\ntwo\nthree\nfour", DriverInstaller.ReadPatchLogTail(path, maxLines: 99));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void PathAOnKmdf_WarnsThatWhqlAppleInfCanOutrankTheTestSignedKmdfPackage()
     {

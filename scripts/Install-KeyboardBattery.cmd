@@ -3,8 +3,10 @@ setlocal EnableExtensions
 title Magic Tray — keyboard battery patch
 
 :: User-initiated PATH-C wrapper. Elevates, then runs kbd-patch-cachedservices.ps1.
-:: Does not change the patch protocol. Requires -Mac: the ps1 defaults to a
-:: developer-machine MAC (e806884b0741) which must not be used by accident.
+:: Does not change the patch protocol. Requires -Mac: the ps1 has no default MAC
+:: and refuses to run without one, so the address has to come from here.
+:: Running it twice is safe - a keyboard that already carries the unlock is
+:: reported as already patched and nothing is written.
 
 set "HASMAC="
 echo(%*| findstr /I /C:"-Mac" >nul && set "HASMAC=1"
@@ -14,7 +16,7 @@ if not defined HASMAC (
   echo Example: Install-KeyboardBattery.cmd -Mac aabbccddeeff
   echo.
   echo You must pass the keyboard Bluetooth MAC (12 hex digits, no colons^).
-  echo The script default MAC is a developer machine and will patch the wrong device.
+  echo The script has no default address and will not run without one.
   echo Find the address in Device Manager - Bluetooth - keyboard - Details - Bluetooth device address.
   echo.
   pause

@@ -205,8 +205,10 @@ Your keyboard keeps the standard Windows Bluetooth driver. There's no Apple soft
 
 - In the tray, open your keyboard and click **Fix battery reads**. Magic Tray finds the keyboard's Bluetooth address on its own, asks your permission, then runs the unlock.
 - Prefer to run it yourself? Every release ships `Install-KeyboardBattery.cmd`. Right-click it and pick **Run as administrator**.
-- Turn Bluetooth off and on again, and the percent appears.
+- **Turn Bluetooth off and on again.** This step is required: Windows only re-reads the keyboard's cached record when it reconnects, so the percent stays blocked until you do it (unplugging and re-pairing is not needed - switching the keyboard off and on again works too).
+- Running **Fix battery reads** again is safe. A keyboard that already carries the unlock is reported as already done and nothing is written, so a second run can't break anything.
 - Re-pairing the keyboard erases the unlock. Run **Fix battery reads** once more. Until you do, the tray lists the keyboard and shows the battery as blocked.
+- Every run writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`. If the unlock won't apply, attach that file to your bug report - it holds the reason.
 
 Full page, including what the unlock changes: [Keyboard battery](https://magictray.app/keyboard.html#unlock).
 
