@@ -77,22 +77,16 @@ Do **not** vendor or rebuild the KMDF driver here — that lives in `magic-mouse
 - Driver install paths are user-confirmed only; missing KMDF package → unavailable, never fall back to patching `applewirelessmouse.sys`.
 - Device catalog is code (`MouseBatteryDevice.KnownMice`, `KeyboardBatteryDevice.KnownKeyboards`), not README prose.
 
-## ACO Triage & Code Graph
+## AICostOptimizer & Code Graph Triage (binding)
 
-Portable ACO maintainer kit under `.aco/` and `.ai/skills/aco-triage/`.
-
-### Opening prompt (mandatory)
-
-Every structural triage / PR-review session **MUST** start from:
-
-```text
-.aco/ACO-TRIAGE-PROMPT.txt
-```
-
-### Jev routing (optional, fail-open)
-
-- **When `JEV_URL` is set:** use Jev semantic routing for triage enrichment.
-- **When `JEV_URL` is unset or unreachable:** fail open immediately to local `.aco/graph.db` (if present) and `git`/`rg`. Never block review on Jev.
+1. **Prompt:** Reference `.aco/ACO-TRIAGE-PROMPT.txt` for structural and semantic analysis.
+2. **Semantic Routing (Jev/Kev):** Active when `JEV_URL` is set:
+   - Risk classification: `python3 -m aicostoptimizer jev choice`
+   - Safety invariants ($p \ge 0.95$): `python3 -m aicostoptimizer jev noul`
+   - ADR compliance scoring: `python3 -m aicostoptimizer jev score`
+3. **Structural Graph:** Uses local `.aco/graph.db` with native C# AST walk; fails open if Jev is unset/unreachable.
+4. **Output Contract:** Every PR review ends with ```json aco-triage-run```.
+5. **Clean repo:** Never commit `.aco/graph.db`.
 
 ### Pre-flight
 
@@ -100,7 +94,7 @@ Every structural triage / PR-review session **MUST** start from:
 python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py
 ```
 
-Expect 25/25 PASS on the offline path. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
+Expect PASS on the offline path. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
 
 ### Blast-radius query (conditional, fail-open)
 
@@ -121,8 +115,8 @@ If graph DB, CLI, or query is missing / times out / empty:
 
 ### Zero daemons
 
-- No localhost graph/search daemons (including ports commonly used for optional search backends).
-- **Never commit** `.aco/graph.db` (blocked by the ACO gitignore fragment). Indexes are local-only.
+- No localhost graph/search daemons.
+- **Never commit** `.aco/graph.db` (blocked by the ACO gitignore fragment).
 
 ### Output contract (every PR review)
 
@@ -146,7 +140,7 @@ Every ACO triage / PR review **MUST** end with exactly one full machine footer:
   "verification": [{ "command": "dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release", "exit_code": 0, "passed": true }],
   "diff_stats": null,
   "residual_risks": [],
-  "prompt_version": "1.2.1-quick",
+  "prompt_version": "1.4.0-quick",
   "pr_comment_status": "skipped|posted",
   "pr_comment_urls": []
 }
@@ -160,6 +154,7 @@ Populate from the real run. Chat narrative alone is not enough for ingest. If a 
 - `.ai/skills/aco-triage/SKILL.md`
 - `.ai/skills/aco-triage/scripts/verify_graceful_degrade.py`
 - `.aco/README.md` · optional `.aco/JEV.md` + `.aco/jev.env.sample`
+
 
 ## PR hygiene
 
