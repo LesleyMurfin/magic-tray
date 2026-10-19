@@ -1,4 +1,6 @@
 # AGENTS.md — Magic Tray
+Read .context/ first.
+
 
 ## Repo identity
 
