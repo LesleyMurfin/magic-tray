@@ -4,6 +4,78 @@ using Microsoft.Win32;
 
 namespace MagicMouseTray;
 
+// One learned battery answer for one PID: which collection of the device answered, which
+// channel it answered over, and the report id that was used. Persisted as
+// "battery_channel_<pid>=<collection>:<channel>:0x<rid>" so a mouse this app has already
+// figured out is read with a single HID call instead of a probe walk on every poll.
+//
+// Keyed on PID plus collection TOKEN, never on the interface path: a path carries the
+// Bluetooth MAC and the instance ids Windows re-mints on re-pairing, while "col02" is the
+// same string across reboots, re-pairings and USB-versus-Bluetooth transports.
+internal readonly record struct BatteryChannelAnswer(string Collection, string Channel, byte ReportId)
+{
+    // HID Input report 0x90 read with HidD_GetInputReport, percent at buf[2]. The vendor
+    // collection channel (usage page 0xFF00, usage 0x0014).
+    internal const string Input90 = "input90";
+    // HID Feature report read with HidD_GetFeature at the id the descriptor declares for
+    // Generic Device Controls (0x0006) Battery Strength (0x0020), percent at buf[1].
+    internal const string Feature47 = "feature47";
+    // The interface path carries no &col fragment at all - the 030D shape: one interface,
+    // battery report on the mouse collection itself.
+    internal const string NoCollection = "none";
+
+    // The persisted form. Written by Config, read back by Parse, and quoted verbatim by the
+    // user-run capture script, so all three agree on one spelling.
+    internal string Value => $"{Collection}:{Channel}:0x{ReportId:X2}";
+
+    // Defensive by contract: config.ini is a plain text file a user may edit and an older
+    // build may have written. An unparseable, unknown-channel or unknown-collection value is
+    // IGNORED - it must never throw and never take Config.Load down with it.
+    internal static BatteryChannelAnswer? Parse(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var parts = value.Split(':');
+        if (parts.Length != 3) return null;
+        var collection = NormalizeCollection(parts[0]);
+        var channel = NormalizeChannel(parts[1]);
+        var rid = ParseReportId(parts[2]);
+        if (collection is null || channel is null || rid is null) return null;
+        return new BatteryChannelAnswer(collection, channel, rid.Value);
+    }
+
+    // "none", or "col" followed by at least one digit. Anything else is a collection token
+    // this app never wrote and cannot match against a live interface path.
+    internal static string? NormalizeCollection(string? token)
+    {
+        var t = token?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(t)) return null;
+        if (t == NoCollection) return NoCollection;
+        if (!t.StartsWith("col", StringComparison.Ordinal) || t.Length == 3) return null;
+        for (int i = 3; i < t.Length; i++)
+            if (!char.IsAsciiDigit(t[i])) return null;
+        return t;
+    }
+
+    internal static string? NormalizeChannel(string? token)
+    {
+        var t = token?.Trim().ToLowerInvariant();
+        if (t == Input90) return Input90;
+        if (t == Feature47) return Feature47;
+        return null;
+    }
+
+    // Always hex, with or without the 0x prefix the app itself writes: a report id is only
+    // ever quoted in hex in this project (0x90, 0x47), so "47" must not decode as 47 decimal.
+    static byte? ParseReportId(string? token)
+    {
+        var t = token?.Trim();
+        if (string.IsNullOrEmpty(t)) return null;
+        if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) t = t[2..];
+        return byte.TryParse(t, System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var rid) ? rid : null;
+    }
+}
+
 // Persists user settings to %APPDATA%\MagicMouseTray\config.ini.
 // Start-with-Windows is stored in HKCU Run registry key (not Startup folder)
 // because ProcessPath is available without install and needs no shortcut logic.
@@ -35,6 +107,14 @@ internal sealed class Config
     internal const string Driver0323Stock = "stock";
     internal string? Driver0323 { get; private set; }
     readonly string _configPath;
+    // config.ini key prefix for a learned battery answer, one line per PID.
+    internal const string BatteryChannelKeyPrefix = "battery_channel_";
+    // Learned battery answers by PID. Unlike every other setting here this one is written
+    // from the POLL thread (the battery reader learns and forgets as devices answer), while
+    // the rest of Config is written from the UI thread - so this dictionary and the file
+    // write it triggers are the one place in Config that needs a lock.
+    readonly object _gate = new();
+    readonly Dictionary<string, BatteryChannelAnswer> _batteryChannel = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _deviceEnabled = new(StringComparer.OrdinalIgnoreCase);
 
     Config(string? path = null) => _configPath = path ?? ConfigPath;
@@ -76,6 +156,12 @@ internal sealed class Config
                     var choice = ParseDriver0323(val);
                     if (choice is not null)
                         cfg.Driver0323 = choice;
+                }
+                else if (key.StartsWith(BatteryChannelKeyPrefix, StringComparison.Ordinal))
+                {
+                    var answer = BatteryChannelAnswer.Parse(val);
+                    if (answer is not null)
+                        cfg._batteryChannel[key[BatteryChannelKeyPrefix.Length..]] = answer.Value;
                 }
             }
         }
@@ -171,31 +257,76 @@ internal sealed class Config
     internal static bool IsPathALastingChoice(string? value) =>
         ParseDriver0323(value) == Driver0323PathA;
 
+    // The learned battery answer for a PID, or null when this app has not figured that device
+    // out yet - or has just forgotten a stale one.
+    internal BatteryChannelAnswer? GetBatteryChannel(string pid)
+    {
+        lock (_gate)
+            return _batteryChannel.TryGetValue(pid, out var answer) ? answer : null;
+    }
+
+    // True only when the stored answer actually CHANGED. The poll loop calls this after every
+    // successful battery read - once every 30 seconds at the fastest - and config.ini must not
+    // be rewritten on a tick that learned nothing new.
+    internal bool SetBatteryChannel(string pid, BatteryChannelAnswer answer)
+    {
+        lock (_gate)
+        {
+            if (_batteryChannel.TryGetValue(pid, out var current) && current == answer) return false;
+            _batteryChannel[pid] = answer;
+            Persist();
+        }
+        Logger.Log($"CONFIG battery_channel pid={pid} val={answer.Value}");
+        return true;
+    }
+
+    // True only when there was something to forget, so the caller logs one relearn, not one
+    // per poll.
+    internal bool ClearBatteryChannel(string pid)
+    {
+        lock (_gate)
+        {
+            if (!_batteryChannel.Remove(pid)) return false;
+            Persist();
+        }
+        Logger.Log($"CONFIG battery_channel pid={pid} val=cleared");
+        return true;
+    }
+
     internal static bool IsValid(int t) => t is 10 or 5 or 1;
 
+    // Locked: the battery reader persists a learned answer from the poll thread while the
+    // menu persists a threshold from the UI thread, and two threads writing config.ini at
+    // once would leave a half-written file behind. Monitor is reentrant, so the callers
+    // above may hold _gate already.
     void Persist()
     {
-        try
+        lock (_gate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_configPath)!);
-            var lines = new List<string>
+            try
             {
-                $"threshold={GlobalThreshold}",
-                $"start_with_windows={StartWithWindows.ToString().ToLower()}",
-                $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
-                $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
-                $"update_check={UpdateCheck.ToString().ToLower()}",
-                $"star_clicked={StarClicked.ToString().ToLower()}"
-            };
-            if (!string.IsNullOrEmpty(Driver0323))
-                lines.Add($"driver_0323={Driver0323}");
-            foreach (var kv in Thresholds)
-                lines.Add($"threshold_{kv.Key}={kv.Value}");
-            foreach (var kv in _deviceEnabled)
-                lines.Add($"enabled_{kv.Key}={kv.Value.ToString().ToLower()}");
-            File.WriteAllLines(_configPath, lines);
+                Directory.CreateDirectory(Path.GetDirectoryName(_configPath)!);
+                var lines = new List<string>
+                {
+                    $"threshold={GlobalThreshold}",
+                    $"start_with_windows={StartWithWindows.ToString().ToLower()}",
+                    $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
+                    $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
+                    $"update_check={UpdateCheck.ToString().ToLower()}",
+                    $"star_clicked={StarClicked.ToString().ToLower()}"
+                };
+                if (!string.IsNullOrEmpty(Driver0323))
+                    lines.Add($"driver_0323={Driver0323}");
+                foreach (var kv in Thresholds)
+                    lines.Add($"threshold_{kv.Key}={kv.Value}");
+                foreach (var kv in _deviceEnabled)
+                    lines.Add($"enabled_{kv.Key}={kv.Value.ToString().ToLower()}");
+                foreach (var kv in _batteryChannel)
+                    lines.Add($"{BatteryChannelKeyPrefix}{kv.Key}={kv.Value.Value}");
+                File.WriteAllLines(_configPath, lines);
+            }
+            catch { }
         }
-        catch { }
     }
 
     static void ApplyStartup(bool enable)

@@ -5,13 +5,11 @@ title: "bug: "
 labels: bug
 ---
 
-Use **Help → Report a bug** in Magic Tray to pre-fill this with version, driver badges, battery readings, and a MAC-redacted log tail. Or paste by hand:
+Use **Help → Report a bug** in Magic Tray to pre-fill this with version, driver badges, battery readings, and a MAC-redacted log tail.
 
-**Magic Tray version** (tray footer):
+Battery percent wrong or missing? Open **Diagnostics → Run mm-hid-report.ps1** and attach the report file it saves in `%APPDATA%\MagicMouseTray\`. It answers your Windows build, Magic Tray version, device code, HID collections and which battery channel replied, with the Bluetooth address already removed. Or paste by hand:
 
-**Windows** (`winver`):
-
-**Device** (PID / model):
+**Device** (model name as printed on it):
 
 **What happened:**
 
