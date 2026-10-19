@@ -34,7 +34,8 @@ hex digits after `PID_`). Then:
   [the two install routes](#the-two-install-routes-for-the-apple-filter).
 - **Magic Keyboard / Apple Wireless Keyboard.** There is nothing to scroll and no driver to
   install. Battery percent needs one **registry patch** you run once:
-  [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1).
+  [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1). It is
+  idempotent, and the percent only appears after a Bluetooth off/on cycle.
 - **Magic Trackpad.** Pointer and battery work on Windows' own driver. This project ships **no**
   trackpad scroll or gesture driver, and there is no radio to pick.
 
@@ -157,8 +158,24 @@ rewriting the pairing record's Bluetooth SDP cache under
 which declares `0x47` as a **Feature** report. Afterwards `FeatureReportByteLength` reads 2 and
 `HidD_GetFeature(0x47)` returns `[0x47, pct]` - **MEASURED live: `[47 0E]`**.
 
-Two operational facts: the script **requires `-Mac`** (there is no default), and **re-pairing the
-keyboard erases the patch**. Details: [README, Keyboard battery](../README.md#keyboard-battery).
+Operational facts:
+
+- The script **requires `-Mac`** (there is no default).
+- It is **idempotent**: a record already carrying `09 20 B1 02` within 96 bytes of `85 47` is
+  reported as already patched and left untouched, so re-running the unlock is safe and is not an
+  error. Each cache subkey is handled on its own - one unpatchable record does not abort the rest.
+- **Exit codes:** `0` the cache carries the unlock (newly patched or already there), `2` no cached
+  record for that MAC carries Report ID `0x47` (wrong `-Mac`, or the keyboard was never paired on
+  this PC), `3` a record carries `0x47` but could not be patched - nothing is written, and the
+  bytes around the RID are dumped to the log for a bug report.
+- Every run appends to a log (`-LogPath`, default
+  `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`). That file is what to attach when the unlock
+  cannot be applied; the tray quotes its tail when a run exits non-zero.
+- `hidbth` only re-reads `CachedServices` on reconnect, so **the percent appears only after
+  Bluetooth is turned off and on again** (or the keyboard reconnects).
+- **Re-pairing the keyboard erases the patch.**
+
+Details: [README, Keyboard battery](../README.md#keyboard-battery).
 
 ### Magic Trackpad
 
