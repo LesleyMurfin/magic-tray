@@ -1,10 +1,11 @@
 # Workflows
 
 Every check that runs on this repository, what it protects, and how to run it
-yourself before pushing. Nine workflow files; the first nine rows below are the
+yourself before pushing. Ten workflow files; the first nine rows below are the
 checks that gate a pull request, and every one of them runs on every pull
-request. All of them run on GitHub-hosted runners; none needs a self-hosted
-runner, and only the two release-side workflows need a secret.
+request. `no-draft-prs` also runs on pull requests and is not in the ruleset.
+All of them run on GitHub-hosted runners; none needs a self-hosted runner,
+and only the two release-side workflows need a secret.
 
 `main` is protected by a ruleset: no direct pushes, no force pushes, and all
 nine checks below must pass on a pull request before it can merge. There are no
@@ -27,6 +28,7 @@ nothing.
 | `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`; dispatch | ubuntu-latest | yes |
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
 | `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
+| `no-draft-prs` | `no-draft-prs.yml` | PR opened/reopened/ready_for_review/converted_to_draft/synchronize | ubuntu-latest | no |
 | `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |
 | `Submit to winget-pkgs` | `winget-submit.yml` | manual dispatch only | windows-latest | n/a (manual) |
 
@@ -151,6 +153,20 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 - **Fix a red run**: `git commit -s` for new commits, or
   `git rebase --signoff origin/main && git push --force-with-lease`.
 - **Permissions**: `contents: read`, `pull-requests: read`. **Timeout**: 5 min.
+
+## no-draft-prs.yml — `no-draft-prs`
+
+- **Purpose**: exit 1 while `github.event.pull_request.draft` is true, including
+  after `converted_to_draft`. A ready-for-review pull request passes. The job
+  does not check out the repository.
+- **Runner**: ubuntu-latest, the same GitHub-hosted runner as the other checks
+  that are not the Windows tray app. `windows-latest` is only used where the
+  .NET TFM or winget tooling requires Windows. No workflow in this repo uses a
+  self-hosted runner.
+- **Permissions**: `{}`. **Timeout**: 5 min. **Concurrency**:
+  `no-draft-prs-<ref>`, cancel-in-progress.
+- **Not a ruleset check**: branch protection was not changed, so a red run does
+  not block merge until this check is added to the `main` ruleset.
 
 ## winget-submit.yml — `Submit to winget-pkgs`
 
