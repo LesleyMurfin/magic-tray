@@ -64,9 +64,9 @@ internal sealed class FindingGate
     internal const int MinObservations = 2;
 
     // What the gate hands back. Pending is not a debug extra: it is what keeps
-    // an explicit user-initiated check from answering "No problems found" while
-    // a fault is mid-confirmation, and it is what the REPAIR_FINDINGS log line
-    // reports so a suppressed transient is auditable instead of swallowed.
+    // an explicit user-initiated check from answering with the all-clear row
+    // while a fault is mid-confirmation, and it is what the REPAIR_FINDINGS log
+    // line reports so a suppressed transient is auditable instead of swallowed.
     internal readonly record struct GateResult(
         IReadOnlyList<RepairFinding> Confirmed,
         IReadOnlyList<RepairFinding> Pending);
@@ -128,7 +128,7 @@ internal sealed class FindingGate
                     };
                     // Once confirmed it stays confirmed for as long as it keeps
                     // appearing, so the menu row does not flicker between the
-                    // fault and "No problems found" from one open to the next.
+                    // fault and the all-clear row from one open to the next.
                     if (!track.Confirmed
                         && track.Observations >= MinObservations
                         && nowUtc - track.FirstSeenUtc >= HoldWindow)

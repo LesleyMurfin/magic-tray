@@ -1710,9 +1710,14 @@ exit 1
     //
     // In Mode A BOTH collections are present: col01 is the standard HID mouse
     // page and answers nothing useful, col02 is the vendor collection that
-    // carries input report 0x90. DeviceRegistry.Discover returns whichever the
-    // SetupDi enumeration yielded first, so it silently read -1 from col01 -
-    // col02 has to be targeted by name.
+    // carries input report 0x90. This enumerates HID paths itself and never
+    // goes through DeviceRegistry, so neither thing that keeps the tray off
+    // col01 is in play: DeviceRegistry.TryClassify's V3 arm returns null for
+    // any 0323 path that is not the battery collection
+    // (Is0323BatteryCollectionPath), so col01 never becomes a device there at
+    // all, and AdaptivePoller.BestReading ranks a device's group when one does
+    // survive. A one-shot read has neither gate nor group, and nothing would
+    // stop it taking the -1 from col01 - so col02 has to be targeted by name.
     internal static int ReadCol02BatteryPercent()
     {
         var path = HidNative.EnumerateHidPaths().FirstOrDefault(p =>
