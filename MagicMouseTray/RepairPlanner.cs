@@ -14,6 +14,14 @@ internal enum RepairProblem
     FilterNotInStack,
     PointerChildMissing,
     BatteryReadBlocked,
+    // The mouse answered its 0x90 battery request and the percent byte in the
+    // answer was 0 while its multitouch stream was provably advancing. Ranked
+    // and worded apart from BatteryReadBlocked because the cause is this PC's
+    // scroll filter truncating the answer, not a missing pairing-record cap.
+    BatteryResponseTruncated,
+    // Touch activity accumulated across several sessions with not one wheel or
+    // hwheel event reaching Windows, on a validated decoder.
+    ScrollNotchesNotDelivered,
 }
 
 // What the user (or the app) has to do about it.
@@ -32,6 +40,14 @@ internal enum RepairAction
     // action never sends F1, never elevates and never runs a script: it tells
     // the user which component switches multitouch back on.
     RecommendMultitouchWatcher,
+    // Guidance only, and the only action that names a script. The mitigation
+    // (scripts/repair-magicmouse-channel.ps1) re-opens the mouse's control
+    // channel from this PC; the tray neither elevates nor runs it, because a
+    // temporary workaround for a driver defect is the user's call to make.
+    RunChannelRepairScript,
+    // Guidance only, and deliberately not fixable at all: the defect is in the
+    // scroll driver's gesture code and no setting on this PC changes it.
+    RecommendFilterUpdate,
 }
 
 // One device as observed on the live machine. Built by DeviceSnapshotReader;
@@ -99,8 +115,11 @@ internal sealed record DeviceSnapshot(
     //   flowing.
     // A counter that is NOT advancing is equally worthless as a fault signal:
     // an idle mouse nobody is touching and a mouse that stopped sending touch
-    // data look identical. Hence null, and hence no automatic scroll finding
-    // anywhere in PlanOne - scroll help is user-initiated in the tray instead.
+    // data look identical. Hence null, and hence no fault may ever be read out
+    // of its absence. Its PRESENCE, though, is load-bearing for the two rules
+    // added below: "the mouse is being used right now" is exactly what tells a
+    // truncated battery answer apart from an idle mouse that sent none, and it
+    // is what makes a zero wheel count an observation rather than a shrug.
     bool? MultitouchAdvancing,
     // Does the driver package's multitouch watcher look alive on this PC?
     // Evidence: C:\ProgramData\MagicMouseDriver\auto-f1-watcher.log plus the
@@ -121,7 +140,59 @@ internal sealed record DeviceSnapshot(
     //            missing the SDP Feature 0x47 cap Windows needs.
     //   -3     - AdaptivePoller collapsed three consecutive -1s.
     //   null   - not measured (no poll has run for this PID). Never a finding.
-    int? LastBatteryPct);
+    int? LastBatteryPct,
+    // ONE correlated battery observation: the 0x90 read's own verdict, the Diag
+    // samples taken around that same call, and when the touch stream last
+    // provably advanced. null - nothing bound, no KMDF-family filter (the Apple
+    // filter publishes no Diag key at all), or no probe taken this sweep - is no
+    // evidence and can raise nothing.
+    //
+    // Why one record instead of loose fields: the halves of this evidence are
+    // only meaningful TOGETHER. The battery number the tray normally holds is a
+    // cache (TrayApp.cs:639, written :1241-1244) that AdaptivePoller may not
+    // refresh for hours, so pairing it with a touch delta measured at some
+    // other moment would accuse an idle mouse from an hours-old reading.
+    // Keeping the set in one record makes that mis-pairing unrepresentable
+    // rather than merely discouraged, and the probe travels with the HID
+    // collection that won AdaptivePoller's ReadingRank collapse (:140-174) so
+    // it can never be assembled from one collection's failure and another's
+    // percentage.
+    //
+    // DiagBefore/DiagAfter are a PAIR, not a precomputed bool, for two
+    // reasons. A driver reinstall zeroes the whole Diag block and a device
+    // mid-restart collapses it too (measured: Rid12Count 2095323 -> 521 across
+    // one restart), so a counter that is not strictly increasing has to read as
+    // "no evidence", which is only decidable from before AND after. And the two
+    // samples carry the INTERVAL the delta was measured across, which is what
+    // makes the delta a claim about this read instead of about the poll cycle:
+    // they are taken either side of the GET_REPORT itself
+    // (MouseBatteryDevice.ReadV3Rid90). IFilterDiagReader.TouchStreamAdvanced
+    // is the single implementation of both rules.
+    //
+    // Everything in those two samples except Availability, ServiceKeyName and
+    // the counters is OPPORTUNISTIC, and one rule below depends on knowing why.
+    // LastAclReceived / LastAclCapacity / LastAclBytes / LastOutHdr are a
+    // single "last inbound" slot shared by the HID control channel and the
+    // interrupt channel, and the mouse streams touch reports at roughly 65 per
+    // second - so a sample taken any meaningful time after a control-channel
+    // exchange shows the interrupt channel's capacity 9, never the control
+    // channel's capacity 1. Its presence CONFIRMS; its absence says nothing
+    // whatsoever, and no rule may gate on it. The same shared slot is why
+    // LastAclReceived was rejected as a health signal outright
+    // (DeviceDiagReader.cs:347-361): the broken binary and the fixed binary both
+    // read LastAclReceived 23 with LastAclCapacity 9, so it separates nothing.
+    BatteryProbe? BatteryProbe = null,
+    // The PASSIVE wheel observation, and only that. It feeds the device row's
+    // observational scroll line and nothing else: no rule may derive a scroll
+    // fault from it, because one window cannot. Measured on the FIXED binary:
+    // 84 active touch seconds of which 83 were zero-wheel, all 32 events inside
+    // a single 1.34 s burst - so a zero here is the normal state of a healthy
+    // mouse nobody happened to scroll on. The fault verdict needs the two
+    // PROMPTED legs compared against each other (RepairPlanner.JudgeScrollProbe),
+    // which the tray holds locally for the length of the probe flow and never
+    // stores here. null is "never observed"; Void is "nobody touched the
+    // surface", which is not a negative result either.
+    WheelObservation? Wheel = null);
 
 internal sealed record RepairFinding(
     string Pid,
@@ -155,12 +226,17 @@ internal sealed record RepairFinding(
 // has no record of it" news.
 //
 // Capability coverage: of the three things a user notices (pointer, scroll,
-// battery) only pointer loss and the keyboard's blocked battery read have a
-// signal that can tell "broken" from "idle", so only those two get automatic
-// rules. A dead scroll wheel with a bound, running, attached filter has no
-// such signal - every candidate was measured false-positive-prone (see
-// DeviceSnapshot.MultitouchAdvancing) - so the tray offers scroll help on the
-// user's own assertion instead of accusing a healthy mouse.
+// battery) pointer loss, the keyboard's blocked battery read and - since the
+// filter's own diagnostic block exists - a battery answer the filter truncated
+// have a signal that can tell "broken" from "idle", so those get automatic
+// rules. A dead scroll wheel still has none, and not for want of trying: every
+// passive candidate was measured false-positive-prone (see
+// DeviceSnapshot.MultitouchAdvancing, and note that a hand resting on the
+// surface emits touch reports at roughly 65 per second while legitimately
+// producing no notches at all, so zero-wheel time on a HEALTHY mouse is
+// unbounded). Scroll is therefore decided by a PROMPTED probe with known user
+// intent - PlanScrollProbe below, offered from the tray - and never by a
+// passive threshold.
 //
 // All user-facing text is plain ASCII on purpose (this repo has been bitten by
 // mojibake): hyphens only, no em dashes, no smart quotes.
@@ -249,9 +325,9 @@ internal static class RepairPlanner
         // driver image is loaded on this PC, never proof that the filter
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
         // the property this repo's own capture script already trusts
-        // (scripts/capture-state.ps1:152-157) and the one V3RecycleManager
-        // calls authoritative (V3RecycleManager.cs:320-322). FilterInStack
-        // carries it into the planner. docs/TEST-PLAN.md:21 had already named
+        // (scripts/capture-state.ps1:146-155), and the only reading that can
+        // tell registration apart from attachment. FilterInStack
+        // carries it into the planner. docs/TEST-PLAN.md:22 had already named
         // this exact shape - wheel dead while the BOUND filter service
         // reports RUNNING - as a failure with no diagnosis attached.
         //
@@ -351,6 +427,58 @@ internal static class RepairPlanner
                 + "entry Windows needs before it will ask for the battery percentage. This app "
                 + "can walk you through patching that pairing record. The keyboard stays paired "
                 + "- nothing is unpaired and nothing about typing changes.",
+                AutoFixable: false);
+        }
+
+        // 2e. The one mouse battery shape with a measured cause behind it, and
+        // the exception 2d's suppression above cannot cover. 2d is right that a
+        // mouse -2 is normally silence: the vendor report stops whenever the
+        // multitouch stream stops, so an idle mouse produces it all day. What
+        // separates this case from that one is that the answer DID arrive and
+        // was destroyed on the way up, and there are now two facts that say so
+        // together:
+        //
+        //   BatteryProbe.ZeroReport - a well-formed 0x90 report whose percent
+        //   byte is 0 (MouseBatteryDevice.IsBogusZeroReport:275-276). HIDCLASS
+        //   pre-zeroes the caller's buffer and writes the report id into byte 0,
+        //   so a truncated copy-back reads as a report of "0%" - which no Magic
+        //   Mouse sends (MouseBatteryDevice.cs:266-270).
+        //
+        //   A touch-report counter that CLIMBED across the pair taken either
+        //   side of that same read (MouseBatteryDevice.ReadV3Rid90), which is
+        //   both the proof that the report was produced at all and the proof
+        //   that it was produced NOW rather than at some point in the last day.
+        //
+        // Why this may fire where 2d must not: 2d's suppressed population is
+        // "no touch, therefore no vendor report, therefore -2". This rule
+        // requires the opposite - the mouse is being used, so the report was
+        // sent - and it requires the report to have actually come back with a
+        // zero in it. An idle mouse satisfies neither: TouchStreamAdvanced is
+        // false with a still counter, and there is no answer to judge. That is
+        // the whole reason the touch-stream precondition is here and not a
+        // nicety.
+        //
+        // Why NOT LastBatteryPct == -2, which is what 2d reads: that sentinel
+        // covers three v3 outcomes told apart only by ZeroReportFact:295-303 -
+        // the zero report (MouseBatteryDevice.cs:221-232), a wrong report id
+        // (:234-238), an IOCTL that failed three times (:196-211) - and it is
+        // also emitted by KeyboardBatteryDevice for the SDP case 2d routes and
+        // by MouseBatteryDevice's v1/v2 path at :402. The failed
+        // IOCTL is what a mouse mid-re-enumeration returns; this finding's
+        // remediation restarts that device, so firing on the sentinel would
+        // build a restart loop inside exactly the window FindingGate.cs:11-18
+        // exists to damp. Only the zero-report fact may fire, and -2 keeps its
+        // existing meaning untouched for 2d.
+        if (snapshot.BthenumLiveCount > 0
+            && DriverHealthChecker.IsV3Pid(snapshot.Pid)
+            && BatteryAnswerTruncated(snapshot.BatteryProbe))
+        {
+            return new RepairFinding(
+                snapshot.Pid,
+                RepairProblem.BatteryResponseTruncated,
+                RepairAction.RunChannelRepairScript,
+                "Battery level is being cut off before Windows sees it",
+                TruncatedBatteryDetail(snapshot.BatteryProbe!),
                 AutoFixable: false);
         }
 
@@ -456,6 +584,291 @@ internal static class RepairPlanner
         1 => findings[0].Title,
         _ => $"{findings.Count} problems found",
     };
+
+    // The report id the mouse answers the battery request on, as it appears on
+    // the wire inside LastAclBytes (A1 90 04 16 on the reference PC: the ACL
+    // HID-input header, the report id, a flags byte, then the percentage).
+    const byte WireBatteryReportId = 0x90;
+    const byte WireAclInputHeader = 0xA1;
+
+    // Both halves of the truncation evidence, and nothing else: a well-formed
+    // zero report, and a touch-report counter that climbed across the pair the
+    // probe took around that very read. Every absent input reads as no
+    // evidence - a null probe, a report that is not the well-formed zero, a
+    // missing pre-read sample, an unreadable Diag key, a counter that stood
+    // still or went BACKWARDS (a driver reinstall zeroes the whole Diag block,
+    // and a device mid-restart collapses it too, measured 2095323 -> 521 across
+    // one restart), or a pair too wide to be describing this read.
+    //
+    // ONE gate, deliberately. There used to be a second one here: the probe's
+    // TakenAt against a remembered "last advance" timestamp, bounded by ten
+    // seconds. It could reject nothing, because that timestamp was stamped with
+    // the sample clock and the difference was therefore zero by construction.
+    // The recency question it meant to ask is now answered where the
+    // measurement is made - PairMaxSpan bounds the interval inside
+    // TouchStreamAdvanced - so a second timing rule on top could only reject
+    // pairs that one has already rejected.
+    internal static bool BatteryAnswerTruncated(BatteryProbe? probe) =>
+        probe is not null
+        && probe.ZeroReport == true
+        && IFilterDiagReader.TouchStreamAdvanced(probe.DiagBefore, probe.DiagAfter);
+
+    // Corroboration is FilterDiagSnapshot.TruncationCorroborated
+    // (DeviceDiagReader.cs:101-104) - one truth about that shape, owned by the
+    // record that carries the bytes. Opportunistic, never a gate: the filter's
+    // "last inbound" slot is shared with the 65-per-second interrupt channel,
+    // so the shape is visible only when the slot was read immediately after the
+    // probe, and its absence is evidence of nothing.
+
+    // The percentage the mouse actually put on the wire, when the corroborating
+    // sample happens to carry the frame. Only claimed for a frame that really is
+    // a 0x90 input report and only for a value Apple can report (1..100), so a
+    // truncated or unrelated frame produces null rather than a made-up number.
+    internal static int? WireBatteryPercent(byte[]? lastAclBytes) =>
+        lastAclBytes is { Length: >= 4 }
+        && lastAclBytes[0] == WireAclInputHeader
+        && lastAclBytes[1] == WireBatteryReportId
+        && lastAclBytes[3] is >= 1 and <= 100
+            ? lastAclBytes[3]
+            : null;
+
+    static string TruncatedBatteryDetail(BatteryProbe probe)
+    {
+        var detail =
+            "The mouse is in use right now - Windows is receiving its touch reports - and it "
+            + "answered the request for its battery level, but the percentage in the answer was "
+            + "zero, and no Magic Mouse reports zero. The scroll driver on this PC hands Windows "
+            + "only the first byte of that answer and Windows fills the rest with zeros, so the "
+            + "real percentage is thrown away after the mouse has already sent it. ";
+
+        if (probe.DiagAfter?.TruncationCorroborated == true)
+        {
+            var received = probe.DiagAfter!.LastAclReceived!.Value;
+            var pct = WireBatteryPercent(probe.DiagAfter.LastAclBytes);
+            detail += "The scroll driver's own counters caught it in the act: the answer it "
+                + "copied up was 1 byte long while " + received.ToString()
+                + " bytes had come back from the mouse"
+                + (pct is null
+                    ? ". "
+                    : ", and the percentage on the wire was " + pct.Value.ToString() + "%. ");
+        }
+
+        return detail
+            + "Pointer movement, clicking and scrolling are not affected by this - only the "
+            + "battery reading is. Until a corrected scroll driver is installed, running "
+            + ChannelRepairScript + " from this project re-opens the mouse's control channel on "
+            + "this PC, which is the state in which the whole answer gets through. It installs "
+            + "nothing, removes nothing and leaves the mouse paired, and it needs administrator "
+            + "approval. This app does not run it for you: it is a temporary workaround for a "
+            + "driver fault, so it stays your decision.";
+    }
+
+    // The mitigation a sibling ships in this repo. Named in one place so the
+    // finding and its test cannot drift apart from the file on disk.
+    internal const string ChannelRepairScript = "scripts/repair-magicmouse-channel.ps1";
+
+    // ---- Scroll: the prompted probe -------------------------------------
+    //
+    // There is no passive scroll rule and there must not be one. A hand resting
+    // on the surface emits TOUCH_STATE_DRAG reports at roughly 65 per second and
+    // legitimately produces no notches, because a notch exists only per unit of
+    // anchor travel - so "touch reports advancing and zero wheel events" is
+    // TRUE for most of the time any healthy mouse spends being held. Measured on
+    // the fixed binary: 84 active seconds of touch carried its first wheel event
+    // at t=57 s and all 32 events fell inside a single 1.34 s burst. Healthy
+    // zero-wheel time is bounded only by whether the user feels like scrolling,
+    // so no accumulated-silence threshold can ever assert a fault.
+    //
+    // What removes the ambiguity is asking. The tray prompts two gestures and
+    // judges the pair:
+    //
+    //   symmetric leg  - both fingers sliding together. POSITIVE CONTROL only.
+    //     The broken rule still emits notches here (7 per 60 units), so nonzero
+    //     proves two-finger contact was registered and the wheel path can carry
+    //     a byte. It is never read as health.
+    //   asymmetric leg - one finger held completely still, the other sliding.
+    //     THE DISCRIMINATOR. The filter measures scroll from the lowest-id
+    //     contact in drag state, so a still reference finger contributes zero
+    //     travel and the whole gesture yields zero notches at every scroll step
+    //     the driver accepts (1..224). A correct rule yields notches from the
+    //     finger that moved.
+    //
+    // Both legs zero is INCONCLUSIVE, not a fault: notch emission needs two
+    // contacts registered, and the tray cannot see a contact count, so "the
+    // resting finger never pressed down" is indistinguishable from dead scroll
+    // from the asymmetric leg alone.
+    internal enum ScrollProbeVerdict
+    {
+        // Nothing may be claimed in either direction. The user is told exactly
+        // that, and offered the probe again.
+        Inconclusive,
+        // The fault: the control leg carried notches and the discriminator leg
+        // carried none.
+        NotchesMissing,
+        // The discriminator leg carried notches. That is NOT a clean bill of
+        // health - the broken rule emits notches for a symmetric drag too - it
+        // only means this probe found nothing to report.
+        NotchesDelivered,
+    }
+
+    // The least touch a leg may carry and still be the gesture the verdicts
+    // rest on. WheelObservation.Void is cleared by a single 250 ms tick of
+    // activity, so without a floor a quarter-second brush of the surface
+    // produced a full "Scroll wheel is dead" finding - whose own detail then
+    // rendered that touch as "0 seconds" through Seconds(ActiveDuration)
+    // (:770). The prompt asks for a deliberate ten-second slide
+    // (ScrollProbeLeg, :798); five seconds is half of it, which is generous to
+    // a user who started late and still nothing like a brush.
+    internal static readonly TimeSpan MinMeasuredTouch = TimeSpan.FromSeconds(5);
+
+    // A leg only counts when the sink actually measured the right device with a
+    // decoder it has proven: no observation, no target device, nobody touching
+    // the surface, an unvalidated decoder, or too little touch to have been the
+    // gesture at all are all "no measurement", and a zero from any of them is
+    // not a zero.
+    static bool LegMeasured(WheelObservation? leg) =>
+        leg is not null
+        && !leg.Void
+        && leg.TargetDevicePath is not null
+        && leg.DecoderValidated
+        && leg.ActiveDuration >= MinMeasuredTouch;
+
+    static bool LegSilent(WheelObservation leg) =>
+        leg.WheelEvents == 0 && leg.HWheelEvents == 0;
+
+    internal static ScrollProbeVerdict JudgeScrollProbe(
+        WheelObservation? symmetric, WheelObservation? asymmetric)
+    {
+        if (!LegMeasured(symmetric) || !LegMeasured(asymmetric))
+            return ScrollProbeVerdict.Inconclusive;
+        if (!LegSilent(asymmetric!))
+            return ScrollProbeVerdict.NotchesDelivered;
+        // Asymmetric silence with no positive control behind it cannot be told
+        // apart from a resting finger that never registered.
+        return LegSilent(symmetric!)
+            ? ScrollProbeVerdict.Inconclusive
+            : ScrollProbeVerdict.NotchesMissing;
+    }
+
+    // The finding for a probe the user was asked to perform. Guidance only, and
+    // deliberately not fixable: the reference-finger rule yields zero notches at
+    // every scroll step the driver accepts, so there is no setting on this PC -
+    // in the tray or in the driver - that changes the outcome. Only a corrected
+    // driver build does.
+    internal static RepairFinding? PlanScrollProbe(
+        DeviceSnapshot snapshot, WheelObservation? symmetric, WheelObservation? asymmetric)
+    {
+        if (JudgeScrollProbe(symmetric, asymmetric) != ScrollProbeVerdict.NotchesMissing)
+            return null;
+
+        var probe = asymmetric!;
+        var control = symmetric!;
+        var notches = control.WheelEvents + control.HWheelEvents;
+        var detail =
+            "You were asked to hold one finger still and slide the other one, and Windows "
+            + "received " + probe.MouseRecords.ToString()
+            + " input records from this mouse during those " + Seconds(probe.ActiveDuration)
+            + " seconds of touch - and not one scroll notch. The same test with both fingers "
+            + "moving together produced " + notches.ToString()
+            + ", so the mouse, the Bluetooth connection and this PC's scroll path all work: "
+            + "the mouse was reporting, and scroll notches can get through. "
+            + "The scroll driver measures scrolling from one reference finger only, so a finger "
+            + "resting on the surface stops every other finger's movement from counting - which "
+            + "is why a hand parked on the mouse kills the wheel. Nothing on this PC changes "
+            + "that: the driver's scroll-step setting makes no difference at any value it "
+            + "accepts. The fix is a corrected scroll driver, and this app will not pretend it "
+            + "can do it from here. Magic Tray has changed nothing on this PC or on the mouse "
+            + "while running this test.";
+
+        return new RepairFinding(
+            snapshot.Pid,
+            RepairProblem.ScrollNotchesNotDelivered,
+            RepairAction.RecommendFilterUpdate,
+            "Scroll wheel is dead - the driver drops the scroll it measures",
+            detail,
+            AutoFixable: false);
+    }
+
+    static string Seconds(TimeSpan span) =>
+        ((int)Math.Round(span.TotalSeconds)).ToString();
+
+    // How long each prompted leg is measured for. Ten seconds is ample: the
+    // fixed binary emitted 32 wheel events inside 1.34 s, so a working mouse
+    // cannot stay silent through a deliberate ten-second gesture.
+    internal static readonly TimeSpan ScrollProbeLeg = TimeSpan.FromSeconds(10);
+
+    // What the user is asked to do, in order. The control gesture runs FIRST so
+    // an abandoned flow leaves the positive control rather than the ambiguous
+    // half.
+    //
+    // decoderValidated is the sink's sticky per-device-path flag. It can only be
+    // set by decoding a nonzero NON-wheel button flag - a real click - and in a
+    // prompted scroll window the user has no reason to click, so when it is
+    // still false the first prompt asks for one click up front. That validates
+    // the decoder inside the measured window by construction instead of leaving
+    // every probe inconclusive. Button state is read from the report header and
+    // takes no part in the notch path, so clicking cannot influence the result.
+    //
+    // Both prompts describe MECHANICS, never intent, and that is load-bearing
+    // rather than pedantry: a habit-dependent gesture cannot be a control.
+    // "Scroll normally with two fingers" was rejected outright, because most
+    // people's natural two-finger scroll is one dominant finger sliding with
+    // the other trailing or resting - which IS the asymmetric case and emits
+    // zero notches under the broken rule. That wording would therefore have
+    // read zero on BOTH legs for exactly the users whose scroll is dead, and
+    // handed them "could not confirm two-finger contact". Friendlier prose here
+    // reopens that hole, so the mechanics stay.
+    //
+    // The property leg 1 relies on is only this: a deliberate symmetric drag is
+    // NONZERO under both rules, with room to spare. It is not a calibration -
+    // the counts differ by rule (7 notches per 60 touch units under the broken
+    // rule, 14 under the healthy one, because a correct rule emits per finger
+    // while the broken one emits from the reference contact alone) - so a count
+    // near 14 is the HEALTHY signature and must never be read as anomalous.
+    internal static string ScrollProbeControlPrompt(bool decoderValidated) =>
+        (decoderValidated ? "" : "Click once, then ")
+        + "place two fingers side by side on the top surface and slide them together - the same "
+        + "distance at the same speed - up and down about 3 cm, repeatedly, for ten seconds. "
+        + "This first step only checks that this mouse and this PC can carry scrolling at all.";
+
+    // The single permitted retry, offered only when BOTH legs came back silent
+    // and only for leg 1. It REPLACES the first control observation; it is
+    // never added to it, because accumulating windows is the passive design
+    // that cannot distinguish a healthy mouse nobody scrolled on. There is no
+    // retry for leg 2 for the same reason. It restates the mechanics that
+    // decide the outcome rather than repeating the prompt verbatim.
+    internal const string ScrollProbeControlRetryPrompt =
+        "One more try, and the way the fingers move is what matters: put them side by side, "
+        + "keep them both pressed on the top surface, and move them the same distance at the "
+        + "same time - up and down about 3 cm, repeatedly, for ten seconds. If this step stays "
+        + "silent, this test stops without reporting anything.";
+
+    internal const string ScrollProbeDiscriminatorPrompt =
+        "Now rest one finger still on the top surface, pressed down firmly enough that the "
+        + "mouse still feels it, and slide the other finger up and down about 3 cm, "
+        + "repeatedly, for ten seconds. Keep the still finger down the whole time.";
+
+    // Said when the pair could not decide. Same voice as the gate-pending
+    // branch in the tray: name what was not established and offer the retry,
+    // never a silent pass and never a fault. Both legs silent is the case this
+    // exists for: with only one contact registered the driver emits zero
+    // notches whether it is broken or healthy (GestureEngine.c:152-156 refreshes
+    // the anchors and skips the notch path entirely below two contacts), so a
+    // still finger the mouse never felt is indistinguishable from dead scroll.
+    internal const string ScrollProbeInconclusive =
+        "This test could not confirm two-finger contact, so nothing is being reported. Either "
+        + "the mouse sent no touch reports during the ten seconds, or the resting finger was "
+        + "not pressed down firmly enough for the mouse to register it - and both of those look "
+        + "exactly like a working mouse from here, so this app will not call the mouse faulty on "
+        + "them. Run it again and keep both fingers in contact with the top surface throughout.";
+
+    // Said when the discriminator leg carried notches. Deliberately not "scroll
+    // is working": the broken rule emits notches for a symmetric drag too, so a
+    // nonzero result rules out this one fault and nothing else.
+    internal const string ScrollProbeNoFaultFound =
+        "Scroll notches reached Windows during this test, so this particular fault is not what "
+        + "is happening here. That is not a clean bill of health for scrolling in general - it "
+        + "only means this test found nothing to report.";
 
     // Fallback only: what this PID is EXPECTED to ride when nothing is bound.
     // 0323 rides the patched KMDF filter; every other Apple mouse rides the Boot Camp filter.
