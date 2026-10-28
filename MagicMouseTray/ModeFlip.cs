@@ -102,9 +102,34 @@ internal enum ModeFlipOutcome
     BatteryUnreadable,
     RestoreFailed,
     Cancelled,
+
+    // Patched Apple driver, the Apple filter already off LowerFilters and no
+    // recovery record: the mouse is parked in Mode A with a dead wheel right
+    // now. It is not NotPathA, which is worded as "nothing was changed" and
+    // would tell a user whose wheel has already stopped that nothing is wrong.
+    StrandedInModeA,
+
+    // Another cycle holds this mouse. That cycle has the value rewritten and
+    // an elevated writer still running, so every reassurance Cancelled gives
+    // ("no setting was written", "it never left scroll mode") is false here.
+    CycleInFlight,
+
+    // The recovery record was taken while a different driver was bound than
+    // the one bound now. Putting the recorded value back would bind a filter
+    // this stack never carried, so the restore refuses and writes nothing.
+    DriverChanged,
 }
 
-internal sealed record ModeFlipResult(ModeFlipOutcome Outcome, int Percent, bool RestoredToModeB, string Detail);
+// Observed is what the tray could actually SEE of the mouse when it finished.
+// The registry value and the bus are two independent halves of the end state
+// and the wording depends on both: a value provably back with no mouse on the
+// bus is neither a confirmation nor a failure (see ModeFlipView.RestoreTail).
+internal sealed record ModeFlipResult(
+    ModeFlipOutcome Outcome,
+    int Percent,
+    bool RestoredToModeB,
+    string Detail,
+    ModeBObservation Observed);
 
 // One registry key the cycle may write, with the value it held BEFORE the
 // cycle. PreviousPresent is the tri-state that matters: a key with no
@@ -257,11 +282,22 @@ internal static class ModeFlip
     // still holds the device in Mode A.
     static int _cycleInFlight;
 
+    // Every result that writes nothing has the same shape: the outcome, what
+    // the bus showed while it was decided, and the transcript line for it.
+    static ModeFlipResult Refusal(ModeFlipOutcome outcome, ModeBObservation observed)
+    {
+        bool intact = observed == ModeBObservation.InModeB;
+        return new ModeFlipResult(outcome, -1, intact, DetailFor(outcome, -1, intact), observed);
+    }
+
     static ModeFlipResult CycleInFlightResult()
     {
-        Logger.Log($"{LogPrefix} phase=preflight outcome=Cancelled reason=cycle_in_flight");
-        return new ModeFlipResult(ModeFlipOutcome.Cancelled, -1, ObserveModeB(),
-            "A battery-mode cycle is already running. Nothing was changed.");
+        // Not Cancelled: the cycle that holds the slot has already rewritten
+        // the value and is still running, so "nothing was changed" would be
+        // false at the exact moment it was logged.
+        var observed = ObserveMode();
+        Logger.Log($"{LogPrefix} phase=preflight outcome=CycleInFlight reason=cycle_in_flight observed={observed}");
+        return Refusal(ModeFlipOutcome.CycleInFlight, observed);
     }
 
     // One elevated restore, verified.
@@ -288,16 +324,34 @@ internal static class ModeFlip
 
     static ModeFlipResult RestoreModeBCore()
     {
-        if (!TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var sentinel) || sentinel is null)
+        TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var sentinel);
+        var status = CurrentV3Status();
+        var observed = ObserveMode();
+        Logger.Log($"{LogPrefix} phase=restore_preflight record={sentinel is not null} status={Render(status)} observed={observed}");
+
+        if (sentinel is null)
         {
-            // Nothing recorded means nothing to put back. Say what is true now
-            // rather than writing a value we never measured.
-            bool modeB = ObserveModeB();
-            Logger.Log($"{LogPrefix} phase=restore sentinel=none mode_b={modeB}");
-            return modeB
-                ? new ModeFlipResult(ModeFlipOutcome.Ok, -1, true,
-                    "Scroll mode is already active - there was nothing to restore.")
-                : new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning);
+            // Nothing recorded means nothing to put back, and what is true
+            // instead depends on what the bus shows and which driver is bound.
+            // The gate decides that; its fallback is the warning answer,
+            // because a failure to answer must never read as "all fine".
+            var answer = RestorePreflightOutcome(sentinelPresent: false, status, observed)
+                ?? ModeFlipOutcome.StrandedInModeA;
+            Logger.Log($"{LogPrefix} phase=restore outcome={answer} reason=no_record");
+            return answer == ModeFlipOutcome.Ok
+                ? new ModeFlipResult(answer, -1, true,
+                    "Scroll mode is already active - there was nothing to restore.", observed)
+                : Refusal(answer, observed);
+        }
+
+        // The recorded value only means what it meant while the driver it was
+        // recorded under is still the bound one. On any other stack this write
+        // would bind a filter that stack never carried, which is the one thing
+        // the flip promises it can never do.
+        if (RestorePreflightOutcome(sentinelPresent: true, status, observed) is ModeFlipOutcome refused)
+        {
+            Logger.Log($"{LogPrefix} phase=restore outcome={refused} reason=driver_changed status={Render(status)}");
+            return new ModeFlipResult(refused, -1, false, DriverChangedDetail(sentinel), observed);
         }
 
         var pid = sentinel.Pid;
@@ -313,7 +367,7 @@ internal static class ModeFlip
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=RestoreFailed reason=no_family_filter");
             return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false,
-                HandRecoveryDetail(sentinel));
+                HandRecoveryDetail(sentinel), observed);
         }
         Logger.Log($"{LogPrefix} phase=restore recorded={Render(recorded)}");
 
@@ -331,14 +385,14 @@ internal static class ModeFlip
         catch (Exception ex)
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=RestoreFailed reason=script err={ex.Message}");
-            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning);
+            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning, observed);
         }
 
         var statusPath = RestoreStatusSidecarPath(pid, nonce);
         if (!ClearHandshake(statusPath, null))
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=RestoreFailed reason=stale_status path={statusPath}");
-            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning);
+            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning, observed);
         }
         var scriptPath = ScriptPath(pid, nonce, restore: true);
 
@@ -350,41 +404,46 @@ internal static class ModeFlip
         catch (Exception ex)
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=Cancelled reason=start err={ex.Message}");
-            return new ModeFlipResult(ModeFlipOutcome.Cancelled, -1, ObserveModeB(),
-                "Cancelled at the Windows permission prompt. Nothing was changed.");
+            return Refusal(ModeFlipOutcome.Cancelled, ObserveMode());
         }
 
         if (proc is null)
         {
             Logger.Log($"{LogPrefix} phase=restore outcome=Cancelled reason=no-process");
-            return new ModeFlipResult(ModeFlipOutcome.Cancelled, -1, ObserveModeB(),
-                "Cancelled at the Windows permission prompt. Nothing was changed.");
+            return Refusal(ModeFlipOutcome.Cancelled, ObserveMode());
         }
 
         using (proc)
         {
+            // Holds until the elevated writer has exited, so what is read
+            // below is an end state nothing can still be changing.
             var transcript = AwaitTerminal(proc, statusPath, RestoreGraceMs, null, out _);
             var terminal = TerminalToken(transcript);
-            // The verdict, whole: the recorded value back, verbatim and in
-            // order. Mode B is measured and logged as evidence beside it,
-            // never as a condition - see FlipEvidence.
+            // The verdict, whole: the recorded value back verbatim and in
+            // order, plus a bus that does not contradict it - see
+            // RestoreVerdict for why absence is not contradiction.
             var verified = CompareTargets(sentinel.Targets, ReadStack(pid)?.Targets);
-            bool modeB = WaitForModeB(ModeBVerifyMs);
-            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} filters_match={Render(verified)} mode_b={modeB}");
+            var after = WaitForModeObservation(ModeBVerifyMs);
+            var verdict = RestoreVerdict(verified, after);
+            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} filters_match={Render(verified)} observed={after} verdict={verdict}");
 
-            if (verified == true)
+            if (verdict == ModeFlipOutcome.Ok)
             {
                 DeleteSentinel();
                 return new ModeFlipResult(ModeFlipOutcome.Ok, -1, true,
-                    "Scroll mode restored and verified.");
+                    after == ModeBObservation.InModeB
+                        ? "Scroll mode restored and verified."
+                        : "Recorded setting restored and verified; the mouse is not on the bus to check.",
+                    after);
             }
             // The script's own walk found no devnode to aim at, so it wrote
             // nothing whatsoever. That is the one failure a user can finish by
             // hand, so the forensic key and value go into the message.
             if (string.Equals(terminal, TokenNoTargets, StringComparison.OrdinalIgnoreCase))
                 return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false,
-                    HandRecoveryDetail(sentinel));
-            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false, RestoreWarning);
+                    HandRecoveryDetail(sentinel), after);
+            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, verified == true,
+                RestoreWarning, after);
         }
     }
 
@@ -422,9 +481,9 @@ internal static class ModeFlip
 
         if (PreflightOutcome(status, ids.Count, appleRegistered) is ModeFlipOutcome refused)
         {
-            Logger.Log($"{LogPrefix} phase=preflight outcome={refused}");
-            bool intact = ObserveModeB();
-            return new ModeFlipResult(refused, -1, intact, DetailFor(refused, -1, intact));
+            var atRefusal = ObserveMode();
+            Logger.Log($"{LogPrefix} phase=preflight outcome={refused} observed={atRefusal}");
+            return Refusal(refused, atRefusal);
         }
 
         // This whole value is what the restore path will re-elevate
@@ -439,9 +498,7 @@ internal static class ModeFlip
                 if (IsPlainServiceName(name))
                     continue;
                 Logger.Log($"{LogPrefix} phase=preflight outcome=FlipFailed reason=unexpected_filter_name key={t.KeyPath} prev={Render(t.Previous)}");
-                bool intact = ObserveModeB();
-                return new ModeFlipResult(ModeFlipOutcome.FlipFailed, -1, intact,
-                    DetailFor(ModeFlipOutcome.FlipFailed, -1, intact));
+                return Refusal(ModeFlipOutcome.FlipFailed, ObserveMode());
             }
         }
 
@@ -462,9 +519,7 @@ internal static class ModeFlip
         if (!ClearHandshake(statusPath, donePath))
         {
             Logger.Log($"{LogPrefix} phase=preflight outcome=FlipFailed reason=stale_handshake path={statusPath}");
-            bool intact = ObserveModeB();
-            return new ModeFlipResult(ModeFlipOutcome.FlipFailed, -1, intact,
-                DetailFor(ModeFlipOutcome.FlipFailed, -1, intact));
+            return Refusal(ModeFlipOutcome.FlipFailed, ObserveMode());
         }
 
         // Belt 3 of three, and the only belt that outlives the process: no
@@ -473,9 +528,7 @@ internal static class ModeFlip
         if (!WriteSentinel(sentinel))
         {
             Logger.Log($"{LogPrefix} phase=preflight outcome=FlipFailed reason=no_sentinel");
-            bool intact = ObserveModeB();
-            return new ModeFlipResult(ModeFlipOutcome.FlipFailed, -1, intact,
-                DetailFor(ModeFlipOutcome.FlipFailed, -1, intact));
+            return Refusal(ModeFlipOutcome.FlipFailed, ObserveMode());
         }
 
         string script;
@@ -487,9 +540,7 @@ internal static class ModeFlip
         {
             DeleteSentinel();
             Logger.Log($"{LogPrefix} phase=script outcome=FlipFailed err={ex.Message}");
-            bool intact = ObserveModeB();
-            return new ModeFlipResult(ModeFlipOutcome.FlipFailed, -1, intact,
-                DetailFor(ModeFlipOutcome.FlipFailed, -1, intact));
+            return Refusal(ModeFlipOutcome.FlipFailed, ObserveMode());
         }
 
         var scriptPath = ScriptPath(pid, nonce, restore: false);
@@ -538,27 +589,37 @@ internal static class ModeFlip
         }
 
         var live = ReadStack(pid)?.Targets;
-        // The verdict, whole: the restore is verified when, and only when, the
-        // recorded LowerFilters value came back verbatim and in order. Mode B
-        // is measured for the log, never as a condition - see FlipEvidence.
+        // The verdict, whole: the recorded LowerFilters value back verbatim
+        // and in order, and a bus that does not contradict it. A mouse that is
+        // not on the bus contradicts nothing; a mouse still split into its
+        // collections contradicts everything - see RestoreVerdict.
         var verified = CompareTargets(targets, live);
-        bool modeB = WaitForModeB(ModeBVerifyMs);
+        var observed = WaitForModeObservation(ModeBVerifyMs);
+        bool restored = RestoreVerdict(verified, observed) == ModeFlipOutcome.Ok;
 
         var evidence = new FlipEvidence(started, ready, terminal, percent, verified);
         var outcome = MapOutcome(evidence);
+        // A mouse the tray can see is still split outranks a value that reads
+        // back correctly: the wheel is what the user has.
+        if (started && !restored
+            && outcome is ModeFlipOutcome.Ok or ModeFlipOutcome.BatteryUnreadable
+                or ModeFlipOutcome.FlipFailed)
+            outcome = ModeFlipOutcome.RestoreFailed;
 
-        Logger.Log($"{LogPrefix} phase=verify filters_match={Render(verified)} mode_b={modeB}");
+        Logger.Log($"{LogPrefix} phase=verify filters_match={Render(verified)} observed={observed}");
         foreach (var t in targets)
             Logger.Log($"{LogPrefix} phase=verify key={t.KeyPath} prev={Render(t.Previous)} post={Render(LiveFor(live, t.KeyPath))}");
         Logger.Log($"{LogPrefix} phase=done started={started} ready={ready} script_terminal={(terminal.Length == 0 ? "none" : terminal)} pct={percent} outcome={outcome}");
 
-        if (verified == true)
+        // The record is the one-click way back, so it only goes away once the
+        // end state is whole - not on the value alone.
+        if (restored)
             DeleteSentinel();
         else if (started)
             Logger.Log($"{LogPrefix} phase=done sentinel=kept path={SentinelPath} reason=restore-unverified");
 
         return new ModeFlipResult(outcome, percent, verified == true,
-            DetailFor(outcome, percent, verified == true));
+            DetailFor(outcome, percent, verified == true), observed);
     }
 
     // --- decision logic (pure) -------------------------------------------
@@ -569,14 +630,17 @@ internal static class ModeFlip
     // nothing else. It is tri-state on purpose: null means the end state could
     // not be read at all, and that must never be reported as success.
     //
-    // Observing Mode B is deliberately NOT part of it. The BTHENUM devnode
-    // re-enumerates on the Bluetooth stack's own schedule - measured on the
-    // reference PC (2026-09-15) as arriving AFTER the registry value is
-    // already correct, and sometimes past any budget worth blocking a user on
-    // - so requiring it would report a restore that did land as failed and
-    // send the user to click Restore again. The registry value is what binds
-    // the filter and is the only half of the end state the tray controls; Mode
-    // B is still measured and logged beside every verdict as evidence.
+    // What the bus shows is NOT part of this record, because the two things it
+    // can show pull opposite ways and only one of them belongs in a mapping
+    // from the script's transcript. A mouse that cannot be seen at all proves
+    // nothing: the BTHENUM devnode re-enumerates on the Bluetooth stack's own
+    // schedule - measured on the reference PC (2026-09-15) as arriving AFTER
+    // the registry value is already correct, and sometimes past any budget
+    // worth blocking a user on - so requiring it here would report a restore
+    // that did land as failed and send the user to click Restore again. A
+    // mouse that IS seen still split into its collections does outrank the
+    // value, and RestoreVerdict applies that outside this mapping, on the
+    // observation ReadBatteryViaFlipCore measured.
     internal readonly record struct FlipEvidence(
         bool Started, bool ReadyObserved, string Terminal, int Percent, bool? FiltersRestored);
 
@@ -611,11 +675,81 @@ internal static class ModeFlip
         if (instanceCount == 0)
             return ModeFlipOutcome.NoInstances;
         // Patched-Apple with the filter already gone from LowerFilters means
-        // the stack is in Mode A right now. Flipping cannot restore a Mode B
-        // that was never recorded, so refuse instead of stranding the wheel.
+        // the stack is in Mode A right now: the wheel is dead and there is no
+        // recorded value to put back. NotPathA is worded as "nothing was
+        // changed", which would tell a user whose wheel has already stopped
+        // that nothing is wrong.
         if (!appleFilterRegistered)
-            return ModeFlipOutcome.NotPathA;
+            return ModeFlipOutcome.StrandedInModeA;
         return null;
+    }
+
+    // Refusals for the STANDALONE restore, decided before anything is
+    // elevated. null = proceed.
+    //
+    // Two halves. With a record, the only question is whether the stack it
+    // describes is still the bound one: the recorded LowerFilters value is
+    // meaningful under the patched Apple driver and nowhere else, and writing
+    // it onto a Stock or KMDF stack would bind a filter that stack never
+    // carried. An unreadable status is not evidence that the stack changed,
+    // and refusing on it would take away the one-click way out of a dead
+    // wheel. Without a record there is nothing to write at all, so the answer
+    // is whatever is true of the mouse right now - and a mouse observably
+    // split into its collections has a dead wheel this click cannot fix.
+    internal static ModeFlipOutcome? RestorePreflightOutcome(
+        bool sentinelPresent, DriverStatus? status, ModeBObservation observed)
+    {
+        bool recordedStackStillBound = status is null or DriverStatus.PathAPatched;
+        if (sentinelPresent)
+            return recordedStackStillBound ? null : ModeFlipOutcome.DriverChanged;
+        if (observed == ModeBObservation.InModeA)
+            return ModeFlipOutcome.StrandedInModeA;
+        if (!recordedStackStillBound)
+            return ModeFlipOutcome.NotPathA;
+        // Scroll mode is live and nothing was recorded: nothing to do and
+        // nothing to warn about. A mouse that is not on the bus proves neither,
+        // so it is reported as the absence it is.
+        return observed == ModeBObservation.InModeB
+            ? ModeFlipOutcome.Ok
+            : ModeFlipOutcome.NoInstances;
+    }
+
+    // The restore verdict from the two independent halves of the end state:
+    // the recorded value back on the key (CompareTargets) and what the bus
+    // shows of the mouse.
+    //
+    // A value that is not provably back is a failure however the mouse looks.
+    // A mouse that is provably still split is a failure however the value
+    // looks - a correct key does not outvote a measurement that contradicts
+    // it. A mouse that is not on the bus at all is no evidence against a value
+    // that IS provably back: calling that a failure sends the user to
+    // re-elevate a restore that already landed.
+    internal static ModeFlipOutcome RestoreVerdict(bool? filtersRestored, ModeBObservation observed) =>
+        filtersRestored == true && observed != ModeBObservation.InModeA
+            ? ModeFlipOutcome.Ok
+            : ModeFlipOutcome.RestoreFailed;
+
+    // Whether the cycle slot may be released and a verdict published.
+    //
+    // The cycle is one elevated writer plus one tray reading its append-only
+    // transcript, and it is finished when the WRITER is finished: a verdict
+    // published over a live script reports an end state the script is still
+    // changing, and a slot released under a live script lets a second elevated
+    // writer start on the same keys. The ceiling is the tray's own patience
+    // for a reading, not the script's deadline, so it decides nothing here.
+    internal readonly record struct CycleRelease(
+        bool MayRelease, bool MayPublishVerdict, bool VerdictIsFailure);
+
+    internal static CycleRelease DecideCycleRelease(
+        bool scriptExited, bool terminalObserved, bool ceilingExceeded)
+    {
+        if (!scriptExited)
+            return new CycleRelease(false, false, false);
+        // The writer is gone, so the slot is free and the user is owed an
+        // answer. A script that said its piece is not a failure just because
+        // the tray waited longer than it budgeted for; a script that exited
+        // without reporting its end state has only one honest verdict.
+        return new CycleRelease(true, true, !terminalObserved);
     }
 
     // Order-sensitive, case-insensitive comparison of every recorded key
@@ -664,6 +798,17 @@ internal static class ModeFlip
         ModeFlipOutcome.RestoreFailed => RestoreWarning,
         ModeFlipOutcome.Cancelled =>
             "Cancelled at the Windows permission prompt. Nothing was changed.",
+        // Already in battery mode with no recovery record: scroll is dead now,
+        // so the refusal vocabulary would be a lie.
+        ModeFlipOutcome.StrandedInModeA =>
+            "This mouse is parked in battery mode with no recovery record, so scroll is dead "
+            + "and there is no recorded value to put back.",
+        ModeFlipOutcome.CycleInFlight =>
+            "A battery-mode cycle is already running on this mouse. Wait for it to finish, "
+            + "then ask again.",
+        ModeFlipOutcome.DriverChanged =>
+            "The recovery record describes a driver that is no longer bound, so the recorded "
+            + "value was not written. Nothing was changed.",
         _ => "Unknown result.",
     };
 
@@ -755,19 +900,33 @@ internal static class ModeFlip
     // nothing at all: its own in-context walk derived no devnode (no-targets),
     // or the sentinel named no Apple-family filter in the first place. The key
     // path is shown to a HUMAN here; it never reaches script text.
-    internal static string HandRecoveryDetail(ModeFlipSentinel sentinel)
-    {
-        const string lead =
+    internal static string HandRecoveryDetail(ModeFlipSentinel sentinel) =>
+        RecordedValueDetail(
+            sentinel,
             "Scroll mode could NOT be restored - your scroll wheel may be dead. "
-            + "Nothing was changed on this attempt. ";
+            + "Nothing was changed on this attempt. ",
+            "To put it back by hand, set LowerFilters = ");
+
+    // The refusal for a record taken under a driver that is no longer bound.
+    // Never silent: the user asked for a restore, so they are owed the reason
+    // and the forensic record. The recorded value is quoted for reference
+    // only - it is exactly the value that must NOT be written onto this stack.
+    internal static string DriverChangedDetail(ModeFlipSentinel sentinel) =>
+        RecordedValueDetail(
+            sentinel,
+            "Scroll mode was NOT restored: the recovery record was taken while a different "
+            + "driver was bound than the one bound now, so nothing was changed. ",
+            "The record holds LowerFilters = ");
+
+    static string RecordedValueDetail(ModeFlipSentinel sentinel, string lead, string quote)
+    {
         foreach (var t in sentinel.Targets)
         {
             foreach (var name in t.Previous)
             {
                 if (!RepairPlanner.IsAppleFamily(name))
                     continue;
-                return lead + "To put it back by hand, set LowerFilters = "
-                    + string.Join(" ", t.Previous) + " on " + t.KeyPath + ".";
+                return lead + quote + string.Join(" ", t.Previous) + " on " + t.KeyPath + ".";
             }
         }
         return lead + "The recovery record names no scroll-mode filter to put back.";
@@ -1684,26 +1843,33 @@ exit 1
         return (false, []);
     }
 
-    static bool ObserveModeB()
+    static ModeBObservation ObserveMode()
     {
-        try { return V3RecycleManager.IsV3InModeB(); }
+        try { return V3RecycleManager.ObserveV3Mode(HidNative.EnumerateHidPaths()); }
         catch (Exception ex)
         {
             Logger.Log($"{LogPrefix} phase=observe err={ex.Message}");
-            return false;
+            // An enumeration that failed proves nothing about the mouse.
+            return ModeBObservation.NotObservable;
         }
     }
 
-    static bool WaitForModeB(int budgetMs)
+    // Polls for the shape scroll depends on and returns what it last saw. The
+    // BTHENUM devnode re-enumerates on the Bluetooth stack's own schedule, so
+    // Mode B can arrive after the registry value is already correct; what the
+    // budget must never do is turn a mouse that is switched off, asleep or out
+    // of range into a dead wheel, which is why the LAST observation comes back
+    // rather than a bool.
+    static ModeBObservation WaitForModeObservation(int budgetMs)
     {
         var deadline = Environment.TickCount64 + budgetMs;
-        do
+        while (true)
         {
-            if (ObserveModeB())
-                return true;
+            var observed = ObserveMode();
+            if (observed == ModeBObservation.InModeB || Environment.TickCount64 >= deadline)
+                return observed;
             Thread.Sleep(100);
-        } while (Environment.TickCount64 < deadline);
-        return false;
+        }
     }
 
     // A ready-made readPercent delegate for ReadBatteryViaFlip.
@@ -1775,20 +1941,33 @@ exit 1
             WindowStyle = ProcessWindowStyle.Normal,
             WorkingDirectory = Path.GetTempPath(),
         };
-        return Process.Start(psi);
+        var proc = Process.Start(psi);
+        // Reading Id here materialises the process handle ShellExecuteEx
+        // returned, and that handle is the whole input to the release
+        // decision: this cycle is not over until this writer is.
+        if (proc is not null)
+            Logger.Log($"{LogPrefix} phase=elevate pid={proc.Id} script={scriptPath}");
+        return proc;
     }
 
     static string AwaitTerminal(
         Process proc, string statusPath, int ceilingMs, Action? onReady, out bool readyObserved) =>
         AwaitTerminal(proc, statusPath, ceilingMs, onReady, ceilingMs, null, out readyObserved);
 
-    // Polls the append-only status sidecar until the script reports a terminal
-    // phase. ExitCode is unavailable once UseShellExecute is true, so the
-    // sidecar is the channel - same reason DeviceRepair uses one.
+    // Polls the append-only status sidecar for the script's phases, and holds
+    // until the elevated WRITER itself is gone.
+    //
+    // The sidecar is the phase channel because an exit code cannot say which
+    // phase a script reached - the same reason DeviceRepair uses one - but the
+    // cycle is not over when the transcript says so. It is over when the
+    // process that writes the registry has exited: DecideCycleRelease is that
+    // rule, and HasExited / WaitForExit on the handle Process.Start returned
+    // are its input.
     //
     // The elevated process is never killed here: it may be in the middle of
     // its restore, and interrupting that is the one failure with real
-    // consequences for the user.
+    // consequences for the user. The ceiling therefore ends the tray's
+    // patience for a READING only - it never ends the wait on the writer.
     static string AwaitTerminal(
         Process proc,
         string statusPath,
@@ -1802,6 +1981,7 @@ exit 1
         var started = Environment.TickCount64;
         var transcript = "";
         bool readyGaveUp = false;
+        bool ceilingLogged = false;
         while (true)
         {
             transcript = ReadAllTextOrNull(statusPath) ?? "";
@@ -1811,9 +1991,8 @@ exit 1
                 Logger.Log($"{LogPrefix} phase=ready elapsed_ms={Environment.TickCount64 - started}");
                 onReady?.Invoke();
             }
-            if (TerminalToken(transcript).Length > 0)
-                break;
             var elapsed = Environment.TickCount64 - started;
+            bool ceilingExceeded = elapsed > ceilingMs;
             if (!readyObserved && !readyGaveUp && elapsed > readyBudgetMs)
             {
                 // Mode A never arrived. Release the script from its wait at
@@ -1823,22 +2002,52 @@ exit 1
                 if (donePath is not null)
                     WriteDone(donePath, -1);
             }
-            if (elapsed > ceilingMs)
+            var decision = DecideCycleRelease(
+                scriptExited: HasExited(proc),
+                terminalObserved: TerminalToken(transcript).Length > 0,
+                ceilingExceeded: ceilingExceeded);
+            if (decision.MayRelease)
             {
-                Logger.Log($"{LogPrefix} phase=ceiling elapsed_ms={elapsed} exited={HasExited(proc)}");
+                Logger.Log($"{LogPrefix} phase=release elapsed_ms={elapsed} publish={decision.MayPublishVerdict} silent_exit={decision.VerdictIsFailure}");
                 break;
             }
-            if (HasExited(proc) && elapsed > 5_000)
-                break;
-            Thread.Sleep(PollMs);
+            if (ceilingExceeded && !ceilingLogged)
+            {
+                ceilingLogged = true;
+                Logger.Log($"{LogPrefix} phase=ceiling elapsed_ms={elapsed} exited=false holding=true");
+            }
+            // Wait on the writer rather than on the clock: while it is alive
+            // it can still change the end state this cycle is about to report.
+            WaitForExit(proc, PollMs);
         }
-        return transcript;
+        // The script can append its verdict between the last poll and its
+        // exit, so the transcript is read once more now that it cannot grow.
+        return ReadAllTextOrNull(statusPath) ?? transcript;
     }
 
+    // At most ms on the handle Process.Start returned. A handle that cannot be
+    // waited on would spin the poll loop, so the sleep stands in for it.
+    static void WaitForExit(Process proc, int ms)
+    {
+        try { proc.WaitForExit(ms); }
+        catch (Exception ex)
+        {
+            Logger.Log($"{LogPrefix} phase=await err={ex.Message}");
+            Thread.Sleep(ms);
+        }
+    }
+
+    // A handle the tray cannot query is no evidence that the writer is still
+    // alive, and holding the cycle on one would wedge every later reading, so
+    // an unreadable handle counts as exited and says so in the log.
     static bool HasExited(Process proc)
     {
         try { return proc.HasExited; }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            Logger.Log($"{LogPrefix} phase=await err={ex.Message} exited=assumed");
+            return true;
+        }
     }
 
     static void WriteDone(string donePath, int percent)

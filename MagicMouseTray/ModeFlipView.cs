@@ -12,9 +12,12 @@ namespace MagicMouseTray;
 //      wheel for a few seconds and costs one administrator approval. A user
 //      who only learns that after clicking has been misled, so OfferText says
 //      it in the dialog that asks.
-//   2. A restore is never claimed unless ModeFlip verified it. ModeFlipResult
-//      .RestoredToModeB is that verification, and it is the only thing allowed
-//      to produce "the mouse is back in scroll mode". Anything else says so.
+//   2. A restore is never claimed unless ModeFlip verified it, and the mouse
+//      was seen in scroll mode afterwards. ModeFlipResult.RestoredToModeB is
+//      the first half and ModeFlipResult.Observed the second, and only both
+//      together produce "the mouse is back in scroll mode". A setting that is
+//      provably back on a mouse that is switched off, asleep or out of range
+//      earns the honest middle, never the confirmation.
 //   3. The dangerous branch leads with the danger. RestoreFailed means the
 //      wheel may be dead right now, so that sentence is the first line and the
 //      one-click fix is its own paragraph, never a clause inside prose.
@@ -45,6 +48,15 @@ internal static class ModeFlipView
     const string ScrollConfirmed =
         "The mouse is back in scroll mode. Magic Tray re-read the setting and checked the mouse "
         + "itself, so that is confirmed rather than assumed.";
+
+    // The end state for a restore whose setting is provably back while the
+    // mouse itself was not on the bus to be looked at. Two opposite mistakes
+    // are available here - frightening a user whose restore landed, and
+    // claiming a confirmation that nothing confirmed - and this makes neither.
+    const string ScrollSetBack =
+        "The setting that puts this mouse back is in place again, exactly as it was before. "
+        + "Magic Tray could not look at the mouse itself to double-check, because the mouse is "
+        + "not connected right now - switched off, asleep or out of range.";
 
     // The fix, as its own paragraph, plus the hand route if it fails too. The
     // pair-again route is the measured last resort from docs/ENABLE-DISABLE.md.
@@ -122,7 +134,7 @@ internal static class ModeFlipView
                 return result.Percent >= 0
                     ? $"Battery: {DeviceCapability.BatteryLabel(result.Percent)}\n\n"
                         + RestoreTail(result)
-                    : "Scrolling is back on.\n\n" + RestoreTail(result);
+                    : ScrollHeadline(result) + "\n\n" + RestoreTail(result);
 
             case ModeFlipOutcome.NotPathA:
                 // Nothing was elevated and nothing was written, so there is no
@@ -173,6 +185,41 @@ internal static class ModeFlipView
                     + "The administrator prompt was not approved, so no setting was written, the "
                     + "mouse was not restarted, and it never left scroll mode.\n\n"
                     + "Ask for the reading again whenever you want it.";
+
+            case ModeFlipOutcome.StrandedInModeA:
+                // The wheel is dead NOW, so the refusal vocabulary would be a
+                // lie, and the one-click restore has no recorded setting to
+                // put back - naming it would send the user to a button that
+                // cannot work. The route that does work is the measured one
+                // from docs/ENABLE-DISABLE.md.
+                return "Scrolling is dead right now.\n\n"
+                    + "This mouse is in the mode where it reports its battery level and its scroll "
+                    + "wheel does not work, and Magic Tray has no record of what this mouse looked "
+                    + "like before, so it cannot put it back for you.\n\n"
+                    + "How to fix it: open Windows Settings -> Bluetooth & devices, remove this "
+                    + "mouse, switch it off and on again, then add it back. Windows rebuilds the "
+                    + "connection from scratch and scrolling comes back with it.";
+
+            case ModeFlipOutcome.CycleInFlight:
+                // Another reading holds this mouse: its setting is already
+                // rewritten and its elevated step is still running, so every
+                // reassurance the cancelled branch gives is false here.
+                return "A battery reading is already under way on this mouse.\n\n"
+                    + "That reading has switched the mouse over and has not finished yet. Starting "
+                    + "a second one now would leave two of them changing the same mouse at the "
+                    + "same time.\n\n"
+                    + "Wait for the one in progress to finish - it takes 10-20 seconds - and it "
+                    + "will report what it found and put the mouse back.";
+
+            case ModeFlipOutcome.DriverChanged:
+                return "No reading was taken, and nothing was changed.\n\n"
+                    + "Magic Tray recorded what to put back for this mouse while one driver was in "
+                    + "use, and a different driver is in use now. Putting that recorded setting "
+                    + "back would change something this driver never had, so Magic Tray refused to "
+                    + "write it.\n\n"
+                    + "If scrolling is not working on the driver you are using now: open Windows "
+                    + "Settings -> Bluetooth & devices, remove this mouse, switch it off and on "
+                    + "again, then add it back.";
         }
 
         throw new ArgumentOutOfRangeException(
@@ -192,9 +239,29 @@ internal static class ModeFlipView
         + "OK puts it back in one click. " + RestorePromise + "\n\n"
         + "Cancel leaves the mouse as it is. Magic Tray will offer this again next time it starts.";
 
-    // Verified restores get the confirmation sentence; everything else gets the
-    // warning and the fix. This is rule 2 in one place, so no branch above can
-    // promise a restore the cycle did not actually check.
-    static string RestoreTail(ModeFlipResult result) =>
-        result.RestoredToModeB ? ScrollConfirmed : ScrollInDoubt;
+    // "Scrolling is back on" is a claim about the MOUSE, so it is only made
+    // when the mouse was seen in scroll mode. A setting that went back on a
+    // mouse nobody could look at gets the weaker headline to match its tail.
+    static string ScrollHeadline(ModeFlipResult result) =>
+        result.RestoredToModeB && result.Observed != ModeBObservation.InModeB
+            ? "Scrolling should be back on."
+            : "Scrolling is back on.";
+
+    // Rule 2 in one place, over both halves of the end state, so no branch
+    // above can promise a restore the cycle did not actually check: the
+    // recorded setting back AND the mouse seen in scroll mode earns the
+    // confirmation; the setting back with no mouse to look at earns the honest
+    // middle; a mouse still seen in battery mode earns the warning, because a
+    // correct setting does not outvote a measurement that contradicts it.
+    static string RestoreTail(ModeFlipResult result)
+    {
+        if (!result.RestoredToModeB)
+            return ScrollInDoubt;
+        return result.Observed switch
+        {
+            ModeBObservation.InModeB => ScrollConfirmed,
+            ModeBObservation.NotObservable => ScrollSetBack,
+            _ => ScrollInDoubt,
+        };
+    }
 }
