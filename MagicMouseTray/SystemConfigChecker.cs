@@ -1287,14 +1287,37 @@ internal static class SystemConfigChecker
     // data: a file we did not build decides how deep it goes.
     const int MaxSignatureNesting = 4;
 
+    // Breadth is the file's to choose as well - one signature can carry any
+    // number of signers, and each signer any number of nested blobs - so the
+    // collected set is capped too, well above the three entries the reference
+    // file produces. Stopping at the cap is a set we did not finish reading,
+    // which is exactly what Unreadable means, and one entry says it: the list
+    // never grows past the cap, however wide the file is.
+    const int MaxSigners = 64;
+
+    static bool Saturated(List<SignerTrust> signers)
+    {
+        if (signers.Count < MaxSigners)
+            return false;
+        if (signers[^1] != SignerTrust.Unreadable)
+            signers.Add(SignerTrust.Unreadable);
+        return true;
+    }
+
     static void CollectSignerTrust(byte[] pkcs7, int depth, List<SignerTrust> signers)
     {
+        if (Saturated(signers))
+            return;
+
         int before = signers.Count;
 
         if (depth <= MaxSignatureNesting && TryDecodeSignature(pkcs7, depth, out var cms))
         {
             foreach (var signer in cms.SignerInfos)
             {
+                if (Saturated(signers))
+                    return;
+
                 var cert = signer.Certificate;
                 signers.Add(cert is null
                     ? SignerTrust.Unreadable

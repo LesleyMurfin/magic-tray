@@ -12,7 +12,7 @@ namespace MagicMouseTray.Tests;
 // does with a verdict; this file covers how an HONEST verdict is produced, and
 // what the facts are allowed to say when it could not be.
 //
-// The rule in SystemConfigChecker.cs:54-57 is the whole point: "Unknown (a read
+// The rule in SystemConfigChecker.cs:57-58 is the whole point: "Unknown (a read
 // that failed, or a catalog-only file) may never claim a driver is self-signed
 // and may never reach Blocking." Blocking on the signing facts tells the user
 // to run bcdedit /set testsigning on and to turn Memory integrity off, so a
@@ -20,7 +20,7 @@ namespace MagicMouseTray.Tests;
 // program telling someone to weaken their machine on no evidence.
 //
 // The reference file for all of this is applewirelessmouse.sys as measured on
-// the 2026-09-15 reference PC (SystemConfigChecker.cs:47-49): a self-issued WDK
+// the 2026-09-15 reference PC (SystemConfigChecker.cs:48-50): a self-issued WDK
 // test signature FIRST, plus two CA-issued Microsoft WHCP signatures nested in
 // the first one's unauthenticated attributes. Windows loads it with nothing
 // switched off. Read completely it is NOT self-signed; read partially - one
