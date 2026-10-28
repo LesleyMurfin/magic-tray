@@ -1194,3 +1194,67 @@ details > *:not(summary) {
 details > *:not(summary):first-of-type { margin-top: 0.2rem; }
 details code { font-family: var(--mono); font-size: 0.85rem; }
 
+/* GitHub star buttons. Nothing here applies until star.js has added
+   `.is-enhanced`, so a visitor without JavaScript keeps the plain footer or
+   CTA link, styled by the rules above, rather than an empty box. The count
+   chip is only ever in the DOM once a real number arrived -- there is no
+   placeholder to leave hanging when api.github.com rate-limits the page. */
+.gh-star.is-enhanced {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--fg);
+}
+.gh-star-face,
+.gh-star-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  /* Same 3:1 boundary the ghost button settles on; `--line` is too quiet to
+     read as a control's edge. */
+  border: 1px solid #66667d;
+  border-radius: var(--radius);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.gh-star-face {
+  background: var(--bg-3);
+  color: var(--accent-2);
+}
+.gh-star-text { color: var(--fg); }
+.gh-star-count {
+  background: var(--bg-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The two halves meet as one pill, with the shared edge drawn once. */
+.gh-star.has-count .gh-star-face {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.gh-star.has-count .gh-star-count {
+  border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.gh-star.is-enhanced:hover .gh-star-face { background: var(--line); }
+.gh-star.is-enhanced:hover .gh-star-count { background: var(--bg-3); }
+
+/* The pill brings its own box, so the padding and borders a `.cta` or a footer
+   row would otherwise put on an anchor have to come back off. */
+.cta a.gh-star.is-enhanced {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  align-self: flex-start;
+}
+.rail-card .cta a.gh-star.is-enhanced { width: auto; }
+.site-footer a.gh-star.is-enhanced {
+  padding: 0;
+  color: var(--fg);
+}
+.site-footer a.gh-star.is-enhanced:hover { color: var(--fg); }
+
