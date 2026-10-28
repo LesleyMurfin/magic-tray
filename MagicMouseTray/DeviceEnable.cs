@@ -72,6 +72,26 @@ internal readonly record struct DeviceEnableEvidence(
     DeviceEnableReading? Reading,
     int? Exit);
 
+// Why the wait on the elevated step ended, or that it has not. Three
+// different facts that decide three different things, so the poll loop
+// reports which one it saw instead of leaving the caller to re-derive it from
+// a boolean and a clock:
+//   KeepWaiting     nothing has been decided yet.
+//   SidecarReady    the script wrote a complete report - a state somebody
+//                   measured, and the only verdict that outranks the others.
+//   ProcessGone     the elevated process is gone and nothing was ever
+//                   written. There is nothing left to wait for, so waiting on
+//                   is time spent on a verdict we already have.
+//   CeilingExpired  the wall. A script that never reports and never exits is
+//                   given up on, and said to be given up on.
+internal enum ElevatedWaitVerdict
+{
+    KeepWaiting,
+    SidecarReady,
+    ProcessGone,
+    CeilingExpired,
+}
+
 internal static class DeviceEnable
 {
     internal static readonly string[] ForbiddenNames =
@@ -483,6 +503,44 @@ exit 1
         };
     }
 
+    // The wall on the wait below, and the number TrayMenu.BlockingCommands
+    // publishes for both Windows device commands: there is one ceiling, not a
+    // loop constant and a table entry that can drift apart.
+    internal static readonly TimeSpan ElevatedWaitCeiling = TimeSpan.FromMinutes(2);
+
+    // The one concession to a file write that lags its own process: a script
+    // that writes its report and exits can be observed exited a few
+    // milliseconds before the report is readable, so "gone" is only believed
+    // once the process has been gone for this long. Seconds, deliberately -
+    // it is the lag on one Set-Content, not a second ceiling.
+    internal static readonly TimeSpan ElevatedWaitSettle = TimeSpan.FromSeconds(5);
+
+    // How often the loop below asks. One file probe and one HasExited read,
+    // so the cost of asking is what sets this, not the answer's urgency.
+    const int PollStepMs = 150;
+
+    // What the poll loop does next, decided on the evidence it has rather
+    // than on the clock alone. Precedence is the part that is easy to get
+    // wrong, so it is stated here once: a complete report wins over
+    // everything, including a process that has already exited and a ceiling
+    // that has already expired, because a report is a state somebody measured
+    // and a timeout is only a state nobody waited for.
+    internal static ElevatedWaitVerdict NextWaitStep(
+        bool sidecarComplete, bool processExited, TimeSpan elapsed)
+    {
+        if (sidecarComplete)
+            return ElevatedWaitVerdict.SidecarReady;
+        // Elevation was granted and the step is gone without a word: a
+        // declined consent prompt inside the script, or a shell that died.
+        // Nothing will write the report now, so the remaining ceiling is time
+        // spent on a verdict we already have.
+        if (processExited && elapsed >= ElevatedWaitSettle)
+            return ElevatedWaitVerdict.ProcessGone;
+        if (elapsed >= ElevatedWaitCeiling)
+            return ElevatedWaitVerdict.CeilingExpired;
+        return ElevatedWaitVerdict.KeepWaiting;
+    }
+
     // --- elevation -------------------------------------------------------
 
     // Started=false means ShellExecute handed back no process at all: UAC
@@ -507,26 +565,29 @@ exit 1
         using (p)
         {
             var started = DateTime.UtcNow;
-            var until = started + TimeSpan.FromMinutes(2);
             var sidecar = "";
-            while (DateTime.UtcNow < until)
+            // Every way out of this loop is a verdict NextWaitStep reached on
+            // the evidence of that one pass: the report, the process, and the
+            // clock, in that order of precedence.
+            while (true)
             {
                 if (File.Exists(statusPath))
                 {
                     try { sidecar = File.ReadAllText(statusPath).Trim(); }
                     catch { sidecar = ""; }
-                    if (ParseSidecar(sidecar) is not null)
-                        break;
                 }
-                try
-                {
-                    if (p.HasExited
-                        && ParseSidecar(sidecar) is null
-                        && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
-                        break;
-                }
+                var exited = false;
+                try { exited = p.HasExited; }
                 catch { /* UseShellExecute */ }
-                Thread.Sleep(150);
+
+                var step = NextWaitStep(
+                    ParseSidecar(sidecar) is not null, exited, DateTime.UtcNow - started);
+                if (step != ElevatedWaitVerdict.KeepWaiting)
+                {
+                    Logger.Log($"DEVICE_ENABLE wait={step}");
+                    break;
+                }
+                Thread.Sleep(PollStepMs);
             }
             if (!p.HasExited)
             {

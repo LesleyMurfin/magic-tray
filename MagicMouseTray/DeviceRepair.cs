@@ -46,6 +46,12 @@ internal static class DeviceRepair
     internal const int NoInstancesExitCode = 2;
     internal const int FilterBlockedExitCode = 3;
 
+    // The wall on the sidecar poll below - an elevated restart-device plus
+    // the verification the script does afterwards. Both repair clicks block
+    // for it, so TrayMenu.BlockingCommands publishes this constant rather
+    // than a copy of the number.
+    internal static readonly TimeSpan SidecarWaitCeiling = TimeSpan.FromMinutes(2);
+
     // Named after the ATTEMPT and the PROCESS, not just the device. Both
     // repairs can be in flight for the same PID at once: TrayApp's
     // StartRepairApply and StartStaleFilterRemoval each launch straight into
@@ -607,7 +613,7 @@ exit 1
         using (p)
         {
             var started = DateTime.UtcNow;
-            var until = started + TimeSpan.FromMinutes(2);
+            var until = started + SidecarWaitCeiling;
             while (DateTime.UtcNow < until)
             {
                 if (File.Exists(statusPath))

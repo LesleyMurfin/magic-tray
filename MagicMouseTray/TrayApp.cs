@@ -685,6 +685,106 @@ internal static class TrayMenu
         return ask(command.ConfirmText);
     }
 
+    // ---- blocking work ---------------------------------------------------
+
+    // The ids of the commands that are NOT in the consent table above,
+    // because their consent is raised one level down (DriverInstaller's own
+    // OK/Cancel) or because they are not mutations at all. They are named
+    // here for the same reason the four above are: a command has to be
+    // nameable without depending on its wording.
+    internal const string CommandFixBatteryReads = "fix-battery-reads";
+    internal const string CommandV1V2StockRestore = "v1v2-stock-restore";
+    internal const string CommandV1V2BootCampPage = "v1v2-boot-camp-page";
+    internal const string CommandTrackpadV1BootCampPage = "trackpad-v1-boot-camp-page";
+    internal const string CommandV3KmdfInstall = "v3-kmdf-install";
+    internal const string CommandV3PathAInstall = "v3-patha-install";
+    internal const string CommandV3StockRestore = "v3-stock-restore";
+    internal const string CommandRepairApply = "repair-apply";
+    internal const string CommandStaleFilterRemoval = "stale-filter-removal";
+
+    // How long each tray command can really block for, and therefore whether
+    // it is allowed to run on the UI thread. The handlers are built from these
+    // entries the same way the consent dialogs are built from
+    // MutatingCommands: the click looks its command up, and the entry decides
+    // whether the work goes to a worker thread.
+    //
+    // The ceilings are not opinions. Every one of them is the wait the
+    // production code performs, read from the constant that performs it, so an
+    // entry cannot drift away from the loop it describes. The two Boot Camp
+    // items are here precisely because they block on nothing - they open a
+    // documented page and return - so a zero ceiling is a real state and not
+    // a predicate that answers "no" to everything.
+    internal static readonly IReadOnlyList<TrayBlockingCommand> BlockingCommands =
+    [
+        // The flip's wall is its own ready budget plus the restore grace the
+        // script is allowed after it; the restore alone is that grace.
+        new(CommandReadBattery,
+            TimeSpan.FromMilliseconds(ModeFlip.DefaultTimeoutMs + ModeFlip.RestoreGraceMs),
+            RunsOffUiThread: true),
+        new(CommandRestoreScrollMode,
+            TimeSpan.FromMilliseconds(ModeFlip.RestoreGraceMs),
+            RunsOffUiThread: true),
+
+        // Start/Stop in Windows: one elevated pnputil pass, then the status
+        // sidecar poll, to DeviceEnable's own ceiling.
+        new(CommandStartInWindows, DeviceEnable.ElevatedWaitCeiling, RunsOffUiThread: true),
+        new(CommandStopInWindows, DeviceEnable.ElevatedWaitCeiling, RunsOffUiThread: true),
+
+        // One elevated script each, waited for with RunElevated's ordinary
+        // ceiling.
+        new(CommandFixBatteryReads, DriverInstaller.ScriptRunCeiling, RunsOffUiThread: true),
+        new(CommandV1V2StockRestore, DriverInstaller.ScriptRunCeiling, RunsOffUiThread: true),
+
+        // The documented Boot Camp pages: a browser launch, and nothing to
+        // wait for afterwards.
+        new(CommandV1V2BootCampPage, TimeSpan.Zero, RunsOffUiThread: false),
+        new(CommandTrackpadV1BootCampPage, TimeSpan.Zero, RunsOffUiThread: false),
+
+        // The 0323 radios pull the driver package first and then wait on the
+        // installer, so the honest ceiling is the download plus the elevated
+        // step - and Stock runs two elevated steps one after the other, the
+        // KMDF uninstall and then the PATH-A uninstall.
+        new(CommandV3KmdfInstall,
+            DriverInstaller.DownloadCeiling + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+        new(CommandV3PathAInstall,
+            DriverInstaller.DownloadCeiling + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+        new(CommandV3StockRestore,
+            DriverInstaller.DownloadCeiling
+                + DriverInstaller.PackageInstallCeiling
+                + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+
+        // The two repair flows, which already ran off the UI thread before
+        // this table existed. They are entries so the table describes the tray
+        // as it is, and their sidecar poll has its own wall.
+        new(CommandRepairApply, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
+        new(CommandStaleFilterRemoval, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
+    ];
+
+    // Fail closed. A lookup that answered with a default entry would hand back
+    // a zero ceiling, and a zero ceiling is a licence to run the work on the
+    // UI thread - the exact defect this table exists to stop, reintroduced by
+    // a typo.
+    internal static TrayBlockingCommand BlockingCommand(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        foreach (var command in BlockingCommands)
+        {
+            if (string.Equals(command.Id, id, StringComparison.Ordinal))
+                return command;
+        }
+        throw new InvalidOperationException($"No blocking-work entry for tray command '{id}'.");
+    }
+
+    // Work that blocks on nothing may stay on the message pump; work that can
+    // block for any length of time may not. The ceiling decides it, not the
+    // entry's own RunsOffUiThread flag: the ceiling is the claim that cannot
+    // be wrong by accident.
+    internal static bool MayRunOnUiThread(TrayBlockingCommand command) =>
+        command.Ceiling == TimeSpan.Zero;
+
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
     {
@@ -837,6 +937,17 @@ internal readonly record struct OfflineDeviceRow(
 // only exists as a missing dialog in the menu code.
 internal readonly record struct TrayDeviceCommand(
     string Id, string Label, string? ConfirmText);
+
+// One tray command and the longest it can hold the thread it runs on.
+//
+// Ceiling is the wait the code actually performs - zero for a command that
+// blocks on nothing - and RunsOffUiThread is the entry's own statement of
+// where it is run. The two are kept separate so they can disagree in a test
+// rather than only in production: TrayMenu.MayRunOnUiThread answers on the
+// ceiling alone, because a ceiling is measured from the loop that waits and
+// a flag is only typed in.
+internal readonly record struct TrayBlockingCommand(
+    string Id, TimeSpan Ceiling, bool RunsOffUiThread);
 
 // One device's answer to "which driver is Windows actually using, and where
 // does the battery percent come from" for the devices this app installs
@@ -1832,7 +1943,8 @@ internal sealed class TrayApp : IDisposable
         if (TrayMenu.ShowFixKeyboard(kind, pct))
         {
             var fix = new ToolStripMenuItem(TrayMenu.MenuText("Fix battery reads")) { ForeColor = Color.OrangeRed };
-            fix.Click += (_, _) => RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
+            fix.Click += (_, _) => RunDriverAction(
+                TrayMenu.CommandFixBatteryReads, DriverInstaller.OfferKeyboardSdpPatch);
             item.DropDownItems.Add(fix);
         }
 
@@ -1840,8 +1952,9 @@ internal sealed class TrayApp : IDisposable
         {
             var offerPid = pid;
             var bootCamp = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.TrackpadV1BootCampLabel));
-            bootCamp.Click += (_, _) =>
-                RunDriverAction(() => DriverInstaller.OfferTrackpadV1BootCamp(offerPid));
+            bootCamp.Click += (_, _) => RunDriverAction(
+                TrayMenu.CommandTrackpadV1BootCampPage,
+                () => DriverInstaller.OfferTrackpadV1BootCamp(offerPid));
             item.DropDownItems.Add(bootCamp);
         }
 
@@ -1861,6 +1974,7 @@ internal sealed class TrayApp : IDisposable
             };
             if (status != DriverStatus.PatchedKmdf)
                 kmdf.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3KmdfInstall,
                     () => OfferThenRemember(
                         Config.Driver0323Kmdf, () => DriverInstaller.OfferV3KmdfInstallAsync()));
             else
@@ -1882,6 +1996,7 @@ internal sealed class TrayApp : IDisposable
             var appleRouteStatus = status;
             if (status != DriverStatus.PathAPatched)
                 patchedApple.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3PathAInstall,
                     () => OfferThenRemember(
                         Config.Driver0323PathA,
                         () => DriverInstaller.OfferV3PathAInstallAsync(appleRouteStatus)));
@@ -1895,6 +2010,7 @@ internal sealed class TrayApp : IDisposable
             };
             if (status != DriverStatus.StockKmdf)
                 stock.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3StockRestore,
                     () => OfferThenRemember(
                         Config.Driver0323Stock, () => DriverInstaller.OfferV3StockRestoreAsync()));
             else
@@ -1922,15 +2038,18 @@ internal sealed class TrayApp : IDisposable
                     // not change which driver the user picked.
                     if (!TrayMenu.Consented(flipCommand, AskOkCancelInfo))
                         return;
-                    _ = RunDriverActionAsync(async () =>
-                    {
-                        // Off the UI thread: the cycle blocks on an elevated
-                        // script, and ModeFlip's own budget is 45 s to reach
-                        // battery mode plus the restore on top of that.
-                        var result = await Task.Run(
-                            () => ModeFlip.ReadBatteryViaFlip(ModeFlip.ReadCol02BatteryPercent));
-                        ReportModeFlip(result, flipName, flipKind, flipPid);
-                    });
+                    // Off the UI thread: the cycle blocks on an elevated
+                    // script, and ModeFlip's own budget is 45 s to reach
+                    // battery mode plus the restore on top of that.
+                    StartTrayCommand(
+                        TrayMenu.CommandReadBattery,
+                        () => ModeFlip.ReadBatteryViaFlip(ModeFlip.ReadCol02BatteryPercent),
+                        result =>
+                        {
+                            ReportModeFlip(result, flipName, flipKind, flipPid);
+                            FinishDriverAction();
+                        },
+                        DriverActionFailed);
                 };
                 driverMenu.DropDownItems.Add(flip);
 
@@ -1953,11 +2072,15 @@ internal sealed class TrayApp : IDisposable
                     var command = TrayMenu.RestoreScrollModeCommand(ModeFlip.HasRecordedRestore());
                     if (!TrayMenu.Consented(command, AskOkCancelInfo))
                         return;
-                    _ = RunDriverActionAsync(async () =>
-                    {
-                        var result = await Task.Run(ModeFlip.RestoreModeB);
-                        ReportModeFlip(result, null, flipKind, flipPid);
-                    });
+                    StartTrayCommand(
+                        TrayMenu.CommandRestoreScrollMode,
+                        ModeFlip.RestoreModeB,
+                        result =>
+                        {
+                            ReportModeFlip(result, null, flipKind, flipPid);
+                            FinishDriverAction();
+                        },
+                        DriverActionFailed);
                 };
                 driverMenu.DropDownItems.Add(restore);
             }
@@ -1978,7 +2101,8 @@ internal sealed class TrayApp : IDisposable
                 Checked = status == DriverStatus.Ok
             };
             if (TrayMenu.V1V2BootCampRadioEnabled(status))
-                bootCamp.Click += (_, _) => RunDriverAction(DriverInstaller.OfferV1V2ScrollFix);
+                bootCamp.Click += (_, _) => RunDriverAction(
+                    TrayMenu.CommandV1V2BootCampPage, DriverInstaller.OfferV1V2ScrollFix);
             else
                 bootCamp.Enabled = false;
             driverMenu.DropDownItems.Add(bootCamp);
@@ -1989,7 +2113,9 @@ internal sealed class TrayApp : IDisposable
             };
             var stockPid = pid;
             if (TrayMenu.V1V2StockRadioEnabled(status))
-                stock.Click += (_, _) => RunDriverAction(() => DriverInstaller.OfferV1V2StockRestore(stockPid));
+                stock.Click += (_, _) => RunDriverAction(
+                    TrayMenu.CommandV1V2StockRestore,
+                    () => DriverInstaller.OfferV1V2StockRestore(stockPid));
             else
                 stock.Enabled = false;
             driverMenu.DropDownItems.Add(stock);
@@ -2165,24 +2291,33 @@ internal sealed class TrayApp : IDisposable
         if (!TrayMenu.Consented(command, AskOkCancelWarning))
             return;
 
-        DeviceEnableResult result;
-        try
-        {
-            result = DeviceEnable.Apply(pid, enable);
-        }
-        catch (Exception ex)
-        {
-            // Apply is total for every device outcome, so what is left here is
-            // a refusal raised before anything launched (an uncatalogued PID,
-            // a guard in BuildScript). Its own words are the honest report.
-            Logger.Log($"DEVICE_ENABLE_REFUSED pid={pid} err={ex.Message}");
-            System.Windows.Forms.MessageBox.Show(
-                ex.Message, TrayMenu.ProductName,
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Warning);
-            return;
-        }
+        // DeviceEnable.Apply launches the elevated step and then polls its
+        // status sidecar to DeviceEnable.ElevatedWaitCeiling, so this is the
+        // call that used to hold the message pump for up to two minutes. The
+        // table says it leaves the UI thread; the report comes back on it.
+        StartTrayCommand(
+            command.Id,
+            () => DeviceEnable.Apply(pid, enable),
+            result => ReportWindowsDeviceState(pid, enable, nameForModal, result),
+            ex =>
+            {
+                // Apply is total for every device outcome, so what is left here is
+                // a refusal raised before anything launched (an uncatalogued PID,
+                // a guard in BuildScript). Its own words are the honest report.
+                Logger.Log($"DEVICE_ENABLE_REFUSED pid={pid} err={ex.Message}");
+                System.Windows.Forms.MessageBox.Show(
+                    ex.Message, TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+            });
+    }
 
+    // Everything the attempt produced, said on the UI thread: this touches
+    // modal dialogs, the critical alert and the tray icon, none of which may
+    // be reached from the worker that ran the elevated step.
+    void ReportWindowsDeviceState(
+        string pid, bool enable, string? nameForModal, DeviceEnableResult result)
+    {
         Logger.Log($"DEVICE_WINDOWS_STATE pid={pid} enable={(enable ? "true" : "false")} "
             + $"outcome={result.Outcome}");
         _poller.RefreshNow();
@@ -2277,10 +2412,14 @@ internal sealed class TrayApp : IDisposable
     // nothing (BuildDeviceRow, flip handler).
     async Task OfferThenRemember(string driver, Func<Task<InstallOutcome>> offer)
     {
-        var outcome = await offer();
+        var outcome = await offer().ConfigureAwait(false);
         if (outcome == InstallOutcome.Confirmed)
         {
-            _config.SetDriver0323(driver);
+            // The offer now runs on a worker thread, and Config holds no lock
+            // of its own - every other write to it is a menu click. So the
+            // write goes back to the thread those clicks run on, and the whole
+            // file is still only ever rewritten from one thread.
+            UiDispatch.ToUiThread(() => _config.SetDriver0323(driver));
             Logger.Log($"DRIVER_CHOICE_SAVED driver={driver}");
             return;
         }
@@ -2288,47 +2427,106 @@ internal sealed class TrayApp : IDisposable
         Logger.Log($"DRIVER_CHOICE_NOT_SAVED driver={driver} outcome={outcome}");
     }
 
+    // Where every blocking tray click runs, decided by the command's own
+    // entry in TrayMenu.BlockingCommands rather than by what each handler
+    // remembers. A nonzero ceiling means the work goes to a worker thread and
+    // comes back through one hop; a zero ceiling - the two Boot Camp pages,
+    // which open a browser and return - stays here, because a hop would only
+    // cost a context switch.
+    //
+    // Fire and forget by design: a click handler returns immediately and the
+    // answer arrives later, which is the whole point. The failure callback is
+    // what makes that safe - UiDispatch.RunThenReport hands a thrown refusal
+    // to it on the UI thread instead of leaving it on a task nobody awaits.
+    void StartTrayCommand<T>(
+        string commandId, Func<T> work, Action<T> report, Action<Exception> failed)
+    {
+        var command = TrayMenu.BlockingCommand(commandId);
+        if (TrayMenu.MayRunOnUiThread(command))
+        {
+            // Same split as the hop below, so the two branches cannot report
+            // differently: failed() is for work that threw, never for a
+            // report that did.
+            T value;
+            try { value = work(); }
+            catch (Exception ex) { failed(ex); return; }
+            report(value);
+            return;
+        }
+
+        Logger.Log($"TRAY_COMMAND id={command.Id} off_ui=true ceiling={command.Ceiling}");
+        _ = UiDispatch.RunThenReport(work, report, failed, UiDispatch.ToUiThread);
+    }
+
     // Offer* report their own outcome and explain their own failures
     // (DriverInstaller shows the message box itself), so nothing is toasted
     // here for Cancelled/Failed/Unavailable - that would be a second dialog
     // for one answer. The catch stays as the backstop for the guard refusals
     // Plan*/Execute* still throw.
-    void RunDriverAction(Func<InstallOutcome> offer)
+    void RunDriverAction(string commandId, Func<InstallOutcome> offer) =>
+        StartTrayCommand(
+            commandId,
+            offer,
+            outcome =>
+            {
+                Logger.Log($"DRIVER_ACTION outcome={outcome}");
+                FinishDriverAction();
+            },
+            DriverActionFailed);
+
+    // The async half of the same rule, for the three 0323 offers: they pull a
+    // driver package before they elevate, so their work is a Task rather than
+    // a Func<T> and Task.Run is the hop. The entry still decides, and the
+    // report still comes back on the UI thread through one Invoke.
+    async Task RunDriverActionAsync(string commandId, Func<Task> action)
     {
+        var command = TrayMenu.BlockingCommand(commandId);
+        Exception? failure = null;
         try
         {
-            var outcome = offer();
-            Logger.Log($"DRIVER_ACTION outcome={outcome}");
+            if (TrayMenu.MayRunOnUiThread(command))
+            {
+                await action();
+            }
+            else
+            {
+                Logger.Log($"TRAY_COMMAND id={command.Id} off_ui=true ceiling={command.Ceiling}");
+                // ConfigureAwait(false) for the same reason DriverInstaller's
+                // own awaits carry it: nothing between here and the hop below
+                // needs the UI thread, and queuing it there is what put a
+                // fifteen-minute WaitForExit on the message pump.
+                await Task.Run(action).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
-            Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
-            ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
+            failure = ex;
         }
+
+        UiDispatch.ToUiThread(() =>
+        {
+            if (failure is not null)
+                DriverActionFailed(failure);
+            else
+                FinishDriverAction();
+        });
+    }
+
+    void DriverActionFailed(Exception ex)
+    {
+        Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
+        ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
+        FinishDriverAction();
+    }
+
+    // The tail every driver action shares: re-read what the machine says now,
+    // then repaint. On the UI thread, because the last two touch the menu.
+    void FinishDriverAction()
+    {
         _health = ReadHealth();
         _poller.RefreshNow();
         RefreshFindings();
         UpdateDeviceMenuItems();
-    }
-
-    async Task RunDriverActionAsync(Func<Task> action)
-    {
-        try
-        {
-            await action();
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
-            ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
-        }
-        _health = ReadHealth();
-        _poller.RefreshNow();
-        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-        {
-            RefreshFindings();
-            UpdateDeviceMenuItems();
-        });
     }
 
     // The advice row: the short form in the menu, the full paragraph on click.
@@ -2455,14 +2653,18 @@ internal sealed class TrayApp : IDisposable
                 System.Windows.Forms.MessageBoxIcon.Warning);
             if (answer != System.Windows.Forms.DialogResult.OK)
                 return;
-            _ = RunDriverActionAsync(async () =>
-            {
-                // Off the UI thread for the same reason the flip is: the
-                // restore waits on an elevated script and then re-reads the
-                // end state before it will claim anything.
-                var result = await Task.Run(ModeFlip.RestoreModeB);
-                ReportModeFlip(result, null, DeviceKind.MagicMouseV3, ModeFlip.V3Pid);
-            });
+            // Off the UI thread for the same reason the flip is: the restore
+            // waits on an elevated script and then re-reads the end state
+            // before it will claim anything.
+            StartTrayCommand(
+                TrayMenu.CommandRestoreScrollMode,
+                ModeFlip.RestoreModeB,
+                result =>
+                {
+                    ReportModeFlip(result, null, DeviceKind.MagicMouseV3, ModeFlip.V3Pid);
+                    FinishDriverAction();
+                },
+                DriverActionFailed);
         });
     }
 
@@ -3651,6 +3853,7 @@ internal sealed class TrayApp : IDisposable
             // Same rule as the radio it routes to: the choice is remembered
             // only once the install is confirmed.
             _ = RunDriverActionAsync(
+                TrayMenu.CommandV3KmdfInstall,
                 () => OfferThenRemember(
                     Config.Driver0323Kmdf, () => DriverInstaller.OfferV3KmdfInstallAsync()));
             return;
@@ -3658,19 +3861,23 @@ internal sealed class TrayApp : IDisposable
 
         if (DriverInstaller.IsTrackpadV1BootCampPid(pid))
         {
-            RunDriverAction(() => DriverInstaller.OfferTrackpadV1BootCamp(pid));
+            RunDriverAction(
+                TrayMenu.CommandTrackpadV1BootCampPage,
+                () => DriverInstaller.OfferTrackpadV1BootCamp(pid));
             return;
         }
 
         if (Array.Exists(DriverHealthChecker.AppleFilterPids, p => TrayMenu.PidEq(p, pid)))
         {
-            RunDriverAction(DriverInstaller.OfferV1V2ScrollFix);
+            RunDriverAction(
+                TrayMenu.CommandV1V2BootCampPage, DriverInstaller.OfferV1V2ScrollFix);
             return;
         }
 
         if (DriverHealthChecker.IsKeyboardPid(pid))
         {
-            RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
+            RunDriverAction(
+                TrayMenu.CommandFixBatteryReads, DriverInstaller.OfferKeyboardSdpPatch);
             return;
         }
 

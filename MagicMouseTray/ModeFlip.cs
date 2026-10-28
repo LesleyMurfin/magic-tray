@@ -160,7 +160,9 @@ internal static class ModeFlip
 
     // Headroom the tray allows the script AFTER its own ready budget expires,
     // so a restore in progress is never interrupted by the tray giving up.
-    const int RestoreGraceMs = 90_000;
+    // The flip's wall is timeoutMs + this, and the restore's wall is this on
+    // its own; TrayMenu.BlockingCommands publishes both from here.
+    internal const int RestoreGraceMs = 90_000;
 
     const int PollMs = 150;
     const int BatteryReadTries = 5;
