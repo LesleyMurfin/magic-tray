@@ -342,10 +342,9 @@ internal static class SystemConfigChecker
             ? (role == SelfSignedRole.InUse
                 ? "The driver this mouse is bound to is self-signed. "
                 : "The driver package installed for this mouse is self-signed. ")
-            : "The tray could not read the signature on this mouse's driver file, so it is making "
-                + "no claim either way about how that driver was signed. The Magic Mouse 2024 "
-                + "packages this project builds are self-signed, and Test Mode is what lets "
-                + "Windows load one. ";
+            : "The tray could not read the signature on this mouse's driver file, so it is not "
+                + "claiming that driver is self-signed. The Magic Mouse 2024 packages this project "
+                + "builds are self-signed, and Test Mode is what lets Windows load one. ";
 
     // Where the reader goes for the Test Mode story. The v3 page is written
     // about the 0323 packages, so any other model gets the model-neutral

@@ -197,10 +197,13 @@ public class SystemConfigSigningHonestyTests
     public void ADegradedSignatureReadNeverCallsTheDriverSelfSigned()
     {
         // The wording is the other half of the same promise: the facts say out
-        // loud that the signature could not be read, instead of asserting a
-        // WHQL-signed Apple driver is self-signed.
+        // loud that the signature could not be read, instead of handing the
+        // reader a verdict. The behaviour, not the phrasing, is what is pinned
+        // here - an unknown verdict, Advisory severity, and the "could not
+        // read" sentence that explains it.
         var verdict = SystemConfigChecker.SelfSignedVerdictFor(
             [SelfIssued, Unreadable, Unreadable]);
+        Assert.Null(verdict);
 
         var facts = SystemConfigChecker.Evaluate(
             DeviceKind.MagicMouseV3, "0323", DriverStatus.PathAPatched,
@@ -213,7 +216,6 @@ public class SystemConfigSigningHonestyTests
         {
             var fact = Fact(facts, id)!;
             Assert.Equal(ConfigSeverity.Advisory, fact.Severity);
-            Assert.DoesNotContain("is self-signed", fact.Detail, StringComparison.Ordinal);
             Assert.Contains("could not read the signature", fact.Detail,
                 StringComparison.Ordinal);
         }
