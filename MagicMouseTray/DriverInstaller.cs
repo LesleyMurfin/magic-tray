@@ -12,14 +12,17 @@ namespace MagicMouseTray;
 // choice only on Confirmed: the user agreed and the step was launched without
 // an immediate error. Cancelled means the user declined and nothing ran.
 // Failed means the offer was refused or errored. Unavailable means the package
-// or device fact the offer needs is not on this branch / this machine, which
-// is a repo or hardware state and not a user error.
+// or device fact the offer needs is not in the pinned package / on this machine, which
+// is a repo or hardware state and not a user error. IntegrityFailed means the
+// downloaded package did not match its pin and was refused before anything was
+// extracted or run, which is not a retryable download error.
 internal enum InstallOutcome
 {
     Confirmed,
     Cancelled,
     Failed,
     Unavailable,
+    IntegrityFailed,
 }
 
 // User-initiated driver offers. Never silent. KMDF never falls back to
@@ -372,7 +375,15 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            var refusal = DriverPackageVerifier.RefusalFor(pull.Integrity);
+            if (refusal is not null)
+            {
+                Logger.Log($"DRIVER_KMDF_ABORTED integrity status={pull.Integrity.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
+            extractDir = pull.ExtractDir!;
         }
         catch (Exception ex)
         {
@@ -383,12 +394,12 @@ foreach ($id in $restart) {
         var script = FindKmdfOneClick(extractDir, DriverPackageCatalog.KmdfInstallCmdRelativePath);
         if (script is null)
         {
-            // The cmd not being on the branch is a repo state, not a user
-            // error, and never a reason to fall back to PATH-A.
+            // The cmd not being in the pinned commit is a repo state, not a
+            // user error, and never a reason to fall back to PATH-A.
             ShowBlocked(
-                $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
-                $"'{DriverPackageCatalog.V3RepoRef}' but " +
-                $"{DriverPackageCatalog.KmdfInstallCmdRelativePath} is not on this branch. " +
+                $"Pulled {DriverPackageCatalog.V3RepoUrl} at pinned commit " +
+                $"{DriverPackageCatalog.V3RepoCommit} but " +
+                $"{DriverPackageCatalog.KmdfInstallCmdRelativePath} is not in that commit. " +
                 "Will not run PATH-A Install-MagicMousePatch.ps1. " +
                 "Will not patch applewirelessmouse.sys.");
             return InstallOutcome.Unavailable;
@@ -452,7 +463,15 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            var refusal = DriverPackageVerifier.RefusalFor(pull.Integrity);
+            if (refusal is not null)
+            {
+                Logger.Log($"DRIVER_PATHA_ABORTED integrity status={pull.Integrity.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
+            extractDir = pull.ExtractDir!;
         }
         catch (Exception ex)
         {
@@ -464,9 +483,9 @@ foreach ($id in $restart) {
         if (script is null)
         {
             ShowBlocked(
-                $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
-                $"'{DriverPackageCatalog.V3RepoRef}' but " +
-                $"{DriverPackageCatalog.PathAInstallScriptRelativePath} is not on this branch. " +
+                $"Pulled {DriverPackageCatalog.V3RepoUrl} at pinned commit " +
+                $"{DriverPackageCatalog.V3RepoCommit} but " +
+                $"{DriverPackageCatalog.PathAInstallScriptRelativePath} is not in that commit. " +
                 "Will not run v2-kmdf-driver/Install-KMDF.cmd. " +
                 "Will not fall back to KMDF.");
             return InstallOutcome.Unavailable;
@@ -543,7 +562,15 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            var refusal = DriverPackageVerifier.RefusalFor(pull.Integrity);
+            if (refusal is not null)
+            {
+                Logger.Log($"DRIVER_STOCK_ABORTED integrity status={pull.Integrity.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
+            extractDir = pull.ExtractDir!;
         }
         catch (Exception ex)
         {
@@ -557,8 +584,8 @@ foreach ($id in $restart) {
         {
             ShowBlocked(
                 $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} and " +
-                $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} are not on " +
-                $"{DriverPackageCatalog.V3RepoUrl} default branch '{DriverPackageCatalog.V3RepoRef}'. " +
+                $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} are not in " +
+                $"{DriverPackageCatalog.V3RepoUrl} pinned commit {DriverPackageCatalog.V3RepoCommit}. " +
                 "Will not run FLIP:NoFilter as Stock.");
             return InstallOutcome.Unavailable;
         }
@@ -718,22 +745,71 @@ foreach ($id in $restart) {
         "Re-pairing the keyboard can undo it.\n\n" +
         "OK continues. Cancel aborts.";
 
-    internal static async Task<string> DownloadV3DefaultBranchAsync(CancellationToken ct)
+    // The pinned zip is downloaded to a temporary file OUTSIDE the driver
+    // cache, hashed there, and only then extracted: a package that does not
+    // match DriverPackageCatalog.V3ZipSha256 never reaches the cache the
+    // elevated step reads from, and is never unpacked or executed. ExtractDir
+    // is null unless Integrity.Verified.
+    internal static async Task<(string? ExtractDir, PackageIntegrityResult Integrity)>
+        DownloadV3PinnedPackageAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(CacheRoot);
-        var zipPath = Path.Combine(CacheRoot, $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoRef}.zip");
-        var extractDir = Path.Combine(CacheRoot, $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoRef}");
         var url = DriverPackageCatalog.V3ZipUrl;
+        var staged = Path.Combine(
+            Path.GetTempPath(),
+            $"{DriverPackageCatalog.V3RepoName}-{Guid.NewGuid():N}.zip");
+        var extractDir = Path.Combine(
+            CacheRoot, $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoCommit}");
 
         Logger.Log($"DRIVER_PULL url={url}");
-        await using (var net = await Http.GetStreamAsync(url, ct))
-        await using (var file = File.Create(zipPath))
-            await net.CopyToAsync(file, ct);
+        try
+        {
+            await using (var net = await Http.GetStreamAsync(url, ct))
+            await using (var file = File.Create(staged))
+                await net.CopyToAsync(file, ct);
+
+            var integrity = ExtractVerifiedPackage(staged, DriverPackageCatalog.V3ZipSha256, extractDir);
+            if (!integrity.Verified)
+            {
+                Logger.Log(
+                    $"DRIVER_PULL_REFUSED status={integrity.Status} " +
+                    $"expected={integrity.ExpectedDigest} actual={integrity.ActualDigest}");
+                return (null, integrity);
+            }
+
+            Logger.Log($"DRIVER_PULL_VERIFIED sha256={integrity.ActualDigest}");
+            return (extractDir, integrity);
+        }
+        finally
+        {
+            // Best effort: a staging file that cannot be deleted must not turn
+            // a verified install into a reported download failure.
+            try
+            {
+                if (File.Exists(staged))
+                    File.Delete(staged);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // Extracts only what hashes to the pin. A package that fails leaves the
+    // target directory exactly as it was - including a copy that did pass a
+    // check - and creates nothing.
+    internal static PackageIntegrityResult ExtractVerifiedPackage(
+        string zipPath, string? expectedSha256, string extractDir)
+    {
+        PackageIntegrityResult integrity;
+        using (var zip = File.OpenRead(zipPath))
+            integrity = DriverPackageVerifier.Verify(expectedSha256, zip);
+
+        if (!integrity.Verified)
+            return integrity;
 
         if (Directory.Exists(extractDir))
             Directory.Delete(extractDir, recursive: true);
         ZipFile.ExtractToDirectory(zipPath, extractDir);
-        return extractDir;
+        return integrity;
     }
 
     // PATH-A patched applewirelessmouse.sys. Blocks KMDF lookup from picking

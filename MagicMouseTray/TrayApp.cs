@@ -2000,9 +2000,9 @@ internal sealed class TrayApp : IDisposable
     // its own OK/Cancel) or a failed one left the config - and through it the
     // menu - claiming a driver that is not on this PC. Only
     // InstallOutcome.Confirmed, which is "the user accepted AND the elevated
-    // step launched", may be remembered. Cancelled, Failed and Unavailable
-    // leave the config exactly as it was, the same way the mode flip persists
-    // nothing (BuildDeviceRow, flip handler).
+    // step launched", may be remembered. Cancelled, Failed, Unavailable and
+    // IntegrityFailed leave the config exactly as it was, the same way the
+    // mode flip persists nothing (BuildDeviceRow, flip handler).
     async Task OfferThenRemember(string driver, Func<Task<InstallOutcome>> offer)
     {
         var outcome = await offer();
@@ -2018,9 +2018,9 @@ internal sealed class TrayApp : IDisposable
 
     // Offer* report their own outcome and explain their own failures
     // (DriverInstaller shows the message box itself), so nothing is toasted
-    // here for Cancelled/Failed/Unavailable - that would be a second dialog
-    // for one answer. The catch stays as the backstop for the guard refusals
-    // Plan*/Execute* still throw.
+    // here for Cancelled/Failed/Unavailable/IntegrityFailed - that would be a
+    // second dialog for one answer. The catch stays as the backstop for the
+    // guard refusals Plan*/Execute* still throw.
     void RunDriverAction(Func<InstallOutcome> offer)
     {
         try

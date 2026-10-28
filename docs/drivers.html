@@ -304,8 +304,8 @@
       </details>
       <details>
         <summary>Show the technical details</summary>
-        <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
-        <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is on the branch, with scroll and battery mutually exclusive.</p>
+        <p>The <strong>KMDF</strong> item downloads one fixed commit of <code>magic-mouse-v3-windows-fix</code> — never a branch, which could be changed under you — checks the download against the SHA-256 recorded in the app before anything is unpacked or run, and then looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. If the download does not match that checksum, the tray says so and stops: nothing is unpacked and nothing runs. No copy of the installer is in that commit, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
+        <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is in that commit, with scroll and battery mutually exclusive.</p>
       </details>
 
       <h2 id="faq">Questions</h2>
