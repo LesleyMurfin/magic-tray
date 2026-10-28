@@ -157,9 +157,11 @@ internal static class DeviceEnable
         + "was changed.";
 
     // Named after the ATTEMPT and the PROCESS, not just the device. Two
-    // elevated attempts can be in flight for the same PID at once: TrayApp's
-    // StartRepairApply and StartStaleFilterRemoval each launch straight into
-    // Task.Run, and RunDriverActionAsync does not serialize driver actions.
+    // elevated attempts can be in flight for the same PID at once:
+    // TrayMenu's in-flight gate refuses a second elevated command inside one
+    // tray, and it is the only thing that does - it does not span two trays,
+    // and it is released when the tray stops waiting, not when the elevated
+    // script it started finally exits.
     // Under a PID-only name the poller in LaunchElevated cannot tell whose
     // report it parsed - it accepts the first COMPLETE report at that path -
     // so it would hand back an end state some other elevated process
@@ -525,8 +527,17 @@ exit 1
     // everything, including a process that has already exited and a ceiling
     // that has already expired, because a report is a state somebody measured
     // and a timeout is only a state nobody waited for.
+    //
+    // Two clocks, because they measure two different things. sinceExit is
+    // null until the process is first seen gone and is the age of THAT
+    // observation afterwards, so the settle window is grace for one lagging
+    // Set-Content however long the elevated step itself took; elapsed is the
+    // age of the whole wait, and only the ceiling reads it. Measuring the
+    // settle from the start of the wait would spend it during the UAC prompt
+    // and give a script that reports and exits at the 40-second mark no
+    // grace at all.
     internal static ElevatedWaitVerdict NextWaitStep(
-        bool sidecarComplete, bool processExited, TimeSpan elapsed)
+        bool sidecarComplete, TimeSpan? sinceExit, TimeSpan elapsed)
     {
         if (sidecarComplete)
             return ElevatedWaitVerdict.SidecarReady;
@@ -534,7 +545,7 @@ exit 1
         // declined consent prompt inside the script, or a shell that died.
         // Nothing will write the report now, so the remaining ceiling is time
         // spent on a verdict we already have.
-        if (processExited && elapsed >= ElevatedWaitSettle)
+        if (sinceExit is { } gone && gone >= ElevatedWaitSettle)
             return ElevatedWaitVerdict.ProcessGone;
         if (elapsed >= ElevatedWaitCeiling)
             return ElevatedWaitVerdict.CeilingExpired;
@@ -566,6 +577,10 @@ exit 1
         {
             var started = DateTime.UtcNow;
             var sidecar = "";
+            // When the process was FIRST seen gone, not whether it is gone
+            // now: the settle window is grace for the report file to catch up
+            // with that observation, so it has to be measured from it.
+            DateTime? exitedAt = null;
             // Every way out of this loop is a verdict NextWaitStep reached on
             // the evidence of that one pass: the report, the process, and the
             // clock, in that order of precedence.
@@ -579,9 +594,14 @@ exit 1
                 var exited = false;
                 try { exited = p.HasExited; }
                 catch { /* UseShellExecute */ }
+                if (exited && exitedAt is null)
+                    exitedAt = DateTime.UtcNow;
 
+                var now = DateTime.UtcNow;
                 var step = NextWaitStep(
-                    ParseSidecar(sidecar) is not null, exited, DateTime.UtcNow - started);
+                    ParseSidecar(sidecar) is not null,
+                    exitedAt is { } gone ? now - gone : null,
+                    now - started);
                 if (step != ElevatedWaitVerdict.KeepWaiting)
                 {
                     Logger.Log($"DEVICE_ENABLE wait={step}");

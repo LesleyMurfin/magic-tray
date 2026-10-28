@@ -989,6 +989,9 @@ foreach ($id in $restart) {
     // themselves now run off the message pump - TrayMenu.BlockingCommands
     // says which clicks leave it, and all of these do - and a window put up
     // from a thread-pool thread is a window with no pump behind it.
+    //
+    // An answer, so the Func hop: with no pump left it throws rather than
+    // handing back a DialogResult nobody gave.
     static System.Windows.Forms.DialogResult AskOkCancel(
         string text, System.Windows.Forms.MessageBoxIcon icon) =>
         UiDispatch.ToUiThread(() => System.Windows.Forms.MessageBox.Show(
@@ -999,13 +1002,20 @@ foreach ($id in $restart) {
 
     // Offer* returns its outcome instead of throwing it, so the explanation
     // has to be shown here or the user never sees why nothing happened.
+    //
+    // A statement, so the Action hop: the reason is in the log above, and
+    // with no pump left the dialog is dropped rather than raised on the
+    // worker that got here.
     static void ShowBlocked(string message)
     {
         Logger.Log($"DRIVER_BLOCKED err={message}");
-        UiDispatch.ToUiThread(() => System.Windows.Forms.MessageBox.Show(
-            message,
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OK,
-            System.Windows.Forms.MessageBoxIcon.Error));
+        UiDispatch.ToUiThread(() =>
+        {
+            System.Windows.Forms.MessageBox.Show(
+                message,
+                "Magic Tray",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Error);
+        });
     }
 }

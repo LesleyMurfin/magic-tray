@@ -33,12 +33,23 @@ namespace MagicMouseTray.Tests;
 /// The settle window is the one concession: a script that writes its report
 /// and exits can be observed exited a few milliseconds before the file is
 /// readable, so "gone" is only believed once the process has been gone for
-/// that long. It is bounded here so it can never grow back into the ceiling.
+/// that long. Gone for that long, and not waited for that long - the two are
+/// the same number only when the elevated step returns instantly, and the
+/// ordinary run is a UAC prompt plus a pnputil pass. So the verdict reads
+/// two clocks: the age of the exit it observed, and the age of the wait.
+/// The settle window is bounded here so it can never grow into the ceiling.
 /// </remarks>
 public class ElevatedWaitTests
 {
-    static ElevatedWaitVerdict Step(bool sidecarComplete, bool processExited, TimeSpan elapsed) =>
-        DeviceEnable.NextWaitStep(sidecarComplete, processExited, elapsed);
+    // Two clocks. sinceExit is null while the process is still running and
+    // the age of the FIRST observed exit afterwards; elapsed is the age of
+    // the whole wait, which only the ceiling reads.
+    static ElevatedWaitVerdict Step(bool sidecarComplete, TimeSpan? sinceExit, TimeSpan elapsed) =>
+        DeviceEnable.NextWaitStep(sidecarComplete, sinceExit, elapsed);
+
+    // Still running at this point in the wait: no exit to age.
+    static ElevatedWaitVerdict Running(bool sidecarComplete, TimeSpan elapsed) =>
+        Step(sidecarComplete, sinceExit: null, elapsed);
 
     static TimeSpan Settle => DeviceEnable.ElevatedWaitSettle;
 
@@ -47,14 +58,44 @@ public class ElevatedWaitTests
     [Fact]
     public void NextWaitStep_ProcessGoneWithNoReport_EndsTheWaitThere()
     {
-        Assert.Equal(ElevatedWaitVerdict.ProcessGone, Step(false, processExited: true, Settle));
         Assert.Equal(
             ElevatedWaitVerdict.ProcessGone,
-            Step(false, processExited: true, Settle + TimeSpan.FromMilliseconds(150)));
+            Step(false, sinceExit: Settle, elapsed: Settle));
+        Assert.Equal(
+            ElevatedWaitVerdict.ProcessGone,
+            Step(false,
+                sinceExit: Settle + TimeSpan.FromMilliseconds(150),
+                elapsed: Settle + TimeSpan.FromMilliseconds(150)));
 
         // Promptly: the verdict is reached in the settle window, not at the
         // ceiling, and the two are not remotely the same length.
         Assert.True(Settle * 4 < Ceiling, "the settle window has grown into the ceiling");
+    }
+
+    [Fact]
+    public void NextWaitStep_TheSettleWindowIsMeasuredFromTheExit_NotFromTheStartOfTheWait()
+    {
+        // The ordinary elevated run is a UAC prompt the user reads plus a
+        // pnputil pass, so it is well past the settle window by the time the
+        // script exits. Measured from the start of the wait the grace would
+        // already be spent, and the very first pass that saw the process gone
+        // would report a change that succeeded as unverified - which is what
+        // the sidecar's own lag exists to prevent.
+        var realRun = TimeSpan.FromSeconds(40);
+        Assert.Equal(
+            ElevatedWaitVerdict.KeepWaiting,
+            Step(false, sinceExit: TimeSpan.Zero, elapsed: realRun));
+        Assert.Equal(
+            ElevatedWaitVerdict.KeepWaiting,
+            Step(false,
+                sinceExit: Settle - TimeSpan.FromTicks(1),
+                elapsed: realRun + Settle));
+
+        // And the grace is spent from there, not extended: one settle window
+        // after the exit it saw, the wait is over.
+        Assert.Equal(
+            ElevatedWaitVerdict.ProcessGone,
+            Step(false, sinceExit: Settle, elapsed: realRun + Settle));
     }
 
     [Fact]
@@ -63,10 +104,14 @@ public class ElevatedWaitTests
         // The script writes the report and then exits; the file can lag the
         // exit. Declaring the attempt dead at the first exited read would turn
         // a completed change into "nothing was verified".
-        Assert.Equal(ElevatedWaitVerdict.KeepWaiting, Step(false, processExited: true, TimeSpan.Zero));
         Assert.Equal(
             ElevatedWaitVerdict.KeepWaiting,
-            Step(false, processExited: true, Settle - TimeSpan.FromTicks(1)));
+            Step(false, sinceExit: TimeSpan.Zero, elapsed: TimeSpan.Zero));
+        Assert.Equal(
+            ElevatedWaitVerdict.KeepWaiting,
+            Step(false,
+                sinceExit: Settle - TimeSpan.FromTicks(1),
+                elapsed: Settle - TimeSpan.FromTicks(1)));
     }
 
     [Fact]
@@ -74,19 +119,20 @@ public class ElevatedWaitTests
     {
         // An elevated install that is working is not a hung one: while the
         // process lives, the absent report means "not finished", never
-        // "declined".
-        Assert.Equal(ElevatedWaitVerdict.KeepWaiting, Step(false, processExited: false, TimeSpan.Zero));
-        Assert.Equal(ElevatedWaitVerdict.KeepWaiting, Step(false, processExited: false, Settle));
+        // "declined". No exit observed, so the settle window never opens
+        // however long the wait has been going.
+        Assert.Equal(ElevatedWaitVerdict.KeepWaiting, Running(false, TimeSpan.Zero));
+        Assert.Equal(ElevatedWaitVerdict.KeepWaiting, Running(false, Settle));
         Assert.Equal(
             ElevatedWaitVerdict.KeepWaiting,
-            Step(false, processExited: false, Ceiling - TimeSpan.FromTicks(1)));
+            Running(false, Ceiling - TimeSpan.FromTicks(1)));
 
         // And the ceiling is still a wall: a script that never reports and
         // never exits is given up on, and said to be given up on.
-        Assert.Equal(ElevatedWaitVerdict.CeilingExpired, Step(false, processExited: false, Ceiling));
+        Assert.Equal(ElevatedWaitVerdict.CeilingExpired, Running(false, Ceiling));
         Assert.Equal(
             ElevatedWaitVerdict.CeilingExpired,
-            Step(false, processExited: false, Ceiling + TimeSpan.FromMinutes(1)));
+            Running(false, Ceiling + TimeSpan.FromMinutes(1)));
     }
 
     [Fact]
@@ -94,23 +140,29 @@ public class ElevatedWaitTests
     {
         // Present and the process still running - the script reports before it
         // exits, so this is the ordinary success.
-        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Step(true, processExited: false, TimeSpan.Zero));
-        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Step(true, processExited: false, Settle));
+        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Running(true, TimeSpan.Zero));
+        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Running(true, Settle));
 
         // Present and the process gone: a finished attempt, never a declined
         // prompt. ProcessGone here would report "nothing was verified" over a
         // state the script actually measured.
-        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Step(true, processExited: true, Settle));
         Assert.Equal(
             ElevatedWaitVerdict.SidecarReady,
-            Step(true, processExited: true, Settle + TimeSpan.FromSeconds(1)));
+            Step(true, sinceExit: Settle, elapsed: Settle));
+        Assert.Equal(
+            ElevatedWaitVerdict.SidecarReady,
+            Step(true,
+                sinceExit: Settle + TimeSpan.FromSeconds(1),
+                elapsed: Settle + TimeSpan.FromSeconds(1)));
 
         // Present and the clock already out: the report was measured, the
         // timeout was not, so the measurement wins.
-        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Step(true, processExited: false, Ceiling));
+        Assert.Equal(ElevatedWaitVerdict.SidecarReady, Running(true, Ceiling));
         Assert.Equal(
             ElevatedWaitVerdict.SidecarReady,
-            Step(true, processExited: true, Ceiling + TimeSpan.FromMinutes(5)));
+            Step(true,
+                sinceExit: Ceiling,
+                elapsed: Ceiling + TimeSpan.FromMinutes(5)));
     }
 
     [Fact]
@@ -128,7 +180,9 @@ public class ElevatedWaitTests
     public void Decide_StartedThenGoneWithNoReport_IsAFailureAndNeverBlamesTheUacPrompt()
     {
         // The verdict this is the end state of.
-        Assert.Equal(ElevatedWaitVerdict.ProcessGone, Step(false, processExited: true, Settle));
+        Assert.Equal(
+            ElevatedWaitVerdict.ProcessGone,
+            Step(false, sinceExit: Settle, elapsed: Settle));
 
         // ShellExecute handed back a process, so elevation was granted: a
         // silent step is a failure of the step, and the user is not told they

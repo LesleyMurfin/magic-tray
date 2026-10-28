@@ -716,13 +716,16 @@ internal static class TrayMenu
     // a predicate that answers "no" to everything.
     internal static readonly IReadOnlyList<TrayBlockingCommand> BlockingCommands =
     [
-        // The flip's wall is its own ready budget plus the restore grace the
-        // script is allowed after it; the restore alone is that grace.
+        // The flip's wall is its own ready budget, plus the restore grace the
+        // script is allowed after it, plus the Mode B re-read both of them
+        // run once the script is terminal (ModeFlip.WaitForModeB, after
+        // AwaitTerminal has already returned). The restore is the last two.
         new(CommandReadBattery,
-            TimeSpan.FromMilliseconds(ModeFlip.DefaultTimeoutMs + ModeFlip.RestoreGraceMs),
+            TimeSpan.FromMilliseconds(
+                ModeFlip.DefaultTimeoutMs + ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
             RunsOffUiThread: true),
         new(CommandRestoreScrollMode,
-            TimeSpan.FromMilliseconds(ModeFlip.RestoreGraceMs),
+            TimeSpan.FromMilliseconds(ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
             RunsOffUiThread: true),
 
         // Start/Stop in Windows: one elevated pnputil pass, then the status
@@ -756,9 +759,8 @@ internal static class TrayMenu
                 + DriverInstaller.PackageInstallCeiling,
             RunsOffUiThread: true),
 
-        // The two repair flows, which already ran off the UI thread before
-        // this table existed. They are entries so the table describes the tray
-        // as it is, and their sidecar poll has its own wall.
+        // The two repair flows. They go through StartTrayCommand like every
+        // other row, and their sidecar poll has its own wall.
         new(CommandRepairApply, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
         new(CommandStaleFilterRemoval, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
     ];
@@ -784,6 +786,52 @@ internal static class TrayMenu
     // be wrong by accident.
     internal static bool MayRunOnUiThread(TrayBlockingCommand command) =>
         command.Ceiling == TimeSpan.Zero;
+
+    // One elevated tray command at a time, and the refusal said out loud.
+    //
+    // The frozen message pump used to be this gate by accident: a click that
+    // ran its elevated work inline could not show the menu again until the
+    // work returned, so there was no second click to race the first. Now that
+    // the work leaves the pump the menu is live for the whole five to twenty
+    // minutes an install takes, and a second click would start a second run
+    // against the same fixed paths - DriverInstaller's one zip and one
+    // extract directory under CacheRoot, which the first run's installer is
+    // executing out of - or a second UAC prompt and a second pnputil pass on
+    // the device the first run is still restarting.
+    //
+    // ModeFlip already refuses its own second cycle exactly this way
+    // (Interlocked.CompareExchange on _cycleInFlight); this is that refusal
+    // for every command the table sends off the pump. Null is free, and the
+    // value is the holder's id, so a refused click can say in the log what it
+    // was turned away by.
+    static string? _commandInFlight;
+
+    internal static bool TryStartCommand(string id, out string inFlight)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var holder = Interlocked.CompareExchange(ref _commandInFlight, id, null);
+        inFlight = holder ?? "";
+        return holder is null;
+    }
+
+    // Once per TryStartCommand that returned true, from the caller's own
+    // finally: a gate left shut by a report that threw is a tray that refuses
+    // every elevated click until the user restarts it.
+    internal static void FinishCommand() => Interlocked.Exchange(ref _commandInFlight, null);
+
+    // What the refused click says. Silence would read as a dead menu item,
+    // which is what the frozen pump already looked like. Not named Command*:
+    // that prefix is the id space the blocking table is checked against.
+    //
+    // "Still busy" and not "still running": the gate is held until the first
+    // command has reported, so a result dialog waiting to be read is inside
+    // this window too.
+    internal const string ElevatedCommandBusy =
+        "Magic Tray is still busy with another command that needs administrator rights, and "
+        + "two of them cannot run at the same time: they share one driver download folder and "
+        + "one device.\n\nLet the first one finish - close any message it has left open, and "
+        + "allow several minutes for a driver install - then try again. Nothing was changed by "
+        + "this click.";
 
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
@@ -2419,8 +2467,15 @@ internal sealed class TrayApp : IDisposable
             // of its own - every other write to it is a menu click. So the
             // write goes back to the thread those clicks run on, and the whole
             // file is still only ever rewritten from one thread.
-            UiDispatch.ToUiThread(() => _config.SetDriver0323(driver));
-            Logger.Log($"DRIVER_CHOICE_SAVED driver={driver}");
+            //
+            // The line that says it was saved is inside the hop, because the
+            // hop is dropped when the host has already gone: a choice that
+            // was never written must not read as one that was.
+            UiDispatch.ToUiThread(() =>
+            {
+                _config.SetDriver0323(driver);
+                Logger.Log($"DRIVER_CHOICE_SAVED driver={driver}");
+            });
             return;
         }
 
@@ -2438,12 +2493,19 @@ internal sealed class TrayApp : IDisposable
     // answer arrives later, which is the whole point. The failure callback is
     // what makes that safe - UiDispatch.RunThenReport hands a thrown refusal
     // to it on the UI thread instead of leaving it on a task nobody awaits.
+    //
+    // And because the handler returns, the menu it came from is live again:
+    // TrayMenu.TryStartCommand is what stops the next click starting a
+    // second elevated run beside this one.
     void StartTrayCommand<T>(
         string commandId, Func<T> work, Action<T> report, Action<Exception> failed)
     {
         var command = TrayMenu.BlockingCommand(commandId);
         if (TrayMenu.MayRunOnUiThread(command))
         {
+            // No gate: a zero ceiling is work that returns before the pump
+            // can deliver another click, so there is no window to race in.
+            //
             // Same split as the hop below, so the two branches cannot report
             // differently: failed() is for work that threw, never for a
             // report that did.
@@ -2454,8 +2516,40 @@ internal sealed class TrayApp : IDisposable
             return;
         }
 
+        if (!TrayMenu.TryStartCommand(command.Id, out var inFlight))
+        {
+            RefuseSecondCommand(command.Id, inFlight);
+            return;
+        }
+
         Logger.Log($"TRAY_COMMAND id={command.Id} off_ui=true ceiling={command.Ceiling}");
-        _ = UiDispatch.RunThenReport(work, report, failed, UiDispatch.ToUiThread);
+        _ = ReleaseWhenReported(
+            UiDispatch.RunThenReport(work, report, failed, UiDispatch.ToUiThread));
+    }
+
+    // The gate is held until the REPORT has been made, not until the work
+    // returns: FinishDriverAction and ReportWindowsDeviceState rebuild the
+    // menu the next click comes from, and the machine is not settled until
+    // they have.
+    static async Task ReleaseWhenReported(Task hop)
+    {
+        try { await hop.ConfigureAwait(false); }
+        finally { TrayMenu.FinishCommand(); }
+    }
+
+    // What a second click gets. The dialog goes through the one hop every
+    // other dialog uses: this is called from a click handler, so it is
+    // already on the UI thread and the Invoke runs inline.
+    static void RefuseSecondCommand(string id, string inFlight)
+    {
+        Logger.Log($"TRAY_COMMAND_REFUSED id={id} in_flight={inFlight}");
+        UiDispatch.ToUiThread(() =>
+        {
+            System.Windows.Forms.MessageBox.Show(
+                TrayMenu.ElevatedCommandBusy, TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+        });
     }
 
     // Offer* report their own outcome and explain their own failures
@@ -2476,15 +2570,29 @@ internal sealed class TrayApp : IDisposable
 
     // The async half of the same rule, for the three 0323 offers: they pull a
     // driver package before they elevate, so their work is a Task rather than
-    // a Func<T> and Task.Run is the hop. The entry still decides, and the
-    // report still comes back on the UI thread through one Invoke.
+    // a Func<T> and Task.Run is the hop. The entry still decides, the gate
+    // still refuses a second start, and the report still comes back on the UI
+    // thread through one Invoke.
     async Task RunDriverActionAsync(string commandId, Func<Task> action)
     {
         var command = TrayMenu.BlockingCommand(commandId);
+        var inline = TrayMenu.MayRunOnUiThread(command);
+
+        // Nothing to wait on is nothing to race, so the two Boot Camp pages
+        // neither take the gate nor leave the pump. Everything else does: the
+        // three 0323 ids share DriverInstaller's single zip and single
+        // extract directory, and the menu is live for the whole of the
+        // download and the install that follows it.
+        if (!inline && !TrayMenu.TryStartCommand(command.Id, out var inFlight))
+        {
+            RefuseSecondCommand(command.Id, inFlight);
+            return;
+        }
+
         Exception? failure = null;
         try
         {
-            if (TrayMenu.MayRunOnUiThread(command))
+            if (inline)
             {
                 await action();
             }
@@ -2503,13 +2611,26 @@ internal sealed class TrayApp : IDisposable
             failure = ex;
         }
 
-        UiDispatch.ToUiThread(() =>
+        try
         {
+            // Before the hop, because the hop can be dropped: with the WPF
+            // host gone there is no thread left to toast from, and this is
+            // the only place the thrown refusal is written down.
             if (failure is not null)
-                DriverActionFailed(failure);
-            else
-                FinishDriverAction();
-        });
+                Logger.Log($"DRIVER_ACTION_CARRIES_FAILURE err={failure.Message}");
+            UiDispatch.ToUiThread(() =>
+            {
+                if (failure is not null)
+                    DriverActionFailed(failure);
+                else
+                    FinishDriverAction();
+            });
+        }
+        finally
+        {
+            if (!inline)
+                TrayMenu.FinishCommand();
+        }
     }
 
     void DriverActionFailed(Exception ex)
@@ -3503,44 +3624,56 @@ internal sealed class TrayApp : IDisposable
         }
 
         Logger.Log($"REPAIR_APPLY_START pid={pid} problem={problem} service={service}");
-        _ = Task.Run(() =>
-        {
-            RepairOutcome outcome;
-            try
+        // Through the table like every other blocking click: the row's
+        // ceiling is DeviceRepair.SidecarWaitCeiling, which is what the
+        // elevated step plus its sidecar poll can really take, and the gate
+        // it takes is what stops a second repair - or a driver install -
+        // running beside this one.
+        StartTrayCommand<(RepairOutcome Outcome, bool? InStack)>(
+            TrayMenu.CommandRepairApply,
+            () =>
             {
-                outcome = DeviceRepair.Apply(pid, service);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"REPAIR_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
-            }
-
-            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
-            // RUNNING was already true before the repair: that contradiction is the whole
-            // finding. Attachment is the only honest proof, so re-read it here, still off the
-            // UI thread (registry plus one CM property query).
-            bool? inStack = null;
-            if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)
-            {
+                RepairOutcome outcome;
                 try
                 {
-                    inStack = DeviceSnapshotReader.ReadPid(pid, _config).FilterInStack;
+                    outcome = DeviceRepair.Apply(pid, service);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"REPAIR_VERIFY_FAIL pid={pid} err={ex.Message}");
+                    Logger.Log($"REPAIR_APPLY_FAIL pid={pid} err={ex.Message}");
+                    outcome = RepairOutcome.Failed;
                 }
-            }
 
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null)
+                // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
+                // RUNNING was already true before the repair: that contradiction is the whole
+                // finding. Attachment is the only honest proof, so re-read it here, still off the
+                // UI thread (registry plus one CM property query).
+                bool? inStack = null;
+                if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)
+                {
+                    try
+                    {
+                        inStack = DeviceSnapshotReader.ReadPid(pid, _config).FilterInStack;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"REPAIR_VERIFY_FAIL pid={pid} err={ex.Message}");
+                    }
+                }
+
+                // Written here, off the UI thread, because the hop that
+                // carries it can be dropped when the host is already gone.
+                Logger.Log($"REPAIR_APPLY_OUTCOME pid={pid} outcome={outcome}");
+                return (outcome, inStack);
+            },
+            answer => OnRepairApplied(pid, answer.Outcome, problem, answer.InStack),
+            ex =>
             {
-                Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={outcome} ui=gone");
-                return;
-            }
-            dispatcher.Invoke(() => OnRepairApplied(pid, outcome, problem, inStack));
-        });
+                // Apply catches its own failures above, so this is a refusal
+                // raised before the script ran. The user still gets told.
+                Logger.Log($"REPAIR_APPLY_REFUSED pid={pid} err={ex.Message}");
+                OnRepairApplied(pid, RepairOutcome.Failed, problem, null);
+            });
     }
 
     void OnRepairApplied(string pid, RepairOutcome outcome, RepairProblem problem, bool? inStack)
@@ -3745,28 +3878,37 @@ internal sealed class TrayApp : IDisposable
     void StartStaleFilterRemoval(string pid, string keep, string[] remove)
     {
         Logger.Log($"REPAIR_STALE_START pid={pid} keep={keep} remove={string.Join(",", remove)}");
-        // Elevated registry edit plus restart-device and the sidecar poll can take minutes.
-        _ = Task.Run(() =>
-        {
-            RepairOutcome outcome;
-            try
+        // Elevated registry edit plus restart-device and the sidecar poll can
+        // take minutes, which is the row's ceiling, so this goes through the
+        // table and takes the same one-at-a-time gate as every other click
+        // that elevates.
+        StartTrayCommand(
+            TrayMenu.CommandStaleFilterRemoval,
+            () =>
             {
-                outcome = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
-            }
-            catch (Exception ex)
+                RepairOutcome outcome;
+                try
+                {
+                    outcome = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"REPAIR_STALE_APPLY_FAIL pid={pid} err={ex.Message}");
+                    outcome = RepairOutcome.Failed;
+                }
+                // Off the UI thread, because the hop that carries it can be
+                // dropped when the host has already gone.
+                Logger.Log($"REPAIR_STALE_OUTCOME pid={pid} outcome={outcome}");
+                return outcome;
+            },
+            outcome => OnStaleFilterRemoved(pid, outcome),
+            ex =>
             {
-                Logger.Log($"REPAIR_STALE_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
-            }
-
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null)
-            {
-                Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={outcome} ui=gone");
-                return;
-            }
-            dispatcher.Invoke(() => OnStaleFilterRemoved(pid, outcome));
-        });
+                // ApplyRemoveStaleFilters catches its own failures above, so
+                // this is a refusal raised before the script ran.
+                Logger.Log($"REPAIR_STALE_REFUSED pid={pid} err={ex.Message}");
+                OnStaleFilterRemoved(pid, RepairOutcome.Failed);
+            });
     }
 
     void OnStaleFilterRemoved(string pid, RepairOutcome outcome)

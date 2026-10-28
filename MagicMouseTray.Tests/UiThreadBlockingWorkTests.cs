@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Threading;
 using MagicMouseTray;
 using Xunit;
 
@@ -119,21 +121,27 @@ public class UiThreadBlockingWorkTests
                 >= downloadThenInstall + DriverInstaller.PackageInstallCeiling,
             "the stock radio waits on two elevated uninstall steps, not one");
 
-        // The battery flip: the cycle's own ready budget, before the restore
-        // that is always waited for on top of it.
-        Assert.True(
-            Entry(TrayMenu.CommandReadBattery).Ceiling
-                >= TimeSpan.FromMilliseconds(ModeFlip.DefaultTimeoutMs),
-            "the flip waits at least its own ready budget for the mode change");
-        Assert.True(
-            Entry(TrayMenu.CommandRestoreScrollMode).Ceiling > TimeSpan.Zero,
-            "the restore elevates, writes the registry and restarts the device");
+        // The battery flip: its own ready budget, the restore grace the
+        // script gets after it, and the Mode B re-read ModeFlip performs
+        // once AwaitTerminal has returned. Equality, not a lower bound - a
+        // row that omits the re-read publishes 135 s for a wait that can run
+        // 143 s, and a lower bound is exactly what let that through.
+        Assert.Equal(8_000, ModeFlip.ModeBVerifyMs);
+        Assert.Equal(
+            TimeSpan.FromMilliseconds(
+                ModeFlip.DefaultTimeoutMs + ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
+            Entry(TrayMenu.CommandReadBattery).Ceiling);
+        Assert.Equal(
+            TimeSpan.FromMilliseconds(ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
+            Entry(TrayMenu.CommandRestoreScrollMode).Ceiling);
 
-        // The two repair flows already run off the UI thread; they are here so
-        // the table describes the tray as it is, and their sidecar poll has the
-        // same two-minute wall.
-        Assert.True(Entry(TrayMenu.CommandRepairApply).Ceiling >= TimeSpan.FromMinutes(2));
-        Assert.True(Entry(TrayMenu.CommandStaleFilterRemoval).Ceiling >= TimeSpan.FromMinutes(2));
+        // The two repair flows: one elevated step and the sidecar poll
+        // DeviceRepair waits out, published from the constant that waits it.
+        Assert.Equal(TimeSpan.FromMinutes(2), DeviceRepair.SidecarWaitCeiling);
+        Assert.Equal(
+            DeviceRepair.SidecarWaitCeiling, Entry(TrayMenu.CommandRepairApply).Ceiling);
+        Assert.Equal(
+            DeviceRepair.SidecarWaitCeiling, Entry(TrayMenu.CommandStaleFilterRemoval).Ceiling);
 
         // The Boot Camp items open a documented page and wait on nothing: no
         // elevation, no pnputil, no WaitForExit.
@@ -159,6 +167,34 @@ public class UiThreadBlockingWorkTests
         Assert.Contains(TrayMenu.CommandV3StockRestore, ids);
         Assert.Contains(TrayMenu.CommandRepairApply, ids);
         Assert.Contains(TrayMenu.CommandStaleFilterRemoval, ids);
+    }
+
+    [Fact]
+    public void BlockingCommands_HaveARowForEveryCommandIdTrayMenuDeclares()
+    {
+        // The list above is thirteen names typed twice, so a fourteenth
+        // command added without a row fails nothing there. This reads the
+        // ids off TrayMenu itself: a new Command* constant with no entry is
+        // a click that throws InvalidOperationException out of its handler,
+        // where App's DispatcherUnhandledException marks it handled and the
+        // user sees a menu item that does nothing at all.
+        var declared = typeof(TrayMenu)
+            .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            .Where(f => f.IsLiteral
+                && f.FieldType == typeof(string)
+                && f.Name.StartsWith("Command", StringComparison.Ordinal))
+            .Select(f => (Name: f.Name, Id: (string)f.GetRawConstantValue()!))
+            .ToList();
+
+        Assert.Equal(TrayMenu.BlockingCommands.Count, declared.Count);
+        foreach (var (name, id) in declared)
+        {
+            var entry = TrayMenu.BlockingCommand(id);
+            Assert.Equal(id, entry.Id);
+            Assert.False(
+                string.IsNullOrWhiteSpace(name),
+                "a command constant with no name names nothing");
+        }
     }
 
     [Fact]
@@ -211,5 +247,92 @@ public class UiThreadBlockingWorkTests
         Assert.Contains("install-the-whole-driver", ex.Message, StringComparison.Ordinal);
 
         Assert.Throws<ArgumentNullException>(() => TrayMenu.BlockingCommand(null!));
+    }
+
+    [Fact]
+    public void TryStartCommand_RefusesASecondElevatedStartWhileTheFirstIsStillRunning()
+    {
+        // The window this closes exists only because the work left the pump:
+        // the menu is live for the whole five to twenty minutes an install
+        // runs, so a second click on a 0323 radio would enter
+        // DownloadV3DefaultBranchAsync beside the first and both would use
+        // the same zip path and the same extract directory.
+        Assert.True(TrayMenu.TryStartCommand(TrayMenu.CommandV3KmdfInstall, out var free));
+        try
+        {
+            Assert.Equal("", free);
+
+            // A different command is refused too: they share one device and
+            // one UAC prompt at a time, not just one download folder.
+            Assert.False(TrayMenu.TryStartCommand(TrayMenu.CommandV3StockRestore, out var held));
+            Assert.Equal(TrayMenu.CommandV3KmdfInstall, held);
+            Assert.False(TrayMenu.TryStartCommand(TrayMenu.CommandStartInWindows, out held));
+            Assert.Equal(TrayMenu.CommandV3KmdfInstall, held);
+
+            // Including a second click on the very same radio, which is the
+            // click a user actually makes when nothing looks like it happened.
+            Assert.False(TrayMenu.TryStartCommand(TrayMenu.CommandV3KmdfInstall, out held));
+            Assert.Equal(TrayMenu.CommandV3KmdfInstall, held);
+        }
+        finally
+        {
+            TrayMenu.FinishCommand();
+        }
+
+        // And the gate opens again, or one install would cost the tray every
+        // elevated command it has until the user restarts it.
+        Assert.True(TrayMenu.TryStartCommand(TrayMenu.CommandStartInWindows, out _));
+        TrayMenu.FinishCommand();
+        Assert.True(TrayMenu.TryStartCommand(TrayMenu.CommandRepairApply, out _));
+        TrayMenu.FinishCommand();
+    }
+
+    [Fact]
+    public void TryStartCommand_UnderConcurrentStarts_LetsExactlyOneThrough()
+    {
+        // Interlocked.CompareExchange, the same gate ModeFlip uses for its
+        // own cycle: two clicks delivered close together are two threads
+        // here, and "I checked and it was free" is not an answer.
+        const int Racers = 8;
+        // Dedicated threads, not the pool: a barrier all eight have to reach
+        // needs eight threads that exist at once.
+        using var ready = new Barrier(Racers);
+        var won = 0;
+        var holders = new string[Racers];
+        var threads = new Thread[Racers];
+
+        for (var i = 0; i < Racers; i++)
+        {
+            var slot = i;
+            threads[slot] = new Thread(() =>
+            {
+                ready.SignalAndWait();
+                if (TrayMenu.TryStartCommand(TrayMenu.CommandV3PathAInstall, out var held))
+                    Interlocked.Increment(ref won);
+                holders[slot] = held;
+            });
+            threads[slot].Start();
+        }
+        foreach (var thread in threads)
+            Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "a racing start never finished");
+
+        Assert.Equal(1, won);
+        TrayMenu.FinishCommand();
+
+        // Every loser was told what it lost to, so the log line a refused
+        // click writes names the command it is waiting on.
+        Assert.Equal(
+            Racers - 1,
+            holders.Count(h => string.Equals(h, TrayMenu.CommandV3PathAInstall, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ElevatedCommandBusy_SaysWhatHappenedAndWhatToDo()
+    {
+        // A refusal the user cannot see is the dead menu item the frozen
+        // pump already looked like.
+        Assert.False(string.IsNullOrWhiteSpace(TrayMenu.ElevatedCommandBusy));
+        Assert.Contains("still busy", TrayMenu.ElevatedCommandBusy, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nothing was changed", TrayMenu.ElevatedCommandBusy, StringComparison.Ordinal);
     }
 }
