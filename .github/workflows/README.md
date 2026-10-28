@@ -1,9 +1,10 @@
 # Workflows
 
 Every check that runs on this repository, what it protects, and how to run it
-yourself before pushing. Ten workflow files; the first nine rows below are the
-checks that gate a pull request, and every one of them runs on every pull
-request. `no-draft-prs` also runs on pull requests and is not in the ruleset.
+yourself before pushing. Eleven workflow files; the first nine rows below are
+the checks that gate a pull request, and every one of them runs on every pull
+request. `no-draft-prs` and `Driver pin` also run on pull requests and are not
+in the ruleset.
 All of them run on GitHub-hosted runners; none needs a self-hosted runner,
 and only the two release-side workflows need a secret.
 
@@ -29,6 +30,7 @@ nothing.
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
 | `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
 | `no-draft-prs` | `no-draft-prs.yml` | PR opened/reopened/ready_for_review/converted_to_draft/synchronize | ubuntu-latest | no |
+| `Driver pin` | `driver-pin.yml` | PR and push `main` on the catalogue, the checker or the workflow; Mondays 05:17 UTC; dispatch | ubuntu-latest | no |
 | `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |
 | `Submit to winget-pkgs` | `winget-submit.yml` | manual dispatch only | windows-latest | n/a (manual) |
 
@@ -39,6 +41,7 @@ dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Buil
 pwsh -File scripts/check-site.ps1                                         # Site checks
 pwsh -File scripts/check-version-sync.ps1                                 # Version sync
 python3 scripts/check-winget-manifest.py                                  # Winget manifest (needs PyYAML)
+pwsh -File scripts/check-driver-pin.ps1                                   # Driver pin (downloads the pinned archive)
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 
@@ -167,6 +170,28 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
   `no-draft-prs-<ref>`, cancel-in-progress.
 - **Not a ruleset check**: branch protection was not changed, so a red run does
   not block merge until this check is added to the `main` ruleset.
+
+## driver-pin.yml — `Driver pin`
+
+- **Purpose**: `MagicMouseTray/DriverPackageCatalog.cs` pins the v3 driver
+  package to an immutable commit *and* to the SHA-256 of the archive that
+  commit serves, and the tray refuses anything that does not match before it
+  extracts or elevates. That makes the digest load-bearing in both directions:
+  the right value stops a substituted payload, a stale or mistyped one refuses
+  the genuine package on every installed copy, across KMDF, patched Apple and
+  the Stock restore. `/archive/<sha>.zip` is generated on demand rather than
+  stored, so only a download proves the pin still holds.
+  `scripts/check-driver-pin.ps1` fetches it and compares.
+- **A failed download is not a failed pin**: the script retries three times and
+  then reports `::warning` and exits 0, because no bytes arrived to contradict
+  the constant. Red means bytes arrived and disagreed.
+- **Not a required check**: it is the only job here that needs a third-party
+  host to be up, so it is not in the `main` ruleset and it does filter its
+  `pull_request` trigger by path — something a required check may never do.
+- **Schedule**: Mondays 05:17 UTC, so an archive regenerated upstream is found
+  before a user's install is.
+- **Permissions**: `contents: read`. **Timeout**: 10 min. **Concurrency**:
+  `driver-pin-<ref>`, cancel-in-progress.
 
 ## winget-submit.yml — `Submit to winget-pkgs`
 

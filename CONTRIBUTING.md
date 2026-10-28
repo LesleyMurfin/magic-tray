@@ -37,7 +37,7 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 skipped). Fix it with
 `git rebase --signoff origin/main && git push --force-with-lease`.
 
-Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-A (`Install-MagicMousePatch.ps1` / `applewirelessmouse.sys` binary patch) must not be silent and must not be a KMDF fallback; a user-initiated Patched Apple offer is allowed. KMDF install is `v2-kmdf-driver/Install-KMDF.cmd` from [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) `main` and never falls back to PATH-A.
+Do not vendor Magic Utilities binaries. Do not add a silent driver rebind. PATH-A (`Install-MagicMousePatch.ps1` / `applewirelessmouse.sys` binary patch) must not be silent and must not be a KMDF fallback; a user-initiated Patched Apple offer is allowed. KMDF install is `v2-kmdf-driver/Install-KMDF.cmd` from the immutable commit of [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix) pinned in `DriverPackageCatalog.V3RepoCommit` — never a branch head — and never falls back to PATH-A. Changing that commit means changing `V3ZipSha256` with it; `scripts/check-driver-pin.ps1` fails if the two stop agreeing.
 
 Driver URLs and package names belong in `DriverPackageCatalog.cs` — do not triplicate them.
 

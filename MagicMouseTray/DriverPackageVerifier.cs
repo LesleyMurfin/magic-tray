@@ -88,9 +88,12 @@ internal static class DriverPackageVerifier
 
         PackageIntegrity.DigestMismatch => new DriverPackageRefusal(
             InstallOutcome.IntegrityFailed,
-            $"The {DriverPackageCatalog.V3RepoName} package that arrived is not the pinned package. " +
+            $"The bytes that arrived are not the {DriverPackageCatalog.V3RepoName} package this " +
+            "version pins. That can be a proxy or captive portal rewriting the download, an " +
+            "upstream archive that changed, or tampering - this check cannot tell which. " +
             $"Expected SHA-256 {result.ExpectedDigest}, got {result.ActualDigest}. " +
-            "Nothing was extracted or run. Retrying the same download will not fix this."),
+            "Nothing was extracted or run. Try again on a network you trust; if it repeats, " +
+            "report both digests."),
 
         _ => new DriverPackageRefusal(
             InstallOutcome.IntegrityFailed,

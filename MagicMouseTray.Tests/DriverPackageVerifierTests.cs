@@ -120,8 +120,8 @@ public class DriverPackageVerifierTests
 
     // "Install failed" is what a 404 and a timeout look like, and a user who
     // reads it retries. Bytes that did not match the pin are a different
-    // event with a different answer: stop, and do not retry into the same
-    // tampered mirror. The outcome has to carry that difference.
+    // event with a different answer: stop before anything is unpacked, and
+    // say which bytes were meant. The outcome has to carry that difference.
     [Fact]
     public void RefusalFor_Mismatch_IsAStatedIntegrityFailure_NotAGenericInstallFailure()
     {
@@ -141,6 +141,24 @@ public class DriverPackageVerifierTests
         Assert.Contains(DriverPackageCatalog.V3RepoName, refusal.Message, StringComparison.Ordinal);
         Assert.Contains("Nothing was extracted or run", refusal.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("Could not pull", refusal.Message, StringComparison.Ordinal);
+    }
+
+    // A mismatch is reached by a captive portal or proxy answering with a
+    // complete interception page, by an upstream archive that was
+    // regenerated, and by tampering. The check cannot tell them apart, so the
+    // message must not pick one cause - and must not tell a hotel-wifi user
+    // that retrying is pointless when signing in is exactly what fixes it.
+    [Fact]
+    public void RefusalFor_Mismatch_StatesTheAlternatives_NotASingleCause()
+    {
+        var result = DriverPackageVerifier.Verify(AbcDigest, Text("abd"));
+
+        var refusal = DriverPackageVerifier.RefusalFor(result);
+
+        Assert.NotNull(refusal);
+        Assert.Contains("proxy or captive portal", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("tampering", refusal.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("will not fix this", refusal.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -225,6 +243,38 @@ public class DriverPackageVerifierTests
             Assert.False(result.Verified);
             Assert.Equal(PackageIntegrity.NoExpectedDigest, result.Status);
             Assert.False(Directory.Exists(extractDir));
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    // The version before the pin wrote whatever arrived into
+    // driver-cache\magic-mouse-v3-windows-fix-main. Nothing reads it now, so
+    // unchecked bytes would otherwise sit in a user-writable directory for
+    // good. A verified pull sweeps its siblings - and only its siblings.
+    [Fact]
+    public void PurgeStalePackageDirs_RemovesTheUnverifiedCache_AndKeepsEverythingElse()
+    {
+        var root = TempRoot();
+        try
+        {
+            var stale = Path.Combine(root, $"{DriverPackageCatalog.V3RepoName}-main");
+            Directory.CreateDirectory(stale);
+            File.WriteAllText(Path.Combine(stale, "Install-KMDF.cmd"), "@echo off :: never checked");
+
+            var keep = Path.Combine(root, $"{DriverPackageCatalog.V3RepoName}-321164d1a4e1");
+            Directory.CreateDirectory(keep);
+
+            var unrelated = Path.Combine(root, "something-else");
+            Directory.CreateDirectory(unrelated);
+
+            DriverInstaller.PurgeStalePackageDirs(root, keep);
+
+            Assert.False(Directory.Exists(stale));
+            Assert.True(Directory.Exists(keep));
+            Assert.True(Directory.Exists(unrelated));
         }
         finally
         {

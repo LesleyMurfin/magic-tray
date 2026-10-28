@@ -24,7 +24,6 @@ public class DriverPackageCatalogTests
             DriverPackageCatalog.KeyboardPatchScriptPath);
         Assert.Equal("MagicMouseDriver", DriverPackageCatalog.PatchedKmdfServiceName);
         Assert.Equal("MagicMouseDriver.sys", DriverPackageCatalog.PatchedKmdfSysFileName);
-        Assert.Equal("main", DriverPackageCatalog.V3RepoRef);
         Assert.Equal("v1-binary-patch/installer/Install-MagicMousePatch.ps1",
             DriverPackageCatalog.PathAInstallScriptRelativePath);
         Assert.Equal("v1-binary-patch/installer/Uninstall-MagicMousePatch.ps1",
@@ -559,7 +558,7 @@ public class DriverPackageCatalogTests
 
         Assert.DoesNotContain($"/{movableRef}.zip", url, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain($"/heads/{movableRef}", url, StringComparison.OrdinalIgnoreCase);
-        Assert.NotEqual(movableRef, DriverPackageCatalog.V3RepoCommit, StringComparer.OrdinalIgnoreCase);
+        Assert.NotEqual(DriverPackageCatalog.V3RepoCommit, movableRef, StringComparer.OrdinalIgnoreCase);
     }
 
     // A pinned commit says which bytes were meant. It does not say the bytes

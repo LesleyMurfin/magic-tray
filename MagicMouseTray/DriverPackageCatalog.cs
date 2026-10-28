@@ -28,14 +28,15 @@ internal static class DriverPackageCatalog
     // --- 0323 scroll: LesleyMurfin/magic-mouse-v3-windows-fix (KMDF, PathA, Stock) ---
     internal const string V3RepoOwner = "LesleyMurfin";
     internal const string V3RepoName = "magic-mouse-v3-windows-fix";
-    // Which branch the pin below was cut from. Documentation only: a branch
-    // head moves, so it must never address the bytes that get run.
-    internal const string V3RepoRef = "main";
-    // The immutable commit the v3 package is pinned to, and the SHA-256 of
-    // the bytes that archive URL serves. The zip is extracted and handed to an
-    // elevated cmd.exe, so both are checked before anything is written or run.
-    internal static readonly string V3RepoCommit = "321164d1a4e15945d2dca52f096db41b763bd944";
-    internal static readonly string V3ZipSha256 =
+    // The immutable commit the v3 package is pinned to - cut from `main`, but
+    // addressed only by its 40-hex id, because a branch head moves and must
+    // never name the bytes that get run - and the SHA-256 of the bytes that
+    // archive URL serves. The zip is extracted and handed to an elevated
+    // cmd.exe, so both are checked before anything is written or run.
+    // scripts/check-driver-pin.ps1 re-downloads the archive in CI and fails
+    // if these two stop agreeing.
+    internal const string V3RepoCommit = "321164d1a4e15945d2dca52f096db41b763bd944";
+    internal const string V3ZipSha256 =
         "4f0ff979f5a213b9bcb268e95c52ae4e455a855ca95281bc97771c573284ebe7";
     internal const string V3RepoUrl =
         "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix";

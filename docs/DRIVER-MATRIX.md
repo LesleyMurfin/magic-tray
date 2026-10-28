@@ -21,10 +21,11 @@ Find your mouse by its PID (Device Manager -> the device -> Details -> Hardware 
 hex digits after `PID_`). Then:
 
 - **Magic Mouse 2024, USB-C, PID `0323`.** **KMDF** is the only driver that gives you scroll and
-  battery percent at the same time, but there is nothing to install yet: the package has never
-  been published, so the tray
-  [cannot install it](../README.md#what-magic-tray-does-about-drivers) and picking the item
-  installs nothing. The cost will be real when it does land: that driver is self-signed, so the
+  battery percent at the same time, but there is nothing to install yet: no signed driver binary
+  has been published. The pinned package does carry the installer, so picking the item
+  [takes one administrator approval](../README.md#what-magic-tray-does-about-drivers), runs that
+  installer, and reports the failure it stops with; nothing is installed. The cost will be real
+  when a signed build does land: that driver is self-signed, so the
   PC has to run in Test Mode with Memory integrity off. Until then you get battery percent with
   no driver at all, and no scroll.
 - **Magic Mouse v1 (AA batteries) `030D`, Magic Mouse v2 (Lightning) `0269`, Apple Wireless
