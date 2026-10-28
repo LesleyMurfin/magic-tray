@@ -27,12 +27,40 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
 
     readonly string _path;
 
-    public string DeviceName { get; } = "Logitech Mouse"; // provisional; name query out of scope
-    public string Pid { get; } = "logi";
+    // Identity comes from the interface path, not from a constant. Pid and DeviceName are the
+    // only keys anything downstream has: AdaptivePoller groups interfaces by DeviceName (one
+    // tray row, one winning reading per group), and both AdaptivePoller.ShouldSkipPid and the
+    // config enable/disable map are keyed by Pid. A fixed "Logitech Mouse"/"logi" pair made
+    // every Logitech interface one identity, so a keyboard, a mouse and a headset dongle
+    // enumerated in the same cycle formed a single group - whichever answered first owned the
+    // tray row, one checkbox enabled or disabled all three, and every non-vendor interface
+    // among them still drew a GENERIC_WRITE open that failed once per tick.
+    //
+    // The name is not queried from the device (HID++ 0x0005 DeviceName would cost two more
+    // round trips per interface per tick), so the product id stands in for the model name. That
+    // is all this name is used for: DeviceCapability.KindForName only scans
+    // MouseBatteryDevice.KnownMice and KeyboardBatteryDevice.KnownKeyboards, neither of which
+    // has ever held a Logitech row, so no name->kind lookup regresses - Kind is the fixed
+    // LogitechMouse either way.
+    //
+    // Consequence: a config entry keyed "logi" no longer matches and the device returns to its
+    // default-enabled state. That is acceptable only because this whole path is behind
+    // Config.EnableThirdParty, which ships off, so no shipped-on configuration can hold one.
+    public string DeviceName { get; }
+    public string Pid { get; }
     public DeviceKind Kind => DeviceKind.LogitechMouse;
     public string DevicePath => _path;
 
-    internal LogitechBatteryDevice(string path) => _path = path;
+    internal LogitechBatteryDevice(string path)
+    {
+        _path = path;
+        // DeviceRegistry.ExtractPid is the repo's path->pid parser (it also keys the discovery
+        // log lines and the 0323 collection gate); its documented fallback for a path with no
+        // pid_/pid& token is "0000", which keeps an unparseable interface stable and distinct
+        // instead of giving it a blank group key.
+        Pid = DeviceRegistry.ExtractPid(path);
+        DeviceName = $"Logitech Device {Pid.ToUpperInvariant()}";
+    }
 
     public int GetBatteryPercent()
     {
@@ -131,6 +159,42 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         return b;
     }
 
+    // Decides whether the frame that arrived on this handle is the answer to `req`, before
+    // ReadFeatureBattery reads byte 4 as a Root feature index or as a battery percentage.
+    // Internal and pure because everything around it in SendReceive needs a live HID handle,
+    // and this rule is the part that can be proved without Logitech hardware.
+    //
+    // byte 3 is (funcIndex << 4) | SW_ID, and it used to go uncompared while the comment over
+    // the compare claimed it was being checked. A HID++ device also PUSHES notifications on the
+    // feature index it was just queried on, and a battery feature is exactly the kind that
+    // does; such a frame carries our report id and our feature index, so a two-byte compare
+    // accepted it and ClassifyLevelByte read a stranger's byte 4 as a level. Byte 3 ties the
+    // frame to this request's function AND to our software id, which is what makes it our reply
+    // rather than another HID++ client's or the device's own event.
+    //
+    // `transferred` is what GetOverlappedResult reported, and it is checked against 5 rather
+    // than only against 0. The buffer comes from GC.AllocateArray, so a 1-4 byte transfer - a
+    // complete, correctly matching header with the payload still missing - leaves byte 4 at the
+    // allocation's zero, which used to decode as battery 0 and log LOGI_BATTERY_ZERO against
+    // the device: a truncated transfer reported as a flat battery. Byte 4 is the first byte
+    // either caller reads, so 5 bytes is the minimum decodable frame. A count larger than the
+    // buffer is refused too - it cannot describe this read, and trusting it would hand a later
+    // indexer a length the array does not have.
+    //
+    // 0xFF in byte 2 is a HID++ 2.0 error frame: byte 3 echoes the failed function+swId and
+    // byte 5 carries the error code, so byte 4 is the echoed function byte - 0x05 for our
+    // requests, which decodes as 5%. It is rejected as a VALUE, not left to the byte-2 compare,
+    // because nothing rejects a Root reply that names feature index 0xFF (only index 0 is
+    // treated as absent), and such a device could otherwise match its own error frames.
+    internal static bool IsMatchingResponse(byte[] request, byte[] response, int transferred)
+    {
+        if (request is null || response is null) return false;
+        if (request.Length < 4 || response.Length < 5) return false;
+        if (transferred < 5 || transferred > response.Length) return false;
+        if (response[2] == 0xFF) return false;
+        return response[0] == request[0] && response[2] == request[2] && response[3] == request[3];
+    }
+
     // Writes the HID++ request and waits (overlapped) for the matching response, reusing the
     // same event/wait helpers KeyboardBatteryDevice-era code uses for timed HID reads.
     static byte[]? SendReceive(SafeFileHandle handle, byte[] req, int reportLen)
@@ -138,7 +202,19 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         if (!HidNative.HidD_SetOutputReport(handle, req, req.Length))
             return null;
 
+        // CreateEvent's failure was unchecked. A NULL hEvent is not a harmless no-op here:
+        // ReadFile still starts the read, WaitForSingleObject(NULL, 600) returns WAIT_FAILED
+        // instead of WAIT_OBJECT_0, and the cancel path below is taken for a read that is
+        // behaving perfectly normally - burning the whole 600 ms budget and then blocking in
+        // the deliberately unbounded GetOverlappedResult(bWait: true) wait. There is no
+        // injectable seam for the P/Invoke, so this is a distinct log marker rather than a test.
         IntPtr evt = HidNative.CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+        if (evt == IntPtr.Zero)
+        {
+            Logger.Log($"LOGI_EVENT_FAILED err={Marshal.GetLastWin32Error()} (no overlapped event; read not issued)");
+            return null;
+        }
+
         try
         {
             // Pinned for the whole pending window, not just for the ReadFile call: the
@@ -172,11 +248,9 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
                     return null;
                 }
             }
-            if (!HidNative.GetOverlappedResult(handle, ref ov, out uint got, false) || got == 0)
+            if (!HidNative.GetOverlappedResult(handle, ref ov, out uint got, false))
                 return null;
-
-            // Match the response to our request (same feature index + swId).
-            if (buf[0] != req[0] || buf[2] != req[2]) return null;
+            if (!IsMatchingResponse(req, buf, (int)got)) return null;
             return buf;
         }
         finally { HidNative.CloseHandle(evt); }

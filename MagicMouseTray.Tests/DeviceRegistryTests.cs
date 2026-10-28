@@ -138,4 +138,74 @@ public class DeviceRegistryTests
         Assert.Equal("0239", found[0].Pid);
         Assert.Equal("Apple Wireless Keyboard (2011)", found[0].DeviceName);
     }
+
+    // --- Logitech (flag-gated third-party path) identity ---------------------------------
+    //
+    // Synthetic product ids, all outside DeviceRegistry's receiver list so they reach the
+    // LogitechBatteryDevice branch: a BT mouse, a BT keyboard and a USB headset dongle.
+    const string LogiMouseBt = @"\\?\hid#vid_046d&pid_b034#8&2b5e3d41&0&0000";
+    const string LogiMouseBtCol02 = @"\\?\hid#vid_046d&pid_b034&col02#8&2b5e3d41&0&0001";
+    const string LogiKeyboardBt = @"\\?\hid#vid_046d&pid_b35b#8&1f0ac937&0&0000";
+    const string LogiHeadsetUsb = @"\\?\hid#vid_046d&pid_0aba&mi_03#7&3c1d0b82&0&0000";
+
+    // Three different Logitech products enumerated in one cycle must not collapse into one
+    // identity. Pid and DeviceName are the only keys downstream: AdaptivePoller groups
+    // interfaces by DeviceName (one tray row, one winning reading per group) and both
+    // AdaptivePoller.ShouldSkipPid and the config enable/disable map are keyed by Pid. With a
+    // hardcoded identity a keyboard's reading lands on the mouse's tray row and disabling one
+    // disables all three. The Pid must come from the path (DeviceRegistry.ExtractPid is the
+    // repo's parser) and the name must carry it, so an unknown product is still tellable apart.
+    [Fact]
+    public void Discover_DistinctLogitechProductIds_GetDistinctIdentities()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths(
+            [LogiMouseBt, LogiKeyboardBt, LogiHeadsetUsb], enableThirdParty: true);
+
+        Assert.Equal(3, found.Count);
+        Assert.Equal(new[] { "b034", "b35b", "0aba" }, found.Select(d => d.Pid).ToArray());
+        Assert.Equal(3, found.Select(d => d.Pid).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(3, found.Select(d => d.DeviceName).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.All(found, d =>
+        {
+            Assert.Equal(DeviceKind.LogitechMouse, d.Kind);
+            Assert.Equal(DeviceRegistry.ExtractPid(d.DevicePath), d.Pid);
+            // Human-readable and self-identifying: whatever the wording, the name has to
+            // name the vendor and carry the product id that makes it unique.
+            Assert.StartsWith("Logitech", d.DeviceName, StringComparison.Ordinal);
+            Assert.Contains(d.Pid, d.DeviceName, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    // The other half of the rule: discovery still keeps every interface (it cannot tell which
+    // one answers HID++ without reading it), and two interfaces of the SAME product must share
+    // one identity so AdaptivePoller treats them as one group with one tray row - the same
+    // multiplicity contract the Apple paths have.
+    [Fact]
+    public void Discover_SameLogitechProductIdOnTwoInterfaces_SharesOneIdentity()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths(
+            [LogiMouseBt, LogiMouseBtCol02], enableThirdParty: true);
+
+        Assert.Equal(new[] { LogiMouseBt, LogiMouseBtCol02 }, found.Select(d => d.DevicePath).ToArray());
+        Assert.Equal("b034", found[0].Pid);
+        Assert.Equal(found[0].Pid, found[1].Pid);
+        Assert.Equal(found[0].DeviceName, found[1].DeviceName);
+    }
+
+    // Degenerate path: VID present, no pid_/pid& token at all. ExtractPid's documented fallback
+    // is "0000", and the identity must follow it instead of throwing or going blank - a blank
+    // DeviceName would be an unnamed tray row and an empty group key. It must still differ from
+    // a real product's identity, so an unparseable interface cannot be grouped with a readable one.
+    [Fact]
+    public void Discover_LogitechPathWithoutProductId_FallsBackToStableIdentity()
+    {
+        const string noPid = @"\\?\hid#vid_046d#8&7c9b1a20&0&0000";
+        var found = DeviceRegistry.DiscoverFromPaths([noPid, LogiMouseBt], enableThirdParty: true);
+
+        Assert.Equal(2, found.Count);
+        Assert.Equal("0000", found[0].Pid);
+        Assert.StartsWith("Logitech", found[0].DeviceName, StringComparison.Ordinal);
+        Assert.NotEqual(found[1].Pid, found[0].Pid);
+        Assert.NotEqual(found[1].DeviceName, found[0].DeviceName);
+    }
 }

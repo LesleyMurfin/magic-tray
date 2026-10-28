@@ -27,8 +27,10 @@ internal static class DeviceRegistry
 
         // Collapse only genuinely identical interface paths. Windows enumerated the same
         // USB col02 path twice in one cycle (live log 2026-09-16: two identical
-        // DISCOVER_SKIP_DUPLICATE lines for ...&mi_01&col02#<instance>), so the
-        // same path string must not produce two devices.
+        // DISCOVER_SKIP_DUPLICATE lines for ...&mi_01&col02#<instance> - that is the
+        // historical marker name those lines were written under; the live one is
+        // DISCOVER_SKIP_SAME_PATH, below), so the same path string must not produce two
+        // devices.
         //
         // Everything else survives. One physical mouse exposes several distinct live col02
         // interfaces: the discovery capture of 2026-09-16 listed two Bluetooth col02 paths
@@ -41,10 +43,19 @@ internal static class DeviceRegistry
         // Discovery cannot tell which interface is which without reading, so it keeps them
         // all and AdaptivePoller picks the winner: it groups by DeviceName and returns the
         // FIRST interface that answers with a real percentage, ranking only the two failure
-        // sentinels when none does, -2 over -1 (AdaptivePoller.BestReading). It stops there,
-        // and also - when an interface wedges - at the first read that times out, so the
-        // amplification costs at most one read budget per group per tick. Dropping candidates
-        // here ran before that scan and could leave only an interface that never reports.
+        // sentinels when none does, -2 over -1 (AdaptivePoller.BestReading). That scan has
+        // three exits and the two that are not an answer are cost bounds: the first read that
+        // times out, which is the wedged-interface case, and a cumulative per-group budget
+        // checked before each interface is launched. Checked BEFORE, which is why the budget
+        // alone is not the ceiling: a read launched while the accumulated spend is a hair
+        // under AdaptivePoller.DeviceGroupBudget still gets its whole per-read budget on top.
+        // So the true worst case for one group on one tick is DeviceGroupBudget plus one
+        // DeviceReadTimeout - 10 s at today's values - whatever the group size is and whichever
+        // of the three exits ends the scan. That bound is the point: never one full read budget
+        // per interface, and not "one read budget per group" either, because several reads that
+        // each fail inside the per-read budget do add up until the group deadline is crossed.
+        // Dropping candidates here ran before that scan and could leave only an interface that
+        // never reports.
         //
         // There is deliberately no transport preference and no one-device-per-PID rule. The
         // false 0% from a charge-cable phantom that those rules were written for is rejected
@@ -119,6 +130,13 @@ internal static class DeviceRegistry
         // VID 046d match keeps it from interfering with Apple-keyboard classification.
         // Unifying/Bolt RECEIVERS are intentionally excluded — they require per-device-index
         // (1-6) addressing, not 0xFF; reading them is out of scope.
+        //
+        // There is no collection gate and no per-product collapse here either: every matching
+        // interface becomes its own device, exactly as the Apple paths do, and the grouping is
+        // left to the identity. LogitechBatteryDevice derives Pid and DeviceName from this
+        // path, so two interfaces of one product share a group while two different products do
+        // not - which is the whole of what keeps a keyboard's reading off a mouse's tray row
+        // and the enable/disable checkboxes apart.
         if (enableThirdParty
             && path.Contains("vid_046d", StringComparison.OrdinalIgnoreCase)
             && !IsLogitechReceiver(path))
