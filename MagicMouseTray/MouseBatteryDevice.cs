@@ -302,8 +302,17 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         return string.Concat("col", path.AsSpan(start, end - start));
     }
 
+    // Test hook - stands in for one candidate read, no live HID call. Null in production.
+    // The success branch of the learned read (ClearFailedReads above) is otherwise unreachable
+    // off Windows: a real percent needs ReadCandidate to open a HID node through kernel32, and
+    // the only kernel-free way into GetBatteryPercent is the hands-free rejection, which always
+    // answers -1, so nothing but a failing read could ever be driven through it.
+    internal static Func<string, BatteryChannelAnswer?, int>? ReadCandidateHook;
+
     int ReadCandidate(string path, BatteryChannelAnswer? learned = null)
     {
+        if (ReadCandidateHook is { } hook) return hook(path, learned);
+
         if (DeviceRegistry.IsHandsFreeOrIphonePath(path))
         {
             Logger.Log($"MOUSE_REJECT_HANDSFREE device={DeviceName} path={path}");

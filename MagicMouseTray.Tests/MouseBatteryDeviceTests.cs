@@ -582,12 +582,15 @@ public class MouseBatteryDeviceTests
         }
     }
 
-    // The other half of "consecutive, not cumulative", driven through GetBatteryPercent as far
-    // as this host allows. The reset itself is the one line of the change no test here can
-    // reach through a read: a SUCCEEDING read needs ReadCandidate to open a real HID node, and
-    // the only kernel32-free seam into GetBatteryPercent is the hands-free rejection, which
-    // always answers -1. So the success is stood in for by the call the success path makes,
-    // BatteryChannelMemory.ClearFailedReads, and everything around it is the real code path.
+    // A mouse whose learned channel answers at this path. No kernel call is made for it: the
+    // read is served by MouseBatteryDevice.ReadCandidateHook, which is the only way to drive a
+    // SUCCEEDING learned read off Windows.
+    const string Bt0cf3Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0cf3&col02#a&5e6f7a8b&0&0001";
+
+    // The other half of "consecutive, not cumulative": a read that answers spends the streak,
+    // so two failures either side of it never add up to three. Without the ClearFailedReads on
+    // the success branch this passes four failures in a row and forgets on the fifth poll.
     [Fact]
     public void GetBatteryPercent_StreakIsConsecutive_AGoodReadPutsTheAnswerBackOnThreeStrikes()
     {
@@ -600,28 +603,36 @@ public class MouseBatteryDeviceTests
             BatteryChannelMemory.Attach(cfg);
 
             var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
-            BatteryChannelMemory.Learn("0cf2", learned);
+            BatteryChannelMemory.Learn("0cf3", learned);
 
-            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
-            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
-            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
+            int answer = -1;
+            MouseBatteryDevice.ReadCandidateHook = (_, _) => answer;
 
-            // Stands in for the read that answers: this is what the success path does.
-            BatteryChannelMemory.ClearFailedReads("0cf2");
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+
+            // The read that answers. It must spend the two strikes, not merely return a percent.
+            answer = 73;
+            Assert.Equal(73, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
 
             // Two more failures must not reach the limit, or the mouse that misses one read a
             // day accumulates its way to a relearn while its channel still works.
-            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
-            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
-            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
-            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
+            answer = -1;
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
 
-            // And the third still forgets, so the reset delays a relearn rather than blocking it.
-            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
-            Assert.Null(cfg.GetBatteryChannel("0cf2"));
+            // And the third consecutive one still forgets, so the reset delays a relearn rather
+            // than blocking it.
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Null(cfg.GetBatteryChannel("0cf3"));
         }
         finally
         {
+            MouseBatteryDevice.ReadCandidateHook = null;
             BatteryChannelMemory.Attach(null);
             try { Directory.Delete(dir, recursive: true); } catch { }
         }
