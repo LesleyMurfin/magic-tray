@@ -375,8 +375,10 @@ What it does not do, so nobody wastes an evening:
   that model's device code, so Windows never loads a scroll driver for it. A community driver is
   being worked on and is not published, so there is nothing to download today. Battery percent on
   that mouse does work, with no driver at all.
-- It cannot turn off Windows driver-signature enforcement or Memory integrity for you, and it
-  never tries.
+- It never turns Memory integrity off or changes Secure Boot for you — those stay manual. It can
+  switch Windows driver-signature enforcement (Test Mode) on or off, but only when you click the
+  item and accept a dialog naming the command, the reboot, the security downgrade and the
+  BitLocker recovery-key risk; never silently, and the undo is always offered.
 
 The honest state of testing: three devices have been confirmed by a tester — the 2024 Magic Mouse,
 the Magic Mouse v1, and the 2011 Apple Wireless Keyboard. Everything else is recognised by the app
@@ -562,7 +564,7 @@ the drafts.
 | Battery is byte 2 of input report `0x90` on `COL02`, not feature `0x47` | `docs/v3.html`; `docs/llms.txt` |
 | `applewirelessmouse.sys` uses the LowerFilter slot for `030D`/`0269`; the community driver claims it for `0323` | `docs/v3.html` technical details |
 | The KMDF installer is not on the driver repo's branch, so that path errors | `README.md` "Building from source" |
-| The app cannot turn off signature enforcement or Memory integrity; no `bcdedit` anywhere | `docs/llms.txt`; `README.md` |
+| The app cannot turn off Memory integrity or change Secure Boot; it can only run `bcdedit /set testsigning on`/`off` from a click plus a confirmation dialog, never silently | `docs/llms.txt`; `README.md` |
 | No gestures, no tap-to-click, no media-key remapping, no trackpad driver | `README.md` comparison table; `docs/llms.txt` "Scope", point 2 |
 | Buy Magic Utilities if you need gestures or the trackpad suite | `README.md` comparison table |
 | Three devices tester-confirmed: `0323`, `030D`, `0239`; everything else "should work, nobody has confirmed it yet" | `docs/llms.txt` testers section; `README.md` "Help us test" |

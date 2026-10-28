@@ -61,7 +61,13 @@ No bounty is offered. Please give a fix a reasonable window before disclosing pu
 - **The SmartScreen warning on an unsigned build.** Known and documented — see
   [README](README.md#why-the-app-is-unsigned-and-what-fixes-it).
 - **Needing test signing on and Memory integrity off** for the patched-Apple scroll route. That
-  is a documented cost you choose and change yourself; the app never touches either setting.
+  is a documented cost you choose. Memory integrity and Secure Boot are never touched by the
+  app — you change those yourself. Test signing the app can switch for you, but only from a menu
+  click you confirm in a dialog naming `bcdedit /set testsigning on`, the reboot, the security
+  downgrade and the BitLocker recovery-key risk; never silently, never at startup, never from a
+  poll, with Secure Boot on reported as blocked and not attempted, and the revert
+  (`bcdedit /set testsigning off`) always offered. A path that reaches either command **without**
+  that confirmation is in scope and worth a report.
 
 ## Verifying what you downloaded
 

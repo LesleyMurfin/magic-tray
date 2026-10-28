@@ -831,8 +831,9 @@ internal sealed class TrayApp : IDisposable
             UpdateBatteryReadsVisibility();
         };
 
-        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings)));
-        if (_findings.Count > 0)
+        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(
+            RepairPlanner.MenuLabel(_findings, ConfigFactView.ProblemTitles(_configFacts))));
+        if (_findings.Count > 0 || ConfigFactView.Blocking(_configFacts).Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
         menu.Items.Add(_repairItem);
@@ -2326,13 +2327,7 @@ internal sealed class TrayApp : IDisposable
 
         try
         {
-            if (_repairItem != null)
-            {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings);
-                _repairItem.ForeColor = _findings.Count > 0
-                    ? Color.OrangeRed
-                    : SystemColors.ControlText;
-            }
+            RefreshRepairRow();
 
             RefreshConfigSection();
         }
@@ -2572,6 +2567,9 @@ internal sealed class TrayApp : IDisposable
                 try
                 {
                     RefreshConfigSection();
+                    // A Blocking fact is a problem the top-of-menu row counts,
+                    // so the row has to be repainted from this reading too.
+                    RefreshRepairRow();
                     // The device rows carry the driver-in-use line and the
                     // battery's source, so a changed reading has to reach
                     // them. Rebuilt only when the reading actually moved:
@@ -2652,6 +2650,25 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
+    // The top-of-menu problem row. Its text now depends on two inputs - the
+    // gated device findings and the Blocking configuration facts - so both
+    // refresh paths come through here: RefreshFindings when the device reading
+    // moves, and PublishConfigFacts when the background config read lands.
+    // Without the second call the row would keep claiming "No problems found"
+    // for a whole poll interval after a Blocking Test Mode fact appeared.
+    void RefreshRepairRow()
+    {
+        if (_repairItem is null)
+            return;
+
+        var configProblems = ConfigFactView.ProblemTitles(_configFacts);
+        _repairItem.Text = TrayMenu.MenuText(
+            RepairPlanner.MenuLabel(_findings, configProblems));
+        _repairItem.ForeColor = _findings.Count > 0 || configProblems.Count > 0
+            ? Color.OrangeRed
+            : SystemColors.ControlText;
+    }
+
     // The collapsed section plus one clickable row per fact. Rebuilt wholesale
     // on every refresh, the same way the device rows are, so there is no stale
     // row to invalidate.
@@ -2684,12 +2701,32 @@ internal sealed class TrayApp : IDisposable
         _configItem.Visible = true;
     }
 
-    // The checker's own prose, then the one thing this tray is allowed to do
-    // about it: open a page. A ConfigFact may name a script that ships in a
-    // driver package, and running one from here is exactly what
-    // SystemConfigChecker's read-only contract forbids, so only an http(s)
-    // target gets the OK/Cancel pair that promises to open something.
+    // One fact on this PC now has an action behind it, and exactly one: Test
+    // Mode. Every other fact keeps the read-only dialog it always had - the
+    // checker's own prose, then the one thing this tray is allowed to do about
+    // it, open a page. A ConfigFact may name a script that ships in a driver
+    // package, and running one from here is exactly what SystemConfigChecker's
+    // read-only contract forbids, so only an http(s) target gets the OK/Cancel
+    // pair that promises to open something.
     void ShowConfigFact(ConfigFact fact)
+    {
+        // The Test Mode offer reads bcdedit and then waits on an elevated
+        // process, neither of which may sit on the UI thread, so it runs as a
+        // task started by this click. Nothing starts it but a click
+        // (RefreshConfigSection's row handler, and the guided walk which is
+        // itself answering a click): there is no timer, no startup path and no
+        // poll into OfferTestModeAsync.
+        if (string.Equals(fact.Id, SystemConfigChecker.TestModeFactId, StringComparison.Ordinal))
+        {
+            _ = OfferTestModeAsync(fact);
+            return;
+        }
+
+        ShowFactDialog(fact);
+    }
+
+    // The read-only dialog, unchanged: explain, and at most open a page.
+    void ShowFactDialog(ConfigFact fact)
     {
         var openable = !string.IsNullOrEmpty(fact.ActionLabel)
             && TrayMenu.IsHelpUrl(fact.ActionUrlOrScript);
@@ -2703,6 +2740,166 @@ internal sealed class TrayApp : IDisposable
                 : System.Windows.Forms.MessageBoxIcon.Information);
         if (openable && answer == System.Windows.Forms.DialogResult.OK)
             OpenHelpUrl(fact.ActionUrlOrScript!);
+    }
+
+    // Everything the Test Mode decision depends on, read fresh at the moment of
+    // the click rather than lifted off the standing fact. A published fact can
+    // be minutes old and the user may have changed Secure Boot in firmware or
+    // run bcdedit by hand since; confirming a command against a stale reading is
+    // how a tool ends up running the wrong one. A click is a user action, so the
+    // read is allowed here where a poll would not be (AGENTS.md:76) - but it is
+    // still a registry read plus a capped bcdedit, so the caller pays for it on
+    // the thread pool, never on the UI thread (SystemConfigChecker.cs:153-159).
+    static (bool? SecureBoot, bool? TestSigning, bool? BitLocker) ReadTestModeState() =>
+        (SystemConfigChecker.ReadSecureBootOn(),
+            SystemConfigChecker.ReadTestSigningOn(),
+            TestModeSwitch.ReadBitLockerProtected());
+
+    // Three-state reading for the log line below. Duplicated per file in this
+    // repo (DeviceSnapshotReader.cs:255, SystemConfigChecker.cs:1378) rather
+    // than shared, because "unknown" must never be printed as "false".
+    static string Tri(bool? value) => value switch
+    {
+        true => "true",
+        false => "false",
+        _ => "unknown",
+    };
+
+    /// <summary>
+    /// The Test Mode row's action, start to finish: read the PC, build the
+    /// plan, and either explain why the action is impossible or ask for the one
+    /// confirmation that lets it run.
+    ///
+    /// Which action is offered is decided by the state, not by a stored
+    /// preference: Test Mode on offers Disable, so the revert is always one
+    /// click away on the same row and a user who turned it on here is never
+    /// left without the way back (AGENTS.md:76).
+    ///
+    /// Returns true when the caller's guided walk may continue. A declined
+    /// confirmation stops the walk, the same way cancelling a device repair
+    /// does; a blocked plan does not, because nothing was asked of the user.
+    /// </summary>
+    async Task<bool> OfferTestModeAsync(ConfigFact fact)
+    {
+        (bool? SecureBoot, bool? TestSigning, bool? BitLocker) state;
+        try
+        {
+            state = await Task.Run(ReadTestModeState).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            // No evidence is a reading of its own: BuildPlan is the thing that
+            // decides what three nulls are allowed to offer, not this catch.
+            Logger.Log($"TEST_MODE_READ_FAIL err={ex.Message}");
+            state = (null, null, null);
+        }
+
+        var action = state.TestSigning == true ? TestModeAction.Disable : TestModeAction.Enable;
+        var plan = TestModeSwitch.BuildPlan(
+            action, state.SecureBoot, state.TestSigning, state.BitLocker);
+        Logger.Log($"TEST_MODE_OFFER action={plan.Action} block={plan.Block} "
+            + $"secureboot={Tri(state.SecureBoot)} testsigning={Tri(state.TestSigning)} "
+            + $"bitlocker={Tri(state.BitLocker)}");
+
+        if (!ConfigFactView.OffersRun(plan))
+        {
+            // Blocked. The dialog explains why and offers at most the page -
+            // the http(s)-only rule is unchanged, so this branch cannot reach a
+            // shell execute and has no path to RunAsync at all.
+            var openable = !string.IsNullOrEmpty(fact.ActionLabel)
+                && TrayMenu.IsHelpUrl(fact.ActionUrlOrScript);
+            var blocked = System.Windows.Forms.MessageBox.Show(
+                ConfigFactView.TestModeBlockedText(fact, plan), TrayMenu.ProductName,
+                openable
+                    ? System.Windows.Forms.MessageBoxButtons.OKCancel
+                    : System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+            if (openable && blocked == System.Windows.Forms.DialogResult.OK)
+                OpenHelpUrl(fact.ActionUrlOrScript!);
+            return true;
+        }
+
+        // The per-action confirmation the charter requires. plan.Prompt is the
+        // switch's own wording - it names the command, the reboot, the BitLocker
+        // recovery-key risk and the revert path - and is shown verbatim: a UI
+        // layer that re-words a consent dialog is a UI layer that can drop the
+        // part the user needed to read.
+        var answer = System.Windows.Forms.MessageBox.Show(
+            plan.Prompt, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning);
+        if (answer != System.Windows.Forms.DialogResult.OK)
+        {
+            Logger.Log($"TEST_MODE_DECLINED action={plan.Action}");
+            return false;
+        }
+
+        InstallOutcome outcome;
+        try
+        {
+            outcome = await TestModeSwitch.RunAsync(plan).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"TEST_MODE_RUN_FAIL action={plan.Action} err={ex.Message}");
+            outcome = InstallOutcome.Failed;
+        }
+        Logger.Log($"TEST_MODE_RUN action={plan.Action} outcome={outcome}");
+
+        switch (outcome)
+        {
+            case InstallOutcome.Confirmed:
+                // The reboot is the user's to make. This dialog is the only
+                // place that says so, and the tray never reboots the PC.
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.TestModeDoneText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            case InstallOutcome.Cancelled:
+                // UAC declined: the elevated process never started, so nothing
+                // on this PC moved and the dialog claims exactly that.
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.TestModeCancelledText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            default:
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.TestModeFailedText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+                break;
+        }
+        return true;
+    }
+
+    // The configuration half of the guided walk. Test Mode is the only fact
+    // with an action behind it; everything else here - Memory integrity above
+    // all - is explained and handed to the Windows page that owns it, because a
+    // programmatic HVCI change is a standing non-goal and stays one.
+    async Task WalkConfigProblemsAsync(IReadOnlyList<ConfigFact> problems)
+    {
+        try
+        {
+            for (var i = 0; i < problems.Count; i++)
+            {
+                var fact = problems[i];
+                Logger.Log($"CONFIG_PROBLEM_FLOW id={fact.Id}");
+                if (string.Equals(fact.Id, SystemConfigChecker.TestModeFactId, StringComparison.Ordinal))
+                {
+                    if (!await OfferTestModeAsync(fact).ConfigureAwait(true))
+                        return;
+                    continue;
+                }
+
+                ShowFactDialog(fact);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"CONFIG_PROBLEM_FLOW_FAIL err={ex.Message}");
+        }
     }
 
     // "held=0323:FilterNotInStack,0323:ConflictingFilters" for the pending pairs,
@@ -2814,8 +3011,8 @@ internal sealed class TrayApp : IDisposable
     }
 
     /// <summary>
-    /// Guided repair over every current finding. Each finding is explained in plain
-    /// language before anything is changed; Cancel stops the walk.
+    /// Guided repair over every problem standing on this PC. Each one is explained
+    /// in plain language before anything is changed; Cancel stops the walk.
     ///
     /// This is the answer to a direct user question - the top-of-menu row and
     /// "Check for problems now" both land here - so it must never say "No problems
@@ -2824,37 +3021,56 @@ internal sealed class TrayApp : IDisposable
     /// pnputil /restart-device, and during a driver install that fights the
     /// install. Asking does not make a 900 ms fault real. So the honest answer is
     /// the third one: name what is being checked and when it will be decided.
+    ///
+    /// A Blocking configuration fact counts as a problem here for the same
+    /// reason: it is a measured property of this PC that stops the driver
+    /// loading, and since the Test Mode row became actionable it is one this app
+    /// can fix. Answering "No problems found" over it would be both untrue and an
+    /// offer withheld. Device faults are still walked first - a fault on the
+    /// device in front of the user outranks a property of the PC that merely
+    /// explains one (ConfigFactView.cs:16-33).
     /// </summary>
     void ShowRepairFlow()
     {
-        if (_findings.Count == 0)
+        var configProblems = ConfigFactView.Blocking(_configFacts);
+
+        // The gate is still holding something: say so first, as a toast, so the
+        // information survives whether or not a config problem follows it into a
+        // dialog. Unchanged wording - only the early return moved.
+        if (_findings.Count == 0 && _pendingFindings.Count > 0)
         {
-            if (_pendingFindings.Count > 0)
-            {
-                var held = _pendingFindings[0];
-                var more = _pendingFindings.Count > 1
-                    ? $" (and {_pendingFindings.Count - 1} more)"
-                    : string.Empty;
-                Logger.Log($"REPAIR_FLOW_PENDING pending={_pendingFindings.Count} "
-                    + $"pid={held.Pid} problem={held.Problem}");
-                ToastNotifier.Show(TrayMenu.ProductName,
-                    $"Checking a possible problem: {held.Title}{more}.\n"
-                    + "It has not been seen for long enough to be sure it is real - "
-                    + "installing or restarting a driver makes a healthy mouse look faulty "
-                    + "for a few seconds. Open this menu again in about "
-                    + $"{(int)FindingGate.HoldWindow.TotalSeconds} seconds and it will be "
-                    + "reported if it is still there.");
-                return;
-            }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+            var held = _pendingFindings[0];
+            var more = _pendingFindings.Count > 1
+                ? $" (and {_pendingFindings.Count - 1} more)"
+                : string.Empty;
+            Logger.Log($"REPAIR_FLOW_PENDING pending={_pendingFindings.Count} "
+                + $"pid={held.Pid} problem={held.Problem}");
+            ToastNotifier.Show(TrayMenu.ProductName,
+                $"Checking a possible problem: {held.Title}{more}.\n"
+                + "It has not been seen for long enough to be sure it is real - "
+                + "installing or restarting a driver makes a healthy mouse look faulty "
+                + "for a few seconds. Open this menu again in about "
+                + $"{(int)FindingGate.HoldWindow.TotalSeconds} seconds and it will be "
+                + "reported if it is still there.");
+        }
+
+        if (_findings.Count == 0 && configProblems.Count == 0)
+        {
+            // Only claim health when nothing is confirmed, nothing is held and
+            // no configuration fact is blocking the driver.
+            if (_pendingFindings.Count == 0)
+                ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
             return;
         }
 
         foreach (var finding in _findings.ToArray())
         {
             if (!HandleFinding(finding))
-                break;
+                return;
         }
+
+        if (configProblems.Count > 0)
+            _ = WalkConfigProblemsAsync(configProblems);
     }
 
     // Same guided flow, scoped to the one finding shown on a device row.
@@ -3309,15 +3525,26 @@ internal sealed class TrayApp : IDisposable
     }
 
     // WIN32_EXIT 31 / blocked signature: the user has to allow the self-signed driver.
+    //
+    // Step 1 is the only one the tray can carry out, so it points at the row
+    // that offers it rather than leaving the user to type the command: that row
+    // runs bcdedit only after its own confirmation (OfferTestModeAsync), and
+    // naming it here is what makes the offer findable from the failure that
+    // needs it. Steps 2 and 3 stay manual on purpose - a programmatic Memory
+    // integrity change is a standing non-goal, and the tray never reboots the PC.
     void ShowFilterBlockedHelp()
     {
         var body =
             "Windows refused to start the scroll driver.\n\n"
             + "The driver is self-signed, so Windows blocks it until this PC is told to allow it. "
             + "Three steps, in this order:\n\n"
-            + "1. Turn Test Mode on: in an administrator Command Prompt run "
-            + "bcdedit /set testsigning on\n"
-            + "2. Turn Memory integrity off in Windows Security -> Device security -> Core isolation.\n"
+            + "1. Turn Test Mode on: open this menu, then "
+            + ConfigFactView.SectionPrefix + " -> Blocking: Test Mode is off. Magic Tray runs "
+            + "bcdedit /set testsigning on for you there once you confirm it, and the same row "
+            + "turns it back off later. (With Secure Boot on the command cannot work at all - the "
+            + "row says so and sends you to the firmware.)\n"
+            + "2. Turn Memory integrity off in Windows Security -> Device security -> Core isolation. "
+            + "Magic Tray never changes that one for you.\n"
             + "3. Reboot this PC, then open the Magic Tray menu and run the fix again.\n\n"
             + "OK opens the Magic Mouse v3 page with the full walkthrough.";
         var answer = System.Windows.Forms.MessageBox.Show(

@@ -47,9 +47,10 @@ public class SystemConfigCheckerTests
         DeviceDiagReader.F1WatcherState? watcher = null,
         DateTime? nowUtc = null,
         bool? selfSigned = null,
-        IReadOnlyList<DriverClaim>? claims = null) =>
+        IReadOnlyList<DriverClaim>? claims = null,
+        bool? secureBoot = null) =>
         new(testSigning, hvci, package, watcher ?? UnknownWatcher, nowUtc ?? T0, selfSigned,
-            claims);
+            claims, secureBoot);
 
     static ConfigFact? Fact(IReadOnlyList<ConfigFact> facts, string id)
     {
@@ -769,5 +770,136 @@ public class SystemConfigCheckerTests
         var advisory = Assert.Single(Advisories(facts));
         Assert.Equal(SystemConfigChecker.RivalClaimantFactId, advisory.Id);
         Assert.DoesNotContain("v3.html", advisory.ActionUrlOrScript!, StringComparison.Ordinal);
+    }
+
+    // ---- Secure Boot ------------------------------------------------------
+    //
+    // Secure Boot and test signing are mutually exclusive: with Secure Boot on,
+    // `bcdedit /set testsigning on` fails with "The value is protected by
+    // Secure Boot policy". A panel that tells the user to run that command, or
+    // offers a button that runs it, is telling them to do something that cannot
+    // work - so the reading has to reach the wording. The opposite failure is
+    // just as bad: Secure Boot on is the DEFAULT, healthy state of a modern PC,
+    // so it may never be mentioned on a machine whose driver signing is not in
+    // question at all.
+
+    [Fact]
+    public void SecureBootOn_WithTestSigningOff_SaysTheCommandCannotWorkAndNamesUefi()
+    {
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,
+            Readings(testSigning: false, hvci: false, package: true, watcher: HealthyWatcher,
+                selfSigned: true, secureBoot: true));
+
+        var testMode = Fact(facts, SystemConfigChecker.TestModeFactId)!;
+
+        // The refusal, in the words Windows actually uses, plus where the
+        // setting really lives. Without both, the user retries the command.
+        Assert.Contains("Secure Boot", testMode.Detail, StringComparison.Ordinal);
+        Assert.Contains("protected by Secure Boot policy", testMode.Detail, StringComparison.Ordinal);
+        Assert.Contains("UEFI", testMode.Detail, StringComparison.Ordinal);
+
+        // And it must not read as an instruction to go and run it anyway.
+        Assert.DoesNotContain("the Test Mode action on this row", testMode.Detail,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SecureBootOn_WithTestSigningOff_AddsItsOwnFactThatIsNeverBlocking()
+    {
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,
+            Readings(testSigning: false, hvci: false, package: true, watcher: HealthyWatcher,
+                selfSigned: true, secureBoot: true));
+
+        var secureBoot = Fact(facts, SystemConfigChecker.SecureBootFactId)!;
+        Assert.NotNull(secureBoot);
+
+        // Secure Boot on is a correctly secured PC, not a broken one. The
+        // Blocking call stays with the Test Mode fact, which is backed by a
+        // measured self-signed driver actually in use.
+        Assert.Equal(ConfigSeverity.Advisory, secureBoot.Severity);
+        var blocking = Assert.Single(Blocking(facts));
+        Assert.Equal(SystemConfigChecker.TestModeFactId, blocking.Id);
+
+        // The decision it is asking the user to make costs them their boot
+        // security and can cost them the BitLocker recovery key prompt.
+        Assert.Contains("recovery key", secureBoot.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SecureBootOn_WhereSigningIsIrrelevant_IsNeverMentioned()
+    {
+        // A v1 on Apple's WHQL-signed Boot Camp binary, and a 0323 back on
+        // stock Windows: neither has a signing question, so neither may be told
+        // anything about Secure Boot. This is the nag-a-healthy-PC failure, and
+        // Secure Boot on is the state most PCs ship in.
+        var bootCamp = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV1, "030d", DriverStatus.Ok,
+            Readings(testSigning: false, hvci: true, package: true, selfSigned: false,
+                secureBoot: true));
+        Assert.Null(Fact(bootCamp, SystemConfigChecker.SecureBootFactId));
+        Assert.All(bootCamp, f =>
+            Assert.DoesNotContain("Secure Boot", f.Detail, StringComparison.Ordinal));
+
+        var stock = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.StockKmdf,
+            Readings(testSigning: false, hvci: true, package: true, secureBoot: true));
+        Assert.Null(Fact(stock, SystemConfigChecker.SecureBootFactId));
+        Assert.All(stock, f =>
+            Assert.DoesNotContain("Secure Boot", f.Detail, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SecureBootOn_WithTestSigningAlreadyOn_IsNotRaised()
+    {
+        // Test Mode is already on, so nothing is blocked and there is nothing
+        // to warn about - mentioning Secure Boot here would be noise on a PC
+        // that is already configured the way the driver needs.
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,
+            Readings(testSigning: true, hvci: false, package: true, watcher: HealthyWatcher,
+                selfSigned: true, secureBoot: true));
+
+        Assert.Null(Fact(facts, SystemConfigChecker.SecureBootFactId));
+        Assert.All(facts, f => Assert.Equal(ConfigSeverity.Ok, f.Severity));
+    }
+
+    [Fact]
+    public void SecureBootUnknown_KeepsTheOrdinaryTestModeInstructions()
+    {
+        // No evidence is not a block. Only a POSITIVE Secure Boot reading may
+        // take the fix away from the user.
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,
+            Readings(testSigning: false, hvci: false, package: true, watcher: HealthyWatcher,
+                selfSigned: true, secureBoot: null));
+
+        Assert.Null(Fact(facts, SystemConfigChecker.SecureBootFactId));
+        var testMode = Fact(facts, SystemConfigChecker.TestModeFactId)!;
+        Assert.Contains("bcdedit /set testsigning on", testMode.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("Secure Boot", testMode.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TestModeOffDetail_StillSaysMemoryIntegrityIsTheUsersJob()
+    {
+        // AGENTS.md:76 moved Test Mode behind a confirmed, user-initiated
+        // action but left HVCI a manual step, and the detail has to keep
+        // saying so or the user waits for a button that will never exist.
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,
+            Readings(testSigning: false, hvci: true, package: true, watcher: HealthyWatcher,
+                selfSigned: true));
+
+        var testMode = Fact(facts, SystemConfigChecker.TestModeFactId)!;
+        Assert.Contains("Core isolation", testMode.Detail, StringComparison.Ordinal);
+        Assert.Contains("Magic Tray will not change that for you", testMode.Detail,
+            StringComparison.Ordinal);
+
+        // And the confirmation promises stay in the row that offers the action.
+        Assert.Contains("reboot", testMode.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BitLocker", testMode.Detail, StringComparison.Ordinal);
+        Assert.Contains("bcdedit /set testsigning off", testMode.Detail, StringComparison.Ordinal);
     }
 }

@@ -189,18 +189,142 @@ public class ConfigFactViewTests
     {
         // Ownership is keyed off the fact id, so a reworded Detail cannot move
         // the fix to the wrong component.
+        var testMode = ConfigFactView.OwnerLine(SystemConfigChecker.TestModeFactId);
+        var memoryIntegrity = ConfigFactView.OwnerLine(SystemConfigChecker.MemoryIntegrityFactId);
+
+        // The Test Mode promise is no longer "the tray changes nothing": the
+        // tray CAN run bcdedit here. What it promises instead is the whole of
+        // AGENTS.md:76 - the user's answer first, that answer covering one
+        // action only, and the three things the dialog has to name. Each is
+        // pinned separately because dropping any one of them turns a confirmed
+        // action back into a silent one.
+        Assert.Contains("You decide", testMode, StringComparison.Ordinal);
+        Assert.Contains("only for the one action you confirm", testMode, StringComparison.Ordinal);
+        Assert.Contains("reboot", testMode, StringComparison.Ordinal);
+        Assert.Contains("BitLocker", testMode, StringComparison.Ordinal);
+        Assert.Contains("never on startup", testMode, StringComparison.Ordinal);
+        Assert.Contains("never on a timer", testMode, StringComparison.Ordinal);
+        // The revert has to be promised where the action is promised, or the
+        // user has no stated way back out of Test Mode.
+        Assert.Contains("the way back is offered on this same row", testMode, StringComparison.Ordinal);
+        // And the promise that is still true must not be widened back over Test
+        // Mode: this line may never again claim the tray never changes it.
+        Assert.DoesNotContain("never changes Test Mode", testMode, StringComparison.Ordinal);
+
+        // Memory integrity and Secure Boot keep the original promise in full. A
+        // programmatic HVCI change is a standing non-goal, so this is the line
+        // that must not drift when the Test Mode one does.
         Assert.Contains(
-            "never changes Test Mode", ConfigFactView.OwnerLine(SystemConfigChecker.TestModeFactId),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "never changes Test Mode", ConfigFactView.OwnerLine(SystemConfigChecker.MemoryIntegrityFactId),
-            StringComparison.Ordinal);
+            "never changes Memory integrity", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("Secure Boot", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("by hand", memoryIntegrity, StringComparison.Ordinal);
+
         Assert.StartsWith(
             "The driver package.", ConfigFactView.OwnerLine(SystemConfigChecker.DriverPackageFactId),
             StringComparison.Ordinal);
         Assert.StartsWith(
             "You, on this PC.", ConfigFactView.OwnerLine("some-fact-added-later"),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BlockedPlan_OffersNoRunnableAction()
+    {
+        var fact = Assert.Single(TestModeOffFacts(), f => f.Id == SystemConfigChecker.TestModeFactId);
+
+        // OffersRun is the single gate every caller asks before a click may
+        // reach TestModeSwitch.RunAsync, so every reason a plan can be blocked
+        // has to fail it. Looping the enum is what keeps a block added later
+        // from defaulting to "runnable".
+        foreach (var block in Enum.GetValues<TestModeBlock>())
+        {
+            var plan = new TestModePlan(
+                TestModeAction.Enable, "bcdedit /set testsigning on", "prompt body", block);
+            Assert.Equal(block == TestModeBlock.None, ConfigFactView.OffersRun(plan));
+            if (block == TestModeBlock.None)
+                continue;
+
+            // A blocked row still explains itself and still offers the page -
+            // and the only thing its OK may ever promise is to OPEN that page.
+            var text = ConfigFactView.TestModeBlockedText(fact, plan);
+            Assert.Contains(ConfigFactView.BlockReason(plan), text, StringComparison.Ordinal);
+            Assert.Contains(fact.Detail, text, StringComparison.Ordinal);
+            Assert.Contains("OK opens", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("OK runs", text, StringComparison.Ordinal);
+            AssertAscii(text, allowNewline: true);
+        }
+    }
+
+    [Fact]
+    public void SecureBootOnBlocksTheAction_AndSaysWhereSecureBootIsChanged()
+    {
+        // The charter answer to Secure Boot is "report blocked, never attempt"
+        // (AGENTS.md:76). BuildPlan is what decides that; this pins that the
+        // decision survives into something the user can act on, and that the
+        // tray never claims it could change Secure Boot itself.
+        var plan = TestModeSwitch.BuildPlan(
+            TestModeAction.Enable, secureBootOn: true, testSigningOn: false,
+            bitLockerProtected: true);
+
+        Assert.Equal(TestModeBlock.SecureBootOn, plan.Block);
+        Assert.False(ConfigFactView.OffersRun(plan));
+
+        var reason = ConfigFactView.BlockReason(plan);
+        Assert.Contains("Secure Boot", reason, StringComparison.Ordinal);
+        Assert.Contains("UEFI firmware", reason, StringComparison.Ordinal);
+        Assert.Contains("Magic Tray never touches it", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AppliedDialog_LeavesTheRebootToTheUserAndNamesTheWayBack()
+    {
+        // Two promises the charter makes that only this text can keep: the tray
+        // does not reboot the PC, and the revert is always stated.
+        var enable = TestModeSwitch.BuildPlan(
+            TestModeAction.Enable, secureBootOn: false, testSigningOn: false,
+            bitLockerProtected: null);
+        var done = ConfigFactView.TestModeDoneText(enable);
+
+        Assert.Contains("reboot", done, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("will not reboot it", done, StringComparison.Ordinal);
+        Assert.Contains("bcdedit /set testsigning off", done, StringComparison.Ordinal);
+        AssertAscii(done, allowNewline: true);
+
+        // The revert's own revert is the opposite command again, never the one
+        // the user just ran.
+        var disable = TestModeSwitch.BuildPlan(
+            TestModeAction.Disable, secureBootOn: false, testSigningOn: true,
+            bitLockerProtected: null);
+        Assert.Equal("bcdedit /set testsigning on", ConfigFactView.RevertCommand(disable));
+        Assert.Contains(
+            "bcdedit /set testsigning on", ConfigFactView.TestModeDoneText(disable),
+            StringComparison.Ordinal);
+
+        // A declined administrator prompt changed nothing, and must say so
+        // without hedging.
+        var cancelled = ConfigFactView.TestModeCancelledText(enable);
+        Assert.Contains("Nothing was changed", cancelled, StringComparison.Ordinal);
+        Assert.Contains("never ran", cancelled, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BlockingFacts_AreTheOnesTheProblemRowCounts()
+    {
+        // The repair flow and the top-of-menu row count these. A healthy PC
+        // must contribute nothing, or "No problems found" becomes a lie in the
+        // other direction.
+        Assert.Empty(ConfigFactView.Blocking(HealthyFacts()));
+        Assert.Empty(ConfigFactView.ProblemTitles(HealthyFacts()));
+
+        var blocking = ConfigFactView.Blocking(TestModeOffFacts());
+        var fact = Assert.Single(blocking);
+        Assert.Equal(SystemConfigChecker.TestModeFactId, fact.Id);
+
+        // Every title stays behind the section prefix, so a configuration line
+        // can never be read as the bare device-fault voice the repair row owns.
+        var title = Assert.Single(ConfigFactView.ProblemTitles(TestModeOffFacts()));
+        Assert.StartsWith(ConfigFactView.SectionPrefix + ": ", title, StringComparison.Ordinal);
+        Assert.EndsWith(fact.Title, title, StringComparison.Ordinal);
     }
 
     [Fact]

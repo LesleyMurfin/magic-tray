@@ -175,13 +175,30 @@ internal static class ConfigFactView
     // rewording.
     internal static string OwnerLine(string factId) => factId switch
     {
-        // The tray is read-only about the security posture of the PC by
-        // construction (SystemConfigChecker.cs:12-21). Saying so here is what
-        // stops a user waiting for a button that will never exist.
-        SystemConfigChecker.TestModeFactId or SystemConfigChecker.MemoryIntegrityFactId =>
-            "You, by hand, in Windows. Magic Tray never changes Test Mode, Memory integrity, "
+        // Test Mode is the ONE security setting this tray may change, and only
+        // on the terms AGENTS.md:76 sets: a per-action confirmation that names
+        // the command, the reboot and the BitLocker recovery-key risk, never on
+        // startup, never from a poll, with the way back offered on the same
+        // row. So this line may no longer carry the old blanket "changes
+        // nothing" promise - that promise is still true of every OTHER setting
+        // and this wording keeps it exactly that wide.
+        SystemConfigChecker.TestModeFactId =>
+            "You decide, and Magic Tray can carry it out. This row can run "
+            + "bcdedit /set testsigning on or off for you, but only for the one action you confirm "
+            + "in the dialog that names the command, the reboot it needs and the BitLocker "
+            + "recovery-key risk - never on startup, never on a timer, never without that answer, "
+            + "and the way back is offered on this same row. Memory integrity and Secure Boot it "
+            + "still never changes: those it only reads.",
+
+        // Memory integrity stays a hand-operated Windows setting. A programmatic
+        // HVCI change is an explicit non-goal, so this line must keep promising
+        // the tray will not make one, and must name Test Mode as the single
+        // exception rather than imply the tray changes nothing at all.
+        SystemConfigChecker.MemoryIntegrityFactId =>
+            "You, by hand, in Windows Security. Magic Tray never changes Memory integrity, "
             + "Secure Boot or any other security setting on this PC - it reports what it read and "
-            + "nothing more.",
+            + "points you at the page. Test Mode is the only setting it can change, and only from "
+            + "its own row after you confirm that one action.",
 
         SystemConfigChecker.DriverPackageFactId =>
             "The driver package. Magic Tray offers the install from its own driver step, and "
@@ -217,4 +234,147 @@ internal static class ConfigFactView
             : "OK: " + fact.ActionLabel;
         return opens + ". Cancel changes nothing.";
     }
+
+    // ---- the one action this view may offer -------------------------------
+    //
+    // Everything below renders a TestModePlan (TestModeSwitch.cs), which is
+    // built pure from the readings taken at the moment of the click. The view
+    // never re-derives whether the action is possible: OffersRun is the single
+    // gate the caller asks, so "may this click reach bcdedit" is decided in one
+    // testable place instead of once per dialog, and a plan the switch refused
+    // cannot be talked back into running by a wording change here.
+
+    // The Blocking facts, in display order. These are the configuration
+    // problems that belong in the "problems found" answer next to the device
+    // faults (TrayApp.ShowRepairFlow). Advisory never qualifies: it covers both
+    // "worth checking" and "we could not read it", and neither is a measured
+    // problem the user can be told to fix (Rank above, and the precedence note
+    // at the top of this file).
+    internal static IReadOnlyList<ConfigFact> Blocking(IReadOnlyList<ConfigFact> facts)
+    {
+        List<ConfigFact>? blocking = null;
+        var ordered = Ordered(facts);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            // Ordered puts Blocking first (Rank == 0), so the first non-Blocking
+            // entry ends the run and the rest of the list needs no visit.
+            if (ordered[i].Severity != ConfigSeverity.Blocking)
+                break;
+            (blocking ??= new List<ConfigFact>(2)).Add(ordered[i]);
+        }
+        return (IReadOnlyList<ConfigFact>?)blocking ?? Array.Empty<ConfigFact>();
+    }
+
+    // The Blocking facts as rows for the top-of-menu problem count
+    // (RepairPlanner.MenuLabel). Each stays behind the section prefix, so a
+    // configuration line can never be read as the bare device-fault voice that
+    // row owns even when it is the only problem standing - the same structural
+    // rule SectionLabel follows, and the reason the precedence note at the top
+    // of this file does not need a severity number to hold.
+    internal static IReadOnlyList<string> ProblemTitles(IReadOnlyList<ConfigFact> facts)
+    {
+        var blocking = Blocking(facts);
+        if (blocking.Count == 0)
+            return Array.Empty<string>();
+        var titles = new List<string>(blocking.Count);
+        for (var i = 0; i < blocking.Count; i++)
+            titles.Add($"{SectionPrefix}: {blocking[i].Title}");
+        return titles;
+    }
+
+    // The only "yes" in this repo's UI layer to running bcdedit. A blocked plan
+    // is a plan whose action is impossible or pointless on this PC, and the
+    // charter answer to that is to explain and offer the documentation - never
+    // an OK that runs something (AGENTS.md:76).
+    internal static bool OffersRun(TestModePlan plan) => plan.Block == TestModeBlock.None;
+
+    // Why the action is not on offer, in the user's terms. Phrased as what this
+    // PC does, not as a refusal by the tray, because every one of these is a
+    // property of the machine rather than a policy choice made here.
+    internal static string BlockReason(TestModePlan plan) => plan.Block switch
+    {
+        TestModeBlock.SecureBootOn =>
+            "Secure Boot is on. Secure Boot refuses the test signing flag outright - the command "
+            + "would answer that the value is protected by Secure Boot policy and nothing on this "
+            + "PC would change. Secure Boot is turned off in this PC's UEFI firmware, by you, "
+            + "before Windows starts; Magic Tray never touches it and cannot.",
+
+        TestModeBlock.AlreadyInThatState =>
+            "This PC is already in that state, so there is nothing to run. If the wheel is still "
+            + "dead, the remaining step is Memory integrity, or a reboot that has not happened yet.",
+
+        TestModeBlock.UnknownState =>
+            "Magic Tray could not read the current test signing state on this PC, so it will not "
+            + "run a command whose effect it cannot predict. Read the state yourself with "
+            + "bcdedit /enum {current} in an administrator Command Prompt.",
+
+        // Not reachable through OffersRun, which is the only caller gate, but a
+        // blank string here would render as a dialog with a missing paragraph.
+        _ => "There is nothing to do here.",
+    };
+
+    // The dialog for a row whose action is blocked: the checker's own prose,
+    // the reason, the owner, and at most a page to open. It never names an OK
+    // that runs anything, which is what makes the blocked path structurally
+    // incapable of reaching TestModeSwitch.RunAsync.
+    internal static string TestModeBlockedText(ConfigFact fact, TestModePlan plan)
+    {
+        var blocks = new List<string>(4)
+        {
+            fact.Title,
+            "What is wrong, what it costs you, and the steps:\n" + fact.Detail,
+            "Why Magic Tray will not run this for you:\n" + BlockReason(plan),
+            "Who fixes this:\n" + OwnerLine(fact.Id),
+        };
+
+        var footer = ActionFooter(fact);
+        if (footer is not null)
+            blocks.Add(footer);
+        return string.Join("\n\n", blocks);
+    }
+
+    // Shown once the elevated bcdedit has run. Two things must survive every
+    // future edit of this string: the reboot is the user's to make - the tray
+    // does not reboot the PC, ever - and the way back is spelled out here
+    // rather than left to be discovered.
+    internal static string TestModeDoneText(TestModePlan plan)
+    {
+        var what = plan.Action == TestModeAction.Enable
+            ? "Test Mode is set to turn on at the next boot. Windows shows a Test Mode watermark "
+                + "on the desktop while it is on - that watermark is the expected sign it worked."
+            : "Test Mode is set to turn off at the next boot. A self-signed driver, including this "
+                + "project's scroll driver, will stop loading once it is off.";
+        return string.Join("\n\n", new[]
+        {
+            what,
+            plan.Command + " ran and reported success.",
+            "Nothing has changed yet: this PC has to reboot first. Magic Tray will not reboot it "
+            + "for you - reboot when it suits you, then open this menu again.",
+            "To undo this: open this same row and confirm the opposite action, or run "
+            + RevertCommand(plan) + " in an administrator Command Prompt, then reboot.",
+        });
+    }
+
+    // UAC declined. The elevated process never started, so this says exactly
+    // that and claims no partial change.
+    internal static string TestModeCancelledText(TestModePlan plan) =>
+        "Nothing was changed. The administrator prompt was declined, so " + plan.Command
+        + " never ran and this PC is exactly as it was. The action stays on this row for "
+        + "whenever you want it.";
+
+    // The elevated step launched and did not report success. The honest claim
+    // is that the result is unknown, not that nothing happened.
+    internal static string TestModeFailedText(TestModePlan plan) =>
+        "Magic Tray could not complete " + plan.Command + " on this PC, so do not assume the "
+        + "setting moved. Check it with bcdedit /enum {current} in an administrator Command "
+        + "Prompt, where you can also run the command yourself. Diagnostics -> Open logs has "
+        + "what the tray saw.";
+
+    // The way back, derived from the action rather than from the command text,
+    // so a reworded Command in TestModeSwitch cannot silently turn the revert
+    // line into the same command the user just ran.
+    internal static string RevertCommand(TestModePlan plan) =>
+        plan.Action == TestModeAction.Enable
+            ? "bcdedit /set testsigning off"
+            : "bcdedit /set testsigning on";
 }

@@ -73,7 +73,7 @@ Do **not** vendor or rebuild the KMDF driver here — that lives in `magic-mouse
 ## Hard product constraints
 
 - **0323 battery** is HID Input report `0x90` on COL02 only. Never Feature `0x47`, never WMI as a mouse battery source.
-- Tray never runs `bcdedit`, never silently enables Test Mode / disables HVCI.
+- Test Mode / HVCI changes are **explicit-user-approved only**: never silent, never automatic, never on startup or a poll. The tray may run `bcdedit /set testsigning on|off` (and the Core-isolation walkthrough) only after a per-action confirmation dialog that names the command, the reboot, the BitLocker recovery-key risk, and the revert path. Secure Boot on → report blocked, never attempt. Always offer the revert action.
 - Driver install paths are user-confirmed only; missing KMDF package → unavailable, never fall back to patching `applewirelessmouse.sys`.
 - Device catalog is code (`MouseBatteryDevice.KnownMice`, `KeyboardBatteryDevice.KnownKeyboards`), not README prose.
 

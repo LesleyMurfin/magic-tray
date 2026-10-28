@@ -14,9 +14,11 @@ namespace MagicMouseTray;
 //
 // READ-ONLY AND SECURITY-NEUTRAL BY CONSTRUCTION. This file never changes the
 // security posture of the machine and contains no code that could: no bcdedit
-// WRITE, no HVCI or Device Guard write, nothing that touches Secure Boot, no
-// signing or certificate change, no service install, no pnputil, no registry
-// write of any kind. ActionLabel / ActionUrlOrScript may only NAME a
+// WRITE, no HVCI or Device Guard write, no Secure Boot WRITE (the Secure Boot
+// state is read, and only read - it is firmware, and TestModeSwitch refuses an
+// action rather than ever attempting to change it), no signing or certificate
+// change, no service install, no pnputil, no registry write of any kind.
+// ActionLabel / ActionUrlOrScript may only NAME a
 // documentation URL or a script that already ships in a known package - this
 // file executes neither, and the caller is expected to open, not run, them.
 // The only process this file ever starts is at most one `bcdedit /enum
@@ -73,9 +75,19 @@ internal static class SystemConfigChecker
     internal const string WatcherFactId = "f1-watcher";
     internal const string RivalClaimantFactId = "rival-claimant";
 
+    // Raised only when Secure Boot is ON and this device actually has a signing
+    // story: Secure Boot is what makes `bcdedit /set testsigning on` fail with
+    // "The value is protected by Secure Boot policy", so without it the Test
+    // Mode fact would be telling the user to run a command that cannot work.
+    internal const string SecureBootFactId = "secure-boot";
+
     const string ControlKey = @"SYSTEM\CurrentControlSet\Control";
     const string HvciScenarioKey =
         @"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity";
+
+    // UEFI firmware publishes the Secure Boot state here and the value is
+    // readable without elevation, unlike bcdedit.
+    const string SecureBootStateKey = @"SYSTEM\CurrentControlSet\Control\SecureBoot\State";
 
     // Same page TrayApp.ShowFilterBlockedHelp opens for the blocked-filter
     // dialog, so the wording and the destination agree.
@@ -134,7 +146,11 @@ internal static class SystemConfigChecker
         DeviceDiagReader.F1WatcherState Watcher,
         DateTime NowUtc,
         bool? BoundDriverSelfSigned = null,
-        IReadOnlyList<DriverClaim>? Claims = null);
+        IReadOnlyList<DriverClaim>? Claims = null,
+        // Trailing and defaulted for the same reason as the two above: a
+        // caller that never took this reading gets "no evidence", and every
+        // existing construction site keeps compiling.
+        bool? SecureBootOn = null);
 
     internal static IReadOnlyList<ConfigFact> Check(DeviceKind kind, string? pid, DriverStatus? status)
     {
@@ -167,12 +183,17 @@ internal static class SystemConfigChecker
                     : new DeviceDiagReader.F1WatcherState(null, null, null),
                 NowUtc: DateTime.UtcNow,
                 BoundDriverSelfSigned: selfSigned,
-                Claims: ReadClaims(pid));
+                Claims: ReadClaims(pid),
+                // Same gate as the other two signing reads: a PC whose driver
+                // Windows trusts never has the Secure Boot question asked about
+                // it, so a healthy machine still takes no extra reading here.
+                SecureBootOn: signingRelevant ? ReadSecureBootOn() : null);
 
             var facts = Evaluate(kind, pid, status, readings);
             Logger.Log($"SYSTEM_CONFIG kind={kind} pid={NormalizePid(pid)} status={(status is null ? "unknown" : status.Value.ToString())} "
                 + $"role={role} path={path} selfsigned={Describe(selfSigned)} "
                 + $"testsigning={Describe(readings.TestSigningOn)} hvci={Describe(readings.HvciOn)} "
+                + $"secureboot={Describe(readings.SecureBootOn)} "
                 + $"package={Describe(readings.PackagePresent)} claims={DescribeCount(readings.Claims)} "
                 + $"facts={facts.Count} "
                 + $"blocking={CountOf(facts, ConfigSeverity.Blocking)}");
@@ -199,8 +220,17 @@ internal static class SystemConfigChecker
 
         if (role != SelfSignedRole.NotRelevant)
         {
-            facts.Add(TestModeFact(role, readings.TestSigningOn, readings.BoundDriverSelfSigned, v3));
+            facts.Add(TestModeFact(
+                role, readings.TestSigningOn, readings.BoundDriverSelfSigned, v3,
+                readings.SecureBootOn));
             facts.Add(MemoryIntegrityFact(role, readings.HvciOn, readings.BoundDriverSelfSigned, v3));
+
+            // Only a PC that both has a signing story AND cannot run the fix
+            // gets this row. A PC where Test Mode is already on is not told
+            // about Secure Boot at all: nothing is blocked there, and the whole
+            // point of the relevance gate is to never nag a working machine.
+            if (readings.SecureBootOn == true && readings.TestSigningOn != true)
+                facts.Add(SecureBootFact(v3));
         }
 
         if (path != PackagePath.None)
@@ -353,11 +383,28 @@ internal static class SystemConfigChecker
             ? ("Open the Magic Mouse v3 page", V3DocUrl)
             : ("Read what Test Mode means", SafetyDocUrl);
 
+    // Why Secure Boot belongs in the Test Mode wording: Secure Boot and test
+    // signing are mutually exclusive by design. With Secure Boot on, bcdedit
+    // rejects the write with "The value is protected by Secure Boot policy",
+    // so a detail that tells the user to run that command - or a button that
+    // offers to run it - would be telling them to do something that cannot
+    // work. Secure Boot is firmware, so the only honest instruction is the
+    // UEFI setup screen, and the tray must never attempt it (AGENTS.md:76).
+    const string SecureBootBlocksTestMode =
+        "Secure Boot is on, and that stops it: Windows refuses bcdedit /set testsigning on while "
+        + "Secure Boot is enabled (\"The value is protected by Secure Boot policy\"). Secure Boot "
+        + "is a firmware setting - it is changed in this PC's UEFI setup screen, not from Windows, "
+        + "and Magic Tray will never touch it. ";
+
     static ConfigFact TestModeFact(
-        SelfSignedRole role, bool? testSigningOn, bool? selfSigned, bool v3)
+        SelfSignedRole role, bool? testSigningOn, bool? selfSigned, bool v3, bool? secureBootOn)
     {
         var (label, url) = SigningDoc(v3);
         var clause = SelfSignedClause(role, selfSigned);
+        // Only a POSITIVE Secure Boot reading changes the instructions. Unknown
+        // keeps the normal wording: the command is still worth trying, and
+        // Windows refusing it is a clear message in itself.
+        var secureBoot = secureBootOn == true ? SecureBootBlocksTestMode : string.Empty;
 
         if (testSigningOn is null)
         {
@@ -366,8 +413,8 @@ internal static class SystemConfigChecker
                 "Test Mode state is unknown",
                 ConfigSeverity.Advisory,
                 "The tray could not read the test signing state on this PC, so it is not claiming "
-                + "anything either way. " + clause
-                + "If the wheel is dead, Test Mode is the first thing worth checking by hand.",
+                + "anything either way. " + clause + secureBoot
+                + "If the wheel is dead, Test Mode is the first thing worth checking.",
                 label,
                 url);
         }
@@ -388,15 +435,47 @@ internal static class SystemConfigChecker
             ? "Windows will not load it while Test Mode is off - the pointer keeps working and the "
                 + "wheel does not. "
             : "Windows will not load a self-signed driver while Test Mode is off. ";
+
+        // Two different endings, because under Secure Boot there is no step the
+        // tray can offer at all. Memory integrity stays a manual step in both:
+        // the tray never writes Device Guard policy.
+        var remedy = secureBootOn == true
+            ? secureBoot
+                + "Until that changes, Test Mode cannot be turned on here, and Magic Tray will not "
+                + "offer to try."
+            : "Turning Test Mode on is a change to how this PC loads drivers, so Magic Tray only "
+                + "does it when you ask: the Test Mode action on this row runs bcdedit /set "
+                + "testsigning on after a confirmation that names the command, the reboot and the "
+                + "BitLocker recovery-key risk, and it is reversible with bcdedit /set testsigning "
+                + "off. Memory integrity has to be turned off by hand in Windows Security -> "
+                + "Device security -> Core isolation - Magic Tray will not change that for you - "
+                + "and the PC has to be rebooted before either takes effect.";
         return new ConfigFact(
             TestModeFactId,
             "Test Mode is off",
             SigningSeverity(role, selfSigned),
-            clause + consequence
-            + "Three steps, in this order: in an administrator Command Prompt run "
-            + "bcdedit /set testsigning on, turn Memory integrity off in Windows Security -> "
-            + "Device security -> Core isolation, then reboot this PC. Magic Tray will not change "
-            + "any of that for you.",
+            clause + consequence + remedy,
+            label,
+            url);
+    }
+
+    // A row of its own, so the reason the Test Mode fix is unavailable is not
+    // buried in another fact's paragraph. Advisory, never Blocking: Secure Boot
+    // is not a broken state, it is a correctly secured PC whose owner has to
+    // decide. The Blocking call stays with the Test Mode / Memory integrity
+    // facts, where it is backed by a measured self-signed driver in use.
+    static ConfigFact SecureBootFact(bool v3)
+    {
+        var (label, url) = SigningDoc(v3);
+        return new ConfigFact(
+            SecureBootFactId,
+            "Secure Boot is on",
+            ConfigSeverity.Advisory,
+            SecureBootBlocksTestMode
+            + "Turning Secure Boot off lowers this PC's boot security, and on a BitLocker-protected "
+            + "PC it can ask for the 48-digit recovery key at the next boot - find that key before "
+            + "changing anything. If you would rather not, the alternative is a driver Windows "
+            + "already trusts: stock Windows HID keeps the pointer working without any of this.",
             label,
             url);
     }
@@ -804,7 +883,10 @@ internal static class SystemConfigChecker
     // we fall back to exactly one `bcdedit /enum {current}` READ. bcdedit needs
     // elevation, so an unelevated tray simply gets null, which can never become
     // Blocking.
-    static bool? ReadTestSigningOn()
+    // internal, not private: the Test Mode confirmation dialog re-reads this at
+    // click time rather than trusting the fact the panel was built from, so the
+    // command it is about to run is decided from the state the PC is in NOW.
+    internal static bool? ReadTestSigningOn()
     {
         try
         {
@@ -917,6 +999,43 @@ internal static class SystemConfigChecker
         catch (Exception ex)
         {
             Logger.Log($"SYSTEM_CONFIG_HVCI_FAILED err={ex.Message}");
+            return null;
+        }
+    }
+
+    // HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State : UEFISecureBootEnabled
+    // is published by the loader, is a plain DWORD, and reads without elevation
+    // - unlike `bcdedit /enum`, and unlike Confirm-SecureBootUEFI, which throws
+    // on a legacy-BIOS PC.
+    //
+    // Tri-state exactly like the two readings above. A MISSING key is a real
+    // answer, not a failure: a legacy BIOS / CSM PC has no Secure Boot at all,
+    // which for every decision this file makes is indistinguishable from Secure
+    // Boot off. An exception is no evidence, and no evidence must never be read
+    // as "blocked" - BuildPlan only refuses an Enable on a POSITIVE reading.
+    internal static bool? ReadSecureBootOn()
+    {
+        try
+        {
+            using var state = Registry.LocalMachine.OpenSubKey(SecureBootStateKey, writable: false);
+            if (state is null)
+                return false;
+
+            var value = state.GetValue("UEFISecureBootEnabled");
+            if (value is null)
+                return false;
+
+            return value switch
+            {
+                int i => i != 0,
+                uint u => u != 0,
+                long l => l != 0,
+                _ => null,
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SYSTEM_CONFIG_SECUREBOOT_FAILED err={ex.Message}");
             return null;
         }
     }

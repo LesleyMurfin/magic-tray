@@ -306,6 +306,7 @@
         <summary>Show the technical details</summary>
         <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
         <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is on the branch, with scroll and battery mutually exclusive.</p>
+        <p>The tray can run that <code>bcdedit /set testsigning on</code> for you, and <code>bcdedit /set testsigning off</code> to put it back — but only when you click the item and accept a dialog that names the exact command, the reboot it needs, the protection you are giving up and the chance Windows asks for your BitLocker recovery key on the next boot. It never happens at startup, on a timer or without that dialog, the undo is always on offer, and if Secure Boot is on the tray tells you the change is blocked and does not try it. Memory integrity and Secure Boot it never touches at all: those two stay yours to change in Windows.</p>
       </details>
 
       <h2 id="faq">Questions</h2>

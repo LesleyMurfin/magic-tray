@@ -302,7 +302,7 @@ KMDF sources live in [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfi
 
 The v1/v2 and `030E` paths never call `pnputil` to install: `OfferV1V2ScrollFix` and `OfferTrackpadV1BootCamp` open the documented GitHub page and stop. `OfferV1V2StockRestore` unbinds `applewirelessmouse` on that PID only, leaving `HidBth`.
 
-There is no `bcdedit` call anywhere in the app. Test signing and HVCI are the user's own manual steps.
+The only `bcdedit` the app can ever run is `bcdedit /set testsigning on` or `bcdedit /set testsigning off`, and only from a menu click you confirm in a dialog that names the exact command, the reboot it needs, the security downgrade it is, and the BitLocker recovery-key prompt it can cause. Never at startup, never from a poll, never silently, and the revert (`bcdedit /set testsigning off`) is always offered. With Secure Boot on the app reports the action as blocked and does not attempt it. Memory integrity (HVCI) and Secure Boot are never changed by the app at all — those stay your own manual steps.
 
 ---
 
@@ -355,9 +355,9 @@ Signing secrets are empty, so v1.1.0 shipped without the Microsoft check and Win
 
 | Level | What it takes | What it removes |
 |---|---|---|
-| Unsigned (today) | nothing | nothing. SmartScreen warns on the app; the 2024-mouse driver needs test signing on and HVCI off |
+| Unsigned (today) | nothing | nothing. SmartScreen warns on the app; the 2024-mouse driver needs test signing on (the tray can switch that for you, after a confirmation dialog) and HVCI off (yours to do by hand) |
 | Authenticode OV or EV | a code-signing certificate from a public CA in a verified name, renewed yearly | the app's SmartScreen warning. EV clears it immediately, OV needs reputation to build |
-| Driver attestation | an EV certificate plus a Microsoft Partner Center account | lets the driver load with no test signing and no HVCI change |
+| Driver attestation | an EV certificate plus a Microsoft Partner Center account | lets the driver load with no test signing and no HVCI change — nothing to confirm, nothing to revert |
 | WHQL | attestation plus passing the Hardware Lab Kit test suite | Windows Update distribution |
 
 The pipeline is already wired: `scripts/sign-app.ps1` runs on `v*` tags when `SIGN_PFX_BASE64` and `SIGN_PFX_PASSWORD` exist. A self-signed PFX is not enough; it must be a real CA-issued certificate in a verified name, or Windows treats it as untrusted.
