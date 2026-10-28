@@ -19,10 +19,19 @@ namespace MagicMouseTray.Tests;
 /// none of the consent, and with nothing on screen saying the pointer was
 /// about to stop.
 ///
-/// This is pinned as data rather than as a dialog: which commands mutate, and
-/// what each one asks, is a fact about the menu that can be read without a
-/// message pump. A command added later with no confirmation text fails here,
-/// which is the point - the gate is the rule, not a habit.
+/// These are the commands the menu asks about itself, and the menu is built
+/// out of exactly these entries: the flip item takes its label and its dialog
+/// from <see cref="TrayMenu.ReadBatteryCommand"/>, the restore from
+/// <see cref="TrayMenu.RestoreScrollModeCommand"/>, and the tray's own
+/// ApplyWindowsDeviceState from the two Windows device entries - each of them
+/// through <see cref="TrayMenu.Consented"/>, which is the gate itself and is
+/// pinned below. The driver radios and "Fix battery
+/// reads" are not here because their consent is raised one level down, in
+/// DriverInstaller.Offer*.
+///
+/// So a command added later with no confirmation text fails here AND is
+/// refused at runtime rather than running unasked - the gate is the rule, not
+/// a habit.
 /// </remarks>
 public class MutatingCommandConsentTests
 {
@@ -31,9 +40,13 @@ public class MutatingCommandConsentTests
     // is complete.
     const string Pid = "0323";
 
+    // Asked with a recorded setting to put back, which is the branch where
+    // every one of these commands really does elevate - the branch these
+    // tests are about. The no-sentinel restore wording is pinned on its own
+    // below.
     static TrayDeviceCommand Command(string id)
     {
-        var matches = TrayMenu.MutatingCommands(Pid)
+        var matches = TrayMenu.MutatingCommands(Pid, hasRecordedSetting: true)
             .Where(c => string.Equals(c.Id, id, StringComparison.Ordinal))
             .ToList();
         return Assert.Single(matches);
@@ -42,7 +55,7 @@ public class MutatingCommandConsentTests
     [Fact]
     public void MutatingCommands_EveryOneOfThemAsksBeforeItChangesAnything()
     {
-        var commands = TrayMenu.MutatingCommands(Pid);
+        var commands = TrayMenu.MutatingCommands(Pid, hasRecordedSetting: true);
         Assert.NotEmpty(commands);
 
         foreach (var command in commands)
@@ -85,7 +98,7 @@ public class MutatingCommandConsentTests
     [Fact]
     public void MutatingCommands_CoverTheCommandsTheMenuActuallyRuns()
     {
-        var ids = TrayMenu.MutatingCommands(Pid).Select(c => c.Id).ToList();
+        var ids = TrayMenu.MutatingCommands(Pid, hasRecordedSetting: true).Select(c => c.Id).ToList();
 
         Assert.Contains(TrayMenu.CommandReadBattery, ids);
         Assert.Contains(TrayMenu.CommandRestoreScrollMode, ids);
@@ -108,7 +121,7 @@ public class MutatingCommandConsentTests
         var restore = Command(TrayMenu.CommandRestoreScrollMode);
 
         Assert.Equal(ModeFlipView.OfferText(Pid), flip.ConfirmText);
-        Assert.Equal(ModeFlipView.RestoreOfferText(), restore.ConfirmText);
+        Assert.Equal(ModeFlipView.RestoreOfferText(hasRecordedSetting: true), restore.ConfirmText);
 
         // Same gate, different sentence: the restore takes no reading, so the
         // flip's offer would describe a cost this command does not pay and
@@ -131,7 +144,7 @@ public class MutatingCommandConsentTests
     [Fact]
     public void MutatingCommands_LeaveTheTrayOnlySwitchAlone()
     {
-        var commands = TrayMenu.MutatingCommands(Pid);
+        var commands = TrayMenu.MutatingCommands(Pid, hasRecordedSetting: true);
 
         // "Show in Magic Tray" writes enabled_<pid> in config.ini and nothing
         // else: no elevation, no PnP change, nothing that can fail. Gating it
@@ -149,9 +162,9 @@ public class MutatingCommandConsentTests
     }
 
     [Fact]
-    public void RestoreOfferText_NamesEveryCostBeforeConsent()
+    public void RestoreOfferText_WithARecordedSetting_NamesEveryCostBeforeConsent()
     {
-        var text = ModeFlipView.RestoreOfferText();
+        var text = ModeFlipView.RestoreOfferText(hasRecordedSetting: true);
 
         Assert.Contains("?", text, StringComparison.Ordinal);
 
@@ -178,5 +191,63 @@ public class MutatingCommandConsentTests
         // never be clamped into one.
         Assert.True(text.Length > TrayMenu.MenuTextMaxChars);
         Assert.NotEqual(ModeFlipView.RestoreItemLabel, text);
+    }
+
+    [Fact]
+    public void RestoreOfferText_WithNothingRecorded_ChargesNoneOfThoseCosts()
+    {
+        var text = ModeFlipView.RestoreOfferText(hasRecordedSetting: false);
+
+        // ModeFlip.RestoreModeBCore returns on this path after looking at the
+        // mouse: no elevation, no registry write, no device restart. The
+        // offer that leads into it may not charge for them - a user whose
+        // wheel may already be dead would be talked out of a free look.
+        Assert.Contains("?", text, StringComparison.Ordinal);
+        Assert.Contains("No administrator approval", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("no setting is written", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not restarted", text, StringComparison.OrdinalIgnoreCase);
+
+        // Still an offer in this file's vocabulary, and refusing is still free.
+        Assert.Contains("scroll mode", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Cancel", text, StringComparison.Ordinal);
+
+        // Rule 2 holds on this branch too: nothing has run, so nothing may be
+        // claimed about the end state.
+        Assert.DoesNotContain("is back in scroll mode", text, StringComparison.OrdinalIgnoreCase);
+
+        // And it is not the recorded-setting offer, which states three costs
+        // this click does not spend.
+        Assert.NotEqual(ModeFlipView.RestoreOfferText(hasRecordedSetting: true), text);
+    }
+
+    [Fact]
+    public void Consented_AsksWithThisCommandsOwnTextAndOnlyYesGetsThrough()
+    {
+        var command = Command(TrayMenu.CommandRestoreScrollMode);
+
+        string? shown = null;
+        Assert.True(TrayMenu.Consented(command, t => { shown = t; return true; }));
+        Assert.Equal(command.ConfirmText, shown);
+
+        // Anything that is not an approval is a refusal, and the elevated
+        // action the click handler runs sits behind this false.
+        shown = null;
+        Assert.False(TrayMenu.Consented(command, t => { shown = t; return false; }));
+        Assert.Equal(command.ConfirmText, shown);
+    }
+
+    [Fact]
+    public void Consented_ACommandWithNoConsentTextIsNeverAskedAndNeverRuns()
+    {
+        var asked = false;
+        bool Ask(string _) { asked = true; return true; }
+
+        Assert.False(TrayMenu.Consented(new TrayDeviceCommand("unworded", "Do it", null), Ask));
+        Assert.False(asked);
+
+        // Blank is the same defect wearing a string: there is nothing on
+        // screen for the user to agree to.
+        Assert.False(TrayMenu.Consented(new TrayDeviceCommand("unworded", "Do it", "   "), Ask));
+        Assert.False(asked);
     }
 }

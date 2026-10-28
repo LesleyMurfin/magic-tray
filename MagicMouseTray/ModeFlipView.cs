@@ -99,12 +99,20 @@ internal static class ModeFlipView
     }
 
     /// <summary>
-    /// The confirmation shown BEFORE "Restore scroll mode" runs, by rule 1.
-    /// That item costs exactly what the flip costs - one administrator
-    /// approval, one setting written, one device restart with the pointer
-    /// gone while Windows rebuilds the connection - and it used to charge all
-    /// three on a single click with nothing on screen.
+    /// The confirmation shown BEFORE "Restore scroll mode" runs, by rule 1,
+    /// worded on what the click is actually going to cost. With a setting
+    /// recorded to put back that is exactly what the flip costs - one
+    /// administrator approval, one setting written, one device restart with
+    /// the pointer gone while Windows rebuilds the connection - and it used
+    /// to charge all three on a single click with nothing on screen.
     /// </summary>
+    /// <param name="hasRecordedSetting">
+    /// <see cref="ModeFlip.HasRecordedRestore"/>: is there a recorded setting
+    /// this restore can put back? Without one, RestoreModeB reads the mouse
+    /// and reports - it elevates nothing, writes nothing and restarts
+    /// nothing - so naming those three costs anyway would talk a user whose
+    /// wheel may already be dead out of a look that costs them nothing.
+    /// </param>
     /// <remarks>
     /// Deliberately not <see cref="OfferText"/>: that one promises a battery
     /// level this command never takes. Deliberately not
@@ -112,18 +120,27 @@ internal static class ModeFlipView
     /// scrolling may ALREADY be dead, which is a different thing to tell a
     /// user who is about to stop a mouse that is working right now.
     ///
-    /// By rule 2 it promises nothing about the end state: nothing has run yet,
+    /// By rule 2 neither branch promises an end state: nothing has run yet,
     /// so the only honest wording is what the attempt will do and check.
     /// </remarks>
-    internal static string RestoreOfferText() =>
-        "Put this mouse back in scroll mode?\n\n"
-        + RestorePromise + "\n\n"
-        + "What that costs:\n\n"
-        + "- Windows restarts the device to apply the setting, so the pointer and scrolling "
-        + "stop for a few seconds. That is expected and it is not a fault.\n"
-        + "- Nothing is installed or removed, the mouse stays paired, and the driver you chose "
-        + "for it does not change.\n\n"
-        + "OK puts it back. Cancel changes nothing.";
+    internal static string RestoreOfferText(bool hasRecordedSetting) =>
+        hasRecordedSetting
+        ? "Put this mouse back in scroll mode?\n\n"
+            + RestorePromise + "\n\n"
+            + "What that costs:\n\n"
+            + "- Windows restarts the device to apply the setting, so the pointer and scrolling "
+            + "stop for a few seconds. That is expected and it is not a fault.\n"
+            + "- Nothing is installed or removed, the mouse stays paired, and the driver you "
+            + "chose for it does not change.\n\n"
+            + "OK puts it back. Cancel changes nothing."
+        : "Check this mouse and put it back in scroll mode?\n\n"
+            + "Magic Tray has no setting recorded for this mouse, so there is nothing stored to "
+            + "put back. It will look at the mouse and tell you what it finds: whether scrolling "
+            + "is on, and if it is not, how to get it back by hand.\n\n"
+            + "What that costs: nothing. No administrator approval is asked for, no setting is "
+            + "written and the device is not restarted, so the pointer and scrolling do not "
+            + "stop.\n\n"
+            + "OK takes the look. Cancel changes nothing.";
 
     /// <summary>
     /// What the user sees once the cycle has finished, one branch per

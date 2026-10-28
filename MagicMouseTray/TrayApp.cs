@@ -477,8 +477,8 @@ internal static class TrayMenu
             or DriverStatus.StockKmdf;
     }
 
-    // ---- the third source of device rows ---------------------------------
-
+    // The third source of device rows, after the poll and the health sweep.
+    //
     // A device the user stopped in Windows loses both of the sources above.
     // The poll (DeviceRegistry.Discover) walks live HID interfaces and an
     // administratively disabled devnode has none, so nothing is enumerated
@@ -597,20 +597,27 @@ internal static class TrayMenu
         return rows;
     }
 
-    // ---- consent ---------------------------------------------------------
-
-    // Every tray command that changes the device or its driver, and the words
-    // it says before it changes anything. The rule it states is the one the
-    // rest of this menu already kept: a mutating command asks first, and the
-    // cost is on screen before the user agrees to it rather than after
-    // Windows has raised its own prompt.
+    // The mutating tray commands whose consent dialog the menu raises itself,
+    // and the exact words each one shows before it changes anything. The rule
+    // they state is the one the rest of this menu already kept: the cost is on
+    // screen before the user agrees to it, rather than after Windows has
+    // raised its own prompt. The click handlers build their items and their
+    // dialogs out of these entries and run behind Consented, so an entry here
+    // is the text the user actually reads.
     //
-    // "Restore scroll mode" was the one that did not. It ran an elevated
+    // "Restore scroll mode" was the one that did not ask. It ran an elevated
     // registry write and a device restart on a single click - the same cost
     // as the flip one row above it, with none of the consent.
     //
+    // Not every command that mutates: the three driver radios and "Fix
+    // battery reads" change driver state too, and their consent is raised one
+    // level down, inside DriverInstaller.OfferV3KmdfInstallAsync,
+    // OfferV3PathAInstallAsync, OfferV3StockRestoreAsync and
+    // OfferKeyboardSdpPatch - each an OK/Cancel prompt that runs nothing on
+    // Cancel. This table is the half of the rule the menu keeps itself.
+    //
     // The ids are stable so a command can be named without depending on its
-    // wording, and the labels are the menu's own constants so this table
+    // wording, and the labels are the menu's own constants, so an entry
     // cannot describe an item the menu does not have, or miss the wording
     // when one of them is renamed.
     internal const string CommandReadBattery = "read-battery";
@@ -618,14 +625,48 @@ internal static class TrayMenu
     internal const string CommandStartInWindows = "start-in-windows";
     internal const string CommandStopInWindows = "stop-in-windows";
 
-    internal static IReadOnlyList<TrayDeviceCommand> MutatingCommands(string pid) =>
+    internal static TrayDeviceCommand ReadBatteryCommand(string pid) =>
+        new(CommandReadBattery, ModeFlipView.MenuItemLabel(), ModeFlipView.OfferText(pid));
+
+    // hasRecordedSetting is ModeFlip.HasRecordedRestore(), read at click time:
+    // with nothing recorded the restore elevates nothing and writes nothing,
+    // and the offer says that instead of charging for an approval, a setting
+    // and a device restart the click will not spend.
+    internal static TrayDeviceCommand RestoreScrollModeCommand(bool hasRecordedSetting) =>
+        new(CommandRestoreScrollMode, ModeFlipView.RestoreItemLabel,
+            ModeFlipView.RestoreOfferText(hasRecordedSetting));
+
+    internal static TrayDeviceCommand StartInWindowsCommand =>
+        new(CommandStartInWindows, StartInWindows, StartInWindowsPrompt);
+
+    internal static TrayDeviceCommand StopInWindowsCommand =>
+        new(CommandStopInWindows, StopInWindows, StopInWindowsPrompt);
+
+    internal static IReadOnlyList<TrayDeviceCommand> MutatingCommands(
+        string pid, bool hasRecordedSetting) =>
     [
-        new(CommandReadBattery, ModeFlipView.MenuItemLabel(), ModeFlipView.OfferText(pid)),
-        new(CommandRestoreScrollMode, ModeFlipView.RestoreItemLabel, ModeFlipView.RestoreOfferText()),
-        new(CommandStartInWindows, StartInWindows, StartInWindowsPrompt),
-        new(CommandStopInWindows, StopInWindows, StopInWindowsPrompt),
+        ReadBatteryCommand(pid),
+        RestoreScrollModeCommand(hasRecordedSetting),
+        StartInWindowsCommand,
+        StopInWindowsCommand,
     ];
 
+    // The gate each of those commands runs behind. ask puts the command's own
+    // consent text on screen and answers true only for OK, and the caller
+    // reaches the elevated action only through a true answer - so "state the
+    // cost, then change the device" is this one method rather than a
+    // hand-written copy inside every click handler.
+    //
+    // A command carrying no consent text is never asked and never runs: an
+    // unworded mutating command is the bug this table exists to catch, and
+    // refusing to run it is the half of that which is safe at runtime.
+    internal static bool Consented(TrayDeviceCommand command, Func<string, bool> ask)
+    {
+        ArgumentNullException.ThrowIfNull(ask);
+        if (string.IsNullOrWhiteSpace(command.ConfirmText))
+            return false;
+        return ask(command.ConfirmText);
+    }
 
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
@@ -1854,18 +1895,15 @@ internal sealed class TrayApp : IDisposable
                 var flipPid = pid;
                 var flipName = name;
                 var flipKind = kind;
-                var flip = new ToolStripMenuItem(TrayMenu.MenuText(ModeFlipView.MenuItemLabel()));
+                var flipCommand = TrayMenu.ReadBatteryCommand(flipPid);
+                var flip = new ToolStripMenuItem(TrayMenu.MenuText(flipCommand.Label));
                 flip.Click += (_, _) =>
                 {
                     // The one confirmation, stating the cost before consent.
                     // Cancel does nothing at all: nothing elevated, nothing
                     // written, and no driver choice persisted - a reading does
                     // not change which driver the user picked.
-                    var answer = System.Windows.Forms.MessageBox.Show(
-                        ModeFlipView.OfferText(flipPid), TrayMenu.ProductName,
-                        System.Windows.Forms.MessageBoxButtons.OKCancel,
-                        System.Windows.Forms.MessageBoxIcon.Information);
-                    if (answer != System.Windows.Forms.DialogResult.OK)
+                    if (!TrayMenu.Consented(flipCommand, AskOkCancelInfo))
                         return;
                     _ = RunDriverActionAsync(async () =>
                     {
@@ -1885,18 +1923,18 @@ internal sealed class TrayApp : IDisposable
                 var restore = new ToolStripMenuItem(TrayMenu.MenuText(ModeFlipView.RestoreItemLabel));
                 restore.Click += (_, _) =>
                 {
-                    // The same gate the flip above has, because this click
-                    // costs the same: one administrator approval, one
-                    // elevated registry write, and a device restart that
-                    // stops the pointer while Windows rebuilds the
-                    // connection. It used to pay all three on a single click
-                    // with nothing on screen. Cancel does nothing at all -
-                    // nothing elevated, nothing written, nothing restarted.
-                    var answer = System.Windows.Forms.MessageBox.Show(
-                        ModeFlipView.RestoreOfferText(), TrayMenu.ProductName,
-                        System.Windows.Forms.MessageBoxButtons.OKCancel,
-                        System.Windows.Forms.MessageBoxIcon.Information);
-                    if (answer != System.Windows.Forms.DialogResult.OK)
+                    // The same gate the flip above has. What this click costs
+                    // depends on whether ModeFlip recorded a setting to put
+                    // back, so the offer is worded on that reading and the
+                    // reading is taken HERE, at click time: a flip run after
+                    // this menu was built writes the sentinel the restore
+                    // then has to spend an approval, a registry write and a
+                    // device restart on. It used to pay all three on a single
+                    // click with nothing on screen. Cancel does nothing at
+                    // all - nothing elevated, nothing written, nothing
+                    // restarted.
+                    var command = TrayMenu.RestoreScrollModeCommand(ModeFlip.HasRecordedRestore());
+                    if (!TrayMenu.Consented(command, AskOkCancelInfo))
                         return;
                     _ = RunDriverActionAsync(async () =>
                     {
@@ -2067,6 +2105,26 @@ internal sealed class TrayApp : IDisposable
         return snapshot.PointerChildLive;
     }
 
+    // The tray's side of TrayMenu.Consented: one OK/Cancel dialog carrying the
+    // command's own text, where only OK is a yes - closing the dialog counts
+    // as Cancel. Two of them because the icon is part of the message: Warning
+    // where the command itself is the risky thing (a device stopped in
+    // Windows, a device started again), Information where the command is a
+    // routine action with a stated pause.
+    static bool AskOkCancelInfo(string text) =>
+        System.Windows.Forms.MessageBox.Show(
+            text, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Information)
+        == System.Windows.Forms.DialogResult.OK;
+
+    static bool AskOkCancelWarning(string text) =>
+        System.Windows.Forms.MessageBox.Show(
+            text, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning)
+        == System.Windows.Forms.DialogResult.OK;
+
     // One elevated PnP change, with every outcome DeviceEnable can report
     // said in its own words. Nothing here rolls the tray state back: the tray
     // state is not what this changes.
@@ -2086,12 +2144,8 @@ internal sealed class TrayApp : IDisposable
             return;
         }
 
-        var confirm = System.Windows.Forms.MessageBox.Show(
-            enable ? TrayMenu.StartInWindowsPrompt : TrayMenu.StopInWindowsPrompt,
-            TrayMenu.ProductName,
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
-            System.Windows.Forms.MessageBoxIcon.Warning);
-        if (confirm != System.Windows.Forms.DialogResult.OK)
+        var command = enable ? TrayMenu.StartInWindowsCommand : TrayMenu.StopInWindowsCommand;
+        if (!TrayMenu.Consented(command, AskOkCancelWarning))
             return;
 
         DeviceEnableResult result;
