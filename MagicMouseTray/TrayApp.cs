@@ -275,6 +275,22 @@ internal static class TrayMenu
     internal static bool ShowFixKeyboard(DeviceKind kind, int pct) =>
         kind == DeviceKind.MagicKeyboard && pct == -2;
 
+    // The undo for that same patch. A Magic Keyboard only reports a real
+    // percent once the SDP unlock is in its Bluetooth record, so a percent the
+    // tray can read is the cheapest honest signal that there is something to
+    // undo. -2 is the blocked sentinel that opens "Fix battery reads" above,
+    // and it is excluded here, so the two items can never stand in the menu
+    // together: either the percent is blocked and the offer is to apply the
+    // unlock, or it reads and the offer is to take it back out.
+    //
+    // This is deliberately a weak test, exactly as the patch offer is. A
+    // read-back that says NotApplied, or a run that finds no backup for this
+    // keyboard, is the real guard, and it lives one layer down in
+    // DriverInstaller.OfferKeyboardSdpRestore - the menu cannot know whether a
+    // backup file still exists without going to disk on every menu open.
+    internal static bool ShowUndoKeyboardFix(DeviceKind kind, int pct) =>
+        kind == DeviceKind.MagicKeyboard && pct >= 0;
+
     internal const string TrackpadV1BootCampLabel = "Boot Camp";
 
     // Magic Trackpad v1 (030E) only. Not KMDF radios, not 0265/0324.
@@ -1583,6 +1599,17 @@ internal sealed class TrayApp : IDisposable
             var fix = new ToolStripMenuItem(TrayMenu.MenuText("Fix battery reads")) { ForeColor = Color.OrangeRed };
             fix.Click += (_, _) => RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
             item.DropDownItems.Add(fix);
+        }
+
+        // Not a warning: the keyboard is working, and this only puts the
+        // Bluetooth record back the way Windows wrote it, so it keeps the
+        // plain menu colour that "Fix battery reads" above deliberately does
+        // not.
+        if (TrayMenu.ShowUndoKeyboardFix(kind, pct))
+        {
+            var undo = new ToolStripMenuItem(TrayMenu.MenuText("Undo battery fix"));
+            undo.Click += (_, _) => RunDriverAction(DriverInstaller.OfferKeyboardSdpRestore);
+            item.DropDownItems.Add(undo);
         }
 
         if (TrayMenu.ShowTrackpadV1BootCamp(kind, pid))
