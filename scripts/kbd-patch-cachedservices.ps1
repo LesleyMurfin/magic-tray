@@ -9,6 +9,12 @@
 # one directory: -LogPath's own, or %APPDATA%\MagicMouseTray by default, or
 # %TEMP%\MagicMouseTray if APPDATA is unset.
 #
+# A backup is named backup-<mac>-<subkey>-<value>-<stamp>.bin. The address is
+# part of the name because every keyboard ever patched on this PC drops its
+# backups into that one flat directory, and a value name like 00010000 repeats
+# across devices, so without the address -Restore could not tell one paired
+# keyboard's originals from another's.
+#
 # RUNNING THIS TWICE IS SAFE AND IS NOT AN ERROR (issue #162). The insert is
 # idempotent: a record that already carries `09 20 B1 02` beside `85 47` is
 # reported as already patched and left exactly as it is.
@@ -22,8 +28,21 @@
 # whole of this script's per-record isolation.
 #
 # -DryRun computes the patched bytes, saves them beside the backup as
-# patched-<subkey>-<value>-<stamp>.bin and writes NOTHING to the registry. It
-# is counted separately and never reports the unlock as installed.
+# patched-<mac>-<subkey>-<value>-<stamp>.bin and writes NOTHING to the
+# registry. It is counted separately and never reports the unlock as installed.
+#
+# -Restore is the undo, and it never patches: for each record it reads the
+# newest backup-<mac>-...bin in that same directory - the newest original is
+# the one that matches the current pairing - and writes it back over the live
+# bytes, having first saved those to
+# prerestore-<mac>-<subkey>-<value>-<stamp>.bin. A record whose registry value
+# has gone is counted as blocked rather than restored: Windows rebuilds these
+# records when a keyboard is paired again, and writing a stale blob into a
+# rebuilt key is exactly the damage this script must not do. A backup that
+# itself carries `09 20 B1 02` beside `85 47` is refused for the same reason -
+# it is a copy of a patched record, not an original. -Restore -DryRun runs
+# every one of those checks and writes nothing at all, not even the prerestore
+# copy.
 #
 # PowerShell rejects a malformed command line at parameter binding, before the
 # first line here runs, so that run leaves no log; every run that gets this far
@@ -51,6 +70,24 @@
 #      Outside -DryRun the unlocked records are real and need a Bluetooth
 #      toggle; the blocked ones are untouched and the log holds their bytes. A
 #      -DryRun that reaches this wrote nothing.
+#
+# Exit codes for -Restore, the same four meanings read as an undo:
+#   0  every record a backup names is stock again - put back by this run, or
+#      already stock - and nothing was blocked. Cycling Bluetooth is what makes
+#      hidbth re-read it. A -DryRun that would have restored also exits 0 and
+#      says in so many words that it wrote nothing.
+#   1  the run stopped before it could report: -Mac was not 12 hex digits, or
+#      something failed outside the per-record isolation above. The log holds
+#      it.
+#   2  there is no usable backup for this MAC in the backup directory, so there
+#      is nothing to undo: nothing was read from or written to the registry.
+#      The log names the directory it searched.
+#   3  nothing could be restored: every backup this run selected was blocked.
+#      The log says which, and why, per record.
+#   4  PARTIAL: at least one record is stock again AND at least one other was
+#      blocked. Outside -DryRun the restored records are real and need a
+#      Bluetooth toggle; the blocked ones still carry the unlock and are
+#      untouched. A -DryRun that reaches this wrote nothing.
 
 [CmdletBinding()]
 param(
@@ -64,16 +101,21 @@ param(
     # belongs to whichever account approved the UAC prompt.
     [string]$LogPath,
 
-    [switch]$DryRun
+    [switch]$DryRun,
+
+    # The undo. With -Restore this run only puts originals back and never
+    # patches, so the two jobs can never be asked for in one command line.
+    [switch]$Restore
 )
 
 # Stop on any error — backup must succeed before registry write proceeds (QA-SS-1)
 $ErrorActionPreference = 'Stop'
 
 # The log path comes first, before anything can fail, and the backups go beside
-# it: one directory holds this run's transcript, the backup-*.bin originals and
-# any -DryRun patched-*.bin. Nothing here depends on -Mac, and the run most
-# worth reading is the one that rejected its own arguments.
+# it: one directory holds this run's transcript, the backup-*.bin originals,
+# any -DryRun patched-*.bin and any -Restore prerestore-*.bin. Nothing here
+# depends on -Mac, and the run most worth reading is the one that rejected its
+# own arguments.
 # Unique per run, not per second: two runs started inside the same second must
 # not name one backup file, or the second would overwrite the originals the
 # first saved. A PID cannot be shared by two live processes.
@@ -84,7 +126,10 @@ if ([string]::IsNullOrWhiteSpace($LogPath)) {
     } else {
         Join-Path $env:TEMP 'MagicMouseTray'
     }
-    $LogPath = Join-Path $defaultDir "kbd-patch-$stamp.log"
+    # A restore's transcript must not read as a patch's when someone opens the
+    # directory later, so the default name says which job it was.
+    $logName = if ($Restore) { "kbd-restore-$stamp.log" } else { "kbd-patch-$stamp.log" }
+    $LogPath = Join-Path $defaultDir $logName
 }
 $LogPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
 $backupDir = Split-Path -Parent $LogPath
@@ -111,14 +156,18 @@ try {
 # tokens are MagicMouseTray/Logger.cs's, so the same address redacted at either
 # sink is the same string; only the shapes this script can write are ported,
 # and each is anchored on a delimiter an address carries but a hex dump does
-# not. The console copy is the operator's own screen and keeps the address, so
-# that "check the -Mac value" can be acted on.
+# not. The backup file names this script writes carry the address themselves,
+# so the third rule is anchored on those three prefixes - a shape Logger.cs
+# never emits and so does not own. The console copy is the operator's own
+# screen and keeps the address, so that "check the -Mac value" can be acted on
+# and the backup files can be found by name.
 function Write-Step {
     param([string]$Text)
     Write-Host $Text
     if ($script:logFailure) { return }
     $line = $Text -replace '\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', '<mac>'
     $line = $line -replace '(?<=\bmac=|\\Devices\\)[0-9A-Fa-f]{12}', '<mac>'
+    $line = $line -replace '(?<=\b(?:backup|patched|prerestore)-)[0-9A-Fa-f]{12}(?=-)', '<mac>'
     $line = $line -replace '(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)', '<user>'
     try {
         Add-Content -LiteralPath $LogPath -Value $line
@@ -149,7 +198,7 @@ $rawMac = $Mac
 $Mac = ($Mac -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
 if ($Mac.Length -ne 12) {
     $macError = "-Mac must be 12 hex digits (colons optional). Example: -Mac aabbccddeeff"
-    Write-Step "kbd-patch-cachedservices.ps1 mac=$rawMac dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
+    Write-Step "kbd-patch-cachedservices.ps1 mac=$rawMac dry_run=$($DryRun.IsPresent) restore=$($Restore.IsPresent) started $(Get-Date -Format s)"
     Write-Step "BAD ARGUMENT. $macError Nothing was read from or written to the registry."
     Write-Step "Log: $(Get-LogRef)"
     throw $macError
@@ -271,7 +320,226 @@ function Edit-Blob {
     return $new
 }
 
-Write-Step "kbd-patch-cachedservices.ps1 mac=$Mac dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
+# Does this blob already carry the unlock beside an `85 47` site? The patch
+# loop below asks the same question of a record's live bytes; -Restore asks it
+# of a file, because a saved blob that carries the insert is a copy of a
+# patched record and not the original it claims to be.
+function Test-BlobUnlocked {
+    param([byte[]]$Blob)
+    for ($site = 0; ($site + 1) -lt $Blob.Length; $site++) {
+        if ($Blob[$site] -ne $ridMarker[0] -or $Blob[$site + 1] -ne $ridMarker[1]) { continue }
+        $windowEnd = $site + 2 + $windowBytes
+        if ((Find-ByteSequence -Blob $Blob -Needle $insertBytes -Start ($site + 2) -End ($windowEnd + 2)) -ge 0) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# A record whose live bytes already equal its backup is stock already, and the
+# quietest restore is the one that writes nothing to it.
+function Test-BytesEqual {
+    param([byte[]]$Left, [byte[]]$Right)
+    if ($Left.Length -ne $Right.Length) { return $false }
+    for ($i = 0; $i -lt $Left.Length; $i++) {
+        if ($Left[$i] -ne $Right[$i]) { return $false }
+    }
+    return $true
+}
+
+# Which saved original belongs to which record.
+#
+# Every run drops its backups into one flat directory, so the file name is the
+# only index there is: backup-<mac>-<subkey>-<namePart>-<stamp>.bin. The subkey
+# is one of two literals and anchors the parse from the left, the stamp is
+# yyyyMMdd-HHmmss-<pid> and anchors it from the right, and between them sits a
+# name part that may itself contain '-' - which is why neither end is found by
+# counting separators.
+#
+# One record collects a backup per patch run, and the newest of them is the one
+# that matches the current pairing: Windows rebuilds these records when the
+# keyboard is paired again, so an older original describes a record that is no
+# longer there.
+function Select-NewestBackup {
+    param([string]$Directory)
+    $pattern = '^backup-' + [regex]::Escape($Mac) +
+        '-(?<subkey>CachedServices|DynamicCachedServices)-(?<name>.+)-(?<stamp>\d{8}-\d{6}-\d+)\.bin$'
+    try {
+        $files = @(Get-ChildItem -LiteralPath $Directory -Filter "backup-$Mac-*.bin" -File)
+    } catch {
+        Write-Step "The backup directory $Directory could not be listed: $($_.Exception.Message)"
+        return @()
+    }
+
+    $found = @()
+    foreach ($file in $files) {
+        $parsed = [regex]::Match($file.Name, $pattern)
+        if (-not $parsed.Success) { continue }
+        $found += [pscustomobject]@{
+            Subkey           = $parsed.Groups['subkey'].Value
+            NamePart         = $parsed.Groups['name'].Value
+            Stamp            = $parsed.Groups['stamp'].Value
+            FileName         = $file.Name
+            FullName         = $file.FullName
+            LastWriteTimeUtc = $file.LastWriteTimeUtc
+        }
+    }
+
+    # The stamp is the run that saved the file and sorts as text because it is
+    # written big-endian; the file's own timestamp breaks the tie between two
+    # runs of the same second, whose only difference is a process id.
+    $newestFirst = @(
+        @{ Expression = 'Stamp'; Descending = $true },
+        @{ Expression = 'LastWriteTimeUtc'; Descending = $true }
+    )
+    $newest = @()
+    foreach ($group in ($found | Group-Object -Property Subkey, NamePart)) {
+        $newest += @($group.Group | Sort-Object -Property $newestFirst)[0]
+    }
+    # Caller wraps this in @(), so the array is returned as it is: a unary
+    # comma around an empty result is what turns "no backup at all" into one
+    # nameless record.
+    return ($newest | Sort-Object -Property Subkey, NamePart)
+}
+
+# The undo, start to finish. It shares this script's header, log, -Mac
+# validation and summary shape with the patch below, and it always ends in its
+# own exit code: a -Restore run must never fall through into the patch loop.
+function Invoke-SdpRestore {
+    $restored = 0
+    $alreadyStock = 0
+    $blocked = 0
+    # -DryRun's own tally, kept apart for the reason $wouldPatch is: a run that
+    # writes nothing must never be able to report the cache as restored.
+    $wouldRestore = 0
+
+    $backups = @(Select-NewestBackup -Directory $backupDir)
+    if ($backups.Count -eq 0) {
+        Write-Step "NOTHING TO UNDO. No backup for this keyboard was found in $backupDir, so there is nothing to put back; nothing was read from or written to the registry. The unlock saves every original into that directory before it writes, so if it ran with a different -LogPath, point -LogPath at that directory and run -Restore again."
+        Write-Step "Log: $(Get-LogRef)"
+        exit 2
+    }
+    Write-Step "$($backups.Count) record(s) have a backup in $backupDir; for each one the newest backup is the original that matches the current pairing."
+
+    foreach ($backup in $backups) {
+        $path = "$base\$($backup.Subkey)"
+        $source = "$($backup.Subkey)\$($backup.NamePart)"
+        Write-Step "[$source] newest backup is $($backup.FileName)"
+
+        # The record has to still be there, and still be binary. A value that
+        # has gone is NOT one to recreate from an old blob: Windows rebuilds
+        # these records when the keyboard is paired again, and a stale original
+        # written into a rebuilt key is exactly the damage this script exists
+        # to avoid. One such record never stops the ones after it.
+        try {
+            if (-not (Test-Path $path)) { throw "$path is not present any more" }
+            $key = Get-ItemProperty $path
+            $live = $null
+            $valueName = $null
+            foreach ($prop in $key.PSObject.Properties) {
+                if ($prop.Name -match '^PS') { continue }
+                if ((ConvertTo-FileNamePart $prop.Name) -ne $backup.NamePart) { continue }
+                if ($null -ne $valueName) { throw "two values under $path have the same backup name" }
+                $valueName = $prop.Name
+                $live = $prop.Value
+            }
+            if ($null -eq $valueName) { throw "no value named $($backup.NamePart) is under $path any more" }
+            if ($live -isnot [byte[]]) { throw "the value named $($backup.NamePart) under $path is no longer binary" }
+        } catch {
+            $blocked++
+            Write-Step "[$source] BLOCKED, nothing was written: $($_.Exception.Message). Windows rebuilds these records when a keyboard is paired again, so this run cannot show that the backup belongs to what is under that name now, and writing the saved bytes into it could corrupt the cache."
+            continue
+        }
+
+        try {
+            $saved = [IO.File]::ReadAllBytes($backup.FullName)
+        } catch {
+            $blocked++
+            Write-Step "[$source] BLOCKED, nothing was written: $($backup.FileName) could not be read: $($_.Exception.Message)"
+            continue
+        }
+
+        if (Test-BlobUnlocked -Blob $saved) {
+            $blocked++
+            Write-Step "[$source] BLOCKED, nothing was written: $($backup.FileName) itself carries 09 20 b1 02 within $windowBytes bytes of an 85 47 site, so it holds a patched record and not an original. Putting it back would leave this record exactly as it is."
+            continue
+        }
+
+        if (Test-BytesEqual -Left $live -Right $saved) {
+            $alreadyStock++
+            Write-Step "[$source] already stock - the record is byte for byte its backup, so nothing was written."
+            continue
+        }
+
+        if ($DryRun) {
+            $wouldRestore++
+            Write-Step "[DRY-RUN] [$source] would be restored from $($backup.FileName): $($live.Length) bytes now, $($saved.Length) in the backup. Nothing was written, not even a prerestore copy."
+            continue
+        }
+
+        # The bytes being replaced are saved first, for the reason the patch
+        # saves the original first: a record this run cannot copy is a record
+        # it must not overwrite.
+        $preRestore = Join-Path $backupDir "prerestore-$Mac-$($backup.Subkey)-$($backup.NamePart)-$stamp.bin"
+        try {
+            [IO.File]::WriteAllBytes($preRestore, $live)
+        } catch {
+            $blocked++
+            Write-Step "[$source] BLOCKED: the bytes it holds now could not be saved to $preRestore ($($_.Exception.Message)), so this record was left exactly as it was."
+            continue
+        }
+        Write-Step "[$source] current bytes saved -> $preRestore"
+
+        try {
+            Set-ItemProperty -Path $path -Name $valueName -Value $saved -Type Binary
+        } catch {
+            $blocked++
+            Write-Step "[$source] BLOCKED: the registry write failed: $($_.Exception.Message) - this record still carries the unlock, and $preRestore holds the bytes it has now."
+            continue
+        }
+        $restored++
+        Write-Step "[$source] RESTORED from $($backup.FileName). Length back to $($saved.Length) bytes"
+    }
+
+    Write-Step ""
+    Write-Step "SUMMARY backups=$($backups.Count) restored=$restored already_stock=$alreadyStock blocked=$blocked would_restore=$wouldRestore"
+    $logRef = Get-LogRef
+    Write-Step "Log: $logRef"
+
+    # One blocked record is not a detail of a successful undo: it is the half of
+    # the cache that still carries the unlock, and the caller has to be told
+    # both halves.
+    $progress = $restored + $alreadyStock + $wouldRestore
+
+    if ($blocked -gt 0 -and $progress -gt 0) {
+        if ($DryRun) {
+            Write-Step "DRY-RUN PARTIAL. $wouldRestore record(s) would be put back and $alreadyStock already hold their original bytes, but $blocked could not be restored. Nothing was written by this run. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining case(s) can be handled."
+        } else {
+            Write-Step "PARTIAL. $restored record(s) were put back and $alreadyStock already held their original bytes, but $blocked could not be restored and were left exactly as they were - the log says why, record by record. The records that are stock again are real: toggle BT off/on for hidbth to re-read CachedServices. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining case(s) can be handled."
+        }
+        exit 4
+    }
+
+    if ($progress -gt 0) {
+        if ($wouldRestore -gt 0) {
+            Write-Step "DRY-RUN COMPLETE. $wouldRestore record(s) would be put back from the backups named above and $alreadyStock already hold their original bytes; the registry was NOT modified by this run and no prerestore copy was written. Re-run without -DryRun to undo the unlock."
+        } elseif ($restored -gt 0) {
+            Write-Step "DONE. The cached record is its original self again, so the battery percent will stop being reported for this keyboard. Toggle BT off/on for hidbth to re-read CachedServices."
+        } else {
+            Write-Step "NOTHING TO UNDO. Every record with a backup already holds its original bytes, so nothing was written and the unlock is not in this keyboard's cache."
+        }
+        exit 0
+    }
+
+    Write-Step "NOT RESTORED. $blocked backup(s) name a record this run could not put back, and nothing was written to the registry. Each record's line above says why. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining case(s) can be handled."
+    exit 3
+}
+
+Write-Step "kbd-patch-cachedservices.ps1 mac=$Mac dry_run=$($DryRun.IsPresent) restore=$($Restore.IsPresent) started $(Get-Date -Format s)"
+
+# -Restore is the whole run when it is asked for: it ends in its own summary
+# and its own exit code, and the patch loop below is never reached.
+if ($Restore) { Invoke-SdpRestore }
 
 # candidates: records carrying RID 0x47. The 84/85-byte service records in the
 # same key carry no battery report and vote on nothing.
@@ -341,8 +609,11 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
 
         # Backup first, and only for a record this run is about to change. A
         # record whose original cannot be saved is not one this run will touch.
+        # The address is part of the name because -Restore reads these files
+        # back out of a directory that holds every patched keyboard's backups,
+        # and a value name like 00010000 is the same on all of them.
         $namePart = ConvertTo-FileNamePart $prop.Name
-        $backup = Join-Path $backupDir "backup-$subkey-$namePart-$stamp.bin"
+        $backup = Join-Path $backupDir "backup-$Mac-$subkey-$namePart-$stamp.bin"
         try {
             [IO.File]::WriteAllBytes($backup, $val)
         } catch {
@@ -367,7 +638,7 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
         }
 
         if ($DryRun) {
-            $patchedFile = Join-Path $backupDir "patched-$subkey-$namePart-$stamp.bin"
+            $patchedFile = Join-Path $backupDir "patched-$Mac-$subkey-$namePart-$stamp.bin"
             try {
                 [IO.File]::WriteAllBytes($patchedFile, $new)
             } catch {
