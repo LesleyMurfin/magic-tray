@@ -32,6 +32,12 @@ python3 scripts/check-winget-manifest.py                                  # Wing
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 
+Those need only the .NET 8 SDK (plus `pwsh`, and PyYAML for the winget check) — there is no
+native toolchain and no Windows SDK to install. Releases are built by
+`.github/workflows/release.yml` on a `v*` tag, not by hand. Where the SDKs, the Windows SDK and
+the EWDK live on the maintainer workstation, and why the tests cannot run under WSL, is in
+[`BUILD-ENVIRONMENT.md`](BUILD-ENVIRONMENT.md).
+
 `DCO sign-off` fails if any commit you wrote lacks a `Signed-off-by` trailer
 (merge commits and bot commits — `dependabot[bot]`, `github-actions[bot]` — are
 skipped). Fix it with
