@@ -398,15 +398,21 @@ public class AdaptivePollerTests : IDisposable
         Assert.Equal(1, live.Reads);
     }
 
-    // F6. Rotation is for a scan that learned nothing. -2 is not nothing: it says the interface
-    // answered and the battery report is not exposed, and it is the only input to RepairPlanner
-    // rule 2d and to the elevated keyboard SDP patch offer. Rotating on it hands the next tick's
-    // first slot to the wedged interface, whose timeout ends that scan at -1 before the -2
-    // interface is ever reached - so the sentinel survives only every other tick and the repair
-    // offer flickers with it. The device here is stable across all four ticks; only the poller's
-    // own state could change the answer.
+    // F6. Rotation is for a scan that learned nothing, and the fact that tells the two apart is
+    // whether the scan was CUT SHORT - not which sentinel it ended on. A group every one of
+    // whose interfaces was examined and whose best answer was -2 has nowhere to rotate TO: any
+    // other start reads the same set and produces the same sentinel, so moving it buys nothing
+    // and costs the one thing -2 is for. -2 is the sole input to RepairPlanner rule 2d
+    // (RepairPlanner.cs:347, gated on DriverHealthChecker.IsKeyboardPid) and to the elevated
+    // keyboard SDP patch offer, and an offer that appears on alternate ticks is worse than one
+    // that never appears.
+    //
+    // The fixture is the one that rationale actually describes: every interface answers, nothing
+    // times out, no budget runs out. A group whose scan was cut short is the opposite case - it
+    // has interfaces it never examined, and those are reachable only by rotating - so it lives
+    // in the two tests below.
     [Fact]
-    public void ReadDevice_MinusTwoGroup_DoesNotRotateAndKeepsTheSentinelEveryTick()
+    public void ReadDevice_EveryInterfaceExaminedAndMinusTwo_DoesNotRotateAndKeepsTheSentinelEveryTick()
     {
         var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
 
@@ -414,14 +420,153 @@ public class AdaptivePollerTests : IDisposable
         {
             var launcher = new RecordingLauncher();
             int best = AdaptivePoller.ReadDevice(
-                "Magic Mouse",
-                [ScriptedDevice.Answers(Col(1), -2), ScriptedDevice.TimesOut(Col(2))],
+                "Magic Keyboard",
+                [ScriptedDevice.Answers(Col(1), -1), ScriptedDevice.Answers(Col(2), -2),
+                 ScriptedDevice.Answers(Col(3), -1)],
                 TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(1), scanStart, null, launcher.Launch);
 
             Assert.Equal(-2, best);
-            Assert.Equal(new[] { Col(1), Col(2) }, launcher.Launched);
-            Assert.Equal(0, StartOf(scanStart, "Magic Mouse"));
+            Assert.Equal(new[] { Col(1), Col(2), Col(3) }, launcher.Launched);
+            Assert.Equal(0, StartOf(scanStart, "Magic Keyboard"));
         }
+    }
+
+    // The other half of that rule, and the hole a sentinel-only test leaves open. One DeviceName
+    // group of three col02 interfaces: Col(1) fails fast at -2 (MouseBatteryDevice
+    // .ClassifyReadFailure answers -2 for ANY mouse read that never completed, on both the v3
+    // Input 0x90 path and the split path, so -2 is exactly what a dead interface looks like),
+    // Col(2) is wedged, Col(3) is live. The scan ends on Col(2)'s timeout with best = -2 and
+    // Col(3) unexamined.
+    //
+    // Keeping the start there is a permanent outage, not a stable diagnosis: every later tick
+    // repeats the same two reads, leaks another worker on the wedge, and reports "Battery
+    // unavailable (Windows sends no report)" for a mouse that would answer 61. Rotation is the
+    // only thing that can reach Col(3), so a scan that was cut short must rotate even at -2.
+    // Driven with no WedgeTracker so that rotation is the only mechanism under test.
+    [Fact]
+    public void ReadDevice_CutShortByATimeoutAtMinusTwo_RotatesAndReachesTheLiveInterface()
+    {
+        var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
+        var perRead = TimeSpan.FromSeconds(5);
+        var budget = TimeSpan.FromMinutes(1);
+        IReadOnlyList<IBatteryDevice> Interfaces() =>
+            [ScriptedDevice.Answers(Col(1), -2), ScriptedDevice.TimesOut(Col(2)),
+             ScriptedDevice.Answers(Col(3), 61)];
+
+        var tick1 = new RecordingLauncher();
+        Assert.Equal(-2, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, null, tick1.Launch));
+        Assert.Equal(new[] { Col(1), Col(2) }, tick1.Launched);
+        Assert.Equal(1, StartOf(scanStart, "Magic Mouse"));
+
+        // The wedge now holds the first slot and ends the scan before anything is established,
+        // which is the -1 case and rotates for the same reason.
+        var tick2 = new RecordingLauncher();
+        Assert.Equal(-1, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, null, tick2.Launch));
+        Assert.Equal(new[] { Col(2) }, tick2.Launched);
+        Assert.Equal(2, StartOf(scanStart, "Magic Mouse"));
+
+        // Third tick reaches the live interface and stays on it, so the wedge's worker is paid
+        // twice in total rather than once per tick forever.
+        var tick3 = new RecordingLauncher();
+        Assert.Equal(61, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, null, tick3.Launch));
+        Assert.Equal(new[] { Col(3) }, tick3.Launched);
+        Assert.Equal(2, StartOf(scanStart, "Magic Mouse"));
+    }
+
+    // The same hole without a timeout anywhere: the group budget cuts the scan at -2 instead.
+    // This is the case with no WedgeTracker relief at all - strikes count timeouts, so a scan
+    // cut by wall clock records none, never skips a path, and nothing but rotation can ever
+    // reach the interfaces behind the cut. Two 3 s reads spend a 5 s budget and Col(3) is never
+    // launched; on the next tick the rotated start puts it inside the budget.
+    [Fact]
+    public void ReadDevice_CutShortByTheGroupBudgetAtMinusTwo_RotatesWithNoWedgeReliefAvailable()
+    {
+        var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
+        var wedges = new WedgeTracker();
+        var perRead = TimeSpan.FromSeconds(5);
+        var budget = TimeSpan.FromSeconds(5);
+        IReadOnlyList<IBatteryDevice> Interfaces() =>
+            [ScriptedDevice.Answers(Col(1), -2, seconds: 3),
+             ScriptedDevice.Answers(Col(2), -1, seconds: 3),
+             ScriptedDevice.Answers(Col(3), 61, seconds: 3)];
+
+        var tick1 = new RecordingLauncher();
+        Assert.Equal(-2, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, wedges, tick1.Launch));
+        Assert.Equal(new[] { Col(1), Col(2) }, tick1.Launched);
+
+        // Nothing timed out, so no strike exists and no backoff will ever hand Col(3) a turn.
+        wedges.Tick();
+        Assert.False(wedges.ShouldSkip(Col(1)));
+        Assert.False(wedges.ShouldSkip(Col(2)));
+        Assert.Equal(1, StartOf(scanStart, "Magic Mouse"));
+
+        var tick2 = new RecordingLauncher();
+        Assert.Equal(61, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, wedges, tick2.Launch));
+        Assert.Equal(new[] { Col(2), Col(3) }, tick2.Launched);
+        Assert.Equal(1, StartOf(scanStart, "Magic Mouse"));
+    }
+
+    // The distinguishing fact is the cut, not the sentinel, so the sentinel alone must not start
+    // deciding either: a fully examined group that ended at -1 still rotates. It learned nothing
+    // and the next order is the only thing that could change that, exactly as before.
+    [Fact]
+    public void ReadDevice_EveryInterfaceExaminedAndMinusOne_StillRotates()
+    {
+        var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
+        var perRead = TimeSpan.FromSeconds(5);
+        var budget = TimeSpan.FromMinutes(1);
+        IReadOnlyList<IBatteryDevice> Interfaces() =>
+            [ScriptedDevice.Answers(Col(1), -1), ScriptedDevice.Answers(Col(2), -1)];
+
+        Assert.Equal(-1, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, null,
+            new RecordingLauncher().Launch));
+        Assert.Equal(1, scanStart["Magic Mouse"].Start);
+
+        Assert.Equal(-1, AdaptivePoller.ReadDevice(
+            "Magic Mouse", Interfaces(), perRead, budget, scanStart, null,
+            new RecordingLauncher().Launch));
+        Assert.Equal(0, scanStart["Magic Mouse"].Start);
+        Assert.Equal(1, scanStart["Magic Mouse"].Rotations);
+    }
+
+    // And the cut alone must not start deciding either. A real percentage ends the scan at the
+    // first interface that answers, so a reading from the first of three interfaces leaves two
+    // unexamined - the scan IS cut short - and it must still keep its start, because that start
+    // is precisely the one that produced the reading. "No real reading AND cut short" is the
+    // condition; "cut short" on its own would rotate off every working device every tick.
+    [Fact]
+    public void ReadDevice_RealReadingCutTheScanShort_KeepsItsStartAndPaysTheRotationDebt()
+    {
+        var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
+        var perRead = TimeSpan.FromSeconds(5);
+        var budget = TimeSpan.FromMinutes(1);
+        IReadOnlyList<IBatteryDevice> AllDead() =>
+            [ScriptedDevice.Answers(Col(1), -1), ScriptedDevice.Answers(Col(2), -1),
+             ScriptedDevice.Answers(Col(3), -1)];
+
+        for (int tick = 0; tick < 3; tick++)
+            Assert.Equal(-1, AdaptivePoller.ReadDevice(
+                "Magic Mouse", AllDead(), perRead, budget, scanStart, null,
+                new RecordingLauncher().Launch));
+        Assert.Equal(0, scanStart["Magic Mouse"].Start);
+        Assert.Equal(1, scanStart["Magic Mouse"].Rotations);
+
+        var answered = new RecordingLauncher();
+        Assert.Equal(61, AdaptivePoller.ReadDevice(
+            "Magic Mouse",
+            [ScriptedDevice.Answers(Col(1), 61), ScriptedDevice.Answers(Col(2), -1),
+             ScriptedDevice.Answers(Col(3), -1)],
+            perRead, budget, scanStart, null, answered.Launch));
+
+        Assert.Equal(new[] { Col(1) }, answered.Launched);
+        Assert.Equal(0, scanStart["Magic Mouse"].Start);
+        Assert.Equal(0, scanStart["Magic Mouse"].Rotations);
     }
 
     // The other two outcomes, for contrast: -1 learned nothing and must move on, a real
@@ -581,6 +726,63 @@ public class AdaptivePollerTests : IDisposable
         for (int tick = 0; tick < WedgeTracker.WedgeBackoffTicks; tick++)
             wedges.Tick();
         Assert.False(wedges.ShouldSkip(Col(1)));
+    }
+
+    // What the retry after the backoff is worth. The strike reset in RecordTimeout decides it:
+    // without it the first post-backoff timeout would re-skip the path on a single strike,
+    // forever, so an interface that was merely asleep would never get the two further reads that
+    // tell "asleep" from "wedged". With it, the retry's timeout opens a NEW outage and the path
+    // owes the full count again.
+    [Fact]
+    public void WedgeTracker_TimeoutAfterTheBackoffElapsed_OwesTheFullStrikeCountAgain()
+    {
+        var wedges = new WedgeTracker();
+        for (int strike = 0; strike < WedgeTracker.WedgeTimeoutStrikes; strike++)
+            wedges.RecordTimeout(Col(1));
+        Assert.True(wedges.ShouldSkip(Col(1)));
+
+        for (int tick = 0; tick < WedgeTracker.WedgeBackoffTicks; tick++)
+            wedges.Tick();
+        Assert.False(wedges.ShouldSkip(Col(1)));
+
+        // Strike one of the new outage, not strike four of the old one.
+        wedges.RecordTimeout(Col(1));
+        Assert.False(wedges.ShouldSkip(Col(1)));
+        wedges.RecordTimeout(Col(1));
+        Assert.False(wedges.ShouldSkip(Col(1)));
+        wedges.RecordTimeout(Col(1));
+        Assert.True(wedges.ShouldSkip(Col(1)));
+
+        // The new skip is anchored to the tick that armed it, so the second backoff is a whole
+        // window rather than whatever was left of the first one.
+        for (int tick = 0; tick < WedgeTracker.WedgeBackoffTicks - 1; tick++)
+            wedges.Tick();
+        Assert.True(wedges.ShouldSkip(Col(1)));
+        wedges.Tick();
+        Assert.False(wedges.ShouldSkip(Col(1)));
+    }
+
+    // The steady state those two rules produce for a permanently wedged interface, which is the
+    // leak rate the tracker exists to bound: three reads, then four cycles skipped, forever.
+    // Each of those three reads parks a thread-pool worker that no cancellation can recall, so
+    // this is 3 leaked workers per 6 poll cycles and not, as it was before the tracker, one per
+    // cycle. A test that stops at the first skip cannot see this number at all.
+    [Fact]
+    public void WedgeTracker_PermanentlyWedgedPath_ReadsThreeTimesEverySixCycles()
+    {
+        var wedges = new WedgeTracker();
+        var readOnCycle = new List<int>();
+
+        for (int cycle = 1; cycle <= 18; cycle++)
+        {
+            // PollLoop's order: one Tick per cycle, then the scan asks before it launches.
+            wedges.Tick();
+            if (wedges.ShouldSkip(Col(1))) continue;
+            readOnCycle.Add(cycle);
+            wedges.RecordTimeout(Col(1));
+        }
+
+        Assert.Equal(new[] { 1, 2, 3, 7, 8, 9, 13, 14, 15 }, readOnCycle);
     }
 
     // An interface that answered is not wedged, whatever it did before: the strikes count
@@ -784,6 +986,26 @@ public class AdaptivePollerTests : IDisposable
         Assert.Equal(1, poller.LoopStarts);
     }
 
+    // The same invariant from the other side. Start() publishes _pollTask and PollLoop owns the
+    // failure counts, the last-seen map and the scan state "single-writer by construction" - a
+    // claim only a guard can make true. A second Start() ran a second PollLoop over all of it,
+    // and concurrent writes to a Dictionary corrupt the bucket chain (a non-terminating Insert
+    // spin or an IndexOutOfRangeException, swallowed as POLL_CYCLE_ERROR); it also overwrote
+    // _pollTask, so Dispose waited on one loop and left the other running past tray shutdown.
+    // LoopStarts is incremented before PollLoop's first await, so it is published by the time
+    // Start() returns and this needs no waiting.
+    [Fact]
+    public void Start_CalledTwice_DoesNotStartASecondPollLoop()
+    {
+        using var poller = new AdaptivePoller(Config.Load(_path));
+
+        poller.Start();
+        poller.Start();
+        poller.Start();
+
+        Assert.Equal(1, poller.LoopStarts);
+    }
+
     // F2. The signal replaces the second PollLoop, so the poll loop's correctness is now this
     // object's. A signal must be remembered until the loop next waits (a refresh arriving while
     // the loop is mid-cycle must not be lost), and it must auto-reset so one refresh buys exactly
@@ -816,9 +1038,11 @@ public class AdaptivePollerTests : IDisposable
         Assert.False(await signal.WaitAsync(TimeSpan.Zero, CancellationToken.None));
     }
 
-    // The ordinary case: the interval expired and nobody asked for anything. The loop must be
-    // able to tell that apart from a refresh, because a refresh is the one case that must not
-    // reset the drain-rate schedule.
+    // The ordinary case: the interval expired and nobody asked for anything. False is what keeps
+    // WaitForNextCycle inside its slice loop - on to the deadline check and the 15 s device-set
+    // probe - instead of returning to PollLoop, which is how a 24 h interval is spent in slices
+    // rather than ended by the first one. The wait must also leave no signal behind for a later
+    // slice to consume as a wake it never received.
     [Fact]
     public async Task RefreshSignal_NoSignal_ReturnsFalseAtTheTimeout()
     {

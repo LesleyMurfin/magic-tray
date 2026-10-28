@@ -685,6 +685,15 @@ internal sealed class TrayApp : IDisposable
     // The snapshots the current _findings were planned from, so the device rows
     // can state per-capability health without a second read.
     IReadOnlyList<DeviceSnapshot> _snapshots = Array.Empty<DeviceSnapshot>();
+    // How many devices the sweep that produced _snapshots attempted. Travels
+    // with the list so the repair row can tell "every device was read and is
+    // clean" from "a device's read threw and is missing from the list" - a
+    // read that throws logs REPAIR_SNAPSHOT_FAILED and adds nothing
+    // (RepairPlanner.MenuLabel). 0 until the first sweep publishes, which is
+    // exactly the "the list is the whole sweep" default, so the menu built
+    // before any refresh keeps its original label; the menu's Opening handler
+    // refreshes before it is ever shown.
+    int _attemptedDeviceCount;
     readonly HashSet<string> _toastedFindings = new(StringComparer.OrdinalIgnoreCase);
     // One gate for the process: a fault has to persist across refreshes before it
     // is believed, so a driver install's stack churn cannot toast or offer a
@@ -832,7 +841,7 @@ internal sealed class TrayApp : IDisposable
         };
 
         _repairItem = new ToolStripMenuItem(
-            TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings, _snapshots)));
+            TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount)));
         if (_findings.Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
@@ -2285,12 +2294,17 @@ internal sealed class TrayApp : IDisposable
     {
         IReadOnlyList<RepairFinding> raw;
         IReadOnlyList<DeviceSnapshot> snapshots;
+        int attempted;
         try
         {
             // The reader cannot read a battery itself - the percent arrives as a
             // pushed HID input report the poller owns - so the tray hands it the
             // sentinels it already has.
             snapshots = DeviceSnapshotReader.Read(_config, _lastBatteryByPid);
+            // Read here, beside the sweep it describes: a PID whose read threw
+            // is logged as REPAIR_SNAPSHOT_FAILED and leaves no snapshot, so
+            // only this pair can tell a clean sweep from an incomplete one.
+            attempted = DeviceSnapshotReader.AttemptedDeviceCount;
             raw = RepairPlanner.Plan(snapshots);
         }
         catch (Exception ex)
@@ -2316,6 +2330,7 @@ internal sealed class TrayApp : IDisposable
         _findings = gated.Confirmed;
         _pendingFindings = gated.Pending;
         _snapshots = snapshots;
+        _attemptedDeviceCount = attempted;
 
         // Started here, exactly where the synchronous read stood, so the
         // refresh cadence is unchanged - but the reading itself runs on the
@@ -2329,7 +2344,8 @@ internal sealed class TrayApp : IDisposable
         {
             if (_repairItem != null)
             {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings, _snapshots);
+                _repairItem.Text =
+                    RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount);
                 _repairItem.ForeColor = _findings.Count > 0
                     ? Color.OrangeRed
                     : SystemColors.ControlText;
@@ -2854,7 +2870,8 @@ internal sealed class TrayApp : IDisposable
             // label, so the answer to "Check for problems now" cannot claim a
             // wider all-clear than the row directly above it.
             ToastNotifier.Show(
-                TrayMenu.ProductName, $"{RepairPlanner.MenuLabel(_findings, _snapshots)}.");
+                TrayMenu.ProductName,
+                $"{RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount)}.");
             return;
         }
 

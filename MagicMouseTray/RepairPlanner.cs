@@ -458,9 +458,11 @@ internal static class RepairPlanner
     }
 
     // Was every driver/connection signal the rules can fire on actually
-    // resolved on this PC? Two of the four are tri-states whose null means
-    // "never measured": rule 2b fires only on FilterInStack == false (:276)
-    // and rule 2c only on PointerChildLive == false (:315), so on a PC where
+    // resolved on this PC - and did every device the sweep attempted produce
+    // a snapshot to resolve it on? Two of the four signals are tri-states
+    // whose null means "never measured": rule 2b fires only on
+    // FilterInStack == false and rule 2c only on PointerChildLive == false
+    // (both predicates are in PlanOne above), so on a PC where
     // DEVPKEY_Device_Stack is unreadable (TEST-PLAN D19) or no Bluetooth
     // COL01 child key exists (D26) both read null, no rule fires, and the
     // count of findings alone cannot tell "checked and clean" apart from
@@ -470,9 +472,9 @@ internal static class RepairPlanner
     // gates, so a null that exists because nothing was probed ON PURPOSE is
     // never counted as a gap:
     //   "bool? filterInStack = bth.InstanceCount > 0 && bound is not null"
-    //       (DeviceSnapshotReader.cs:168)
+    //       (the filterInStack assignment in DeviceSnapshotReader.ReadPid)
     //   "bool? pointerChildLive = bth.InstanceCount > 0"
-    //       (DeviceSnapshotReader.cs:181)
+    //       (the pointerChildLive assignment in the same method)
     // A device with no live BTHENUM instance is never probed at all - the
     // "do not pay for devices this PC never had" discipline - and a catalog
     // device this PC never owned must not drag the row down to the weaker
@@ -483,11 +485,30 @@ internal static class RepairPlanner
     // would pin the weaker wording permanently on every keyboard-only PC. A
     // bound filter whose stack read failed is the real gap.
     //
+    // The second gap is a device with NO snapshot at all, which the loop
+    // below cannot see however carefully it reads what it was given:
+    // DeviceSnapshotReader.Read wraps every catalog PID in its own
+    // try/catch, and a read that throws logs REPAIR_SNAPSHOT_FAILED and adds
+    // nothing to the list. Nothing else can be missing - ReadPid returns a
+    // snapshot even for a catalog device this PC never owned - so
+    // "fewer snapshots than devices attempted" means exactly "at least one
+    // read threw", and a device that could not be read AT ALL is the most
+    // complete failure of the lot. attemptedDeviceCount carries the size of
+    // the sweep that produced this list (DeviceSnapshotReader.AttemptedDeviceCount).
+    //
+    // The comparison is "<", never "!=": a caller with no sweep behind it has
+    // no count to give, and an absent (0) count must not invent a gap. The
+    // default parameter is exactly today's contract - the list IS the whole
+    // sweep - which is what keeps every case written against it unchanged.
+    //
     // The weakest evidence on the PC wins, because the row speaks for the
     // whole PC: one unread device among otherwise fully measured ones is
-    // still a claim the checker cannot make.
-    static bool EvidenceComplete(IReadOnlyList<DeviceSnapshot> snapshots)
+    // still a claim the checker cannot make, whether it was read and left a
+    // tri-state unresolved or never came back from the reader at all.
+    static bool EvidenceComplete(IReadOnlyList<DeviceSnapshot> snapshots, int attemptedDeviceCount)
     {
+        if (snapshots.Count < attemptedDeviceCount)
+            return false;
         for (int i = 0; i < snapshots.Count; i++)
         {
             var snapshot = snapshots[i];
@@ -540,11 +561,23 @@ internal static class RepairPlanner
     // Silence from the rules is not the same as a clean bill of health, so
     // the full sentence is EARNED, not default: it is spoken only when
     // EvidenceComplete holds, i.e. every signal a rule could have fired on was
-    // actually resolved. Where a signal was not read, the row says so instead
-    // - otherwise a checker that could not read driver attachment or the
-    // pointer child would report that there are no driver or connection
-    // problems, which is the same false reassurance, one level in, that
-    // narrowing "No problems found" to this scope set out to remove.
+    // actually resolved, on every device the sweep attempted. Where a signal
+    // was not read - or a whole device never came back from the reader - the
+    // row says so instead, otherwise a checker that could not read driver
+    // attachment or the pointer child, or could not read a device at all,
+    // would report that there are no driver or connection problems, which is
+    // the same false reassurance, one level in, that narrowing "No problems
+    // found" to this scope set out to remove.
+    //
+    // One gap, one sentence: a device that threw is not a new KIND of
+    // ignorance, so it speaks the SAME degraded wording as an unread signal.
+    // Ten docs/TEST-PLAN.md rows and docs/ENABLE-DISABLE.md are read off
+    // these two literals on hardware, and a third variant would be a silent
+    // contract break.
+    //
+    // attemptedDeviceCount defaults to 0 for callers with no sweep behind
+    // them: the list is then taken as the whole sweep, which is the contract
+    // this method has always had (see EvidenceComplete).
     //
     // Incomplete evidence only ever softens the ALL-CLEAR. Once there is
     // something to report, what was not measured is no longer the headline:
@@ -552,10 +585,12 @@ internal static class RepairPlanner
     // the bare fault voice the rest of the menu is ranked against (the
     // PRECEDENCE note in ConfigFactView).
     internal static string MenuLabel(
-        IReadOnlyList<RepairFinding> findings, IReadOnlyList<DeviceSnapshot> snapshots) =>
+        IReadOnlyList<RepairFinding> findings,
+        IReadOnlyList<DeviceSnapshot> snapshots,
+        int attemptedDeviceCount = 0) =>
         findings.Count switch
         {
-            0 => EvidenceComplete(snapshots)
+            0 => EvidenceComplete(snapshots, attemptedDeviceCount)
                 ? "No driver or connection problems found"
                 : "No driver or connection problems found - some checks could not run",
             1 => findings[0].Title,

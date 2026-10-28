@@ -177,6 +177,30 @@ internal static class HidNative
             return false;
         }
 
+        // RequiredSize is only trustworthy when the call that produced it failed for the reason
+        // we think it did. Taking it on faith cost three distinct ways to read or write outside
+        // the allocation, all of them silent:
+        //   - the WriteInt32 below is unconditional, so a required of 1..3 put four bytes into a
+        //     block of one to three;
+        //   - the path read used the unbounded PtrToStringUni overload, which walks forward to a
+        //     UTF-16 NUL with no relation at all to what was allocated, so a short block or one
+        //     the driver left unterminated kept reading into whatever followed it;
+        //   - (int)required is unchecked, so anything above int.MaxValue arrived at AllocHGlobal
+        //     negative, and the OutOfMemoryException it throws escapes TryGetInterfacePath, ends
+        //     the whole EnumerateHidPaths walk and surfaces as POLL_CYCLE_ERROR - losing every
+        //     later interface too, when the contract of this rewrite is that a bad interface is
+        //     skipped with a marker and the walk continues.
+        // A real detail buffer is the 4-byte header plus at least one WCHAR plus its NUL, and no
+        // HID device path approaches 64 KB, so anything outside that is a lying or corrupt size
+        // and is refused before a byte is allocated - with the same marker a hard failure gets,
+        // because the user-visible outcome is identical: this interface has no usable path.
+        if (required < 6 || required > 64 * 1024)
+        {
+            Logger.Log($"HID_ENUM_PATH_FAILED index={index} err={err} size={required} (implausible RequiredSize; interface skipped)");
+            path = string.Empty;
+            return false;
+        }
+
         IntPtr block = Marshal.AllocHGlobal((int)required);
         try
         {
@@ -187,7 +211,13 @@ internal static class HidNative
                 path = string.Empty;
                 return false;
             }
-            path = Marshal.PtrToStringUni(block + 4) ?? string.Empty;
+            // Bounded read: the path region is everything after the 4-byte header, so at most
+            // (required - 4) / 2 WCHARs. The bounded overload does not stop at a NUL, it returns
+            // the whole region, so the terminator is cut here; a driver that forgot to terminate
+            // simply yields the full region rather than a walk off the end of the block.
+            string raw = Marshal.PtrToStringUni(block + 4, (int)((required - 4) / 2)) ?? string.Empty;
+            int nul = raw.IndexOf('\0');
+            path = nul >= 0 ? raw[..nul] : raw;
         }
         finally { Marshal.FreeHGlobal(block); }
 

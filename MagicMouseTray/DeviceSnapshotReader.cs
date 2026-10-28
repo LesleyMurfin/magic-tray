@@ -27,6 +27,15 @@ internal static class DeviceSnapshotReader
 
     readonly record struct HidLayer(int PhantomCount, bool Col01, bool Col02);
 
+    // How many devices a Read sweep ATTEMPTS, i.e. the size of the catalog it
+    // walks. Read adds one snapshot per catalog PID and ReadPid answers even
+    // for a device this PC never owned, so the only way a PID leaves no
+    // snapshot is the catch below that logs REPAIR_SNAPSHOT_FAILED. That
+    // makes "this count minus the returned list length" exactly the number of
+    // reads that threw, which is what RepairPlanner.EvidenceComplete needs to
+    // stop the all-clear row speaking for a device it never saw.
+    internal static int AttemptedDeviceCount => CatalogPids().Count;
+
     internal static IReadOnlyList<DeviceSnapshot> Read(Config config) => Read(config, null);
 
     // lastBatteryByPid: the tray's most recent battery reading per PID, with

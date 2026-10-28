@@ -1105,6 +1105,146 @@ public class RepairPlannerTests
                 [blocked, HealthyV3(pointerChildLive: null, lastBatteryPct: -3)]));
     }
 
+    // The same defect class as the four tests above, one level further out.
+    // EvidenceComplete can only inspect snapshots that EXIST, but a device
+    // whose read threw is not in the list at all: DeviceSnapshotReader wraps
+    // every PID in its own try/catch, logs "REPAIR_SNAPSHOT_FAILED pid=...
+    // err=..." and simply does not add it (DeviceSnapshotReader.cs:53-63).
+    // Nothing else can be missing - ReadPid always returns a snapshot for the
+    // PIDs it survives, including catalog devices this PC never owned - so
+    // "fewer snapshots than devices attempted" means exactly "a read threw".
+    // A partially measured device degrades the claim; a device that could not
+    // be read AT ALL is the most complete failure of the lot and must degrade
+    // it too, otherwise the row speaks the unqualified all-clear for a device
+    // it never saw.
+    //
+    // MenuLabel cannot see that from findings + snapshots alone, so the count
+    // of devices the sweep ATTEMPTED is passed in. It is the minimum that can
+    // express the gap, and it leaves both existing parameters' meaning intact.
+    [Fact]
+    public void MenuLabel_NoFindingsAndEveryAttemptedDeviceRead_ClaimsTheFullScope()
+    {
+        var mouse = HealthyV3();
+        var keyboard = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: true);
+
+        Assert.Empty(RepairPlanner.Plan([mouse, keyboard]));
+        Assert.Equal(
+            AllClear,
+            RepairPlanner.MenuLabel([], [mouse, keyboard], attemptedDeviceCount: 2));
+    }
+
+    // Two devices attempted, one snapshot back: the device that threw is
+    // invisible to every per-snapshot test, and the one that survived is
+    // flawlessly measured. The row still may not claim the full scope.
+    [Fact]
+    public void MenuLabel_AttemptedDeviceMissingFromTheList_DegradesTheWholeRow()
+    {
+        var fullyResolved = HealthyV3();
+
+        Assert.Empty(RepairPlanner.Plan([fullyResolved]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [fullyResolved], 1));
+        Assert.Equal(
+            AllClearUnverified,
+            RepairPlanner.MenuLabel([], [fullyResolved], attemptedDeviceCount: 2));
+    }
+
+    // The degenerate end of the same failure: every read threw, so the list is
+    // empty, Plan is empty and today's label is the unqualified all-clear read
+    // off nothing whatsoever.
+    [Fact]
+    public void MenuLabel_EverySnapshotReadThrew_DoesNotSpeakForDevicesItNeverRead()
+    {
+        Assert.Empty(RepairPlanner.Plan([]));
+        Assert.Equal(
+            AllClearUnverified, RepairPlanner.MenuLabel([], [], attemptedDeviceCount: 3));
+    }
+
+    // A caller that did not run a sweep has no attempted count to give, and an
+    // absent count must not invent a gap: with nothing supplied the list IS the
+    // whole sweep, which is the contract every case above this block was
+    // written against. This is what keeps those cases untouched.
+    [Fact]
+    public void MenuLabel_AttemptedCountNotSupplied_TreatsTheListAsTheWholeSweep()
+    {
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [HealthyV3()]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [HealthyV3()], 0));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [HealthyV3(pointerChildLive: null)]));
+    }
+
+    // One gap, one sentence. A missing device is not a new KIND of ignorance
+    // deserving its own wording: ten docs/TEST-PLAN.md rows and
+    // docs/ENABLE-DISABLE.md are read off these two literals on hardware, so a
+    // third variant would be a silent contract break.
+    [Fact]
+    public void MenuLabel_MissingDeviceAndUnreadSignal_ShareOneDegradedSentence()
+    {
+        var deviceNeverRead = RepairPlanner.MenuLabel([], [HealthyV3()], attemptedDeviceCount: 2);
+        var signalNeverRead = RepairPlanner.MenuLabel([], [HealthyV3(filterInStack: null)]);
+
+        Assert.Equal(AllClearUnverified, deviceNeverRead);
+        Assert.Equal(signalNeverRead, deviceNeverRead);
+    }
+
+    // The ownership exemption says a catalog device this PC never had is not a
+    // gap, because the reader skips its probes ON PURPOSE and still returns a
+    // snapshot for it. A device whose read THREW returned nothing at all, and
+    // the exemption must not be stretched to cover it: the first arm is the
+    // exemption still standing, the second is the same PC with one more device
+    // attempted than came back.
+    [Fact]
+    public void MenuLabel_UnownedDeviceExemptionDoesNotCoverADeviceThatThrew()
+    {
+        var owned = HealthyV3();
+        var neverOnThisPc = Snap(
+            pid: "0267",
+            bthenumLiveCount: 0,
+            usbPhantomCount: 0,
+            configEnabled: null,
+            filterInStack: null,
+            pointerChildLive: null,
+            multitouchAdvancing: null,
+            scrollWatcherHealthy: null);
+
+        Assert.Empty(RepairPlanner.Plan([owned, neverOnThisPc]));
+        Assert.Equal(
+            AllClear,
+            RepairPlanner.MenuLabel([], [owned, neverOnThisPc], attemptedDeviceCount: 2));
+        Assert.Equal(
+            AllClearUnverified,
+            RepairPlanner.MenuLabel([], [owned, neverOnThisPc], attemptedDeviceCount: 3));
+    }
+
+    // Incomplete evidence only ever softens the ALL-CLEAR. A device that threw
+    // is no different: once there is something to report, the fault keeps the
+    // bare voice the rest of the menu is ranked against, byte for byte.
+    [Fact]
+    public void MenuLabel_FindingsPresentWhileADeviceThrew_KeepsTheFaultVoice()
+    {
+        var stopped = Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: false);
+        var v1Gone = Snap(pid: "030d", configEnabled: false);
+
+        var one = RepairPlanner.Plan([stopped]);
+        var two = RepairPlanner.Plan([stopped, v1Gone]);
+
+        Assert.Single(one);
+        Assert.Equal(2, two.Count);
+        Assert.Equal(
+            one[0].Title,
+            RepairPlanner.MenuLabel(one, [stopped], attemptedDeviceCount: 23));
+        Assert.Equal(
+            "2 problems found",
+            RepairPlanner.MenuLabel(two, [stopped, v1Gone], attemptedDeviceCount: 23));
+    }
+
     [Fact]
     public void MenuLabel_SingleFinding_IsThatFindingsTitle()
     {

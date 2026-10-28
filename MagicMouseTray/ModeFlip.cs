@@ -1017,9 +1017,17 @@ $doneWaitMs = __DONEWAIT_MS__
 $nonce = '__NONCE__'
 $hidUuidPrefix = '{00001124-0000-1000-8000-00805f9b34fb}'
 
+# The status file is the channel the tray polls, so a failed append loses a phase
+# the tray will never see; the console line above has already gone out, which is
+# why the loss is recoverable only from a console-hosted run. Write-Host, NOT
+# Write-Phase, in the catch: recursing into the function whose append just failed
+# would recurse once per failure with no exit. The write stays best-effort - a
+# transcript that cannot be appended to must never abort the flip that is already
+# half-applied to LowerFilters.
 function Write-Phase([string]$line) {
     Write-Host ('MODE_FLIP ' + $line)
-    try { Add-Content -LiteralPath $statusFile -Value $line -Encoding ASCII } catch { }
+    try { Add-Content -LiteralPath $statusFile -Value $line -Encoding ASCII }
+    catch { Write-Host ('MODE_FLIP status-write-failed err=' + $_.Exception.Message + ' lost=' + $line) }
 }
 
 function Test-Vid([string]$n) {

@@ -26,13 +26,19 @@ internal readonly record struct ScanState(int Start, int Rotations);
 // BatteryChanged is raised from a thread-pool thread — callers must marshal
 // to the UI thread before touching WPF/NotifyIcon objects (done in TrayApp).
 //
-// A v3 Magic Mouse that cannot expose Input 0x90 on COL02 returns pct=-2.
+// A v3 Magic Mouse whose Input 0x90 read never completes returns pct=-2, and so does a
+// [90 xx 00] report, because a zeroed 0x90 is the battery report failing to arrive at all. A
+// 0x90 that arrives carrying a junk percent byte is -1 (MOUSE_RID90_BAD_CONTENT).
 // Never Feature 0x47, never WMI Hands-Free. The tray never flips LowerFilters.
 internal sealed class AdaptivePoller : IDisposable
 {
     // Fired once per discovered device per poll cycle.
-    // percent sentinel values: -1=not found/disconnected/read did not answer, -2=present but the
-    // battery report is not exposed, -3=battery unavailable (three consecutive -1s, minted below).
+    // percent sentinel values, as IBatteryDevice defines them: -1 = not found/disconnected, or a
+    // report that arrived and is not a level, or a read this poller abandoned at its budget;
+    // -2 = the battery report never arrived (the capability is absent, or the HID read itself
+    // came back failed - MouseBatteryDevice.ClassifyReadFailure - or a v3 [90 xx 00]);
+    // -3 = battery unavailable, minted below when a device has failed EscalationFailures ticks
+    // AND rotation has completed a turn (see ShouldEscalate).
     internal event Action<int, string, DeviceKind, string>? BatteryChanged;
 
     // Last computed interval — readable by TrayApp for tooltip.
@@ -48,11 +54,12 @@ internal sealed class AdaptivePoller : IDisposable
     int _loopStarts;
 
     // Cycle state. Every one of these is read-modify-written by the poll loop and by nothing
-    // else: there is exactly ONE PollLoop for a poller's lifetime (Start creates it; RefreshNow
-    // only wakes it), so this state is single-writer by construction. That invariant is what the
-    // whole arrangement rests on - two loops racing these dictionaries corrupt the bucket chain,
-    // which is a non-terminating Insert spin or an IndexOutOfRangeException, swallowed by the
-    // cycle guard as POLL_CYCLE_ERROR. Anything added here must stay inside the loop.
+    // else: there is exactly ONE PollLoop for a poller's lifetime (Start creates it and refuses
+    // to create a second; RefreshNow only wakes it), so this state is single-writer. That is the
+    // invariant the whole arrangement rests on - two loops racing these dictionaries corrupt the
+    // bucket chain, which is a non-terminating Insert spin or an IndexOutOfRangeException,
+    // swallowed by the cycle guard as POLL_CYCLE_ERROR. Anything added here must stay inside the
+    // loop.
     readonly Dictionary<string, int> _consecutiveFailures = new();
     readonly Dictionary<string, (DeviceKind Kind, string Pid)> _lastSeen = new(StringComparer.OrdinalIgnoreCase);
     // Next interface index and rotation count for a device's scan, per DeviceName. See ReadDevice.
@@ -94,9 +101,16 @@ internal sealed class AdaptivePoller : IDisposable
 
     // Reads one device's battery with a hard timeout and exception guard so a single slow or
     // throwing device can't stall the poll loop. On timeout/throw the device is logged (so the
-    // culprit is identifiable) and the reading is -1, matching the disconnected sentinel: -2
-    // means the battery report is not exposed, which a read that never answered has not
-    // established, and -2 is what buys the elevated keyboard SDP patch offer.
+    // culprit is identifiable) and the reading is -1, matching the disconnected sentinel.
+    //
+    // That is deliberately NOT the sentinel the device layer mints for a read that failed:
+    // MouseBatteryDevice.ClassifyReadFailure answers -2 there, because the HID call came back
+    // failed and a call that fails is evidence the battery report is not arriving. A read this
+    // guard abandoned came back with nothing at all - it is still running, inside a driver that
+    // may yet answer - so it has established neither that nor anything else. -2 is the sole
+    // input to RepairPlanner's keyboard-gated rule 2d and to the elevated keyboard SDP patch
+    // offer, and claiming it on the evidence of a driver that hung would tell the user their
+    // pairing record is broken when all that is known is that a read is slow.
     //
     // TimedOut is reported separately from the value because the two failures have opposite
     // costs. A throw came back immediately and left nothing behind. A timeout spent the whole
@@ -192,31 +206,46 @@ internal sealed class AdaptivePoller : IDisposable
             return true;
         }
         // Only the failure sentinels reach here, so the whole of the ranking is this one
-        // line: -2 (present, report not exposed) outranks -1 (not found), and a later -1
-        // must not erase a -2 already seen in the group.
+        // line: -2 (the battery report never arrived) outranks -1 (not found, or a report that
+        // arrived and is not a level), and a later -1 must not erase a -2 already seen.
         if (read.Pct == -2) best = -2;
         return read.TimedOut;
     }
 
-    // One device's interfaces, read in a rotating order. BestReading ends a scan at the first
-    // timeout, which bounds the tick but makes the scan order load-bearing: Discover re-derives
-    // the same paths in the same index order every tick, so a wedged interface sitting first
-    // would hide every interface behind it on every tick, forever - the same "only an interface
-    // that never reports survives" outcome DeviceRegistry refuses to cause one layer up. So the
-    // start rotates: a device that did not answer moves on by one, which gives every interface
-    // its turn within interfaces.Count ticks at a cost, per device per tick, of the group budget
-    // plus at most the one per-read budget a launch started just under the deadline can overrun
-    // it by. A device that answered keeps the start it answered from, because that start is
-    // exactly the one that put a live interface ahead of the wedged one - so the wedge is then
-    // never read again, and the leaked worker is paid once rather than on every tick. If that
-    // interface later stops answering the start advances again and the others, wedge included,
-    // get their turn back.
+    // One device's interfaces, read in a rotating order. The scan ends at the first timeout
+    // (ScanEndsHere), which bounds the tick but makes the scan order load-bearing: Discover
+    // re-derives the same paths in the same index order every tick, so a wedged interface
+    // sitting first would hide every interface behind it on every tick, forever - the same "only
+    // an interface that never reports survives" outcome DeviceRegistry refuses to cause one
+    // layer up. So the start rotates: a scan that got no reading and did not get to see
+    // everything moves on by one, which gives every interface its turn within interfaces.Count
+    // ticks at a cost, per device per tick, of the group budget plus at most the one per-read
+    // budget a launch started just under the deadline can overrun it by. A device that answered
+    // keeps the start it answered from, because that start is exactly the one that put a live
+    // interface ahead of the wedged one - so the wedge is then never read again, and the leaked
+    // worker is paid once rather than on every tick. If that interface later stops answering the
+    // start advances again and the others, wedge included, get their turn back.
     //
-    // Only -1 rotates. -2 is not "learned nothing": it says the interface answered and the
-    // battery report is not exposed, and it is the only input to RepairPlanner rule 2d and to the
-    // elevated keyboard SDP patch offer. Rotating on it would hand the next tick's first slot to
-    // a wedged interface whose timeout ends that scan at -1 before the -2 interface is reached,
-    // so the sentinel would survive only every other tick and the repair offer would flicker.
+    // The rotation rule is "no real reading AND the scan was cut short": the loop stopped - on a
+    // timeout or on the group budget - with an interface left that it never examined. Those
+    // interfaces are reachable by nothing else. The wedge backoff only relieves a path that
+    // timed out, and a scan cut by wall clock records no strike at all, so without rotation the
+    // interfaces behind a budget cut are never read again. A -1 from a scan that examined
+    // everything rotates as well: it learned nothing anywhere, and a different order is the only
+    // thing that could change that.
+    //
+    // A group that examined every interface and ended at -2 keeps its start instead. It has
+    // nowhere to rotate TO - any other start reads the same set for the same answer - and moving
+    // it costs the one thing -2 is for: it is the sole input to RepairPlanner's keyboard-gated
+    // rule 2d and to the elevated keyboard SDP patch offer, and once a wedged interface held the
+    // first slot the sentinel would survive only every other tick and the repair offer would
+    // flicker with it. A real reading keeps its start for the older reason - that start is
+    // exactly the one that produced the reading - even though stopping at the first live
+    // interface also leaves the rest of the group unexamined.
+    //
+    // A skipped path does not make a scan cut short. The skip is per path and holds whatever
+    // order the scan uses, so rotating cannot reach it a tick sooner; only the backoff elapsing
+    // can. See AnyUnexamined.
     //
     // Rotations counts the times the start wrapped past the end since the last real reading,
     // which is exactly the number of times every interface has had the first slot. ShouldEscalate
@@ -245,22 +274,36 @@ internal sealed class AdaptivePoller : IDisposable
         int best = -1;
         bool bounded = groupBudget != TimeSpan.MaxValue;
         var spent = TimeSpan.Zero;
+        // Whether the scan stopped with an interface left that a later start could read. A local
+        // observable at the loop's own exits, because the rotation decision below is the only
+        // thing that consumes it - no caller of this method has any use for it.
+        bool cutShort = false;
 
         for (int i = 0; i < interfaces.Count; i++)
         {
             var device = interfaces[(start + i) % interfaces.Count];
             if (wedges is not null && wedges.ShouldSkip(device.DevicePath)) continue;
-            if (bounded && spent >= groupBudget) break;
+            if (bounded && spent >= groupBudget)
+            {
+                // This interface passed the skip check, so it is the budget and not the wedge
+                // backoff that left it - and everything behind it - unread.
+                cutShort = true;
+                break;
+            }
 
             var read = launcher(device, perRead);
             if (bounded) spent += read.Took;
             if (read.TimedOut) wedges?.RecordTimeout(device.DevicePath);
             else wedges?.RecordAnswer(device.DevicePath);
 
-            if (ScanEndsHere(read, ref best)) break;
+            if (ScanEndsHere(read, ref best))
+            {
+                cutShort = AnyUnexamined(interfaces, start, i, wedges);
+                break;
+            }
         }
 
-        if (best == -1)
+        if (best < 0 && (best == -1 || cutShort))
         {
             int next = start + 1;
             scanStart[name] = new ScanState(
@@ -271,12 +314,30 @@ internal sealed class AdaptivePoller : IDisposable
         {
             // A real reading proves the current start works, so the rotation debt is paid and the
             // next outage starts its own count; without that reset a device that fails three
-            // ticks, recovers for a week and fails once would escalate on that single tick. A -2
-            // keeps the count it had: it is an answer, but it is not a reading, so it says nothing
-            // about whether rotation has yet reached an interface that could produce one.
+            // ticks, recovers for a week and fails once would escalate on that single tick. The
+            // settled -2 that lands here keeps the count it had: it is an answer, but it is not a
+            // reading, so it says nothing about whether rotation has yet reached an interface
+            // that could produce one.
             scanStart[name] = new ScanState(start, best >= 0 ? 0 : state.Rotations);
         }
         return best;
+    }
+
+    // Whether anything the scan stopped short of is an interface a later start could actually
+    // read. Skipped paths are not: the skip is keyed by path and applies in any order, so a scan
+    // whose only unexamined interfaces are skipped ones has already seen everything rotation
+    // could show it, and rotating would cost a settled -2 its stability for nothing. Walked from
+    // the stop point rather than counted during the loop because only the exits need the answer,
+    // and a group is at most a handful of HID collections.
+    static bool AnyUnexamined(
+        IReadOnlyList<IBatteryDevice> interfaces, int start, int stoppedAt, WedgeTracker? wedges)
+    {
+        for (int i = stoppedAt + 1; i < interfaces.Count; i++)
+        {
+            var device = interfaces[(start + i) % interfaces.Count];
+            if (wedges is null || !wedges.ShouldSkip(device.DevicePath)) return true;
+        }
+        return false;
     }
 
     // Whether a device's run of failures has earned the -3 "battery unavailable" sentinel.
@@ -307,7 +368,20 @@ internal sealed class AdaptivePoller : IDisposable
 
 
 
-    internal void Start() => _pollTask = PollLoop(_cts.Token);
+    // Starts the one poll loop. Idempotent, because the single-writer invariant the cycle state
+    // rests on is only "by construction" if a second call cannot construct a second loop: two
+    // PollLoops write the failure counts, the last-seen map, the scan state and the wedge
+    // tracker at once, and concurrent writes to a Dictionary corrupt the bucket chain - a
+    // non-terminating Insert spin or an IndexOutOfRangeException, swallowed by the cycle guard
+    // as POLL_CYCLE_ERROR. A second call also overwrote _pollTask, leaving Dispose waiting on
+    // one loop while the other ran past tray shutdown. Starting after Dispose is refused for the
+    // same reason RefreshNow is: the token is already cancelled, so the loop would exit at once
+    // and the only lasting effect would be a _pollTask nobody waits on.
+    internal void Start()
+    {
+        if (_pollTask is not null || _disposed) return;
+        _pollTask = PollLoop(_cts.Token);
+    }
 
     // Asks the running loop to poll now instead of waiting out its interval. Safe to call from
     // any thread, and from all six call sites in TrayApp.
@@ -330,7 +404,19 @@ internal sealed class AdaptivePoller : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();
-        try { _pollTask?.Wait(TimeSpan.FromSeconds(5)); } catch { }
+        // Best effort by design: the loop's own cancellation check is what stops it, and the
+        // tray is going away either way, so nothing here changes what Dispose does next. The
+        // wait can still end badly - a cycle cancelled mid-await surfaces as an
+        // AggregateException wrapping OperationCanceledException, and anything the cycle guard
+        // could not catch (an OutOfMemoryException, a Dispose racing a faulted loop) arrives the
+        // same way - and a shutdown that discarded that silently is how a poll loop stops
+        // polling with nothing in the log to say so.
+        try { _pollTask?.Wait(TimeSpan.FromSeconds(5)); }
+        catch (Exception ex)
+        {
+            var root = ex.GetBaseException();
+            Logger.Log($"POLL_DISPOSE_WAIT_FAILED type={root.GetType().Name} err={root.Message}");
+        }
         _cts.Dispose();
     }
 

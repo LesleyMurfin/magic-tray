@@ -36,6 +36,20 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
     // tray row, one checkbox enabled or disabled all three, and every non-vendor interface
     // among them still drew a GENERIC_WRITE open that failed once per tick.
     //
+    // The split is not free, and the cost is paid in poll-cycle wall clock, not in reads.
+    // AdaptivePoller's budget is per DeviceName GROUP - ReadDevice is called once per
+    // GroupBy(d => d.DeviceName) iteration - and DeviceRegistry documents the worst case for one
+    // group on one tick as DeviceGroupBudget plus one DeviceReadTimeout, 10 s at today's values.
+    // Under the fused "logi" identity, K non-answering vid_046d products were ONE group and
+    // therefore one 10 s bound between POLL_SCHEDULED lines. Per-product groups turn that into
+    // K x 10 s: a user with three silent Logitech products can hold a cycle for 30 s, during
+    // which no tick is scheduled and no row refreshes. Anyone sizing the poll interval has to
+    // size it against the number of Logitech products present, not against a constant. What the
+    // split buys for that is correctness - one tray row and one checkbox per real device - plus
+    // the per-tick failing GENERIC_WRITE opens that ShouldSkipPid can now retire per product
+    // instead of all-or-nothing. The exposure is bounded by Config.EnableThirdParty, which
+    // ships OFF, so no default install pays any of this.
+    //
     // The name is not queried from the device (HID++ 0x0005 DeviceName would cost two more
     // round trips per interface per tick), so the product id stands in for the model name. That
     // is all this name is used for: DeviceCapability.KindForName only scans
@@ -108,6 +122,20 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         // Root.GetFeature(featureId): byte3 = 0x00 | swId (function 0 on the Root feature).
         var rootReq = NewReport(reportId, reportLen, featureIndex: 0x00,
             funcByte: (byte)(0x00 | SW_ID), arg0: (byte)(featureId >> 8), arg1: (byte)(featureId & 0xFF));
+        // SendReceive issues exactly ONE ReadFile and hands that single frame to
+        // IsMatchingResponse; there is no drain loop. So a frame the matcher rejects does not
+        // cost one frame, it costs the whole read: this call returns null and ReadFeatureBattery
+        // answers -1 for the tick. On a device that pushes notifications on the very feature
+        // being queried - which the comment over IsMatchingResponse says a battery feature is
+        // exactly the kind to do - the pushed frame is now correctly refused and the real reply
+        // behind it in the queue is never read, so such a device reports no battery at all where
+        // it used to report an occasional wrong one. That is the intended trade (a stranger's
+        // level shown as this device's is worse than an empty row, and the rejection is logged),
+        // but it IS a behaviour change from the two-byte matcher, recorded here because the
+        // symptom - a Logitech row that is permanently blank rather than wrong - looks like a
+        // discovery or permissions fault and is not one. A drain/retry loop is the obvious
+        // remedy and is deliberately not here: it changes the per-read timing this path shares
+        // with the rest of the app and there is no hardware or seam to validate it against.
         var rootResp = SendReceive(handle, rootReq, reportLen);
         if (rootResp is null) return -1;
         byte featureIndex = rootResp[4];
@@ -181,18 +209,28 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
     // buffer is refused too - it cannot describe this read, and trusting it would hand a later
     // indexer a length the array does not have.
     //
-    // 0xFF in byte 2 is a HID++ 2.0 error frame: byte 3 echoes the failed function+swId and
-    // byte 5 carries the error code, so byte 4 is the echoed function byte - 0x05 for our
-    // requests, which decodes as 5%. It is rejected as a VALUE, not left to the byte-2 compare,
-    // because nothing rejects a Root reply that names feature index 0xFF (only index 0 is
-    // treated as absent), and such a device could otherwise match its own error frames.
+    // 0xFF in byte 2 is a HID++ 2.0 error frame: its layout is [rid][devIndex][FF][failed
+    // feature index][funcIndex<<4|swId][error code], so byte 4 - the byte both callers decode -
+    // is the echoed function byte, 0x05 for our requests, which reads as 5%. It is rejected as a
+    // VALUE, not left to the byte-2 compare, because nothing rejects a Root reply that names
+    // feature index 0xFF (only index 0 is treated as absent), and such a device could otherwise
+    // match its own error frames.
+    //
+    // byte 1 is the HID++ device index, and leaving it out was the same class of hole byte 3
+    // was. Our requests always address the device directly (DEV_INDEX = 0xFF); a receiver or any
+    // other multiplexing interface carries frames for every paired device on one report id, and
+    // such a frame only has to share our feature index and our function|swId to have been
+    // accepted - at which point byte 4 is a DIFFERENT device's battery reported as this row's.
+    // Discovery excludes receivers only by a short PID substring list, so any receiver model
+    // outside that list arrives here and this compare is the only thing standing in front of it.
     internal static bool IsMatchingResponse(byte[] request, byte[] response, int transferred)
     {
         if (request is null || response is null) return false;
         if (request.Length < 4 || response.Length < 5) return false;
         if (transferred < 5 || transferred > response.Length) return false;
         if (response[2] == 0xFF) return false;
-        return response[0] == request[0] && response[2] == request[2] && response[3] == request[3];
+        return response[0] == request[0] && response[1] == request[1]
+            && response[2] == request[2] && response[3] == request[3];
     }
 
     // Writes the HID++ request and waits (overlapped) for the matching response, reusing the

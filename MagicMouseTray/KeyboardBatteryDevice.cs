@@ -201,7 +201,9 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     // On this line the Feature cap is present and HidD_GetFeature
     // returned true, so the pairing record is demonstrably intact: a phantom col02 answering 0
     // must not buy a repair row that tells the user to re-patch a working keyboard. That is the
-    // same answer the mouse's unified-Feature path gives (MouseBatteryDevice.cs:280-294).
+    // same answer the mouse's unified-Feature read gives for a Feature that came back without a
+    // level: the `unifiedApple && featureLen > 0` arm of MouseBatteryDevice.ReadV1V2Feature, whose
+    // -2 is reserved for the HidD_GetFeature failure that logs MOUSE_UNIFIED_BLOCKED.
     //
     // The rejection markers stay distinct from KB_FEATURE_BLOCKED on purpose: "patch needed"
     // would be false here, and GetLastWin32Error would be stale from an earlier call because

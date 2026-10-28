@@ -212,9 +212,10 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // three analogous arms give (KeyboardBatteryDevice.ClassifyFeatureByte,
     // LogitechBatteryDevice.ClassifyLevelByte, and the unified-Feature arm in ReadV1V2Feature
     // below). That arm used to answer -2 under the now-retired MOUSE_RID90_BAD marker, which cost
-    // more than tidiness: -2 outranks -1 in AdaptivePoller.BestReading (AdaptivePoller.cs:105), so
-    // a single junk-answering interface won the whole group over a live interface's -1, and
-    // DeviceCapability.BatteryRow then rendered "Battery unavailable (Windows sends no report)"
+    // more than tidiness: -2 outranks -1 in AdaptivePoller.ScanEndsHere (the one ranking shared by
+    // the bounded and unbounded group scans), so a single junk-answering interface won the whole
+    // group over a live interface's -1, and DeviceCapability.BatteryRow then rendered
+    // "Battery unavailable (Windows sends no report)"
     // (DeviceCapability.cs:253) for a device that was answering.
     //
     // A report with some OTHER id is -1 as well, including when its byte 2 happens to be 0: a

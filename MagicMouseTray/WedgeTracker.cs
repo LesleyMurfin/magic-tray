@@ -6,10 +6,12 @@ namespace MagicMouseTray;
 //
 // A timeout is not a free failure. Task.Run cannot cancel a blocking HID IOCTL
 // (HidD_GetFeature / HidD_GetInputReport), so the abandoned read keeps a thread-pool worker until
-// the driver releases it, which on a wedged interface is never. AdaptivePoller.ReadDevice rotates
-// its scan start, which guarantees a never-answering group comes back to each wedged interface in
-// turn, forever - so without this memory the tray leaks one worker per wedged interface per tick
-// for the life of the process.
+// the driver releases it, which on a wedged interface is never. Every scan comes back to a wedged
+// interface: AdaptivePoller.ReadDevice rotates a scan that learned nothing and was cut short, so
+// a never-answering group reaches each of its wedged interfaces in turn, forever - and a group
+// that settled on -2 with nothing left unexamined keeps a start that reads its wedge on every
+// single tick. Either way, without this memory the tray leaks one worker per wedged interface
+// per tick for the life of the process.
 //
 // Keyed by DevicePath, because that is what a wedge belongs to: DeviceName covers a whole group,
 // and the other collections of the same mouse are exactly what the rotation is trying to reach.

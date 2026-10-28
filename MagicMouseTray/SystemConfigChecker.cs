@@ -856,9 +856,20 @@ internal static class SystemConfigChecker
             var stderr = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(3000))
             {
-                try { p.Kill(entireProcessTree: true); } catch { }
-                try { p.WaitForExit(1000); } catch { }
-                Logger.Log("SYSTEM_CONFIG_BCDEDIT_TIMEOUT");
+                // Both of these stay best-effort: bcdedit has already blown its budget and the
+                // answer is null whatever happens next, so a kill that cannot land must not turn
+                // a diagnostic read into a thrown exception. What they must not do is vanish -
+                // a Kill that throws InvalidOperationException ("process has already exited") and
+                // one that throws Win32Exception (access denied, nothing reaped) leave very
+                // different machines behind, and the second means this process is still running
+                // after the tray has moved on. The reason rides on the timeout line rather than
+                // taking one of its own, so the marker stays one line per timeout.
+                string killNote = string.Empty;
+                try { p.Kill(entireProcessTree: true); }
+                catch (Exception ex) { killNote = $" kill_failed={ex.GetType().Name}:{ex.Message}"; }
+                try { p.WaitForExit(1000); }
+                catch (Exception ex) { killNote += $" reap_failed={ex.GetType().Name}:{ex.Message}"; }
+                Logger.Log($"SYSTEM_CONFIG_BCDEDIT_TIMEOUT{killNote}");
                 return null;
             }
 

@@ -10,7 +10,8 @@ namespace MagicMouseTray;
 
 // File logger for diagnosing battery read failures in the headless tray app.
 // Output: %APPDATA%\MagicMouseTray\debug.log  (rotates at 1MB → debug.log.1)
-// Never throws — all I/O errors are silently swallowed.
+// Never throws - all I/O errors are swallowed, but not unrecorded: see
+// DroppedLines and Log's catch.
 internal static class Logger
 {
     internal static readonly string LogPath = Path.Combine(
@@ -22,6 +23,14 @@ internal static class Logger
     const long MaxBytes = 1024 * 1024; // 1 MB rotation threshold
     static readonly object Lock = new();
     static string _appStartBanner = string.Empty;
+
+    // Lines this sink accepted and then failed to write, and why the last one
+    // failed. Kept here rather than logged for the reason spelled out in Log's
+    // catch: the only sink available at that moment is the one that just failed.
+    static int _droppedLines;
+    static string _lastDropReason = string.Empty;
+    internal static int DroppedLines => Volatile.Read(ref _droppedLines);
+    internal static string LastDropReason => _lastDropReason;
 
     internal static void LogAppStart()
     {
@@ -62,7 +71,26 @@ internal static class Logger
                     $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}", new System.Text.UTF8Encoding(true));
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // This catch cannot call Log. It IS Log: a disk-full, locked-handle or
+            // ACL failure is reliably repeatable, so logging the failure would
+            // re-enter this method, fail the same way and recurse until the stack
+            // ends - and it would re-enter under a lock this thread already holds,
+            // so the reentrancy is invisible rather than a deadlock that announces
+            // itself. The swallow is the documented contract of this type ("Never
+            // throws") and must stay: every caller is a diagnostic emitter on a
+            // path that has to keep working with no log at all.
+            //
+            // So the loss is recorded out-of-band instead. The counter is what
+            // makes a silent log usable evidence: a debug.log that simply stops is
+            // indistinguishable from an app that stopped doing anything, and
+            // DroppedLines separates those two. Debug.WriteLine goes to the
+            // attached debugger / DebugView only, never through this sink.
+            Interlocked.Increment(ref _droppedLines);
+            _lastDropReason = $"{ex.GetType().Name}: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"MagicMouseTray logger write failed: {_lastDropReason}");
+        }
     }
 
     // The one redaction entry point every written line passes through:
