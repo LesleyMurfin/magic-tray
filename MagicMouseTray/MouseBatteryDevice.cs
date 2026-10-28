@@ -48,9 +48,31 @@
 // choice changes the shape again (measured on the 0323: filter bound = one unified node
 // with no readable battery, filter removed = &col02 appears and reads). So the app stops
 // guessing: it probes, logs EVERY attempt with its outcome, remembers the pair that worked
-// in config.ini (BatteryChannelMemory, one battery call per poll from then on), and
-// throws that memory away the moment it stops working - which is what makes a Boot Camp to
-// Stock driver switch self-healing without the user doing anything.
+// in config.ini (BatteryChannelMemory, one battery call per poll from then on), and throws
+// that memory away after THREE consecutive failed reads of it - which is what makes a Boot
+// Camp to Stock driver switch self-healing without the user doing anything. One failed read
+// is an idle Bluetooth mouse far more often than it is a driver change, and forgetting on it
+// would make an idle mouse thrash learn - forget - relearn every poll. The exception is the
+// structural one: when the remembered COLLECTION is no longer among the mouse's interfaces
+// the memory is dropped at once, because that is a reshaped device rather than a failed read
+// (the battery_channel_<pid> paragraph of docs/ENABLE-DISABLE.md states both rules to the
+// user).
+//
+// LOG VOLUME on the learned path (review nit N4). That read costs exactly ONE HID call and
+// writes THREE lines - MOUSE_CHANNEL_TRY, MOUSE_CHANNEL_OK, MOUSE_BATTERY_OK - for an outcome
+// identical to the last few thousand. Logger rotates at 1 MB keeping ONE generation
+// (Logger.cs:22,51-59) and has no level or dedup of its own, so a steady mouse evicts exactly
+// the history a bug reporter needs: the probe walk, the learn, the driver change. So the
+// learned path BUFFERS its attempt lines and flushes them only when they differ word-for-word
+// from the lines that PID last wrote (BatteryChannelMemory.RepeatsLastLearnedLog). Measured on
+// the real Logger: 30 lines over 10 steady polls down to 3.
+//
+// Word-for-word rather than "same percent", because MOUSE_CHANNEL_OK carries bytes=[...]: a
+// report head that moves while the percent holds still prints, and only a genuinely identical
+// outcome goes quiet. A FAILING read prints every single time and clears the remembered set,
+// so the success after it prints too. The full probe walk (ReadV1V2Feature - unlearned devices
+// and the third-strike re-probe) passes NO sink and logs every attempt exactly as before: that
+// walk is the diagnosis, it is not repetitive, and nothing about it may be dropped.
 //
 // A well-formed 0x90 report whose percent byte is 0 now answers -2 where the pre-fix code
 // answered -1. That is user-visible: DeviceCapability renders -1 as "No reading" and -2 as
@@ -189,10 +211,24 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                     BatteryChannelMemory.ClearFailedReads(Pid);
                     return pct;
                 }
-                // Three consecutive failures before the answer is dropped, the same threshold
-                // AdaptivePoller uses before it collapses a device to -3: one failed read is a
+                // Three consecutive failures before the answer is dropped: one failed read is a
                 // Bluetooth mouse that has gone idle, not a driver change, and forgetting on it
-                // makes an idle mouse thrash learn - forget - relearn every poll.
+                // makes an idle mouse thrash learn - forget - relearn every poll. The count is a
+                // near-neighbour of AdaptivePoller's own three-failure collapse to -3 and not the
+                // same test - that one keys on DeviceName and only counts -1, so a -2 resets it
+                // (AdaptivePoller.cs:156-165) - so do not reason about one from the other.
+                //
+                // The price, paid by exactly the case this is for: strikes one and two return the
+                // sentinel WITHOUT running the probe walk, where the pre-change code re-probed on
+                // the very first failure. So a genuine Boot Camp to Stock switch renders "No
+                // reading" (-1) or "Battery unavailable (Windows sends no report)" (-2) for two
+                // whole poll cycles before the third read probes and relearns - and this path is
+                // never the v3's, so those cycles are DrainRateTracker.FloorNonV3 (30 minutes)
+                // apart at the fastest and CeilingNormal (24h) apart on a healthy battery.
+                // AdaptivePoller's -3 collapse ("Disconnected") does not pile on, because the
+                // third cycle succeeds. Still judged cheaper than an idle mouse rewriting
+                // config.ini every poll: a stale sentinel is recoverable, a thrashing relearn is
+                // not.
                 if (!BatteryChannelMemory.CountFailedRead(Pid))
                     return pct;
                 // Third strike: forget and fall through to the full probe walk on THIS read, so
@@ -466,14 +502,48 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // battery call: it sizes the Feature buffer and keeps the declared= field of the log line a
     // fact instead of a guess. Exactly one HidD_GetInputReport / HidD_GetFeature leaves this
     // method, which is the whole point of remembering.
+    //
+    // One call, three log lines, every poll forever - see LOG VOLUME in this file's header. The
+    // attempt lines are buffered and written only when this PID's read says something it did not
+    // say last time.
     int ReadLearnedChannel(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string path, BatteryChannelAnswer answer)
     {
-        if (!TryInspect(handle, path, out var node)) return -1;
+        if (!TryInspect(handle, path, out var node))
+        {
+            // TryInspect named its own cause straight to the log, unbuffered: a node that cannot
+            // be inspected is not the steady state this dedup exists for. Drop the remembered
+            // set with it, so the read that recovers prints instead of being taken for a repeat
+            // of the last good one.
+            BatteryChannelMemory.ForgetLearnedLog(Pid);
+            return -1;
+        }
 
         var attempt = answer.Channel == BatteryChannelAnswer.Input90
             ? new ChannelAttempt(BatteryChannelAnswer.Input90, answer.ReportId, node.VendorBatteryInput)
             : new ChannelAttempt(BatteryChannelAnswer.Feature47, answer.ReportId, node.FeatureBatteryRid == answer.ReportId);
-        return RunAttempt(handle, CollectionToken(path), attempt, node.FeatureLen);
+
+        // Capacity 3: TRY plus either OK and BATTERY_OK, or one FAIL.
+        var buffered = new List<string>(3);
+        int pct = RunAttempt(handle, CollectionToken(path), attempt, node.FeatureLen, buffered);
+
+        if (pct < MinValidPercent)
+        {
+            // A failure prints EVERY time - it is the line a reporter and MOUSE_RELEARN are both
+            // read off - and it takes the remembered set with it, so the success that follows is
+            // not suppressed as a repeat of the last success three strikes ago.
+            BatteryChannelMemory.ForgetLearnedLog(Pid);
+            Flush(buffered);
+        }
+        else if (!BatteryChannelMemory.RepeatsLastLearnedLog(Pid, buffered))
+        {
+            Flush(buffered);
+        }
+        return pct;
+    }
+
+    static void Flush(List<string> lines)
+    {
+        foreach (var line in lines) Logger.Log(line);
     }
 
     // Reads the opened node's descriptor. False means the node could not be inspected at all,
@@ -535,15 +605,27 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
 
     // One channel attempt on an opened node: one TRY line in, one OK or one FAIL line out, so a
     // reporter's debug.log is a complete record of what the device answered.
-    int RunAttempt(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen)
+    //
+    // sink is the learned path's dedup buffer: non-null means "collect these lines, the caller
+    // decides whether they say anything new". Null - the probe walk - writes straight through,
+    // which is why nothing about that walk's logging changed.
+    int RunAttempt(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen, List<string>? sink = null)
     {
-        Logger.Log($"MOUSE_CHANNEL_TRY pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} declared={(attempt.Declared ? "true" : "false")}");
+        Emit(sink, $"MOUSE_CHANNEL_TRY pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} declared={(attempt.Declared ? "true" : "false")}");
         return attempt.Channel == BatteryChannelAnswer.Input90
-            ? TryInput90(handle, col, attempt)
-            : TryFeature(handle, col, attempt, featureLen);
+            ? TryInput90(handle, col, attempt, sink)
+            : TryFeature(handle, col, attempt, featureLen, sink);
     }
 
-    int TryInput90(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt)
+    // The one place that decides between "write it" and "hold it": no caller below composes a
+    // line without going through here, so no later line can forget the buffer exists.
+    static void Emit(List<string>? sink, string line)
+    {
+        if (sink is null) Logger.Log(line);
+        else sink.Add(line);
+    }
+
+    int TryInput90(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, List<string>? sink)
     {
         var buf = new byte[64];
         // Three IOCTLs 50ms apart are ONE attempt of this channel: a Bluetooth mouse that has
@@ -557,20 +639,20 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 var pct = ParseRid90Percent(buf);
                 if (pct is not null)
                 {
-                    LogChannelOk(col, attempt, pct.Value, buf, 3);
+                    LogChannelOk(col, attempt, pct.Value, buf, 3, sink);
                     return pct.Value;
                 }
-                LogChannelFail(col, attempt, 0, IsBogusZeroReport(buf) ? "zero_byte" : "out_of_range", buf, 3);
+                LogChannelFail(col, attempt, 0, IsBogusZeroReport(buf) ? "zero_byte" : "out_of_range", buf, 3, sink);
                 // The device answered and what it sent was not a usable level.
                 return -2;
             }
             if (n < 2) Thread.Sleep(50);
         }
-        LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0);
+        LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0, sink);
         return DeclaredFailureSentinel(attempt);
     }
 
-    int TryFeature(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen)
+    int TryFeature(Microsoft.Win32.SafeHandles.SafeFileHandle handle, string col, ChannelAttempt attempt, int featureLen, List<string>? sink)
     {
         // Sized from the descriptor when the node declares feature reports at all; 64 is the
         // blind-try buffer for a node that declares none, matching the input path.
@@ -578,17 +660,17 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         buf[0] = attempt.ReportId;
         if (!HidNative.HidD_GetFeature(handle, buf, buf.Length))
         {
-            LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0);
+            LogChannelFail(col, attempt, Marshal.GetLastWin32Error(), "call_failed", null, 0, sink);
             return DeclaredFailureSentinel(attempt);
         }
 
         int pct = buf[1];
         if (pct is >= MinValidPercent and <= 100)
         {
-            LogChannelOk(col, attempt, pct, buf, 2);
+            LogChannelOk(col, attempt, pct, buf, 2, sink);
             return pct;
         }
-        LogChannelFail(col, attempt, 0, pct == 0 ? "zero_byte" : "out_of_range", buf, 2);
+        LogChannelFail(col, attempt, 0, pct == 0 ? "zero_byte" : "out_of_range", buf, 2, sink);
         return -2;
     }
 
@@ -598,24 +680,26 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // observed nothing at all and may not claim anything, so it stays -1.
     static int DeclaredFailureSentinel(ChannelAttempt attempt) => attempt.Declared ? -2 : -1;
 
-    void LogChannelOk(string col, ChannelAttempt attempt, int pct, byte[] buf, int bytes)
+    void LogChannelOk(string col, ChannelAttempt attempt, int pct, byte[] buf, int bytes, List<string>? sink)
     {
-        Logger.Log($"MOUSE_CHANNEL_OK pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} pct={pct} bytes=[{FormatReportHead(buf, bytes)}]");
+        Emit(sink, $"MOUSE_CHANNEL_OK pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} pct={pct} bytes=[{FormatReportHead(buf, bytes)}]");
         // The success line every existing consumer greps for, in the exact wording
         // DRIVER-MATRIX.md and DriverAdvisor quote: "(split)" for the vendor Input channel,
         // "(unified Feature 0xNN)" for the Generic Device Feature channel.
         string how = attempt.Channel == BatteryChannelAnswer.Input90
             ? "(split)"
             : $"(unified Feature 0x{attempt.ReportId:X2})";
-        Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% {how}");
+        Emit(sink, $"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% {how}");
     }
 
-    void LogChannelFail(string col, ChannelAttempt attempt, int err, string reason, byte[]? buf, int bytes)
+    void LogChannelFail(string col, ChannelAttempt attempt, int err, string reason, byte[]? buf, int bytes, List<string>? sink)
     {
         // Bytes only when there ARE bytes: a failed call read nothing, and printing an empty
         // buffer as if it were the device's answer would be a claim it never made.
         string tail = buf is null ? string.Empty : $" bytes=[{FormatReportHead(buf, bytes)}]";
-        Logger.Log($"MOUSE_CHANNEL_FAIL pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} err={err} reason={reason}{tail}");
+        // Buffered like the rest, but ReadLearnedChannel flushes a failed read unconditionally:
+        // this line never goes quiet.
+        Emit(sink, $"MOUSE_CHANNEL_FAIL pid={Pid} col={col} channel={attempt.Channel} rid=0x{attempt.ReportId:X2} err={err} reason={reason}{tail}");
     }
 }
 

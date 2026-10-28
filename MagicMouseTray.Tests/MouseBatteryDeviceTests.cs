@@ -521,4 +521,109 @@ public class MouseBatteryDeviceTests
         Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
         Assert.True(BatteryChannelMemory.CountFailedRead("fa04"));
     }
+
+    // The four tests above pin BatteryChannelMemory's arithmetic. These two pin the CALL SITE
+    // in GetBatteryPercent, which is the change: without the guard that stands between a failed
+    // read and Forget, the counter can be perfect and the first failed read still drops the
+    // answer, and the helper tests above would not notice.
+    //
+    // Driving GetBatteryPercent needs a read that fails without kernel32, and ReadCandidate has
+    // exactly one: a path DeviceRegistry.IsHandsFreeOrIphonePath matches returns -1 before it
+    // opens anything. The &col02 fragment is read off the path by CollectionToken, so one
+    // candidate can be both hands-free-shaped and the collection the learned answer names -
+    // that is a test fixture, not a device anyone owns, and it is the only seam this suite has
+    // into the failure branch.
+    //
+    // PIDs 0cf1 / 0cf2 belong to these two tests alone: the streak store is process-wide and
+    // keyed on PID, so sharing one with another test would spend its strikes.
+    const string HandsFreeCol02_0cf1 =
+        @"\\?\hid#bthhfenum&vid_05ac&pid_0cf1&col02#8&1b7cce4&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+    const string HandsFreeCol02_0cf2 =
+        @"\\?\hid#bthhfenum&vid_05ac&pid_0cf2&col02#8&1b7cce4&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+
+    // A fresh instance per read, because that is what production does: DeviceRegistry.Discover
+    // rebuilds every device object on every poll, so a test that reused one would also pass if
+    // the streak were moved back into the instance field this store exists to replace.
+    static int Poll(string path) =>
+        new MouseBatteryDevice(path, "Magic Mouse v2", DeviceKind.MagicMouseV2).GetBatteryPercent();
+
+    [Fact]
+    public void GetBatteryPercent_KeepsTheLearnedAnswerForTwoFailedReads_AndDropsItOnTheThird()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-strike-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0cf1", learned);
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 1: an idle Bluetooth mouse, not a driver change. The answer stays.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 2: still one strike short.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 3: forgotten, in memory and in config.ini, so the next poll probes again.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Null(cfg.GetBatteryChannel("0cf1"));
+            Assert.Null(Config.Load(file).GetBatteryChannel("0cf1"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // The other half of "consecutive, not cumulative", driven through GetBatteryPercent as far
+    // as this host allows. The reset itself is the one line of the change no test here can
+    // reach through a read: a SUCCEEDING read needs ReadCandidate to open a real HID node, and
+    // the only kernel32-free seam into GetBatteryPercent is the hands-free rejection, which
+    // always answers -1. So the success is stood in for by the call the success path makes,
+    // BatteryChannelMemory.ClearFailedReads, and everything around it is the real code path.
+    [Fact]
+    public void GetBatteryPercent_StreakIsConsecutive_AGoodReadPutsTheAnswerBackOnThreeStrikes()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-strike-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0cf2", learned);
+
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
+
+            // Stands in for the read that answers: this is what the success path does.
+            BatteryChannelMemory.ClearFailedReads("0cf2");
+
+            // Two more failures must not reach the limit, or the mouse that misses one read a
+            // day accumulates its way to a relearn while its channel still works.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf2"));
+
+            // And the third still forgets, so the reset delays a relearn rather than blocking it.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf2));
+            Assert.Null(cfg.GetBatteryChannel("0cf2"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
 }
