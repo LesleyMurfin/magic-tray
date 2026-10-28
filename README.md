@@ -56,7 +56,7 @@ What happens after you confirm depends on the device:
 
 | Your device | Menu item | What the tray then does |
 |---|---|---|
-| Magic Mouse 2024, USB-C, `0323` | `KMDF` | Nothing yet. The community-built driver isn't published, so this reports that it can't find it |
+| Magic Mouse 2024, USB-C, `0323` | `KMDF` | Downloads the pinned package, asks for one administrator approval and runs its installer — which stops, because no signed driver binary has been published yet. Nothing is installed |
 | Magic Mouse 2024, USB-C, `0323` | `Patched Apple driver` | Runs the patched-Apple route. You get scrolling **or** battery, never both. Unconfirmed |
 | Magic Mouse 2024, USB-C, `0323` | `Stock Windows` | Puts the standard Windows driver back |
 | Magic Mouse v1 `030D`, v2 `0269`, Apple Wireless Mouse `0310` | `Boot Camp` | Opens the download page. You run the file yourself |
@@ -248,7 +248,7 @@ Magic Tray shows **nothing at all** for your device? That's a different form: [t
 Windows moves the pointer on a Magic Mouse without any help. One-finger scrolling needs a driver, and which one depends on your mouse.
 
 - **Magic Mouse v1, v2 and the Apple Wireless Mouse.** Apple wrote a Windows driver for these years ago and it still works. Apple calls it Boot Camp. The tray's `Boot Camp` item opens [tealtadpole's download page](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), and you install the file from there. Nothing about Windows changes. Eight steps, with pictures of each: [the easy path](https://magictray.app/drivers.html#v1v2).
-- **Magic Mouse 2024 (USB-C).** Apple's old driver doesn't cover this one, so scrolling needs a different driver. The community-built one isn't finished yet, so there's nothing to download for it today. One other route exists, a patched version of Apple's driver, and it makes you choose: scrolling or battery percent, never both. It also needs a Windows startup setting changed and Memory integrity off, and nobody has confirmed it works yet. What's happening and why: [the hard path](https://magictray.app/drivers.html#v3).
+- **Magic Mouse 2024 (USB-C).** Apple's old driver doesn't cover this one, so scrolling needs a different driver. The community-built one isn't finished yet: the pinned package carries its installer but no signed driver binary, so picking `KMDF` takes one administrator approval, runs that installer and reports the failure it stops with. One other route exists, a patched version of Apple's driver, and it makes you choose: scrolling or battery percent, never both. It also needs a Windows startup setting changed and Memory integrity off, and nobody has confirmed it works yet. What's happening and why: [the hard path](https://magictray.app/drivers.html#v3).
 
 There are two ways to put that older-mouse driver in place, and both end on the same Apple file with the same Microsoft countersignature, so **neither of them needs the Windows startup setting**. One is Apple's driver package: you install the `.inf` from [tealtadpole's download page](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which is what the tray's `Boot Camp` item opens. The other is [sbagirici's script](https://github.com/sbagirici/apple-magic-mouse-scroll-fix-windows), which copies the same `applewirelessmouse.sys` into place, registers the service by hand and names it as a filter on the device itself, so it never needs your mouse to be listed in Apple's `.inf`. Magic Tray does not run that second one for you; it just reads the result like any other bound driver. Neither way goes near Apple's Boot Camp *installer*, which is the piece that refuses to run when the PC is not a Mac - the driver inside it is fine on ordinary hardware. Both routes side by side: [docs/DRIVER-MATRIX.md](docs/DRIVER-MATRIX.md#the-two-install-routes-for-the-apple-filter).
 
@@ -263,7 +263,7 @@ Getting the 2024 driver checked by Microsoft would remove the startup setting fo
 ## FAQ
 
 **Does the Magic Mouse 2024 (USB-C) work on Windows 10 and Windows 11?**  
-The battery percent does, with no driver at all. Scrolling doesn't yet. It needs the community-built driver, and that driver is not on the linked branch, so the tray's `KMDF` item tells you it can't find it and stops. The fallback is the patched Apple driver, which gives you scrolling **or** battery percent, never both, needs a Windows startup setting you change yourself, and has never been confirmed by a tester. [The 2024 mouse](https://magictray.app/v3.html) explains why.
+The battery percent does, with no driver at all. Scrolling doesn't yet. It needs the community-built driver, and the pinned package carries that driver's installer but no signed build of the driver itself, so the tray's `KMDF` item takes one administrator approval, runs the installer and reports the failure it stops with. Nothing is installed. The fallback is the patched Apple driver, which gives you scrolling **or** battery percent, never both, needs a Windows startup setting you change yourself, and has never been confirmed by a tester. [The 2024 mouse](https://magictray.app/v3.html) explains why.
 
 **Will Magic Tray change a driver on its own?**  
 No. You pick the item, a dialog asks you, and only then does anything happen. For the older mice and the AA trackpad it opens a download page and installs nothing.

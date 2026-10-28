@@ -581,10 +581,12 @@ public class DriverPackageCatalogTests
     // The commit and the digest have to move together or the genuine package
     // is refused on every installed copy. The job that downloads the archive
     // and compares it (`Driver pin`) is advisory - it filters by path, so it
-    // cannot be a required check - which leaves nothing on the merge gate to
-    // notice a bumped commit with a stale digest. driver-pin.lock is that
-    // second record, and this test is what makes it binding: it runs in
-    // `Build and test`, which is required.
+    // cannot be a required check. driver-pin.lock is a second written record
+    // of the pair, and this test is what makes it binding: it runs in
+    // `Build and test`, which is required. What that stops is a half edit -
+    // one of the two files moved, the other not. It is not a digest check: a
+    // commit bumped in both the catalogue and the lock, with the stale digest
+    // left in both, passes here and is caught only by the advisory download.
     [Fact]
     public void V3Package_Pin_MatchesTheCommittedLock()
     {

@@ -27,10 +27,20 @@
     digest in the catalogue. Run it in CI and the pin is a checked fact instead
     of a claim in a commit message.
 
+    driver-pin.lock records the same commit and digest a second time, and the
+    required `Build and test` fails if the catalogue moves without it. That
+    catches a half edit, not a stale digest: an author who bumps the commit in
+    both files and keeps the old digest in both satisfies that test. So this
+    script reads the lock too and requires all three records - catalogue, lock
+    and the bytes that arrive - to agree. It is the only check that can catch a
+    lock that went stale together with the catalogue, and it is also what makes
+    the lock worth having in this job's path filters.
+
     A transport failure is NOT a pin failure: if the archive cannot be fetched
     after the retries below, the script says so as a ::warning and exits 0,
     because no bytes arrived to contradict the constant. Only bytes that arrive
-    and disagree are an error.
+    and disagree are an error. A catalogue/lock disagreement needs no download
+    and is always an error.
 
 .PARAMETER RepoRoot
     Repository root. Defaults to the parent of this script's directory.
@@ -55,6 +65,9 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 
 $catalogRelative = 'MagicMouseTray/DriverPackageCatalog.cs'
 $catalogPath = Join-Path -Path $RepoRoot -ChildPath $catalogRelative
+
+$lockRelative = 'driver-pin.lock'
+$lockPath = Join-Path -Path $RepoRoot -ChildPath $lockRelative
 
 function Write-Problem {
     [CmdletBinding()]
@@ -96,6 +109,32 @@ function Get-CatalogConstant {
         return @{ Value = ''; Line = $i + 1 }
     }
     return $null
+}
+
+function Get-LockRecord {
+    <#
+    .SYNOPSIS
+        The `<key> <value>` pairs in driver-pin.lock, each with the line it is
+        written on. Blank lines and `#` comments are skipped.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string[]] $Lines
+    )
+
+    $records = @{}
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $text = $Lines[$i].Trim()
+        if ($text.Length -eq 0 -or $text.StartsWith('#')) {
+            continue
+        }
+        $parts = $text -split '\s+', 2
+        if ($parts.Count -eq 2) {
+            $records[$parts[0]] = @{ Value = $parts[1].Trim(); Line = $i + 1 }
+        }
+    }
+    return $records
 }
 
 if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
@@ -143,6 +182,39 @@ if ($problems -gt 0) {
     exit 1
 }
 
+# The lock is the second written record of the same pair. Reading it here is
+# what the `driver-pin.lock` path filter on this job promises, and it is the
+# only check that sees the lock and the downloaded bytes at once: the required
+# `Build and test` compares the catalogue against the lock, so a commit bumped
+# in both files with the digest left behind in both passes it.
+if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+    Write-Problem -Path $lockRelative -Line 1 -Message "Cannot read $lockRelative."
+    Write-Host 'Driver pin: FAIL - the lock is missing.'
+    exit 1
+}
+
+$lock = Get-LockRecord -Lines ([string[]]@(Get-Content -LiteralPath $lockPath))
+foreach ($pair in @(
+        @{ Key = 'commit'; Constant = 'V3RepoCommit'; Found = $commit },
+        @{ Key = 'sha256'; Constant = 'V3ZipSha256';  Found = $digest })) {
+    if (-not $lock.ContainsKey($pair.Key)) {
+        Write-Problem -Path $lockRelative -Line 1 -Message (
+            'The lock has no `{0}` line, so nothing records {1} a second time.' -f $pair.Key, $pair.Constant)
+        $problems++
+        continue
+    }
+    if ($lock[$pair.Key].Value -ne $pair.Found.Value) {
+        Write-Problem -Path $lockRelative -Line $lock[$pair.Key].Line -Message (
+            'The lock says {0} is "{1}"; {2} says "{3}". One of the two was changed without the other.' -f
+            $pair.Key, $lock[$pair.Key].Value, $pair.Constant, $pair.Found.Value)
+        $problems++
+    }
+}
+if ($problems -gt 0) {
+    Write-Host 'Driver pin: FAIL - the catalogue and the lock disagree; no download was attempted.'
+    exit 1
+}
+
 $url = 'https://github.com/{0}/{1}/archive/{2}.zip' -f `
     $constants['V3RepoOwner'].Value, $constants['V3RepoName'].Value, $commit.Value
 $destination = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath (
@@ -182,13 +254,13 @@ try {
     $actual = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $digest.Value) {
         Write-Problem -Path $catalogRelative -Line $digest.Line -Message (
-            'The pinned archive no longer hashes to V3ZipSha256. Expected {0}, got {1}. Until this is reconciled every v3 driver flow - KMDF, patched Apple and Stock restore - refuses to run for every installed copy.' -f
+            'The pinned archive no longer hashes to V3ZipSha256 (driver-pin.lock carries the same value). Expected {0}, got {1}. Until this is reconciled every v3 driver flow - KMDF, patched Apple and Stock restore - refuses to run for every installed copy.' -f
             $digest.Value, $actual)
-        Write-Host 'Driver pin: FAIL - the pinned archive does not match the catalogue digest.'
+        Write-Host 'Driver pin: FAIL - the pinned archive does not match the pinned digest.'
         exit 1
     }
 
-    Write-Host ('Driver pin: OK - {0}@{1} hashes to {2}.' -f
+    Write-Host ('Driver pin: OK - {0}@{1} hashes to {2}, and the catalogue and driver-pin.lock both say so.' -f
         $constants['V3RepoName'].Value, $commit.Value, $actual)
     exit 0
 }

@@ -183,23 +183,28 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
   the genuine package on every installed copy, across KMDF, patched Apple and
   the Stock restore. `/archive/<sha>.zip` is generated on demand rather than
   stored, so only a download proves the pin still holds.
-  `scripts/check-driver-pin.ps1` fetches it and compares.
+  `scripts/check-driver-pin.ps1` fetches it and requires the catalogue,
+  `driver-pin.lock` and the bytes that arrive to agree.
 - **A failed download is not a failed pin**: the script retries three times and
   then reports `::warning` and exits 0, because no bytes arrived to contradict
-  the constant. Red means bytes arrived and disagreed.
+  the constant. Red means bytes arrived and disagreed, or the catalogue and
+  the lock disagreed before the download was attempted.
 - **Not a required check**: it filters its `pull_request` trigger by path, and
   a required check may never do that (see the rule above the table) — added to
   the ruleset as it stands, it would block every pull request that leaves the
   pin alone. Host downtime is *not* the reason: the script fails open, so an
   unreachable host is already a green run.
-- **What being advisory costs, and what covers it**: a red run here does not
-  block a merge. The drift a pull request can introduce is caught offline
-  instead — `driver-pin.lock` records the same commit and digest, and
-  `DriverPackageCatalogTests.V3Package_Pin_MatchesTheCommittedLock` fails the
-  required `Build and test` if either catalogue constant moves without it, so
-  a bumped commit with a stale digest cannot merge green. What stays advisory
-  is the byte comparison itself, which is the part that needs the third-party
-  host and the part only upstream can break.
+- **What being advisory costs, and what only partly covers it**: a red run
+  here does not block a merge. `driver-pin.lock` records the same commit and
+  digest and `DriverPackageCatalogTests.V3Package_Pin_MatchesTheCommittedLock`
+  fails the required `Build and test` if either catalogue constant moves
+  without it — so a *half* edit cannot merge. That is not a digest check: an
+  author who bumps the commit in both the catalogue and the lock and leaves
+  the digest behind in both still merges green, and this job goes red without
+  blocking. Only the download proves the digest, and the download is here.
+  Closing that needs this job to be required, which needs its `pull_request`
+  path filter dropped and a ruleset change the repository owner makes — not
+  something a pull request can do.
 - **Schedule**: Mondays 05:17 UTC, so an archive regenerated upstream is found
   before a user's install is.
 - **Permissions**: `contents: read`. **Timeout**: 10 min. **Concurrency**:

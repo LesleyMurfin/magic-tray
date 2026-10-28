@@ -17,10 +17,12 @@
 # the reason: scripts/check-driver-pin.ps1 treats a failed download as "not
 # checked" (::warning, exit 0), so an unreachable host is already a green run.
 # What being advisory costs is that a red run here - bytes arrived and
-# disagreed - does not itself block a merge, and the drift a pull request can
-# introduce is caught offline instead: driver-pin.lock records the same commit
-# and digest, and the required `Build and test` fails if either catalogue
-# constant moves without it.
+# disagreed - does not itself block a merge. driver-pin.lock records the same
+# commit and digest, and the required `Build and test` fails if either
+# catalogue constant moves without it, so a half edit cannot merge; a commit
+# bumped in both files with the stale digest left in both still can. Only this
+# download proves the digest, and this job reads the lock too, so all three
+# records have to agree.
 # The weekly schedule is the point of the rest: an archive regenerated upstream
 # breaks every installed copy, and waiting for the next pull request to notice
 # is too late.
@@ -69,6 +71,7 @@ jobs:
           persist-credentials: false
 
       # pwsh is preinstalled on the ubuntu-latest image, and the checker only
-      # reads a C# file and hashes a download, so no Windows runner is needed.
+      # reads two text files and hashes a download, so no Windows runner is
+      # needed.
       - name: Check the pinned driver package against its digest
         run: pwsh -File scripts/check-driver-pin.ps1

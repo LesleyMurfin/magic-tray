@@ -182,7 +182,7 @@
             "name": "Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway."
+              "text": "Not yet. The community driver for that mouse has no signed build, so its installer stops before installing anything, and its battery percent works with no driver anyway."
             }
           },
           {
@@ -281,15 +281,15 @@
       <p class="note">Want to go back to plain Windows? The <strong>Driver</strong> menu has <strong>Stock Windows</strong>, which undoes this.</p>
 
       <h2 id="v3">The Magic Mouse 2024 with USB-C: no scroll fix to download yet</h2>
-      <p class="lead">The 2024 USB-C Magic Mouse (<code>0323</code>) has no finished scroll fix you can install today. The community driver it needs is still being built, so there is nothing to download.</p>
+      <p class="lead">The 2024 USB-C Magic Mouse (<code>0323</code>) has no finished scroll fix you can install today. The community driver it needs is still being built: the package carries its installer, but no signed build of the driver, so the installer stops before anything is installed.</p>
       <p>Your battery percent on this mouse already works with no driver at all, and a tester has confirmed it. <a href="battery.html#read">See it in the tray</a>, or read <a href="tested.html">the full list of confirmed devices</a>.</p>
       <ul class="facts">
-        <li><strong>Scrolling is the only thing missing.</strong> Nobody can install that driver yet, from the tray or by hand.</li>
+        <li><strong>Scrolling is the only thing missing.</strong> Nobody can install that driver yet, from the tray or by hand: there is no signed build for its installer to install.</li>
         <li>Why this mouse is the awkward one: <a href="v3.html">the 2024 mouse explained</a>.</li>
         <li>What would finish it: <a href="funding.html">a driver Microsoft has checked</a>.</li>
       </ul>
-      <p>The tray's <strong>Driver</strong> menu already lists the community driver. Once it's published, picking it will download and install it after you confirm.</p>
-      <p>Pick it today and the tray tells you the driver isn't available yet, and nothing on your PC changes.</p>
+      <p>The tray's <strong>Driver</strong> menu already lists the community driver. Once a signed build is published, picking it will install it after you confirm.</p>
+      <p>Pick it today and the tray downloads the pinned package, asks you for administrator approval, runs the installer and reports the error it stops with. Nothing is installed.</p>
       <p>The menu's other choice, the patched Apple driver, does have an installer today. On that route you get scrolling or battery, never both, and nobody has confirmed it.</p>
       <p>Neither driver has been checked by Microsoft, and the startup setting they need lowers a real security protection.</p>
       <details id="cost">
@@ -315,7 +315,7 @@
         <dt>Which driver does my Apple Magic Mouse need on Windows 10 or 11?</dt>
         <dd>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</dd>
         <dt>Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?</dt>
-        <dd>Not yet. The community driver for that mouse isn't published, so nobody can download or install it, and its battery percent works with no driver anyway.</dd>
+        <dd>Not yet. The community driver for that mouse has no signed build, so its installer stops before installing anything, and its battery percent works with no driver anyway.</dd>
         <dt>Will Magic Tray change my mouse driver without asking?</dt>
         <dd>No, never on its own. Magic Tray opens a download page for the older Magic Mice, and for the 2024 mouse it asks before it installs anything.</dd>
         <dt>My Magic Mouse still won't scroll. What do I check?</dt>

@@ -4,13 +4,18 @@
 # (V3RepoCommit and V3ZipSha256). This file exists so that neither of those two
 # constants can move on its own: DriverPackageCatalogTests compares the
 # catalogue against this file, and that test runs in `Build and test`, which is
-# a required check. A pull request that bumps the commit and leaves the digest
-# behind - which would refuse the genuine package on every installed copy, on
-# all three v3 flows - therefore goes red on the merge gate.
+# a required check.
 #
-# What this file does NOT prove is that the digest describes the bytes GitHub
-# serves today. Only a download proves that, and that is the `Driver pin` job
-# (.github/workflows/driver-pin.yml), which is advisory and runs every Monday.
+# What that catches is a half edit - one file moved, the other not. It is NOT a
+# digest check: a change that bumps the commit here and in the catalogue and
+# keeps the old digest in both passes it, and a stale digest refuses the
+# genuine package on every installed copy, on all three v3 flows. Only a
+# download proves the digest describes the bytes GitHub serves, and that is
+# `scripts/check-driver-pin.ps1` - which reads this file too and requires the
+# catalogue, the lock and the downloaded bytes to agree. It runs as the
+# `Driver pin` job (.github/workflows/driver-pin.yml), which is advisory and
+# runs every Monday, so a stale digest can still be merged and is caught after
+# the fact rather than before.
 #
 # Changing the pin means changing both lines here and both constants there.
 # Get the digest from the archive rather than by hand:
