@@ -167,7 +167,7 @@ $state = [ordered]@{
     timestamp          = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     col01Present       = $false
     col02Present       = $false
-    filterInStack      = $null   # tri-state: $null = not read, $true/$false = measured
+    filterInStack      = $null   # tri-state: $null = not read, boolean = measured
     hidDeviceCount     = 0
     hidDevices         = @()
     bthenumInstanceId  = ""
