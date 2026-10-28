@@ -41,8 +41,10 @@ public class DriverPackageCatalogTests
         Assert.Equal("Install-KMDF.cmd", DriverPackageCatalog.KmdfOneClickName);
         Assert.Equal("Uninstall-KMDF.cmd", DriverPackageCatalog.KmdfUninstallCmdName);
         Assert.DoesNotContain("FLIP:NoFilter", DriverPackageCatalog.KmdfUninstallCmdRelativePath);
+        // The archive the installer downloads, extracts and runs elevated is
+        // addressed by the catalogue's pinned commit, never by a branch head.
         Assert.Equal(
-            "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/refs/heads/main.zip",
+            $"https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/{DriverPackageCatalog.V3RepoCommit}.zip",
             DriverPackageCatalog.V3ZipUrl);
     }
 
@@ -525,5 +527,55 @@ public class DriverPackageCatalogTests
         Assert.Contains(reason, text, StringComparison.Ordinal);
         // It did not claim a decline it never observed.
         Assert.DoesNotContain("was declined", text, StringComparison.Ordinal);
+    }
+
+    // The v3 zip is downloaded, extracted and then run elevated. A ref that
+    // can move - a branch head, a tag - means whoever moves it next decides
+    // what runs as administrator on every machine that clicks the radio. Only
+    // a 40-hex commit id names bytes that cannot change under us.
+    [Fact]
+    public void V3Package_IsAddressedByAnImmutableCommit_NotAMovableRef()
+    {
+        var url = DriverPackageCatalog.V3ZipUrl;
+
+        Assert.Matches(@"^https://github\.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/[0-9a-f]{40}\.zip$", url);
+        Assert.Matches("^[0-9a-f]{40}$", DriverPackageCatalog.V3RepoCommit);
+        Assert.NotEqual(new string('0', 40), DriverPackageCatalog.V3RepoCommit);
+
+        // Neither of GitHub's movable archive shapes: refs/heads/<branch> is a
+        // branch head, refs/tags/<tag> is a tag that can be force-moved.
+        Assert.DoesNotContain("refs/heads", url, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("refs/tags", url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("main")]
+    [InlineData("master")]
+    [InlineData("HEAD")]
+    [InlineData("develop")]
+    public void V3Package_ArchiveUrl_NamesNoBranch(string movableRef)
+    {
+        var url = DriverPackageCatalog.V3ZipUrl;
+
+        Assert.DoesNotContain($"/{movableRef}.zip", url, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain($"/heads/{movableRef}", url, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(movableRef, DriverPackageCatalog.V3RepoCommit, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // A pinned commit says which bytes were meant. It does not say the bytes
+    // that arrived are those bytes: a TLS-terminating proxy or a tampered
+    // mirror answers any URL. The catalogue therefore also carries the
+    // known-good SHA-256 the installer checks before it extracts anything.
+    [Fact]
+    public void V3Package_CarriesAKnownGoodSha256_ForTheBytesItWillExecute()
+    {
+        Assert.Matches("^[0-9a-f]{64}$", DriverPackageCatalog.V3ZipSha256);
+
+        // Not a placeholder: all-zero, and the digest of zero bytes, are the
+        // two values that would wave an empty or stubbed download through.
+        Assert.NotEqual(new string('0', 64), DriverPackageCatalog.V3ZipSha256);
+        Assert.NotEqual(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            DriverPackageCatalog.V3ZipSha256);
     }
 }
