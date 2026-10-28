@@ -16,6 +16,8 @@
 - HIST-2026-09-23: `786c77c` bump actions/checkout from 4.4.0 to 7.0.1.
 - HIST-2026-10-14: `b9b55e6` bump actions/upload-artifact from 7.0.1 to 7.0.2.
 - HIST-2026-10-15: `356b8fa` bump github/codeql-action to v4.39.0.
-- HIST-2026-10-16: `fbd47e3` add `AGENTS.md` and the ACO maintainer kit; `ac0dda8` wire AICostOptimizer Jev and purge Orca; `99511d2` bind riley_kg state schema to jev. `main` HEAD.
-- HIST-2026-10-19: Seed `.context/` and the `AGENTS.md` pointer. #172 (`4b96781`) fails DCO because a blank line splits the trailer block; force-push is forbidden. Replacement is #174.
-- HIST-2026-10-19: On #174, drop `@LesleyMurfin` from CODEOWNERS, replace Lesley-only merge wording, and remove dead `aicostoptimizer jev`, C# walker, `riley_kg` init/sync, and `aco-index-publish.yml` instructions outside `.ai/skills/`.
+- HIST-2026-10-16: `fbd47e3` add `AGENTS.md` and the ACO maintainer kit; `ac0dda8` wire AICostOptimizer Jev and purge Orca; `99511d2` bind riley_kg state schema to jev.
+- HIST-2026-10-19: Seed `.context/` and the `AGENTS.md` pointer. #172 (`4b96781`) fails DCO because a blank line splits the trailer block; force-push is forbidden. Replacement is #174, and #172 was closed on 2026-10-28.
+- HIST-2026-10-19: `1c9b8ce` merge PR #173 — `no-draft-prs` now fails draft pull requests.
+- HIST-2026-10-28: `b94d2a1` bump the codeql-action group.
+- HIST-2026-10-28: On #174, delete `.github/CODEOWNERS`, replace Lesley-only merge wording, and remove dead `aicostoptimizer jev`, C# walker, `riley_kg` init/sync, and `aco-index-publish.yml` instructions outside `.ai/skills/`. Fold `.aco/JEV.md` into `.aco/README.md`; bump the triage prompt to `1.5.0-quick`.

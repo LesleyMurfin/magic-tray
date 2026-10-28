@@ -16,12 +16,16 @@ Path index of this repo. Device catalog is code, not this table (`AGENTS.md`, `l
 | `specs/` | `github-drafts.md`, `outreach-drafts.md`, `webmaster-setup.md` |
 | `scripts/` | Release verify/package, site and version checks, keyboard SDP patch, diagnose/recover |
 | `packaging/winget/` | Winget manifests for portable `MagicTray` 1.1.0 |
-| `.github/workflows/` | Nine required PR checks plus release and winget-submit (`README.md` in that folder) |
+| `.github/workflows/` | Required PR checks plus release and winget-submit (`README.md` in that folder names the current set) |
 | `.github/ISSUE_TEMPLATE/` | Bug, feature, missing-device, test-report |
 | `diagnose-driver.ps1` | Repo-root diagnostic script |
-| `.aco/` | ACO maintainer kit (prompt, JEV sample). Never commit `graph.db` |
+| `PSScriptAnalyzerSettings.psd1` | PowerShell lint rules |
+| `templates/` | Issue and report body templates |
+| `.context/` | This context pack: `current.md`, `decisions.md`, `history.md`, `map.md` |
+| `.aco/` | ACO maintainer kit (triage prompt, cost and graph notes, probe sample). Never commit `graph.db` |
 | `.ai/skills/aco-triage/` | Portable ACO triage skill and graceful-degrade verifier |
-| `AGENTS.md` | Agent charter pointer, product constraints, ACO contract, PR hygiene |
+| `.ai/hooks/`, `.ai/validators/` | Optional fail-open session probe and doc validators |
+| `AGENTS.md` | Agent charter (inlined, not a pointer), product constraints, ACO contract, PR hygiene |
 | `llms.txt` | Agent-oriented product notes |
 | `README.md` | User manual in the repo: install, devices, drivers, releases |
 | `CONTRIBUTING.md` | DCO, PR checks, hardware-report rules |

@@ -1,8 +1,7 @@
 # AGENTS.md — Magic Tray
 Read .context/ first.
-Shared-store AGENTS.md: ~/projects/AGENTS.md
 
-- Code graph (optional, fail-open): if `.aco/graph.db` exists, `riley-kg blast-radius --db .aco/graph.db <file>` / `riley-kg callers --db .aco/graph.db <symbol>` (from LesleyMurfin/agents@agents-sqlite-graph); otherwise use `rg`/`git`. Never block on the graph.
+- Code graph (optional, fail-open): when `.aco/graph.db` and `riley-kg` are both present and the query returns, `riley-kg blast-radius --db .aco/graph.db <file>` / `riley-kg callers --db .aco/graph.db <symbol>` (from LesleyMurfin/agents@agents-sqlite-graph); otherwise use `rg`/`git`. Never block on the graph.
 - Cost: run `aicostoptimizer status` before long or expensive agent runs when it is installed; exit≠0 means quota fail-closed, so stop and report.
 - Build: `dotnet build MagicMouseTray/MagicMouseTray.csproj -c Release`
 - Test: `dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release`
@@ -20,6 +19,7 @@ Shared-store AGENTS.md: ~/projects/AGENTS.md
 
 | Path | Role |
 |------|------|
+| `.context/` | Agent context pack read first: current, decisions, history, map |
 | `MagicMouseTray/` | WPF tray app (C# / .NET 8) |
 | `MagicMouseTray.Tests/` | Unit tests |
 | `docs/` | Site pages + operator docs |
@@ -88,34 +88,24 @@ Do **not** vendor or rebuild the KMDF driver here — that lives in `magic-mouse
 
 1. **Prompt:** Reference `.aco/ACO-TRIAGE-PROMPT.txt` for structural triage.
 2. **Cost:** `aicostoptimizer status` before a long run when that command is installed. Non-zero exit is quota fail-closed: stop and report.
-3. **Graph:** If `.aco/graph.db` exists, `riley-kg blast-radius --db .aco/graph.db <file>` and `riley-kg callers --db .aco/graph.db <symbol>`. Otherwise `rg` and `git`. Never block on the graph.
+3. **Graph:** When `.aco/graph.db` and `riley-kg` are both present and the query returns, `riley-kg blast-radius --db .aco/graph.db <file>` and `riley-kg callers --db .aco/graph.db <symbol>`. If the file, the CLI, or the query is missing, empty, or stalled, use `rg` and `git`. Never block on the graph.
 4. **Output Contract:** Every PR review ends with ```json aco-triage-run```.
 5. **Clean repo:** Never commit `.aco/graph.db`.
 
 ### Pre-flight
 
 ```bash
-python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py
+python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py --offline-only
 ```
 
-Expect PASS on the offline path. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
+Expect PASS. `--offline-only` skips the optional TypeScript probe self-test, which needs Node 22.6+; drop the flag to exercise it. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
 
-### Blast-radius query (conditional, fail-open)
-
-When `.aco/graph.db` exists:
-
-```bash
-riley-kg blast-radius --db .aco/graph.db <file>
-riley-kg callers --db .aco/graph.db <symbol>
-```
+### Blast-radius targets
 
 Typical targets: `MagicMouseTray/` (`DriverInstaller.cs`, battery readers, device catalog).
 
-If graph DB, CLI, or query is missing / times out / empty:
-
-- Continue with `git` + `rg` (label callers `method: "rg"` / heuristic).
-- Set `graph.present=false` (or `true` with `node_count=0`) in the run footer.
-- **Never** block a PR review on graph availability.
+When the graph is unavailable, say so in the run footer rather than omitting it: `graph.present=false`
+(or `true` with `node_count=0`), `tooling.riley_kg_ok=false`, and `blast_radius[].method="rg"`.
 
 ### Zero daemons
 
@@ -144,8 +134,8 @@ Every ACO triage / PR review **MUST** end with exactly one full machine footer:
   "verification": [{ "command": "dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release", "exit_code": 0, "passed": true }],
   "diff_stats": null,
   "residual_risks": [],
-  "prompt_version": "1.4.0-quick",
-  "pr_comment_status": "skipped|posted",
+  "prompt_version": "1.5.0-quick",
+  "pr_comment_status": "skipped",
   "pr_comment_urls": []
 }
 ```
@@ -157,8 +147,7 @@ Populate from the real run. Chat narrative alone is not enough for ingest. If a 
 
 - `.ai/skills/aco-triage/SKILL.md`
 - `.ai/skills/aco-triage/scripts/verify_graceful_degrade.py`
-- `.aco/README.md` · `.aco/JEV.md` (cost and graph commands) · `.aco/jev.env.sample`
-
+- `.aco/README.md` (cost, graph, and smoke commands) · `.aco/jev.env.sample` (probe variables)
 
 ## PR hygiene
 

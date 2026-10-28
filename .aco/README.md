@@ -1,13 +1,15 @@
 # `.aco/` — ACO Maintainer Kit index (zero-daemon)
 
-This directory holds the **local structural graph** used by the ACO Maintainer Kit
-(PRD-0106). Contributors do **not** run Elasticsearch, Jev, XERJ, or any other
-daemon to triage PRs.
+This directory holds the ACO Maintainer Kit triage prompt and notes (PRD-0106).
+Structural triage runs from the local checkout: no Elasticsearch, no search daemon,
+no network hop. This repo does not publish `.aco/graph.db`, so `rg` + `git` is the
+normal path and the graph is a bonus when a maintainer has one.
 
 | File | Tracked? | Purpose |
 |------|----------|---------|
 | `README.md` | yes | This file |
 | `ACO-TRIAGE-PROMPT.txt` | yes | Binding triage prompt |
+| `jev.env.sample` | yes | Sample variables for the optional fail-open probe hook |
 | `graph.db` | **no** | Optional SQLite symbol graph for `riley-kg` |
 | `graph.db-wal` / `graph.db-shm` | **no** | SQLite sidecars if a graph file is opened |
 | `graph.json` | **no** | Optional export / debug dump |
@@ -15,28 +17,34 @@ daemon to triage PRs.
 
 ## Baseline contract
 
-1. **Structural triage** reads `.aco/graph.db` when that file is present:
+1. **Structural triage** reads `.aco/graph.db` through `riley-kg`:
    `riley-kg blast-radius --db .aco/graph.db <file>` and
-   `riley-kg callers --db .aco/graph.db <symbol>`. No network hop.
-   If the file or the CLI is missing, use `rg` and `git`. Never block on the graph.
+   `riley-kg callers --db .aco/graph.db <symbol>`.
+   If the file, the CLI, or the query is missing, empty, or stalled, use `rg` and
+   `git`, and label callers `method: "rg"`. Never block on the graph.
 2. **Cost:** when `aicostoptimizer` is installed, run `aicostoptimizer status`
    before a long run. A non-zero exit is quota fail-closed: stop and report.
 3. **Do not commit** `graph.db`.
 
-## Graph file
-
-This repo does not publish `graph.db`. If `.aco/graph.db` is absent, use `rg` and `git`.
-
 ## Smoke commands
 
+Always:
+
 ```bash
-python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py
+python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py --offline-only
 python3 .ai/skills/aco-triage/tests/test_graceful_degrade_smoke.py
+```
+
+Only when the tool is installed — and `riley-kg` also needs `.aco/graph.db`, which this
+repo does not ship:
+
+```bash
 riley-kg blast-radius --db .aco/graph.db MagicMouseTray/DriverInstaller.cs
 riley-kg callers --db .aco/graph.db DriverInstaller
 aicostoptimizer status
 ```
 
-Related skill: `.ai/skills/aco-triage/`. Optional probe hook:
-`.ai/hooks/pre/jev-probe.ts` (fail-open). Binding prompt:
-`.aco/ACO-TRIAGE-PROMPT.txt`.
+Related skill: `.ai/skills/aco-triage/`. Binding prompt: `.aco/ACO-TRIAGE-PROMPT.txt`.
+The optional URL probe `.ai/hooks/pre/jev-probe.ts` is fail-open, and is neither the cost
+check nor the graph query; sample variables for it are in `.aco/jev.env.sample`. Never
+commit live secrets.

@@ -1,4 +1,4 @@
-ACO structural triage — THIS workspace only. Offline-first. prompt_version=1.4.0-quick.
+ACO structural triage — THIS workspace only. Offline-first. prompt_version=1.5.0-quick.
 
 RULES
 1) Stay in workspace root. No daemons. No graph CLI is required for structural triage.
@@ -32,7 +32,7 @@ OUTPUT (chat)
 
 FINAL BLOCK (mandatory, exactly one, last in reply — full object, not a stub):
 ```json aco-triage-run
-{"schema_version":"aco-triage-run/v1","run_id":"<slug-date>","timestamp":"<ISO-Z>","workspace_root":"<pwd>","branch":"<branch>","head_sha":"<sha>","pr_ref":"<owner/repo#N|null>","graph":{"present":false,"db_path":null,"node_count":0,"edge_count":0,"scoped":true,"build_seconds":null},"tooling":{"riley_kg_ok":false,"jev_used":false,"pythonpath":null},"targets":[{"path":"...","reason":"..."}],"blast_radius":[{"path":"...","symbols":null,"callers":null,"latency_ms":null,"method":"rg"}],"findings":[{"id":"F1","severity":"P0|P1|P2|OK","title":"...","path":"...","evidence":"...","patch_summary":null}],"verification":[{"command":"...","exit_code":0,"passed":true}],"diff_stats":null,"residual_risks":["graph missing → rg only"],"prompt_version":"1.4.0-quick","pr_comment_status":"skipped","pr_comment_urls":[]}
+{"schema_version":"aco-triage-run/v1","run_id":"<slug-date>","timestamp":"<ISO-Z>","workspace_root":"<pwd>","branch":"<branch>","head_sha":"<sha>","pr_ref":"<owner/repo#N|null>","graph":{"present":false,"db_path":null,"node_count":0,"edge_count":0,"scoped":true,"build_seconds":null},"tooling":{"riley_kg_ok":false,"jev_used":false,"pythonpath":null},"targets":[{"path":"...","reason":"..."}],"blast_radius":[{"path":"...","symbols":null,"callers":null,"latency_ms":null,"method":"rg"}],"findings":[{"id":"F1","severity":"P0|P1|P2|OK","title":"...","path":"...","evidence":"...","patch_summary":null}],"verification":[{"command":"...","exit_code":0,"passed":true}],"diff_stats":null,"residual_risks":["graph missing → rg only"],"prompt_version":"1.5.0-quick","pr_comment_status":"skipped","pr_comment_urls":[]}
 ```
 Populate from the real run (counts must match Findings). Put the checklist in the PR body.
 
