@@ -16,12 +16,11 @@
     <!-- Allows building on non-Windows (e.g. restoring packages) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>magic-mouse.ico</ApplicationIcon>
-    <!-- Test build of the automated driver-signing fix, cut from the unreleased
-         1.1.1 line. The prerelease suffix is what the tray menu, the log header
-         and every bug report show, so a tester can never confuse this with a
-         release. verify-release.ps1 gates a tag against <Version>, so this must
-         go back to a plain 1.1.x before anything is tagged. -->
-    <Version>1.1.2-test.signingfix.20261028</Version>
+    <!-- The automated driver-signing fix ships on the 1.1.2 line. Version,
+         AssemblyVersion and FileVersion must stay the same MAJOR.MINOR.PATCH:
+         check-version-sync.ps1 rejects anything else, and verify-release.ps1
+         gates a tag against <Version>. -->
+    <Version>1.1.2</Version>
     <AssemblyVersion>1.1.2.0</AssemblyVersion>
     <FileVersion>1.1.2.0</FileVersion>
     <Product>Magic Tray</Product>
