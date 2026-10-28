@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System.Diagnostics;
 using System.IO;
-using System.Management;
 using System.Runtime.Versioning;
 using System.Text;
 
@@ -12,7 +11,7 @@ namespace MagicMouseTray;
 // (AGENTS.md:76).
 //
 // Two parts on purpose, so every rule is testable without a PC: BuildPlan is
-// pure - four readings and a resume flag in, an ordered step list and the exact
+// pure - three readings and a resume flag in, an ordered step list and the exact
 // words the user agrees to out - and RunAsync is the only code here that starts
 // a process. So "nothing reboots this PC without a confirmed plan that said it
 // would" is a property of two small functions rather than of every caller's
@@ -56,9 +55,12 @@ internal enum SigningStep
     // whether it is writing Enabled=0 or Enabled=1 - and the plan record is
     // positional (callers deconstruct it), so the direction is carried in the
     // steps rather than in a sixth record field.
+    //
+    // There is deliberately no ResumeBitLocker. The undo suspends for its own
+    // one restart exactly as the fix does, and that IS the resume: see
+    // BuildRevertPlan.
     DisableTestSigning,
     EnableHvci,
-    ResumeBitLocker,
 }
 
 internal enum SigningFixState
@@ -103,7 +105,10 @@ internal static class SigningFix
 
     // The elevated pass does registry writes, a bcdedit write and a shutdown
     // request. Two minutes is the same ceiling DeviceRepair uses
-    // (DeviceRepair.cs:610) and it is what bounds a hung elevated process.
+    // (DeviceRepair.cs:610). It bounds how long THIS process waits, not the
+    // elevated child: Kill on a high-integrity process from a medium-integrity
+    // one is refused, so a hung elevated pass is reported as a failure here
+    // while the script itself keeps running.
     static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(2);
 
     // Verbatim text from the failed step - bcdedit's own stderr, when a Secure
@@ -134,23 +139,26 @@ internal static class SigningFix
     //   testSigningOn != true       EnableTestSigning is included. bcdedit
     //                               setting a flag that is already set is a
     //                               no-op, so an unreadable reading acts.
-    //   bitLockerProtected != false SuspendBitLocker is included. Unknown
-    //                               suspends: the suspend is harmless on a PC
-    //                               with no BitLocker (the script tolerates the
-    //                               cmdlet being absent) and skipping it on a
-    //                               PC that could not be read is what makes
-    //                               Windows demand the recovery key.
     //   resuming                    this is the pass after the firmware trip.
     //                               It only changes what happens when Secure
     //                               Boot is STILL on: first time that is the
     //                               firmware trip, second time it is
     //                               Unavailable rather than another trip.
+    //
+    // BitLocker is deliberately NOT a reading here. Whether this drive is
+    // protected is only answerable by an administrator - the volume class lives
+    // in root\CIMV2\Security\MicrosoftVolumeEncryption - and the tray plans
+    // unelevated, so a reading taken at this point is null on every ordinary PC
+    // and could only ever make the plan LESS careful. So every plan that
+    // rewrites boot configuration carries SuspendBitLocker, and the elevated
+    // script, which can read it, is where "suspend or do nothing" is decided
+    // (ScriptFor below). That is also the only place that can refuse to
+    // continue when a protected drive will not suspend.
     internal static SigningFixPlan BuildPlan(
-        bool? secureBootOn, bool? hvciOn, bool? testSigningOn, bool? bitLockerProtected, bool resuming)
+        bool? secureBootOn, bool? hvciOn, bool? testSigningOn, bool resuming)
     {
         bool needHvci = hvciOn != false;
         bool needTestSigning = testSigningOn != true;
-        bool needBitLocker = bitLockerProtected != false;
 
         // Measured-correct PC. Checked before Secure Boot, because a PC that
         // already has Test Mode on and Memory integrity off needs nothing -
@@ -213,20 +221,16 @@ internal static class SigningFix
                     reason);
             }
 
-            List<SigningStep> firmwareSteps = [];
-            if (needBitLocker)
-                firmwareSteps.Add(SigningStep.SuspendBitLocker);
-            firmwareSteps.Add(SigningStep.RebootToFirmware);
+            List<SigningStep> firmwareSteps =
+                [SigningStep.SuspendBitLocker, SigningStep.RebootToFirmware];
             return new SigningFixPlan(
                 SigningFixState.NeedsFirmware,
                 firmwareSteps,
-                FirmwarePrompt(firmwareSteps, bitLockerProtected),
+                FirmwarePrompt(firmwareSteps),
                 null);
         }
 
-        List<SigningStep> steps = [];
-        if (needBitLocker)
-            steps.Add(SigningStep.SuspendBitLocker);
+        List<SigningStep> steps = [SigningStep.SuspendBitLocker];
         if (needHvci)
             steps.Add(SigningStep.DisableHvci);
         if (needTestSigning)
@@ -235,20 +239,23 @@ internal static class SigningFix
         return new SigningFixPlan(
             SigningFixState.Ready,
             steps,
-            ReadyPrompt(steps, testSigningOn, bitLockerProtected, resuming),
+            ReadyPrompt(steps, testSigningOn, resuming),
             null);
     }
 
-    // The undo the charter requires to always be on offer (AGENTS.md:76):
-    // Test Mode off, Memory integrity back on, BitLocker protection resumed,
-    // one restart. It is never blocked by Secure Boot - turning test signing
-    // OFF is always permitted by Windows, Secure Boot or not - so the undo is
-    // available on every PC, including one whose forward fix is Unavailable.
+    // The undo, offered wherever there is something to undo (AGENTS.md:76):
+    // Test Mode off, Memory integrity back on, one restart. It is never blocked
+    // by Secure Boot - turning test signing OFF is always permitted by Windows,
+    // Secure Boot or not - so the undo is available on every PC, including one
+    // whose forward fix is Unavailable.
     //
-    // BitLocker is resumed unconditionally: Resume-BitLocker on a volume that
-    // was never suspended is a no-op, and the alternative - leaving protection
-    // suspended because a reading failed - is the one outcome that actually
-    // costs the user something.
+    // It suspends BitLocker for exactly the same reason the forward fix does,
+    // and that suspend IS the resume. This pass rewrites the BCD and the HVCI
+    // scenario, so an active TPM seal turns the restart at the end of it into a
+    // 48-digit recovery prompt; protectors suspended for one restart are active
+    // again when Windows comes back. Resuming BitLocker BEFORE that restart -
+    // which is what this plan used to do - re-seals against measurements the
+    // next boot no longer matches, which is the lockout it claimed to prevent.
     internal static SigningFixPlan BuildRevertPlan(bool? testSigningOn, bool? hvciOn)
     {
         bool needTestSigning = testSigningOn != false;
@@ -265,12 +272,11 @@ internal static class SigningFix
                 null);
         }
 
-        List<SigningStep> steps = [];
+        List<SigningStep> steps = [SigningStep.SuspendBitLocker];
         if (needTestSigning)
             steps.Add(SigningStep.DisableTestSigning);
         if (needHvci)
             steps.Add(SigningStep.EnableHvci);
-        steps.Add(SigningStep.ResumeBitLocker);
         steps.Add(SigningStep.Reboot);
         return new SigningFixPlan(SigningFixState.Ready, steps, RevertPrompt(steps), null);
     }
@@ -297,8 +303,8 @@ internal static class SigningFix
     static string StepText(SigningStep step) => step switch
     {
         SigningStep.SuspendBitLocker =>
-            "Magic Tray: suspends BitLocker protection for one restart "
-            + "(Suspend-BitLocker -RebootCount 1)",
+            "Magic Tray: suspends BitLocker protection for this one restart, on a drive that is "
+            + "protected (manage-bde -protectors -disable -rebootcount 1)",
         SigningStep.DisableHvci =>
             "Magic Tray: turns Memory integrity (Core isolation) off "
             + "(Enabled = 0 under HypervisorEnforcedCodeIntegrity)",
@@ -314,8 +320,6 @@ internal static class SigningFix
         SigningStep.EnableHvci =>
             "Magic Tray: turns Memory integrity (Core isolation) back on "
             + "(Enabled = 1 under HypervisorEnforcedCodeIntegrity)",
-        SigningStep.ResumeBitLocker =>
-            "Magic Tray: resumes BitLocker protection (Resume-BitLocker)",
         _ => "Magic Tray: an unrecognised step, which Magic Tray will not run",
     };
 
@@ -360,8 +364,8 @@ internal static class SigningFix
     const string UndoSection =
         "TO UNDO\n"
         + "One click: \"Undo the driver signing fix\" on this same menu puts all of it back "
-        + "(" + TestSigningOffCommand + ", Memory integrity back on with Enabled = 1, "
-        + "Resume-BitLocker, one restart).";
+        + "(" + TestSigningOffCommand + ", Memory integrity back on with Enabled = 1, one "
+        + "restart).";
 
     // IReadOnlyList has no Contains / IndexOf of its own, and these two run
     // over a list of at most four entries, so a plain scan is both the cheapest
@@ -384,26 +388,19 @@ internal static class SigningFix
         return 0;
     }
 
-    // Unknown counts as protected: a sentence the user did not need costs
-    // nothing, a missing one costs them their data. The difference here is that
-    // the fix SUSPENDS BitLocker, so the sentence is a reassurance rather than
-    // a warning - the recovery key is not asked for at all.
-    static string BitLockerLines(IReadOnlyList<SigningStep> steps, bool? bitLockerProtected)
-    {
-        if (!HasStep(steps, SigningStep.SuspendBitLocker))
-        {
-            return "BitLocker is not protecting this PC's system drive, so no recovery key is "
-                + "involved in any of this.";
-        }
-
-        var lead = bitLockerProtected == true
-            ? "This PC is protected by BitLocker, so Magic Tray suspends it for one restart first."
-            : "Magic Tray could not tell whether BitLocker protects this PC, so it suspends "
-                + "BitLocker for one restart anyway.";
-        return lead
-            + "\nThat is what stops Windows asking for the 48-digit recovery key: you will not "
-            + "need the key, and BitLocker turns itself back on after that one restart.";
-    }
+    // The suspend is in every plan that rewrites boot configuration, and the
+    // script skips it on a drive that is not protected, so one sentence serves
+    // both PCs: it promises the recovery key is not needed, and says plainly
+    // that an unprotected drive is untouched. The fix SUSPENDS rather than
+    // warns, so this is a reassurance and not a risk notice - and the promise
+    // is kept by the script refusing to change boot settings at all when a
+    // protected drive will not suspend.
+    const string BitLockerLines =
+        "If BitLocker or Device Encryption is protecting this drive, Magic Tray suspends that "
+        + "protection for this one restart first, and stops without changing anything if the "
+        + "suspend fails.\nThat is what stops Windows asking for the 48-digit recovery key: you "
+        + "will not need the key, and protection is active again when Windows comes back. On a "
+        + "drive that is not protected, that step does nothing.";
 
     // What the user is trading away, one line each, with the Memory integrity
     // line only when that step is in THIS plan - the firmware pass does not
@@ -432,7 +429,7 @@ internal static class SigningFix
     }
 
     static string ReadyPrompt(
-        IReadOnlyList<SigningStep> steps, bool? testSigningOn, bool? bitLockerProtected, bool resuming)
+        IReadOnlyList<SigningStep> steps, bool? testSigningOn, bool resuming)
     {
         var headline = resuming
             ? "Magic Tray can finish the driver signing fix now, and then the Magic Mouse scroll "
@@ -462,7 +459,7 @@ internal static class SigningFix
             + "THIS PC WILL RESTART at the end of the list above, on its own and without asking "
             + "again. Save your work now.\n"
             + AdminOnce,
-            BitLockerLines(steps, bitLockerProtected),
+            BitLockerLines,
             unknown,
             ChangesSection(steps, firmware: false),
             UndoSection,
@@ -472,7 +469,7 @@ internal static class SigningFix
         ]);
     }
 
-    static string FirmwarePrompt(IReadOnlyList<SigningStep> steps, bool? bitLockerProtected)
+    static string FirmwarePrompt(IReadOnlyList<SigningStep> steps)
     {
         return Block(
         [
@@ -503,7 +500,7 @@ internal static class SigningFix
             + "THIS PC WILL RESTART IMMEDIATELY, into the firmware setup screen instead of into "
             + "Windows. Save your work now.\n"
             + AdminOnce,
-            BitLockerLines(steps, bitLockerProtected),
+            BitLockerLines,
             ChangesSection(steps, firmware: true),
             UndoSection,
             "OK restarts this PC into the firmware screen now. Cancel changes nothing at all.",
@@ -531,8 +528,8 @@ internal static class SigningFix
             + "- Any self-signed driver stops loading: if this mouse was relying on one, scroll "
             + "stops working after the restart, while the pointer and the battery percent keep "
             + "working.\n"
-            + "- BitLocker protection is resumed as part of this, so it cannot be left "
-            + "suspended.",
+            + "- BitLocker protection is suspended for just this one restart, exactly as the fix "
+            + "did it, and is active again when Windows comes back.",
             "TO REDO\n"
             + "One click: \"Fix driver signing\" on this same menu runs the fix again from the "
             + "start.",
@@ -551,7 +548,7 @@ internal static class SigningFix
     static bool IsRevert(SigningFixPlan plan)
     {
         foreach (var step in plan.Steps)
-            if (step is SigningStep.DisableTestSigning or SigningStep.EnableHvci or SigningStep.ResumeBitLocker)
+            if (step is SigningStep.DisableTestSigning or SigningStep.EnableHvci)
                 return true;
         return false;
     }
@@ -628,10 +625,21 @@ internal static class SigningFix
     // nothing between them can stop to ask a question.
     //
     // Failure policy, step by step:
-    //   BitLocker  tolerated. A PC with no BitLocker (Home edition, or an
-    //              unencrypted volume) has no Suspend-BitLocker cmdlet and
-    //              nothing to suspend, which is not a fault - the status line
-    //              records whether it happened and the run continues.
+    //   BitLocker  hard, on a protected drive. Suspending is what stops the
+    //              restart below asking for the 48-digit recovery key, so a
+    //              protected drive that will not suspend stops the run BEFORE
+    //              anything is written. A drive that is not protected has
+    //              nothing to suspend and is not a fault.
+    //
+    //              Note what this deliberately does NOT use: the BitLocker
+    //              PowerShell module. Windows Home does not ship it, but Home
+    //              DOES ship Device Encryption, which is BitLocker, with key
+    //              protectors and a recovery key. A missing cmdlet there is
+    //              not "no BitLocker", and treating it as one is exactly how a
+    //              user ends up at the recovery screen. manage-bde.exe ships
+    //              on every edition, and the protection reading is taken from
+    //              CIM rather than from manage-bde's own text because that
+    //              text is localised and an exit code is not.
     //   HVCI       hard. If Memory integrity cannot be turned off, the driver
     //              will not load even with Test Mode on, so finishing the rest
     //              would be finishing a fix that does not work.
@@ -643,6 +651,12 @@ internal static class SigningFix
     //              request, because Windows can tear this process down the
     //              moment the request is accepted; if the request itself is
     //              refused the status is overwritten with the refusal.
+    //
+    // Every hard stop goes through Fail, which appends what this run had
+    // ALREADY changed before it stopped. A sequence that suspended BitLocker
+    // and turned Memory integrity off and then lost bcdedit has left this PC
+    // somewhere, and the dialog that says so is the difference between a user
+    // who can undo it and one who does not know there is anything to undo.
     internal static string BuildScript(SigningFixPlan plan, long nonce)
     {
         if (!IsRunnable(plan))
@@ -656,8 +670,18 @@ internal static class SigningFix
             $nonce = '__NONCE__'
             $statusFile = Join-Path $env:TEMP ('mm-signing-' + $procId + '-' + $nonce + '.status')
             $hvciKey = '__HVCIKEY__'
+            $sysDrive = $env:SystemDrive
+            $done = @()
             function Write-Status([string]$token, [string]$detail) {
                 ($token + "`r`n" + $detail) | Set-Content -LiteralPath $statusFile -Encoding UTF8
+            }
+            function Fail([string]$detail) {
+                if ($done.Count -gt 0) {
+                    $detail += "`r`n`r`nAlready changed on this PC before this stopped: " +
+                        ($done -join '; ') + '.'
+                }
+                Write-Status '__FAILED__' $detail
+                exit 1
             }
             Write-Status '__RUNNING__' ''
 
@@ -692,30 +716,35 @@ internal static class SigningFix
         SigningStep.SuspendBitLocker =>
             """
             Write-Host 'SIGNING_FIX_STEP suspend-bitlocker'
-            $suspended = $false
+            $protected = $false
             try {
-                $null = Get-Command Suspend-BitLocker -ErrorAction Stop
-                Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 1 -ErrorAction Stop | Out-Null
-                $suspended = $true
+                $volumeQuery = @{
+                    Namespace = 'root\CIMV2\Security\MicrosoftVolumeEncryption'
+                    ClassName = 'Win32_EncryptableVolume'
+                    Filter = "DriveLetter='$sysDrive'"
+                }
+                $volume = @(Get-CimInstance @volumeQuery -ErrorAction Stop)
+                if ($volume.Count -gt 0 -and $volume[0].ProtectionStatus -ne 0) {
+                    $protected = $true
+                }
             } catch {
-                Write-Host ('SIGNING_FIX_BITLOCKER skipped err="' + $_.Exception.Message + '"')
+                Write-Host ('SIGNING_FIX_BITLOCKER unreadable err="' + $_.Exception.Message + '"')
             }
-            Write-Host "SIGNING_FIX_BITLOCKER suspended=$suspended"
-
-            """,
-
-        SigningStep.ResumeBitLocker =>
-            """
-            Write-Host 'SIGNING_FIX_STEP resume-bitlocker'
-            $resumed = $false
-            try {
-                $null = Get-Command Resume-BitLocker -ErrorAction Stop
-                Resume-BitLocker -MountPoint $env:SystemDrive -ErrorAction Stop | Out-Null
-                $resumed = $true
-            } catch {
-                Write-Host ('SIGNING_FIX_BITLOCKER resume-skipped err="' + $_.Exception.Message + '"')
+            Write-Host "SIGNING_FIX_BITLOCKER protected=$protected"
+            if ($protected) {
+                $bdeOut = (& manage-bde.exe -protectors -disable $sysDrive -rebootcount 1 2>&1 |
+                    Out-String).Trim()
+                $bdeExit = $LASTEXITCODE
+                Write-Host "SIGNING_FIX_BITLOCKER suspend-exit=$bdeExit"
+                Write-Host $bdeOut
+                if ($bdeExit -ne 0) {
+                    Fail ("BitLocker is protecting this drive and its protection could not be " +
+                        "suspended, so nothing was changed. Changing boot settings while it is " +
+                        "active is what makes Windows ask for the 48-digit recovery key after " +
+                        "the restart. manage-bde reported (exit $bdeExit): " + $bdeOut)
+                }
+                $done += 'BitLocker protection suspended until the next restart'
             }
-            Write-Host "SIGNING_FIX_BITLOCKER resumed=$resumed"
 
             """,
 
@@ -728,10 +757,10 @@ internal static class SigningFix
                 }
                 Set-ItemProperty -LiteralPath $hvciKey -Name Enabled -Value 0 -Type DWord -ErrorAction Stop
                 Write-Host 'SIGNING_FIX_HVCI enabled=0'
+                $done += 'Memory integrity turned off (Enabled = 0)'
             } catch {
                 Write-Host ('SIGNING_FIX_HVCI failed err="' + $_.Exception.Message + '"')
-                Write-Status '__FAILED__' ('Memory integrity could not be turned off: ' + $_.Exception.Message)
-                exit 1
+                Fail ('Memory integrity could not be turned off: ' + $_.Exception.Message)
             }
 
             """,
@@ -745,10 +774,10 @@ internal static class SigningFix
                 }
                 Set-ItemProperty -LiteralPath $hvciKey -Name Enabled -Value 1 -Type DWord -ErrorAction Stop
                 Write-Host 'SIGNING_FIX_HVCI enabled=1'
+                $done += 'Memory integrity turned back on (Enabled = 1)'
             } catch {
                 Write-Host ('SIGNING_FIX_HVCI failed err="' + $_.Exception.Message + '"')
-                Write-Status '__FAILED__' ('Memory integrity could not be turned back on: ' + $_.Exception.Message)
-                exit 1
+                Fail ('Memory integrity could not be turned back on: ' + $_.Exception.Message)
             }
 
             """,
@@ -765,9 +794,9 @@ internal static class SigningFix
             Write-Host "SIGNING_FIX_BCDEDIT exit=$bcdExit"
             Write-Host $bcdOut
             if ($bcdExit -ne 0) {
-                Write-Status '__FAILED__' ("bcdedit /set testsigning on failed (exit $bcdExit): " + $bcdOut)
-                exit 1
+                Fail ("bcdedit /set testsigning on failed (exit $bcdExit): " + $bcdOut)
             }
+            $done += 'Test Mode turned on (bcdedit /set testsigning on)'
 
             """,
 
@@ -779,9 +808,9 @@ internal static class SigningFix
             Write-Host "SIGNING_FIX_BCDEDIT exit=$bcdExit"
             Write-Host $bcdOut
             if ($bcdExit -ne 0) {
-                Write-Status '__FAILED__' ("bcdedit /set testsigning off failed (exit $bcdExit): " + $bcdOut)
-                exit 1
+                Fail ("bcdedit /set testsigning off failed (exit $bcdExit): " + $bcdOut)
             }
+            $done += 'Test Mode turned off (bcdedit /set testsigning off)'
 
             """,
 
@@ -794,8 +823,7 @@ internal static class SigningFix
             Write-Host "SIGNING_FIX_SHUTDOWN fw=1 exit=$shutExit"
             Write-Host $shutOut
             if ($shutExit -ne 0) {
-                Write-Status '__FAILED__' ("shutdown /r /fw failed (exit $shutExit): " + $shutOut)
-                exit 1
+                Fail ("shutdown /r /fw failed (exit $shutExit): " + $shutOut)
             }
             exit 0
 
@@ -810,8 +838,7 @@ internal static class SigningFix
             Write-Host "SIGNING_FIX_SHUTDOWN fw=0 exit=$shutExit"
             Write-Host $shutOut
             if ($shutExit -ne 0) {
-                Write-Status '__FAILED__' ("shutdown /r failed (exit $shutExit): " + $shutOut)
-                exit 1
+                Fail ("shutdown /r failed (exit $shutExit): " + $shutOut)
             }
             exit 0
 
@@ -991,64 +1018,5 @@ internal static class SigningFix
             }
         }
         return (true, false, token, detail);
-    }
-
-    // Is the system drive BitLocker-protected? Only used to decide whether the
-    // plan carries SuspendBitLocker and which BitLocker sentence the one
-    // confirmation shows, and BOTH treat null like true - so a failure here can
-    // only ever make the fix more careful, never less.
-    //
-    // Win32_EncryptableVolume lives in root\CIMV2\Security\MicrosoftVolumeEncryption
-    // and is readable only by an administrator, so an unelevated tray - the
-    // normal case, since TrayApp takes this reading without elevation - gets an
-    // access-denied exception and returns null. That is the whole reason null
-    // must still suspend: skipping the suspend on a PC that could not be read
-    // is what makes Windows demand the 48-digit recovery key after the reboot.
-    //
-    // ProtectionStatus: 0 unprotected, 1 protected, 2 unknown/locked.
-    [SupportedOSPlatform("windows")]
-    internal static bool? ReadBitLockerProtected()
-    {
-        try
-        {
-            var systemRoot = Path.GetPathRoot(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows));
-            if (string.IsNullOrEmpty(systemRoot) || systemRoot.Length < 2)
-                return null;
-
-            // "C:\" -> "C:", which is how DriveLetter is stored.
-            var driveLetter = systemRoot[..2];
-
-            var scope = new ManagementScope(@"\\.\root\CIMV2\Security\MicrosoftVolumeEncryption");
-            var query = new ObjectQuery(
-                "SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter = '"
-                + driveLetter + "'");
-            using var searcher = new ManagementObjectSearcher(scope, query);
-            using var results = searcher.Get();
-            foreach (var o in results)
-            {
-                using var volume = (ManagementObject)o;
-                var status = volume["ProtectionStatus"];
-                if (status is null)
-                    continue;
-                var value = Convert.ToUInt32(status, System.Globalization.CultureInfo.InvariantCulture);
-                if (value == 0)
-                    return false;
-                if (value == 1)
-                    return true;
-                return null; // 2 = unknown, e.g. a locked volume.
-            }
-
-            // No row for the system drive at all: BitLocker is not available on
-            // this edition / this volume is not encryptable. Nothing to suspend,
-            // but nothing proven either - and null suspends, which is the safe
-            // direction.
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"SIGNING_FIX_BITLOCKER_READ_FAILED err=\"{ex.Message}\"");
-            return null;
-        }
     }
 }

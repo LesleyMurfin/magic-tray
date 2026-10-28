@@ -381,7 +381,8 @@ What it does not do, so nobody wastes an evening:
   accept the "Fix driver signing" dialog and it suspends BitLocker for one reboot, turns Memory
   integrity off, turns Windows driver-signature enforcement off (Test Mode on) and reboots -
   one dialog, one admin prompt, no further questions. Never silently, and putting it all back is
-  always offered.
+  offered whenever there is anything to put back - that undo suspends BitLocker for its own
+  reboot the same way, because it rewrites the boot configuration too.
 
 The honest state of testing: three devices have been confirmed by a tester — the 2024 Magic Mouse,
 the Magic Mouse v1, and the 2011 Apple Wireless Keyboard. Everything else is recognised by the app

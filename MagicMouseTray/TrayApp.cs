@@ -689,6 +689,12 @@ internal sealed class TrayApp : IDisposable
     // needs the raw reading - it has to be on the menu whenever Test Mode is
     // on, including on a PC whose devices produce no signing fact at all.
     bool? _testSigningOn;
+    // Whether this PC currently has Memory integrity configured on, cached for
+    // the same reason and read on the same trip: the undo has to be offered on
+    // a PC the fix already turned HVCI off on, and that PC may have no signing
+    // fact and no test signing to key off. Same "null is no evidence, keep what
+    // we had" rule as the reading above - a failed read never blanks it.
+    bool? _hvciOn;
     // One signing-fix dialog at a time. Two clicks on the row - or a click
     // during the guided walk - would otherwise stack two confirmations and two
     // elevated runs, which is exactly the "exactly one confirmation" property
@@ -2448,6 +2454,7 @@ internal sealed class TrayApp : IDisposable
             IReadOnlyList<ConfigFact>? facts = null;
             IReadOnlyDictionary<string, StockFacts>? stock = null;
             bool? testSigning = null;
+            bool? hvci = null;
             try
             {
                 try
@@ -2476,12 +2483,13 @@ internal sealed class TrayApp : IDisposable
                     Logger.Log($"STOCK_FACTS_FAIL err={ex.Message}");
                 }
 
-                // And the raw test signing reading, which decides whether the
-                // undo row is on the menu. It cannot be lifted off the facts:
-                // a Title is the checker's prose, and a menu that keyed an
-                // ACTION off prose would lose the row the next time that prose
-                // is reworded. Same trip, same thread, its own catch - and
-                // null from a failed read keeps whatever the menu already had.
+                // And the raw test signing and Memory integrity readings, which
+                // decide whether the undo row is on the menu. Neither can be
+                // lifted off the facts: a Title is the checker's prose, and a
+                // menu that keyed an ACTION off prose would lose the row the
+                // next time that prose is reworded. Same trip, same thread,
+                // their own catch - and null from a failed read keeps whatever
+                // the menu already had.
                 try
                 {
                     testSigning = SystemConfigChecker.ReadTestSigningOn();
@@ -2490,14 +2498,24 @@ internal sealed class TrayApp : IDisposable
                 {
                     Logger.Log($"TESTSIGNING_READ_FAIL err={ex.Message}");
                 }
+
+                try
+                {
+                    hvci = SystemConfigChecker.ReadHvciOn();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"HVCI_READ_FAIL err={ex.Message}");
+                }
             }
             finally
             {
                 System.Threading.Interlocked.Exchange(ref _configReadInFlight, 0);
             }
 
-            if (facts is not null || stock is not null || testSigning is not null)
-                PublishConfigFacts(facts, stock, testSigning);
+            if (facts is not null || stock is not null || testSigning is not null
+                || hvci is not null)
+                PublishConfigFacts(facts, stock, testSigning, hvci);
         });
     }
 
@@ -2619,12 +2637,12 @@ internal sealed class TrayApp : IDisposable
     // already-disposed guard the settle tick uses after crossing threads -
     // both are normal exit races, not errors.
     //
-    // All three readings cross together because they are read together: the
+    // All four readings cross together because they are read together: the
     // configuration section, the device rows and the undo row are repainted
     // from the one trip the refresh already pays for.
     void PublishConfigFacts(
         IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock,
-        bool? testSigningOn)
+        bool? testSigningOn, bool? hvciOn)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null)
@@ -2644,6 +2662,8 @@ internal sealed class TrayApp : IDisposable
                     _stockFacts = stock;
                 if (testSigningOn is not null)
                     _testSigningOn = testSigningOn;
+                if (hvciOn is not null)
+                    _hvciOn = hvciOn;
                 try
                 {
                     RefreshConfigSection();
@@ -2767,7 +2787,7 @@ internal sealed class TrayApp : IDisposable
             // a PC this app has already put INTO Test Mode is owed the way back
             // out whether or not a device still produces a signing fact today,
             // so the undo alone keeps the section alive under its bare name.
-            if (_testSigningOn != true)
+            if (!SigningRevertHasWork)
             {
                 _configItem.Visible = false;
                 return;
@@ -2808,13 +2828,23 @@ internal sealed class TrayApp : IDisposable
         _configItem.Visible = true;
     }
 
-    // The revert, on the menu whenever this PC boots with test signing on. The
-    // charter requires the way back to be offered wherever the fix is
-    // (AGENTS.md:76), and it is driven by the raw reading rather than by a
-    // fact, so a PC left in Test Mode can always get out of it.
+    // The undo is offered when this PC is in a state the fix produces: test
+    // signing on, OR Memory integrity configured off. The second clause is the
+    // documented partial failure - the elevated script wrote HVCI Enabled=0 and
+    // then bcdedit was refused, leaving a PC with Memory integrity off, test
+    // signing still off and no route back but regedit. It is only honest to
+    // read it that way because ReadHvciOn is tri-state: false now means the
+    // value is present and 0, not that we could not find it, so an all-null
+    // initial state offers nothing.
+    bool SigningRevertHasWork => _testSigningOn == true || _hvciOn == false;
+
+    // The revert, on the menu whenever this PC is in a state the fix produces.
+    // The charter requires the way back to be offered wherever the fix is
+    // (AGENTS.md:76), and it is driven by the raw readings rather than by a
+    // fact, so a PC left mid-fix can always get out of it.
     void AddSigningRevertRow()
     {
-        if (_configItem is null || _testSigningOn != true)
+        if (_configItem is null || !SigningRevertHasWork)
             return;
         var revert = new ToolStripMenuItem(TrayMenu.MenuText(ConfigFactView.SigningFixRevertLabel));
         revert.Click += (_, _) => _ = OfferSigningRevertAsync();
@@ -2870,18 +2900,17 @@ internal sealed class TrayApp : IDisposable
     // bcdedit by hand since; confirming a sequence against a stale reading is
     // how a tool ends up running the wrong steps. A click is a user action, so
     // the read is allowed here where a poll would not be (AGENTS.md:76) - but
-    // it is still registry reads plus a capped bcdedit and a BitLocker query,
-    // so the caller pays for it on the thread pool, never on the UI thread
-    // (SystemConfigChecker.cs:153-159).
-    static (bool? SecureBoot, bool? Hvci, bool? TestSigning, bool? BitLocker) ReadSigningState() =>
+    // it is still registry reads plus a capped bcdedit, so the caller pays for
+    // it on the thread pool, never on the UI thread (SystemConfigChecker.cs:
+    // 153-159).
+    static (bool? SecureBoot, bool? Hvci, bool? TestSigning) ReadSigningState() =>
         (SystemConfigChecker.ReadSecureBootOn(),
             SystemConfigChecker.ReadHvciOn(),
-            SystemConfigChecker.ReadTestSigningOn(),
-            SigningFix.ReadBitLockerProtected());
+            SystemConfigChecker.ReadTestSigningOn());
 
-    // No evidence is a reading of its own: BuildPlan decides what four nulls
+    // No evidence is a reading of its own: BuildPlan decides what three nulls
     // are allowed to offer, not this catch.
-    static async Task<(bool? SecureBoot, bool? Hvci, bool? TestSigning, bool? BitLocker)>
+    static async Task<(bool? SecureBoot, bool? Hvci, bool? TestSigning)>
         ReadSigningStateAsync()
     {
         try
@@ -2891,7 +2920,7 @@ internal sealed class TrayApp : IDisposable
         catch (Exception ex)
         {
             Logger.Log($"SIGNING_FIX_READ_FAIL err={ex.Message}");
-            return (null, null, null, null);
+            return (null, null, null);
         }
     }
 
@@ -2979,11 +3008,10 @@ internal sealed class TrayApp : IDisposable
     {
         var state = await ReadSigningStateAsync().ConfigureAwait(true);
         var plan = SigningFix.BuildPlan(
-            state.SecureBoot, state.Hvci, state.TestSigning, state.BitLocker, resuming);
+            state.SecureBoot, state.Hvci, state.TestSigning, resuming);
         Logger.Log($"SIGNING_FIX_PLAN state={plan.State} steps={StepList(plan)} "
             + $"resuming={(resuming ? "true" : "false")} secureboot={Tri(state.SecureBoot)} "
-            + $"hvci={Tri(state.Hvci)} testsigning={Tri(state.TestSigning)} "
-            + $"bitlocker={Tri(state.BitLocker)}");
+            + $"hvci={Tri(state.Hvci)} testsigning={Tri(state.TestSigning)}");
 
         if (plan.State == SigningFixState.NothingToDo)
         {
@@ -3011,11 +3039,15 @@ internal sealed class TrayApp : IDisposable
         if (!ConfigFactView.SigningFixOffersRun(plan))
         {
             // Unavailable: the planner cannot predict what its own steps would
-            // do here. The dialog explains and names no OK that runs anything,
-            // so this branch has no path to SigningFix.RunAsync at all.
+            // do here, and in practice it is only ever reached on the resume
+            // path - Secure Boot is still on after the firmware hop. That is
+            // the likeliest way this feature fails, so it is also the one the
+            // user most needs told; staying silent here would end the sequence
+            // with nothing on screen. Showing it keeps the one-confirmation
+            // property: the dialog is OK-only, elevates nothing and runs
+            // nothing - it is the report on a sequence the user already
+            // consented to and that has stopped.
             SetPendingSigningFix(false, "unavailable");
-            if (resuming)
-                return true;
             System.Windows.Forms.MessageBox.Show(
                 ConfigFactView.SigningFixBlockedText(plan), TrayMenu.ProductName,
                 System.Windows.Forms.MessageBoxButtons.OK,
@@ -3103,10 +3135,11 @@ internal sealed class TrayApp : IDisposable
         return true;
     }
 
-    // The undo the charter requires to be always on offer: test signing off,
-    // Memory integrity back on, BitLocker resumed. Same shape as the fix - one
-    // confirmation, one elevated pass - and the same in-flight guard, so an
-    // undo and a fix can never be in the air together.
+    // The undo the charter requires wherever there is anything to undo: test
+    // signing off, Memory integrity back on, BitLocker suspended for the one
+    // restart that changes the BCD. Same shape as the fix - one confirmation,
+    // one elevated pass - and the same in-flight guard, so an undo and a fix
+    // can never be in the air together.
     async Task OfferSigningRevertAsync()
     {
         if (_signingFixInFlight)

@@ -204,9 +204,10 @@ public class ConfigFactViewTests
         Assert.Contains("one administrator prompt", testMode, StringComparison.Ordinal);
         Assert.Contains("reboot", testMode, StringComparison.Ordinal);
         Assert.Contains("BitLocker", testMode, StringComparison.Ordinal);
-        Assert.Contains("never on startup", testMode, StringComparison.Ordinal);
+        Assert.Contains("never without that answer", testMode, StringComparison.Ordinal);
         Assert.Contains("never on a timer", testMode, StringComparison.Ordinal);
-        Assert.Contains("undo is always offered", testMode, StringComparison.Ordinal);
+        Assert.Contains("undo is offered whenever there is anything to undo", testMode,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("never changes Test Mode", testMode, StringComparison.Ordinal);
 
         // Memory integrity: the one confirmed sequence now writes the HVCI
@@ -217,7 +218,7 @@ public class ConfigFactViewTests
             "never changes Memory integrity", memoryIntegrity, StringComparison.Ordinal);
         Assert.Contains("with your permission", memoryIntegrity, StringComparison.Ordinal);
         Assert.Contains("one confirmed sequence", memoryIntegrity, StringComparison.Ordinal);
-        Assert.Contains("never on startup", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("never unprompted at startup", memoryIntegrity, StringComparison.Ordinal);
         Assert.Contains("undo turns it back on", memoryIntegrity, StringComparison.Ordinal);
         Assert.Contains("Core isolation", memoryIntegrity, StringComparison.Ordinal);
 
@@ -273,7 +274,7 @@ public class ConfigFactViewTests
         // The one refusal with a next move: Secure Boot still on after the
         // firmware trip. The dialog has to name the toggle that was missed and
         // offer the way round again, or the fix dead-ends on a reason alone.
-        var secureBoot = SigningFix.BuildPlan(true, true, false, null, resuming: true);
+        var secureBoot = SigningFix.BuildPlan(true, true, false, resuming: true);
         var blockedBySecureBoot = ConfigFactView.SigningFixBlockedText(secureBoot);
         Assert.Contains("Secure Boot is still on", blockedBySecureBoot, StringComparison.Ordinal);
         Assert.Contains("To try again", blockedBySecureBoot, StringComparison.Ordinal);
@@ -295,13 +296,12 @@ public class ConfigFactViewTests
     public void SecureBootOnTakesTheFirmwareRoute_AndTheTrayNeverClaimsItCanChangeIt()
     {
         // The reference PC as measured: Secure Boot on, HVCI on, test signing
-        // off, BitLocker protected. Secure Boot is firmware and bcdedit is
-        // refused while it is on, so the ONLY answer is the restart into
-        // firmware setup (AGENTS.md:76) - and the plan has to say so itself
-        // rather than leave the view to infer it.
+        // off. Secure Boot is firmware and bcdedit is refused while it is on,
+        // so the ONLY answer is the restart into firmware setup (AGENTS.md:76)
+        // - and the plan has to say so itself rather than leave the view to
+        // infer it.
         var plan = SigningFix.BuildPlan(
-            secureBootOn: true, hvciOn: true, testSigningOn: false,
-            bitLockerProtected: true, resuming: false);
+            secureBootOn: true, hvciOn: true, testSigningOn: false, resuming: false);
 
         Assert.Equal(SigningFixState.NeedsFirmware, plan.State);
         Assert.Contains(SigningStep.RebootToFirmware, plan.Steps);
@@ -396,13 +396,16 @@ public class ConfigFactViewTests
         // has to know which direction each setting moves (SigningFix.cs), so a
         // revert text that read the forward names would describe nothing.
         var revert = Plan(
-            SigningFixState.Ready, SigningStep.DisableTestSigning, SigningStep.EnableHvci,
-            SigningStep.ResumeBitLocker, SigningStep.Reboot);
+            SigningFixState.Ready, SigningStep.SuspendBitLocker, SigningStep.DisableTestSigning,
+            SigningStep.EnableHvci, SigningStep.Reboot);
         var done = ConfigFactView.SigningFixRevertDoneText(revert);
 
         Assert.Contains("test signing is off", done, StringComparison.Ordinal);
         Assert.Contains("Memory integrity is back on", done, StringComparison.Ordinal);
-        Assert.Contains("BitLocker protection is resumed", done, StringComparison.Ordinal);
+        // The undo suspends for one restart exactly as the forward fix does; it
+        // never resumes BitLocker, because resuming before the reboot that
+        // rewrites the BCD is what triggers the recovery-key prompt.
+        Assert.DoesNotContain("resumed", done, StringComparison.Ordinal);
         // Undoing the fix must not lock the user out of redoing it.
         Assert.Contains(ConfigFactView.SigningFixLabel, done, StringComparison.Ordinal);
 

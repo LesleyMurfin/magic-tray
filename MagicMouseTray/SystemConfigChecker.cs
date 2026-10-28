@@ -224,7 +224,12 @@ internal static class SystemConfigChecker
             facts.Add(TestModeFact(
                 role, readings.TestSigningOn, readings.BoundDriverSelfSigned, v3,
                 readings.SecureBootOn));
-            facts.Add(MemoryIntegrityFact(role, readings.HvciOn, readings.BoundDriverSelfSigned, v3));
+            // The row's own rule, stated where the row is built: no evidence
+            // is "not on" here, because Enabled is policy rather than the
+            // running state and only a POSITIVE read may escalate to
+            // Blocking. The planner's rule is the opposite one, which is why
+            // the reading itself stays tri-state.
+            facts.Add(MemoryIntegrityFact(role, readings.HvciOn ?? false, readings.BoundDriverSelfSigned, v3));
 
             // Only a PC that both has a signing story AND cannot run the fix
             // gets this row. A PC where Test Mode is already on is not told
@@ -1003,11 +1008,16 @@ internal static class SystemConfigChecker
     // scenario, which is what a user turns on and off in Windows Security ->
     // Core isolation -> Memory integrity.
     //
-    // Absent key or absent value is "not configured on", the same reading
-    // DeviceDiagReader gives a missing watcher file: we looked, and it is not
-    // there. null is kept for a probe that could not run - and because Enabled
-    // is policy rather than the running state, only a POSITIVE read is ever
-    // allowed to escalate to Blocking.
+    // Tri-state, and honestly so. An absent Control key, an absent scenario
+    // subkey, an absent Enabled value and a value of an unexpected type are
+    // all "we could not find out", not "off" - only a present int/uint/long
+    // answers true or false. The two consumers default that null in opposite
+    // directions, each at its own call site: the Memory integrity fact row
+    // reads it as not-on, so a missing key can never escalate to Blocking,
+    // while SigningFix.BuildPlan treats anything that is not a positive
+    // "off" as needing the Enabled=0 write, because skipping that write on a
+    // PC we could not read leaves the fix incomplete.
+    //
     // internal, next to ReadTestSigningOn and ReadSecureBootOn: the signing fix
     // needs the configured HVCI state to decide whether its plan has to write
     // Enabled=0 at all (SigningFix.BuildPlan), and that read must come from the
@@ -1022,14 +1032,14 @@ internal static class SystemConfigChecker
 
             using var scenario = Registry.LocalMachine.OpenSubKey(HvciScenarioKey, writable: false);
             if (scenario is null)
-                return false;
+                return null;
 
             return scenario.GetValue("Enabled") switch
             {
                 int i => i != 0,
                 uint u => u != 0,
                 long l => l != 0,
-                _ => false,
+                _ => null,
             };
         }
         catch (Exception ex)

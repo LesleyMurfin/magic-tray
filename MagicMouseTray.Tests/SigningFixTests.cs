@@ -5,18 +5,27 @@ using Xunit;
 namespace MagicMouseTray.Tests;
 
 // SigningFix.BuildPlan is the whole automated driver-signing fix with the
-// machine lifted out: four tri-state readings and a resume flag in, the ordered
-// list of steps this PC actually needs plus the one confirmation the user is
-// asked to agree to out. Everything that could hurt someone - a reboot nobody
-// agreed to, a BitLocker suspend that was skipped, a plan that runs bcdedit
-// while Secure Boot is on and cannot succeed - is decided there, so that is
-// what is pinned here, for every combination of readings.
+// machine lifted out: three tri-state readings and a resume flag in, the
+// ordered list of steps this PC actually needs plus the one confirmation the
+// user is asked to agree to out. Everything that could hurt someone - a reboot
+// nobody agreed to, a plan that rewrites boot configuration without suspending
+// BitLocker first, a plan that runs bcdedit while Secure Boot is on and cannot
+// succeed - is decided there, so that is what is pinned here, for every
+// combination of readings.
+//
+// BitLocker is not one of those readings and there is nothing tri-state to pin
+// about it: only an administrator can read whether this drive is protected, so
+// every plan that rewrites boot configuration carries the suspend and the
+// elevated script decides suspend-or-nothing. What IS pinned here is the order
+// that makes that safe - the suspend, and its refusal to continue, both come
+// before the first boot-configuration write.
 //
 // RunAsync is deliberately untested: it writes a .ps1 into %TEMP%, raises a UAC
 // prompt and restarts the PC. Faking that would only test the fake. What IS
-// testable about it is the gate in front of it - nothing runs without a plan
-// whose last step is a restart, with no step twice - and BuildScript, which is
-// that gate plus the exact command order the elevated pass will use.
+// testable about it is the gate in front of it - IsRunnable, reached through
+// BuildScript: a runnable state, a last step that is a restart, and no step
+// twice - plus the exact command order the elevated pass will use, and the
+// nonce validation on the two file names that cross the elevation boundary.
 //
 // The physics this file keeps honest (AGENTS.md:76): Secure Boot cannot be
 // turned off from Windows. There is no API and no command - bcdedit refuses the
@@ -39,6 +48,15 @@ public class SigningFixTests
         return n;
     }
 
+    // 0-based, and -1 when the step is not in this plan at all.
+    static int IndexOfStep(IReadOnlyList<SigningStep> steps, SigningStep step)
+    {
+        for (int i = 0; i < steps.Count; i++)
+            if (steps[i] == step)
+                return i;
+        return -1;
+    }
+
     // Every forward plan this machine's readings can produce, and every revert
     // plan, kept separate because the two make different promises: the fix
     // explains what Test Mode costs, the undo explains what turning it back off
@@ -48,10 +66,8 @@ public class SigningFixTests
         foreach (var secureBoot in TriStates)
             foreach (var hvci in TriStates)
                 foreach (var testSigning in TriStates)
-                    foreach (var bitLocker in TriStates)
-                        foreach (var resuming in new[] { false, true })
-                            yield return SigningFix.BuildPlan(
-                                secureBoot, hvci, testSigning, bitLocker, resuming);
+                    foreach (var resuming in new[] { false, true })
+                        yield return SigningFix.BuildPlan(secureBoot, hvci, testSigning, resuming);
     }
 
     static IEnumerable<SigningFixPlan> RevertPlans()
@@ -75,13 +91,10 @@ public class SigningFixTests
     public void OwnersLiveReadings_AreTheFirmwareTripAndNothingElse()
     {
         // Measured on the owner's PC, 2026-10-28: UEFISecureBootEnabled=1,
-        // HVCI Enabled=1, TESTSIGNING=False, BitLocker unreadable from an
-        // unelevated tray (SigningFix.ReadBitLockerProtected explains why that
-        // read needs an administrator and returns null without one). This is
-        // what the very first real run does, so it is pinned exactly.
+        // HVCI Enabled=1, TESTSIGNING=False. This is what the very first real
+        // run does, so it is pinned exactly.
         var plan = SigningFix.BuildPlan(
-            secureBootOn: true, hvciOn: true, testSigningOn: false, bitLockerProtected: null,
-            resuming: false);
+            secureBootOn: true, hvciOn: true, testSigningOn: false, resuming: false);
 
         Assert.Equal(SigningFixState.NeedsFirmware, plan.State);
         Assert.Equal(
@@ -100,32 +113,13 @@ public class SigningFixTests
     // ---- Secure Boot on: the firmware branch ------------------------------
 
     [Fact]
-    public void SecureBootOn_WithBitLockerMeasuredOff_DropsTheSuspendStep()
-    {
-        var plan = SigningFix.BuildPlan(true, true, false, bitLockerProtected: false, resuming: false);
-
-        Assert.Equal(SigningFixState.NeedsFirmware, plan.State);
-        Assert.Equal(new[] { SigningStep.RebootToFirmware }, plan.Steps);
-    }
-
-    [Fact]
-    public void SecureBootOn_WithBitLockerProtected_SuspendsBeforeTheFirmwareTrip()
-    {
-        var plan = SigningFix.BuildPlan(true, true, false, bitLockerProtected: true, resuming: false);
-
-        Assert.Equal(
-            new[] { SigningStep.SuspendBitLocker, SigningStep.RebootToFirmware },
-            plan.Steps);
-    }
-
-    [Fact]
     public void SecureBootStillOnAfterTheFirmwareTrip_IsUnavailableAndRunsNothing()
     {
         // The resume pass found Secure Boot still on: the user could not find
         // the setting, the firmware would not allow it, or they changed their
         // mind. Sending them back into firmware would be a loop, and Magic Tray
         // cannot flip it for them.
-        var plan = SigningFix.BuildPlan(true, true, false, null, resuming: true);
+        var plan = SigningFix.BuildPlan(true, true, false, resuming: true);
 
         Assert.Equal(SigningFixState.Unavailable, plan.State);
         Assert.Empty(plan.Steps);
@@ -139,7 +133,7 @@ public class SigningFixTests
     [Fact]
     public void SecureBootOff_IsTheFullOrderedSequenceWithTheRebootLast()
     {
-        var plan = SigningFix.BuildPlan(false, true, false, true, resuming: false);
+        var plan = SigningFix.BuildPlan(false, true, false, resuming: false);
 
         Assert.Equal(SigningFixState.Ready, plan.State);
         Assert.Equal(
@@ -161,7 +155,7 @@ public class SigningFixTests
         // unreadable reading is the ordinary case on an unelevated tray, and
         // sending that PC into its firmware screen on a guess would be worse
         // than letting bcdedit report the refusal in its own words.
-        var plan = SigningFix.BuildPlan(null, true, false, null, resuming: false);
+        var plan = SigningFix.BuildPlan(null, true, false, resuming: false);
 
         Assert.Equal(SigningFixState.Ready, plan.State);
         Assert.Equal(
@@ -176,20 +170,9 @@ public class SigningFixTests
     }
 
     [Fact]
-    public void BitLockerMeasuredOff_DropsTheSuspendStepFromTheFullFix()
-    {
-        var plan = SigningFix.BuildPlan(false, true, false, bitLockerProtected: false, resuming: false);
-
-        Assert.Equal(
-            new[] { SigningStep.DisableHvci, SigningStep.EnableTestSigning, SigningStep.Reboot },
-            plan.Steps);
-    }
-
-    [Fact]
     public void HvciMeasuredOff_DropsTheMemoryIntegrityStep()
     {
-        var plan = SigningFix.BuildPlan(false, hvciOn: false, testSigningOn: false,
-            bitLockerProtected: true, resuming: false);
+        var plan = SigningFix.BuildPlan(false, hvciOn: false, testSigningOn: false, resuming: false);
 
         Assert.Equal(
             new[] { SigningStep.SuspendBitLocker, SigningStep.EnableTestSigning, SigningStep.Reboot },
@@ -199,8 +182,7 @@ public class SigningFixTests
     [Fact]
     public void TestSigningAlreadyOn_DropsTheBcdeditStep()
     {
-        var plan = SigningFix.BuildPlan(false, hvciOn: true, testSigningOn: true,
-            bitLockerProtected: true, resuming: false);
+        var plan = SigningFix.BuildPlan(false, hvciOn: true, testSigningOn: true, resuming: false);
 
         Assert.Equal(SigningFixState.Ready, plan.State);
         Assert.Equal(
@@ -215,17 +197,23 @@ public class SigningFixTests
         // already set are both no-ops, so an unreadable policy state acts. The
         // alternative - skipping a step on the PCs that could not be read - is
         // the one that leaves the fix incomplete.
-        var plan = SigningFix.BuildPlan(false, null, null, false, resuming: false);
+        var plan = SigningFix.BuildPlan(false, null, null, resuming: false);
 
         Assert.Equal(
-            new[] { SigningStep.DisableHvci, SigningStep.EnableTestSigning, SigningStep.Reboot },
+            new[]
+            {
+                SigningStep.SuspendBitLocker,
+                SigningStep.DisableHvci,
+                SigningStep.EnableTestSigning,
+                SigningStep.Reboot,
+            },
             plan.Steps);
     }
 
     [Fact]
     public void ResumingWithSecureBootOff_FinishesTheJob()
     {
-        var plan = SigningFix.BuildPlan(false, true, false, null, resuming: true);
+        var plan = SigningFix.BuildPlan(false, true, false, resuming: true);
 
         Assert.Equal(SigningFixState.Ready, plan.State);
         Assert.Equal(
@@ -252,7 +240,7 @@ public class SigningFixTests
         // signing can have been set before Secure Boot was turned back on, and
         // that PC needs no UAC prompt and no reboot.
         var plan = SigningFix.BuildPlan(secureBootOn, hvciOn: false, testSigningOn: true,
-            bitLockerProtected: true, resuming: false);
+            resuming: false);
 
         Assert.Equal(SigningFixState.NothingToDo, plan.State);
         Assert.Empty(plan.Steps);
@@ -264,8 +252,8 @@ public class SigningFixTests
     {
         foreach (var plan in new[]
                  {
-                     SigningFix.BuildPlan(false, false, true, true, false),
-                     SigningFix.BuildPlan(true, true, false, null, resuming: true),
+                     SigningFix.BuildPlan(false, false, true, false),
+                     SigningFix.BuildPlan(true, true, false, resuming: true),
                      SigningFix.BuildRevertPlan(testSigningOn: false, hvciOn: true),
                  })
         {
@@ -299,7 +287,6 @@ public class SigningFixTests
             // this dialog alone and not only from the tray menu.
             Assert.Contains("bcdedit /set testsigning off", plan.Prompt, StringComparison.Ordinal);
             Assert.Contains("Enabled = 1", plan.Prompt, StringComparison.Ordinal);
-            Assert.Contains("Resume-BitLocker", plan.Prompt, StringComparison.Ordinal);
 
             // What Test Mode costs: the watermark and the unchecked drivers.
             Assert.Contains("watermark", plan.Prompt, StringComparison.Ordinal);
@@ -315,7 +302,11 @@ public class SigningFixTests
             if (!plan.Steps.Contains(SigningStep.SuspendBitLocker))
                 continue;
 
-            Assert.Contains("Suspend-BitLocker -RebootCount 1", plan.Prompt, StringComparison.Ordinal);
+            // The command is in the text because it is the only way to check
+            // the app by hand, and manage-bde is the one that ships on every
+            // edition of Windows, Home included.
+            Assert.Contains("manage-bde -protectors -disable -rebootcount 1", plan.Prompt,
+                StringComparison.Ordinal);
             Assert.Contains("one restart", plan.Prompt, StringComparison.Ordinal);
             Assert.Contains("48-digit recovery key", plan.Prompt, StringComparison.Ordinal);
             Assert.Contains("you will not need the key", plan.Prompt, StringComparison.Ordinal);
@@ -325,7 +316,7 @@ public class SigningFixTests
     [Fact]
     public void TheFirmwarePromptSaysSecureBootCannotBeChangedFromWindows()
     {
-        var plan = SigningFix.BuildPlan(true, true, false, null, resuming: false);
+        var plan = SigningFix.BuildPlan(true, true, false, resuming: false);
 
         // The physics, in plain words: no API, no command, firmware only.
         Assert.Contains("no program can do from inside Windows", plan.Prompt,
@@ -380,7 +371,7 @@ public class SigningFixTests
     [Fact]
     public void TheFirmwarePromptNumbersTheUsersOwnStepAsAYouLine()
     {
-        var plan = SigningFix.BuildPlan(true, true, false, null, resuming: false);
+        var plan = SigningFix.BuildPlan(true, true, false, resuming: false);
 
         Assert.Equal(
             new[] { SigningStep.SuspendBitLocker, SigningStep.RebootToFirmware },
@@ -403,7 +394,7 @@ public class SigningFixTests
     [Fact]
     public void TheReadyPromptDoesNotSendAnyoneToFirmware()
     {
-        var plan = SigningFix.BuildPlan(false, true, false, true, resuming: false);
+        var plan = SigningFix.BuildPlan(false, true, false, resuming: false);
 
         Assert.Contains("bcdedit /set testsigning on", plan.Prompt, StringComparison.Ordinal);
         Assert.DoesNotContain("firmware", plan.Prompt, StringComparison.Ordinal);
@@ -483,13 +474,13 @@ public class SigningFixTests
             if (!firmware)
                 continue;
 
-            // The firmware pass carries the BitLocker suspend at most, and
+            // The firmware pass carries the BitLocker suspend and the trip, and
             // never a policy write: with Secure Boot still on the bcdedit write
             // is refused, and the HVCI write would be a change made for a reboot
             // that is not going to Windows.
-            Assert.DoesNotContain(SigningStep.EnableTestSigning, plan.Steps);
-            Assert.DoesNotContain(SigningStep.DisableHvci, plan.Steps);
-            Assert.True(plan.Steps.Count is 1 or 2, $"firmware plan had {plan.Steps.Count} steps");
+            Assert.Equal(
+                new[] { SigningStep.SuspendBitLocker, SigningStep.RebootToFirmware },
+                plan.Steps);
         }
     }
 
@@ -500,15 +491,47 @@ public class SigningFixTests
         {
             Assert.DoesNotContain(SigningStep.DisableTestSigning, plan.Steps);
             Assert.DoesNotContain(SigningStep.EnableHvci, plan.Steps);
-            Assert.DoesNotContain(SigningStep.ResumeBitLocker, plan.Steps);
         }
 
         foreach (var plan in RevertPlans())
         {
             Assert.DoesNotContain(SigningStep.EnableTestSigning, plan.Steps);
             Assert.DoesNotContain(SigningStep.DisableHvci, plan.Steps);
-            Assert.DoesNotContain(SigningStep.SuspendBitLocker, plan.Steps);
             Assert.DoesNotContain(SigningStep.RebootToFirmware, plan.Steps);
+        }
+    }
+
+    // The lockout this branch exists to prevent: a pass that rewrote the BCD or
+    // the HVCI scenario with protection still active, so the TPM seal no longer
+    // matched the next boot and Windows came back asking for the 48-digit
+    // recovery key. The suspend is in every runnable plan in both directions,
+    // and it is ahead of every write and ahead of the restart.
+    [Fact]
+    public void EveryRunnablePlanSuspendsBitLockerBeforeItRewritesBootConfiguration()
+    {
+        foreach (var plan in AllPlans())
+        {
+            if (plan.Steps.Count == 0)
+                continue;
+
+            var suspend = IndexOfStep(plan.Steps, SigningStep.SuspendBitLocker);
+            Assert.True(suspend >= 0, $"{plan.State} plan had no suspend: {string.Join(",", plan.Steps)}");
+
+            foreach (var write in new[]
+                     {
+                         SigningStep.DisableHvci,
+                         SigningStep.EnableHvci,
+                         SigningStep.EnableTestSigning,
+                         SigningStep.DisableTestSigning,
+                     })
+            {
+                var at = IndexOfStep(plan.Steps, write);
+                if (at >= 0)
+                    Assert.True(suspend < at, $"{write} at {at} ran before the suspend at {suspend}");
+            }
+
+            Assert.True(suspend < plan.Steps.Count - 1,
+                $"the suspend at {suspend} was the restart itself");
         }
     }
 
@@ -523,9 +546,9 @@ public class SigningFixTests
         Assert.Equal(
             new[]
             {
+                SigningStep.SuspendBitLocker,
                 SigningStep.DisableTestSigning,
                 SigningStep.EnableHvci,
-                SigningStep.ResumeBitLocker,
                 SigningStep.Reboot,
             },
             plan.Steps);
@@ -540,17 +563,22 @@ public class SigningFixTests
     }
 
     [Fact]
-    public void TheRevertAlwaysResumesBitLockerEvenWhenNothingElseIsKnown()
+    public void TheRevertWithNothingKnownStillPutsBothSettingsBack()
     {
-        // Leaving protection suspended because a reading failed is the one
-        // outcome that actually costs the user something, and Resume-BitLocker
-        // on a volume that was never suspended is a no-op.
+        // Leaving Test Mode on or Memory integrity off because a reading failed
+        // is the outcome that actually costs the user something, and both
+        // writes are no-ops on a PC that is already back.
         var plan = SigningFix.BuildRevertPlan(testSigningOn: null, hvciOn: null);
 
-        Assert.Contains(SigningStep.ResumeBitLocker, plan.Steps);
-        Assert.Contains(SigningStep.DisableTestSigning, plan.Steps);
-        Assert.Contains(SigningStep.EnableHvci, plan.Steps);
-        Assert.Equal(SigningStep.Reboot, plan.Steps[^1]);
+        Assert.Equal(
+            new[]
+            {
+                SigningStep.SuspendBitLocker,
+                SigningStep.DisableTestSigning,
+                SigningStep.EnableHvci,
+                SigningStep.Reboot,
+            },
+            plan.Steps);
     }
 
     [Fact]
@@ -580,10 +608,10 @@ public class SigningFixTests
     [Fact]
     public void TheScriptRunsTheStepsInPlanOrderAndRebootsLast()
     {
-        var plan = SigningFix.BuildPlan(false, true, false, true, resuming: false);
+        var plan = SigningFix.BuildPlan(false, true, false, resuming: false);
         var script = SigningFix.BuildScript(plan, nonce: 1);
 
-        var suspend = script.IndexOf("Suspend-BitLocker", StringComparison.Ordinal);
+        var suspend = script.IndexOf("manage-bde.exe -protectors -disable", StringComparison.Ordinal);
         var hvci = script.IndexOf("-Name Enabled -Value 0", StringComparison.Ordinal);
         var bcdedit = script.IndexOf("bcdedit.exe /set testsigning on", StringComparison.Ordinal);
         var shutdown = script.IndexOf("shutdown.exe /r /t 0", StringComparison.Ordinal);
@@ -602,31 +630,61 @@ public class SigningFixTests
         Assert.DoesNotContain("/fw", script, StringComparison.Ordinal);
     }
 
+    // The other half of the lockout fix, and the half only the script can do:
+    // the tray cannot read whether this drive is protected, so the script does,
+    // and a protected drive that will not suspend stops the run BEFORE the
+    // first boot-configuration write rather than after it. Pinned as order, not
+    // as wording.
+    [Fact]
+    public void TheScriptGivesUpOnAFailedSuspendBeforeTheFirstBootConfigurationWrite()
+    {
+        var plan = SigningFix.BuildPlan(false, true, false, resuming: false);
+        var script = SigningFix.BuildScript(plan, nonce: 1);
+
+        var suspend = script.IndexOf("manage-bde.exe -protectors -disable", StringComparison.Ordinal);
+        Assert.True(suspend >= 0, "the script never suspends BitLocker");
+
+        // The failure branch of the suspend, pinned on the condition rather than
+        // on the call: a branch that still contains the word Fail but no longer
+        // tests the suspend's exit code is the exact regression this guards, so
+        // the exit-code test is what has to come between the suspend and the
+        // first write. "function Fail(" has no space, so "Fail (" is a call.
+        var guard = script.IndexOf("if ($bdeExit -ne 0)", suspend, StringComparison.Ordinal);
+        Assert.True(guard > suspend, $"suspend={suspend} is not checked for failure at all");
+        var abort = script.IndexOf("Fail (", guard, StringComparison.Ordinal);
+        Assert.True(abort > guard, $"the failed-suspend branch at {guard} does not give up");
+
+        var hvci = script.IndexOf("Set-ItemProperty", StringComparison.Ordinal);
+        var bcdedit = script.IndexOf("bcdedit.exe", StringComparison.Ordinal);
+        Assert.True(hvci > abort && bcdedit > abort,
+            $"abort={abort} hvci={hvci} bcdedit={bcdedit}");
+    }
+
     [Fact]
     public void TheFirmwareScriptAsksForTheFirmwareRestartAndTouchesNoPolicy()
     {
-        var plan = SigningFix.BuildPlan(true, true, false, null, resuming: false);
+        var plan = SigningFix.BuildPlan(true, true, false, resuming: false);
         var script = SigningFix.BuildScript(plan, nonce: 1);
 
         Assert.Contains("shutdown.exe /r /fw /t 0", script, StringComparison.Ordinal);
-        Assert.Contains("Suspend-BitLocker", script, StringComparison.Ordinal);
+        Assert.Contains("manage-bde.exe -protectors -disable", script, StringComparison.Ordinal);
         Assert.DoesNotContain("bcdedit", script, StringComparison.Ordinal);
         Assert.DoesNotContain("-Name Enabled", script, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void TheRevertScriptPutsTheValuesBackAndResumesBitLocker()
+    public void TheRevertScriptSuspendsFirstAndThenPutsTheValuesBack()
     {
         var plan = SigningFix.BuildRevertPlan(testSigningOn: true, hvciOn: false);
         var script = SigningFix.BuildScript(plan, nonce: 1);
 
+        var suspend = script.IndexOf("manage-bde.exe -protectors -disable", StringComparison.Ordinal);
         var bcdedit = script.IndexOf("bcdedit.exe /set testsigning off", StringComparison.Ordinal);
         var hvci = script.IndexOf("-Name Enabled -Value 1", StringComparison.Ordinal);
-        var resume = script.IndexOf("Resume-BitLocker", StringComparison.Ordinal);
         var shutdown = script.IndexOf("shutdown.exe /r /t 0", StringComparison.Ordinal);
 
-        Assert.True(bcdedit >= 0 && hvci > bcdedit && resume > hvci && shutdown > resume,
-            $"order was bcdedit={bcdedit} hvci={hvci} resume={resume} shutdown={shutdown}");
+        Assert.True(suspend >= 0 && bcdedit > suspend && hvci > bcdedit && shutdown > hvci,
+            $"order was suspend={suspend} bcdedit={bcdedit} hvci={hvci} shutdown={shutdown}");
         Assert.DoesNotContain("testsigning on", script, StringComparison.Ordinal);
         Assert.DoesNotContain("-Value 0", script, StringComparison.Ordinal);
     }
@@ -675,8 +733,80 @@ public class SigningFixTests
                 null),
             1));
         Assert.Throws<InvalidOperationException>(() => SigningFix.BuildScript(
-            SigningFix.BuildPlan(false, false, true, true, false), 1));
+            SigningFix.BuildPlan(false, false, true, false), 1));
         Assert.Throws<InvalidOperationException>(() => SigningFix.BuildScript(
-            SigningFix.BuildPlan(true, true, false, null, resuming: true), 1));
+            SigningFix.BuildPlan(true, true, false, resuming: true), 1));
+    }
+
+    // The state is part of the gate and not decoration. Unavailable means the
+    // fix has already sent this user to firmware once and Secure Boot is still
+    // on; a record in that state carrying a plausible step list is a caller
+    // that built it by hand, and running it would be the reboot loop the state
+    // exists to stop.
+    [Fact]
+    public void AScriptIsRefusedForAPlanWhoseStateIsNotRunnableEvenWhenItsStepsLookFine()
+    {
+        foreach (var state in new[] { SigningFixState.Unavailable, SigningFixState.NothingToDo })
+        {
+            var plan = new SigningFixPlan(
+                state,
+                [SigningStep.SuspendBitLocker, SigningStep.EnableTestSigning, SigningStep.Reboot],
+                "",
+                state == SigningFixState.Unavailable ? "Secure Boot is still on" : null);
+
+            Assert.Throws<InvalidOperationException>(() => SigningFix.BuildScript(plan, 1));
+        }
+    }
+
+    // Each step is idempotent on its own, so a repeat is not dangerous by
+    // itself - but it is proof the plan did not come from BuildPlan, and a
+    // plan of unknown origin is exactly what this file runs nothing for.
+    [Fact]
+    public void AScriptIsRefusedForAPlanThatRepeatsAStep()
+    {
+        Assert.Throws<InvalidOperationException>(() => SigningFix.BuildScript(
+            new SigningFixPlan(
+                SigningFixState.Ready,
+                [SigningStep.SuspendBitLocker, SigningStep.SuspendBitLocker, SigningStep.Reboot],
+                "",
+                null),
+            1));
+    }
+
+    // Both file names cross the elevation boundary - this process writes them,
+    // the elevated script rebuilds them from the same two segments - so the
+    // nonce has to be a positive number on both sides. Zero is the value a
+    // default-initialised counter has, which is the one that would collide
+    // between two runs.
+    [Fact]
+    public void ANonPositiveNonceIsRefusedByBothFileNames()
+    {
+        foreach (long nonce in new long[] { 0, -1 })
+        {
+            Assert.Throws<InvalidOperationException>(() => SigningFix.ScriptPath(nonce));
+            Assert.Throws<InvalidOperationException>(() => SigningFix.StatusSidecarPath(nonce));
+        }
+
+        Assert.Contains("-1.ps1", SigningFix.ScriptPath(1), StringComparison.Ordinal);
+        Assert.Contains("-1.status", SigningFix.StatusSidecarPath(1), StringComparison.Ordinal);
+    }
+
+    // This script changes boot policy and nothing else, so it has no business
+    // naming a driver installer, pnputil or a FLIP value - the same tripwire
+    // DeviceEnable and DeviceRepair carry. Pinned as the property it protects:
+    // the generated script names none of them.
+    [Fact]
+    public void TheScriptNamesNothingFromTheDriverInstallTripwire()
+    {
+        Assert.NotEmpty(DeviceEnable.ForbiddenNames);
+
+        foreach (var plan in AllPlans())
+        {
+            if (plan.Steps.Count == 0)
+                continue;
+            var script = SigningFix.BuildScript(plan, nonce: 1);
+            foreach (var name in DeviceEnable.ForbiddenNames)
+                Assert.DoesNotContain(name, script, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

@@ -33,14 +33,6 @@
     <InternalsVisibleTo Include="MagicMouseTray.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <!-- WMI from .NET 8 is a package, not part of the Windows Desktop shared
-         framework. SigningFix.ReadBitLockerProtected reads
-         Win32_EncryptableVolume.ProtectionStatus so the signing fix can suspend
-         BitLocker for one reboot and say so in its one confirmation
-         (AGENTS.md:76). Nothing else in the tray uses WMI. -->
-    <PackageReference Include="System.Management" Version="8.0.0" />
-  </ItemGroup>
-  <ItemGroup>
     <Content Include="..\scripts\capture-state.ps1" Link="capture-state.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\diagnose-driver.ps1" Link="diagnose-driver.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\scripts\diagnose-and-recover.ps1" Link="diagnose-and-recover.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

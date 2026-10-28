@@ -187,9 +187,12 @@ internal static class ConfigFactView
             + "step this PC needs in one administrator action after the single confirmation that "
             + "lists them: suspend BitLocker for one restart, turn Memory integrity off, run "
             + "bcdedit /set testsigning on, and reboot. One question, one administrator prompt, "
-            + "nothing asked after it - never on startup, never on a timer, never without that "
-            + "answer. Secure Boot it cannot touch: that is firmware, so the fix restarts this PC "
-            + "into the firmware screen and you turn it off there. The undo is always offered.",
+            + "nothing asked after it unprompted - never on a timer, never without that answer. "
+            + "The one thing that can begin at launch is the single question to finish a fix you "
+            + "already confirmed before a firmware restart, and only because that answer left it "
+            + "half done. Secure Boot it cannot touch: that is firmware, so the fix restarts this "
+            + "PC into the firmware screen and you turn it off there. The undo is offered "
+            + "whenever there is anything to undo.",
 
         // Memory integrity is no longer a hand-operated setting this tray only
         // reads: the one confirmed sequence writes the HVCI policy value, so
@@ -201,9 +204,10 @@ internal static class ConfigFactView
         SystemConfigChecker.MemoryIntegrityFactId =>
             "You, or Magic Tray with your permission. Memory integrity (HVCI) makes Windows "
             + "refuse a self-signed driver, so " + SigningFixLabel + " can turn it off for you - "
-            + "only as part of the one confirmed sequence that lists every step, never on "
-            + "startup, never on a timer, and the undo turns it back on. By hand it lives in "
-            + "Windows Security -> Device security -> Core isolation.",
+            + "only as part of the one confirmed sequence that lists every step, never on a "
+            + "timer, and never unprompted at startup: the only thing launch can raise is the "
+            + "question to finish a fix you already confirmed. The undo turns it back on. By "
+            + "hand it lives in Windows Security -> Device security -> Core isolation.",
 
         // Secure Boot keeps the absolute promise, because it is the one setting
         // here that no program can change: it lives in firmware, and
@@ -384,7 +388,7 @@ internal static class ConfigFactView
         "WHAT YOU NEED TO DO\n"
         + "- Nothing, unless you want this PC put back the way it was.\n"
         + "- OK shows the undo (" + SigningFixRevertLabel + "): test signing off, Memory "
-        + "integrity back on, BitLocker resumed.\n"
+        + "integrity back on, one restart, and BitLocker suspended for just that restart.\n"
         + "- Nothing runs until you accept the undo's own confirmation.",
         "OK shows the undo. Cancel leaves this PC exactly as it is.",
     });
@@ -405,10 +409,12 @@ internal static class ConfigFactView
     // who undid the fix by mistake is not locked out of redoing it.
     //
     // Keyed off the revert-only steps (SigningFix.cs: DisableTestSigning,
-    // EnableHvci, ResumeBitLocker), never off the forward ones: the elevated
-    // script needs to know which direction each setting moves, so the two legs
-    // carry different step values and a text that read the forward names would
-    // silently describe nothing.
+    // EnableHvci), never off the forward ones: the elevated script needs to
+    // know which direction each setting moves, so the two legs carry different
+    // step values and a text that read the forward names would silently
+    // describe nothing. SuspendBitLocker is shared with the forward legs
+    // because the undo rewrites the same boot configuration and needs the same
+    // one-restart suspend to avoid the recovery-key prompt.
     internal static string SigningFixRevertDoneText(SigningFixPlan plan)
     {
         var blocks = new List<string>(6)
@@ -428,11 +434,11 @@ internal static class ConfigFactView
         if (HasStep(plan, SigningStep.EnableHvci))
             blocks.Add("Memory integrity is back on, which is the state Windows ships with.");
 
-        if (HasStep(plan, SigningStep.ResumeBitLocker))
+        if (HasStep(plan, SigningStep.SuspendBitLocker))
         {
-            blocks.Add("BitLocker protection is resumed. It is resumed whether or not the fix "
-                + "ever suspended it, because a volume left suspended is the one outcome of this "
-                + "sequence that would cost you something.");
+            blocks.Add("BitLocker protection is suspended for this one reboot, exactly as the "
+                + "fix itself did it, so the boot configuration change does not ask you for a "
+                + "recovery key. It is active again when Windows comes back.");
         }
 
         blocks.Add("TO REDO\n"
@@ -524,7 +530,8 @@ internal static class ConfigFactView
 
         blocks.Add("TO UNDO\n"
             + "One click: " + SigningFixRevertLabel + " on the same menu puts test signing back "
-            + "off, Memory integrity back on and resumes BitLocker.");
+            + "off and Memory integrity back on, over one more reboot, with BitLocker suspended "
+            + "for that reboot the same way this one was.");
         return string.Join("\n\n", blocks);
     }
 
