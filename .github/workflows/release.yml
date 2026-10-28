@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: test-results
           path: TestResults/*.trx
@@ -123,4 +123,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ZIP_PATH: ${{ steps.package.outputs.zip }}
           SUMS_PATH: ${{ steps.package.outputs.sums }}
-        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/diagnose-and-recover.ps1" "publish/mm-bt-stack-snapshot.ps1" "publish/repair-magicmouse-channel.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes
+        run: gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_PATH" "${env:ZIP_PATH}.sha256" "publish/MagicMouseTray.exe" "publish/kbd-patch-cachedservices.ps1" "publish/Install-KeyboardBattery.cmd" "publish/capture-state.ps1" "publish/diagnose-driver.ps1" "publish/diagnose-and-recover.ps1" "publish/mm-bt-stack-snapshot.ps1" "$env:SUMS_PATH" --notes-file "$env:RUNNER_TEMP/release-notes.md" --generate-notes

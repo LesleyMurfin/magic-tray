@@ -278,7 +278,7 @@ Hardware on/off reconnects a **still-paired** mouse. It does not re-pair a remov
 
 ## Scripts (elevated CLI fallback)
 
-The in-app path above covers twelve field faults, not the three this line claimed before this release: the six in **What the app fixes for you**, which it repairs itself; the four in **What the app can only guide**; and two added here - the prompted two-leg scroll probe, whose fault verdict nothing on this PC can undo, and the truncated `90 00 00` battery answer on a mouse that is being used, which the tray detects and explains but repairs only through the last script below. Reach for the scripts when you want a full capture for a bug report, when the app cannot run, or when you are working over a remote shell.
+The in-app path above covers eleven field faults, not the three this line claimed before this release: the six in **What the app fixes for you**, which it repairs itself; the four in **What the app can only guide**; and one added here - the prompted two-leg scroll probe, whose fault verdict nothing on this PC can undo. Reach for the scripts when you want a full capture for a bug report, when the app cannot run, or when you are working over a remote shell.
 
 | Script | Use when |
 |---|---|
@@ -286,7 +286,6 @@ The in-app path above covers twelve field faults, not the three this line claime
 | `scripts/capture-state.ps1` | Pre/post-reboot **v3 (0323) only** compare. Not a v1 tool. |
 | `diagnose-driver.ps1` | Deep dive on `applewirelessmouse.sys` (v1/v2 Boot Camp). |
 | `scripts/mm-bt-stack-snapshot.ps1` | Live BT HID stack dump. No repair. |
-| `scripts/repair-magicmouse-channel.ps1` | v3 (`0323`) battery reading `90 00 00` on a mouse that is being used. One elevated `pnputil /restart-device` on the live BTHENUM instance, to re-arm the filter's control channel, then re-reads Input `0x90` on COL02 and the filter's `Diag` values and reports the percent it actually got. A reprieve, not a fix: the next device-initiated reconnect unarms the channel again. `-WhatIf` shows the plan without elevation. |
 
 Tray Diagnostics launches those **without** `-Repair`. Script repair is CLI-only, elevated:
 

@@ -95,8 +95,8 @@ internal sealed record FilterDiagSnapshot(
     // requiring Ok meant requiring all twelve values of the block, which made
     // corroboration impossible on any filter build that publishes one fewer -
     // a build DiagAvailability.ValueMissing (:28-31) explicitly calls
-    // legitimate - and silently dropped the measured percentage out of the
-    // finding's detail (RepairPlanner.cs:644-647) on those machines. Same
+    // legitimate - and silently dropped the corroboration out of the probe
+    // log (DeviceSnapshotReader.cs:299) on those machines. Same
     // over-strict gate as IFilterDiagReader.TouchStreamAdvanced had, same fix.
     internal bool TruncationCorroborated =>
         LastOutHdr == AclOutGetReportHeader
@@ -296,19 +296,19 @@ internal static class DeviceDiagReader
     // NOW. Without an upper bound the pair spanned a whole battery poll
     // interval - 5 minutes to 24 hours (AdaptivePoller.cs:20,
     // DrainRateTracker.cs:24-26) - and any touch anywhere in that window read
-    // as "the mouse is in use right now", so a mouse last touched hours ago
-    // satisfied the truncation rule. Ten seconds is above anything one HID read
-    // can take (three IOCTL attempts with 50 ms sleeps, MouseBatteryDevice
-    // .ReadV3Rid90) and far below any poll interval, so it separates the two
-    // without being a second timing rule.
+    // as "the mouse is in use right now" for a mouse last touched hours ago.
+    // Ten seconds is above anything one HID read can take (three IOCTL
+    // attempts with 50 ms sleeps, MouseBatteryDevice.ReadV3Rid90) and far
+    // below any poll interval, so it separates the two without being a
+    // second timing rule.
     //
     // What the bound COSTS, stated plainly because it is not free: the pair is
     // now taken around one GET_REPORT, so it spans the read round trip -
     // milliseconds - while the filter rewrites the whole Diag block only about
-    // once a second (Driver.c:164-180, 741-748, 862-953). The truncation rule
-    // therefore fires only when a rewrite lands inside that window, i.e. on a
-    // fraction of the truncated reads it used to fire on. Detection is
-    // probabilistic now and the rule WILL miss reads it could have caught.
+    // once a second (Driver.c:164-180, 741-748, 862-953). A pair therefore
+    // records an advance only when a rewrite lands inside that window, i.e. on
+    // a fraction of the reads it could have described. The measurement is
+    // probabilistic now and the pair WILL miss reads it could have caught.
     // Buying that back by taking the pre-read sample a full rewrite cadence
     // (~1.1 s) before the request was rejected on measurement grounds: it
     // spends a second of the 5 s DeviceReadTimeout (AdaptivePoller.cs:32) on

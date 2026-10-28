@@ -277,7 +277,7 @@ public class MouseBatteryDeviceTests
         Assert.False(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x90, 0x04, 0x2E]));
 
         // THE truncation fingerprint: a well-formed 0x90 whose percent byte
-        // is 0. The only fact the finding may fire on.
+        // is 0. The only outcome that may be read as one.
         Assert.True(MouseBatteryDevice.ZeroReportFact(ioctlSucceeded: true, [0x90, 0x04, 0x00]));
 
         // Wrong report id - nothing judgeable came back. Unknown, and NOT

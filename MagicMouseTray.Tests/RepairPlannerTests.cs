@@ -66,8 +66,7 @@ public class RepairPlannerTests
         // in a test that is not about the battery.
         int? lastBatteryPct = null,
         // batteryProbe: the ONE correlated 0x90 observation. null - no probe
-        // this sweep - is the default, so no truncation rule can fire in a test
-        // that is not about it.
+        // this sweep - is the default.
         BatteryProbe? batteryProbe = null)
         => new(
             pid,
@@ -87,70 +86,13 @@ public class RepairPlannerTests
             lastBatteryPct,
             BatteryProbe: batteryProbe);
 
-    // ---- Fixtures for the two filter defects ----------------------------
+    // ---- Fixture for the measured scroll defect -------------------------
     //
-    // Both defects are measured facts about the shipped KMDF filter, and both
-    // are invisible to every registration-level check: the battery answer comes
-    // back STATUS_SUCCESS with a zeroed percent, and the wheel simply never
-    // emits. So these fixtures are the records those seams hand over - the
-    // battery probe's Diag pair, taken either side of one HID read, and a
-    // raw-input wheel sink driven through IWheelSink - built exactly the way
-    // the battery read and DeviceSnapshotReader build them.
-
-    private const string DiagService = BoundKmdfVariant;
-    private static readonly DateTimeOffset T0 =
-        new(2026, 9, 16, 23, 37, 42, TimeSpan.Zero);
-
-    // The truncating control-channel frame as it was measured on the wire:
-    // A1 (ACL HID input header), 90 (the battery report id), 04, 16 = 22 %.
-    private static readonly byte[] TruncatedWireFrame = [0xA1, 0x90, 0x04, 0x16];
-
-    private static FilterDiagSnapshot Diag(
-        ulong? rid12,
-        DiagAvailability availability = DiagAvailability.Ok,
-        uint? lastAclReceived = null,
-        uint? lastAclCapacity = null,
-        uint? lastOutHdr = null,
-        byte[]? lastAclBytes = null,
-        DateTimeOffset? takenAt = null)
-        => new(
-            takenAt ?? T0,
-            availability,
-            DiagService,
-            rid12, rid12, null, null,
-            lastAclReceived, lastAclCapacity, lastOutHdr, null,
-            lastAclBytes, null, null, null);
-
-    // The planner judges the probe RECORD, so the fixture is the pair as the
-    // battery read hands it over: one Diag sample taken immediately before the
-    // GET_REPORT, one immediately after, and the fact that read produced. Both
-    // samples default to T0, i.e. one read's worth of interval apart, because
-    // that is the only interval a delta may be measured across
-    // (DeviceDiagReader.PairMaxSpan).
-    private static BatteryProbe Probe(
-        FilterDiagSnapshot? before,
-        FilterDiagSnapshot after,
-        bool? zeroReport,
-        DateTimeOffset? takenAt = null)
-        => new(takenAt ?? T0, zeroReport, before, after);
-
-    // The whole measured fingerprint: a well-formed 0x90 report whose percent
-    // byte is 0 and a touch counter that really climbed across the read.
-    // corroborate:false is the COMMON live case - the filter's last-inbound
-    // slot is shared with the ~65/s interrupt channel, so a sample normally
-    // shows capacity 9 and not capacity 1.
-    private static BatteryProbe TruncationProbe(bool corroborate = true)
-        => Probe(
-            Diag(rid12: 2_095_000),
-            corroborate
-                ? Diag(
-                    rid12: 2_095_323,
-                    lastAclReceived: 78,
-                    lastAclCapacity: 1,
-                    lastOutHdr: 0x41,
-                    lastAclBytes: TruncatedWireFrame)
-                : Diag(rid12: 2_095_323, lastAclReceived: 23, lastAclCapacity: 9),
-            zeroReport: true);
+    // The defect is a measured fact about the shipped KMDF filter, and it is
+    // invisible to every registration-level check: the wheel simply never
+    // emits. So the fixture is the record that seam hands over - a raw-input
+    // wheel sink driven through IWheelSink - built exactly the way
+    // DeviceSnapshotReader builds it.
 
     private static DeviceSnapshot V3WithProbe(BatteryProbe? probe, int? lastBatteryPct = -2)
         => Snap(
@@ -162,14 +104,6 @@ public class RepairPlannerTests
             filterCandidates: [BoundKmdfVariant],
             lastBatteryPct: lastBatteryPct,
             batteryProbe: probe);
-
-    // The naive rule this batch replaced: "-2 and the touch stream looks
-    // alive". Asserted directly in the loop-hazard test so that test cannot be
-    // satisfied by a planner that simply stopped reading the battery.
-    private static bool NaiveTruncationPredicate(DeviceSnapshot s) =>
-        s.LastBatteryPct == -2
-        && IFilterDiagReader.TouchStreamAdvanced(
-            s.BatteryProbe?.DiagBefore, s.BatteryProbe?.DiagAfter);
 
     private static WheelObservation Leg(
         int wheelEvents = 0,
@@ -1083,153 +1017,6 @@ public class RepairPlannerTests
         Assert.NotEqual(RepairPlanner.MenuLabel([]), label);
     }
 
-    // ================= Battery: the truncated answer =====================
-
-    [Fact]
-    public void PlanOne_ZeroPercentWhileTouchStreamAdvancing_NamesTheMitigationScript()
-    {
-        // The measured defect. The filter gates its inbound scratch diversion
-        // on BufferSize > 0, HidBth reads the control channel header-first with
-        // BufferSize == 1, so the filter takes the whole GET_REPORT response
-        // onto a 78-byte scratch and copies ONE byte back. HIDCLASS pre-zeroes
-        // the caller's buffer and writes the report id into byte 0, so the read
-        // succeeds and userspace sees 90 00 00 while the percentage (22 %) was
-        // on the wire.
-        var finding = RepairPlanner.PlanOne(V3WithProbe(TruncationProbe()));
-
-        Assert.NotNull(finding);
-        Assert.Equal("0323", finding.Pid);
-        Assert.Equal(RepairProblem.BatteryResponseTruncated, finding.Problem);
-        Assert.Equal(RepairAction.RunChannelRepairScript, finding.Action);
-        Assert.False(finding.AutoFixable);
-
-        // What a user has to be able to act on: that the mouse answered, that
-        // the answer was cut off, and the name of the one thing that helps.
-        Assert.Contains("scripts/repair-magicmouse-channel.ps1", finding.Detail);
-        Assert.Contains("1 byte long while 78 bytes", finding.Detail);
-        Assert.Contains("22%", finding.Detail);
-        // It must not imply the pointer or the wheel are broken too.
-        Assert.Contains("only the battery reading is", finding.Detail);
-    }
-
-    [Fact]
-    public void PlanOne_ZeroPercentWithNoCorroboratingSlotSample_StillFires()
-    {
-        // The COMMON live case, and the reason corroboration may never gate:
-        // the filter's last-inbound slot is shared with the interrupt channel
-        // at ~65 reports/s, so a sweep-time sample shows capacity 9. Both the
-        // broken and the fixed binary read received 23 / capacity 9 there, so
-        // that shape separates nothing - while the zero percent plus a live
-        // touch stream still does.
-        var uncorroborated = RepairPlanner.PlanOne(
-            V3WithProbe(TruncationProbe(corroborate: false)));
-
-        Assert.NotNull(uncorroborated);
-        Assert.Equal(RepairProblem.BatteryResponseTruncated, uncorroborated.Problem);
-        Assert.Contains("scripts/repair-magicmouse-channel.ps1", uncorroborated.Detail);
-        // Nothing may be asserted about bytes that were not sampled.
-        Assert.DoesNotContain("bytes had come back", uncorroborated.Detail);
-    }
-
-    [Fact]
-    public void PlanOne_ZeroPercentOnAnIdleMouse_RaisesNothing()
-    {
-        // The whole point of the touch-stream precondition. An idle mouse stops
-        // sending its vendor report, so a zero answer from one is silence, not
-        // a fault - and a rule that fired here would nag every Magic Mouse on
-        // every desk. Counter identical between the two sweeps = the stream did
-        // not advance.
-        var stalled = Probe(
-            Diag(rid12: 2_095_323),
-            Diag(rid12: 2_095_323),
-            zeroReport: true);
-
-        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(stalled)));
-    }
-
-    [Fact]
-    public void PlanOne_ZeroPercentWithCountersResetBetweenSweeps_RaisesNothing()
-    {
-        // A driver reinstall zeroes every Diag counter, and a device mid-restart
-        // collapses them too (measured: Rid12Count 2095323 -> 521 across one
-        // restart). A lower number is a NEW BASELINE, never a negative delta
-        // and never proof of touch - so this must read as no evidence.
-        var reinstalled = Probe(
-            Diag(rid12: 2_095_323),
-            Diag(rid12: 0),
-            zeroReport: true);
-        var midRestart = Probe(
-            Diag(rid12: 2_095_323),
-            Diag(rid12: 521),
-            zeroReport: true);
-
-        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(reinstalled)));
-        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(midRestart)));
-    }
-
-    [Fact]
-    public void PlanOne_BatteryReadThatNeverAnswered_RaisesNothingAndCannotLoop()
-    {
-        // THE LOOP HAZARD. MOUSE_RID90_FAILED (the IOCTL failing three times,
-        // observed as err=21 at 23:37:42 while the device was re-enumerating)
-        // and MOUSE_RID90_BAD (a wrong report id) both return the SAME -2
-        // sentinel as the truncation case. This finding's remediation restarts
-        // the device, so a rule keyed on -2 would diagnose a mouse that is
-        // already mid-restart and prescribe another restart - a loop inside the
-        // exact window FindingGate exists to damp. Only the well-formed-zero
-        // fact may fire, so both of these are null and raise nothing.
-        //
-        // This is the CONSUMER half only, and the fact below is hand-written -
-        // so it cannot see the producer reclassifying an outcome. That half is
-        // pinned by MouseBatteryDeviceTests
-        // .ZeroReportFact_PinsEveryTerminalOutcomeOfA0x90Read.
-        var neverAnswered = V3WithProbe(Probe(
-            Diag(rid12: 2_095_000),
-            Diag(rid12: 2_095_323),
-            zeroReport: null));
-
-        Assert.Null(RepairPlanner.PlanOne(neverAnswered));
-
-        // And the fixture really is the trap: it satisfies the naive predicate
-        // this rule replaced, so a planner that went back to reading -2 - or
-        // that widened ZeroReport to a two-state bool - fails here instead of
-        // passing by having stopped looking at the battery altogether.
-        Assert.True(NaiveTruncationPredicate(neverAnswered));
-
-        // Same shape with a real percentage: not a fault either.
-        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(Probe(
-            Diag(rid12: 2_095_000),
-            Diag(rid12: 2_095_323),
-            zeroReport: false))));
-    }
-
-    [Fact]
-    public void PlanOne_ZeroPercentWithACounterThatClimbedAcrossPollCycles_RaisesNothing()
-    {
-        // The false positive the interval bound exists to stop. The pair used to
-        // come from a static per-service store, so before was the PREVIOUS poll
-        // cycle's sample - 5 minutes to 24 hours back - and any touch anywhere
-        // in that window read as "the mouse is in use right now" on a mouse
-        // nobody had touched for hours.
-        var pollCycleApart = Probe(
-            Diag(rid12: 169_000, takenAt: T0 - TimeSpan.FromMinutes(5)),
-            Diag(rid12: 400_000),
-            zeroReport: true);
-
-        Assert.Null(RepairPlanner.PlanOne(V3WithProbe(pollCycleApart)));
-
-        // The identical climb measured across the read itself still fires: the
-        // discriminator is the interval, not the numbers.
-        var acrossTheRead = Probe(
-            Diag(rid12: 169_000, takenAt: T0 - TimeSpan.FromMilliseconds(120)),
-            Diag(rid12: 400_000),
-            zeroReport: true);
-
-        Assert.Equal(
-            RepairProblem.BatteryResponseTruncated,
-            RepairPlanner.PlanOne(V3WithProbe(acrossTheRead))!.Problem);
-    }
-
     // ================= Scroll: the prompted two-leg probe ================
 
     [Fact]
@@ -1397,34 +1184,25 @@ public class RepairPlannerTests
     [Fact]
     public void Rows_MeasuredFaults_RenderTheirOwnLines()
     {
-        // Both new findings have to be visible on the device row, not only in
-        // the headline. A finding whose row still read "working" would be the
-        // same out-claiming this change exists to remove.
-        var facts = new DeviceCapability.CapabilityFacts(
+        // The finding has to be visible on the device row, not only in the
+        // headline. A finding whose row still read "working" would be the same
+        // out-claiming this change exists to remove.
+        var scrollFacts = new DeviceCapability.CapabilityFacts(
             Kind: DeviceKind.MagicMouseV3,
             Pid: "0323",
-            LastPct: -2,
+            LastPct: 47,
             BoundFilter: BoundKmdfVariant,
             FilterPackagePresent: true,
             FilterServiceRunning: true,
             FilterInStack: true,
             PointerChildLive: true,
             MultitouchAdvancing: true,
-            Problem: RepairProblem.BatteryResponseTruncated,
+            Problem: RepairProblem.ScrollNotchesNotDelivered,
             EnabledInApp: true);
 
-        var batteryRow = DeviceCapability.BatteryRow(facts);
-        Assert.Equal("Battery: answer cut off by the scroll driver", batteryRow);
-        Assert.True(batteryRow.Length <= DeviceCapability.RowMax);
-        Assert.Contains(batteryRow, DeviceCapability.Rows(facts));
-
-        var scrollFacts = facts with
-        {
-            Problem = RepairProblem.ScrollNotchesNotDelivered,
-            LastPct = 47,
-        };
         var scrollRow = DeviceCapability.ScrollRow(scrollFacts);
         Assert.Equal("Scroll: not working (driver drops scroll it reads)", scrollRow);
+        Assert.True(scrollRow.Length <= DeviceCapability.RowMax);
         Assert.Contains(scrollRow, DeviceCapability.Rows(scrollFacts));
     }
 }

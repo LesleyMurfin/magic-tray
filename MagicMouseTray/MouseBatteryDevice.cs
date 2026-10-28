@@ -190,7 +190,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         // emit it for unrelated reasons (KeyboardBatteryDevice's blocked SDP
         // cap, and :402 below), so the fact is carried BESIDE the sentinel and
         // never instead of it. Redefining -2 would silently change the keyboard
-        // rule at RepairPlanner.cs:416-430 and the repair script behind it.
+        // rule at RepairPlanner.cs:395-410 and the repair script behind it.
         CaptureProbe(ZeroReportFact(ioctlSucceeded, buf), diag, diagBefore);
 
         if (!ioctlSucceeded)
@@ -281,7 +281,7 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // through this one call (:194), so the mapping lives in a testable place
     // instead of in four literals at four return paths.
     //   true  - a well-formed report whose percent byte is 0: THE truncation
-    //           fingerprint, and the only fact rule 2e may fire on.
+    //           fingerprint, and the only outcome a consumer may read as one.
     //   false - a real percent arrived.
     //   null  - nothing judgeable came back: a wrong report id, or an IOCTL
     //           that never answered at all.

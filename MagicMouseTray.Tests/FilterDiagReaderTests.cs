@@ -272,9 +272,7 @@ public class FilterDiagReaderTests
         // MissingValue_IsUnknownNotZero pins as legitimate, and a value this
         // question never reads. While the gate was Availability.Ok - which
         // means all twelve values - one absent, unrelated value made the
-        // touch-stream question permanently unanswerable on that machine, so
-        // the truncation detector was silent there forever and the silence read
-        // as health.
+        // touch-stream question permanently unanswerable on that machine.
         var values = FullBlock(169000).Drop("ScrollStep");
         var reader = ReaderFor(values, service);
 
@@ -284,14 +282,6 @@ public class FilterDiagReaderTests
 
         Assert.Equal(DiagAvailability.ValueMissing, after.Availability);
         Assert.True(IFilterDiagReader.TouchStreamAdvanced(before, after));
-
-        // And the whole rule answers, not just the predicate: a zero report
-        // beside a stream that climbed across this read is the finding.
-        values.Set("Rid12Count", Dword(169200));
-        var probe = DeviceDiagReader.TakeBatteryProbe(
-            zeroReport: true, reader, before, T0);
-
-        Assert.True(RepairPlanner.BatteryAnswerTruncated(probe));
     }
 
     [Fact]
@@ -314,8 +304,9 @@ public class FilterDiagReaderTests
 
         // The same slot, the same frame, on a build that publishes eleven of
         // the twelve values. Requiring Availability.Ok here discarded the
-        // corroboration - and with it the measured percentage the finding's
-        // detail quotes - on every filter build that is not the reference one.
+        // corroboration - and with it the flag the probe log quotes
+        // (DeviceSnapshotReader.cs:299) - on every filter build that is not
+        // the reference one.
         Assert.True(ReaderFor(values.Drop("ScrollStep"), service).Read().TruncationCorroborated);
     }
 
@@ -332,7 +323,8 @@ public class FilterDiagReaderTests
             zeroReport: true, reader, before: null, T0);
 
         Assert.Null(blind.DiagBefore);
-        Assert.False(RepairPlanner.BatteryAnswerTruncated(blind));
+        Assert.False(IFilterDiagReader.TouchStreamAdvanced(
+            blind.DiagBefore, blind.DiagAfter));
 
         // The production shape: one sample immediately before the GET_REPORT,
         // one immediately after, and the counter climbed in between. The zero
@@ -346,7 +338,8 @@ public class FilterDiagReaderTests
 
         Assert.True(probe.ZeroReport);
         Assert.Same(before, probe.DiagBefore);
-        Assert.True(RepairPlanner.BatteryAnswerTruncated(probe));
+        Assert.True(IFilterDiagReader.TouchStreamAdvanced(
+            probe.DiagBefore, probe.DiagAfter));
 
         // The same climb measured from a sample one poll interval old is the
         // false positive: this is the pair the old static store handed over, and
@@ -359,7 +352,8 @@ public class FilterDiagReaderTests
             T0.AddSeconds(3));
 
         Assert.True(stalePair.ZeroReport);
-        Assert.False(RepairPlanner.BatteryAnswerTruncated(stalePair));
+        Assert.False(IFilterDiagReader.TouchStreamAdvanced(
+            stalePair.DiagBefore, stalePair.DiagAfter));
     }
 
     [Fact]

@@ -215,12 +215,6 @@ internal static class DeviceCapability
         if (f.EnabledInApp == false)
             return "Battery: not polled (switched off in this app)";
 
-        // The percentage arrived and was destroyed on the way up, which is a
-        // different statement from "Windows sends no report" below - and the
-        // opposite of unavailable: the mouse answered.
-        if (f.Problem == RepairProblem.BatteryResponseTruncated)
-            return "Battery: answer cut off by the scroll driver";
-
         // A Magic Keyboard percent does not come from the device asking to be
         // read: Windows exposes no battery Feature cap on the stock SDP record
         // (marker 81 02 C0 C0), and this app's registry patch inserts the four
