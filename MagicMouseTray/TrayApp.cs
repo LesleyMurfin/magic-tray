@@ -477,6 +477,155 @@ internal static class TrayMenu
             or DriverStatus.StockKmdf;
     }
 
+    // ---- the third source of device rows ---------------------------------
+
+    // A device the user stopped in Windows loses both of the sources above.
+    // The poll (DeviceRegistry.Discover) walks live HID interfaces and an
+    // administratively disabled devnode has none, so nothing is enumerated
+    // and nothing is read. ShouldShowHealthRow cannot cover the gap either:
+    // the health sweep parses BTHENUM with skipNonScroll:true and drops every
+    // keyboard and trackpad PID on purpose, because those devices must never
+    // feed a mouse driver status. So the row disappeared together with the
+    // only in-app "Start this device in Windows", and the user had to open
+    // Device Manager to undo a click they made in this app.
+    //
+    // The evidence this row is drawn from is the pair nobody was asking: the
+    // BTHENUM instance key is still in the registry while the device is
+    // stopped (DeviceSnapshot.BthenumLiveCount counts those keys), and the
+    // PID is in this app's own catalog. No devnode means there is nothing to
+    // start, and a PID the catalog cannot name is not ours to name either.
+
+    // What such a row says about the battery: nothing. -1 is BatteryLabel's
+    // "No reading", and since nothing is polling this device, the last
+    // percent it ever reported is history rather than a fact about now.
+    internal const int OfflineRowPct = -1;
+
+    // The catalog's own name for a bare PID, or null for a PID this app ships
+    // no support for.
+    internal static string? CatalogName(string? pid) =>
+        TryCatalogEntry(pid, out var name, out _) ? name : null;
+
+    // The catalog row behind a bare PID: the name this app shows for it, and
+    // the kind that name resolves to. Both come out of the same table entry,
+    // so a row cannot describe one device and behave as another - and
+    // KindForNameTests pins DeviceCapability.KindForName to these same two
+    // tables, so the name and the kind here agree with it by construction.
+    static bool TryCatalogEntry(string? pid, out string name, out DeviceKind kind)
+    {
+        if (!string.IsNullOrEmpty(pid))
+        {
+            foreach (var m in MouseBatteryDevice.KnownMice)
+            {
+                if (PidTailEq(m.PidPattern, pid))
+                {
+                    name = m.DisplayName;
+                    kind = m.Kind;
+                    return true;
+                }
+            }
+            foreach (var k in KeyboardBatteryDevice.KnownKeyboards)
+            {
+                if (PidTailEq(k.PidPattern, pid))
+                {
+                    name = k.DisplayName;
+                    kind = DeviceKind.MagicKeyboard;
+                    return true;
+                }
+            }
+        }
+        name = "";
+        kind = default;
+        return false;
+    }
+
+    // The four-hex tail of a catalog pattern ("PID&0239", "PID_0239") against
+    // a bare PID, which is the form registry keys and tray rows both use.
+    // Registry keys spell it upper case and poll results do not, so the match
+    // is case-insensitive. Not EndsWith: a shorter string would match every
+    // PID that happens to end in it.
+    static bool PidTailEq(string pattern, string pid) =>
+        pid.Length == 4
+        && pattern.Length >= 4
+        && pattern.AsSpan(pattern.Length - 4).Equals(pid, StringComparison.OrdinalIgnoreCase);
+
+    // Does this device need a row that nothing else on the menu will draw?
+    // Every clause is evidence about THIS device, and absence from the shown
+    // set is the whole signal: no liveness guess may veto the row, because
+    // every veto here is another way to lose the Start item for a device that
+    // still has one. A device with a live pointer child the poll nonetheless
+    // failed to read is missing from the menu just as completely as a stopped
+    // one.
+    internal static bool ShouldShowOfflineRow(
+        IEnumerable<string> shownPids, string? pid, string? catalogName, DeviceSnapshot? snapshot)
+    {
+        if (string.IsNullOrEmpty(pid) || string.IsNullOrEmpty(catalogName))
+            return false;
+        // Another device's snapshot is not evidence about this one, and no
+        // snapshot at all means the sweep never measured it.
+        if (snapshot is null || !PidEq(snapshot.Pid, pid))
+            return false;
+        // No BTHENUM instance: Windows has never been paired with this device
+        // on this PC, or the pairing was removed. Charge-cable phantoms under
+        // Enum\USB / Enum\HID are counted separately and are not a pairing.
+        if (snapshot.BthenumLiveCount == 0)
+            return false;
+        foreach (var shown in shownPids)
+        {
+            if (PidEq(shown, pid))
+                return false;
+        }
+        return true;
+    }
+
+    // One row per device the menu is missing, in the sweep's own order and
+    // named once. shownPids is what the poll rows and the health rows between
+    // them have already put on the menu.
+    internal static IReadOnlyList<OfflineDeviceRow> OfflineRows(
+        IEnumerable<string> shownPids, IEnumerable<DeviceSnapshot> snapshots)
+    {
+        var rows = new List<OfflineDeviceRow>();
+        var drawn = new HashSet<string>(shownPids, StringComparer.OrdinalIgnoreCase);
+        foreach (var s in snapshots)
+        {
+            if (!TryCatalogEntry(s.Pid, out var name, out var kind))
+                continue;
+            if (!ShouldShowOfflineRow(drawn, s.Pid, name, s))
+                continue;
+            drawn.Add(s.Pid);
+            rows.Add(new OfflineDeviceRow(s.Pid, name, kind, OfflineRowPct));
+        }
+        return rows;
+    }
+
+    // ---- consent ---------------------------------------------------------
+
+    // Every tray command that changes the device or its driver, and the words
+    // it says before it changes anything. The rule it states is the one the
+    // rest of this menu already kept: a mutating command asks first, and the
+    // cost is on screen before the user agrees to it rather than after
+    // Windows has raised its own prompt.
+    //
+    // "Restore scroll mode" was the one that did not. It ran an elevated
+    // registry write and a device restart on a single click - the same cost
+    // as the flip one row above it, with none of the consent.
+    //
+    // The ids are stable so a command can be named without depending on its
+    // wording, and the labels are the menu's own constants so this table
+    // cannot describe an item the menu does not have, or miss the wording
+    // when one of them is renamed.
+    internal const string CommandReadBattery = "read-battery";
+    internal const string CommandRestoreScrollMode = "restore-scroll-mode";
+    internal const string CommandStartInWindows = "start-in-windows";
+    internal const string CommandStopInWindows = "stop-in-windows";
+
+    internal static IReadOnlyList<TrayDeviceCommand> MutatingCommands(string pid) =>
+    [
+        new(CommandReadBattery, ModeFlipView.MenuItemLabel(), ModeFlipView.OfferText(pid)),
+        new(CommandRestoreScrollMode, ModeFlipView.RestoreItemLabel, ModeFlipView.RestoreOfferText()),
+        new(CommandStartInWindows, StartInWindows, StartInWindowsPrompt),
+        new(CommandStopInWindows, StopInWindows, StopInWindowsPrompt),
+    ];
+
 
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
@@ -613,6 +762,23 @@ internal static class TrayMenu
         return string.Join(" | ", parts) + suffix;
     }
 }
+
+// One device the tray menu would otherwise be missing: Windows still holds a
+// BTHENUM devnode for it, but nothing is driving it, so neither the poll nor
+// the driver health sweep produced a row - and the row is what carries
+// "Start this device in Windows". Built by TrayMenu.OfflineRows from a
+// DeviceSnapshot and the device catalog, which between them are the only
+// evidence there is about a device nothing can read.
+internal readonly record struct OfflineDeviceRow(
+    string Pid, string Name, DeviceKind Kind, int Pct);
+
+// One tray command that changes the device or its driver, and the exact text
+// shown before it is allowed to. ConfirmText is nullable so that a command
+// with no consent is something this type can express - and therefore
+// something MutatingCommandConsentTests can catch - instead of a shape that
+// only exists as a missing dialog in the menu code.
+internal readonly record struct TrayDeviceCommand(
+    string Id, string Label, string? ConfirmText);
 
 // One device's answer to "which driver is Windows actually using, and where
 // does the battery percent come from" for the devices this app installs
@@ -1495,6 +1661,25 @@ internal sealed class TrayApp : IDisposable
             menu.Items.Insert(insertAt++, row);
         }
 
+        // Last, and only for the devices the two loops above did not draw: a
+        // device Windows is not driving right now. It polls nothing and the
+        // health sweep skips its PID, so without this the user lost the row
+        // AND the "Start this device in Windows" item on it - the only way
+        // back from a Stop they did here. The snapshots the finding sweep
+        // already published are the evidence; BuildDeviceRow gives the row
+        // the same Windows device submenu every other row has, and
+        // OfflineRowPct keeps it honest about the battery (nothing is being
+        // read, so the row claims no reading).
+        foreach (var offline in TrayMenu.OfflineRows(shownPids, _snapshots))
+        {
+            var offlineKey = $"offline:{offline.Pid}";
+            if (_deviceMenuItems.ContainsKey(offlineKey)) continue;
+            shownPids.Add(offline.Pid);
+            var row = BuildDeviceRow(offline.Name, offline.Pct, offline.Kind, offline.Pid);
+            _deviceMenuItems[offlineKey] = row;
+            menu.Items.Insert(insertAt++, row);
+        }
+
         if (_deviceBatteries.Count == 0 && _deviceMenuItems.Count > 0)
         {
             _deviceSection.Text = _deviceMenuItems.Count == 1
@@ -1698,11 +1883,27 @@ internal sealed class TrayApp : IDisposable
                 // for (ModeFlip.RestoreWarning, ModeFlipView.RestoreItemLabel),
                 // so it is on this driver whether or not a flip has run yet.
                 var restore = new ToolStripMenuItem(TrayMenu.MenuText(ModeFlipView.RestoreItemLabel));
-                restore.Click += (_, _) => _ = RunDriverActionAsync(async () =>
+                restore.Click += (_, _) =>
                 {
-                    var result = await Task.Run(ModeFlip.RestoreModeB);
-                    ReportModeFlip(result, null, flipKind, flipPid);
-                });
+                    // The same gate the flip above has, because this click
+                    // costs the same: one administrator approval, one
+                    // elevated registry write, and a device restart that
+                    // stops the pointer while Windows rebuilds the
+                    // connection. It used to pay all three on a single click
+                    // with nothing on screen. Cancel does nothing at all -
+                    // nothing elevated, nothing written, nothing restarted.
+                    var answer = System.Windows.Forms.MessageBox.Show(
+                        ModeFlipView.RestoreOfferText(), TrayMenu.ProductName,
+                        System.Windows.Forms.MessageBoxButtons.OKCancel,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    if (answer != System.Windows.Forms.DialogResult.OK)
+                        return;
+                    _ = RunDriverActionAsync(async () =>
+                    {
+                        var result = await Task.Run(ModeFlip.RestoreModeB);
+                        ReportModeFlip(result, null, flipKind, flipPid);
+                    });
+                };
                 driverMenu.DropDownItems.Add(restore);
             }
 

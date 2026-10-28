@@ -99,6 +99,33 @@ internal static class ModeFlipView
     }
 
     /// <summary>
+    /// The confirmation shown BEFORE "Restore scroll mode" runs, by rule 1.
+    /// That item costs exactly what the flip costs - one administrator
+    /// approval, one setting written, one device restart with the pointer
+    /// gone while Windows rebuilds the connection - and it used to charge all
+    /// three on a single click with nothing on screen.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="OfferText"/>: that one promises a battery
+    /// level this command never takes. Deliberately not
+    /// <see cref="StartupRestoreOffer"/> either - that is shown because
+    /// scrolling may ALREADY be dead, which is a different thing to tell a
+    /// user who is about to stop a mouse that is working right now.
+    ///
+    /// By rule 2 it promises nothing about the end state: nothing has run yet,
+    /// so the only honest wording is what the attempt will do and check.
+    /// </remarks>
+    internal static string RestoreOfferText() =>
+        "Put this mouse back in scroll mode?\n\n"
+        + RestorePromise + "\n\n"
+        + "What that costs:\n\n"
+        + "- Windows restarts the device to apply the setting, so the pointer and scrolling "
+        + "stop for a few seconds. That is expected and it is not a fault.\n"
+        + "- Nothing is installed or removed, the mouse stays paired, and the driver you chose "
+        + "for it does not change.\n\n"
+        + "OK puts it back. Cancel changes nothing.";
+
+    /// <summary>
     /// What the user sees once the cycle has finished, one branch per
     /// <see cref="ModeFlipOutcome"/>.
     /// </summary>
