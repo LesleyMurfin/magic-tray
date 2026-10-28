@@ -490,11 +490,14 @@ public class ModeFlipTests
     }
 
     [Fact]
-    public void Preflight_RefusesWhenTheFilterIsAlreadyGone()
+    public void Preflight_ModeAWithNoRecordIsAStrandedWheelNotANonEvent()
     {
         // Patched Apple with no Apple filter on LowerFilters means the stack is
-        // in Mode A right now. Flipping would have no Mode B to return to.
-        Assert.Equal(ModeFlipOutcome.NotPathA,
+        // in Mode A right now: the wheel is dead and there is no recorded value
+        // to put back. NotPathA is the one answer that must never come out of
+        // here - it is worded as "nothing was changed", which tells a user
+        // whose scroll wheel has already stopped that nothing is wrong.
+        Assert.Equal(ModeFlipOutcome.StrandedInModeA,
             ModeFlip.PreflightOutcome(DriverStatus.PathAPatched, 2, appleFilterRegistered: false));
     }
 
@@ -723,10 +726,236 @@ public class ModeFlipTests
     [Fact]
     public void Detail_RefusalsSayNothingWasChanged()
     {
-        foreach (var outcome in new[] { ModeFlipOutcome.NotPathA, ModeFlipOutcome.NoInstances, ModeFlipOutcome.Cancelled })
+        foreach (var outcome in new[]
+                 {
+                     ModeFlipOutcome.NotPathA, ModeFlipOutcome.NoInstances,
+                     ModeFlipOutcome.Cancelled, ModeFlipOutcome.DriverChanged,
+                 })
         {
             Assert.Contains("Nothing was changed",
                 ModeFlip.DetailFor(outcome, -1, restoredToModeB: true), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Detail_ACycleAlreadyRunningNeverClaimsNothingWasChanged()
+    {
+        var detail = ModeFlip.DetailFor(ModeFlipOutcome.CycleInFlight, -1, restoredToModeB: false);
+
+        // The other cycle holds this mouse in battery mode with the value
+        // already rewritten, so "nothing was changed" is false at the exact
+        // moment it would be logged.
+        Assert.DoesNotContain("Nothing was changed", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("not approved", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("already", detail, StringComparison.OrdinalIgnoreCase);
+        // Not the unworded fall-through.
+        Assert.NotEqual("Unknown result.", detail);
+    }
+
+    [Fact]
+    public void Detail_StrandedModeASaysTheWheelIsDeadRatherThanThatNothingHappened()
+    {
+        var detail = ModeFlip.DetailFor(ModeFlipOutcome.StrandedInModeA, -1, restoredToModeB: false);
+
+        Assert.NotEqual("Unknown result.", detail);
+        Assert.Contains("scroll", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("dead", detail, StringComparison.OrdinalIgnoreCase);
+        // This is the transcript line for a mouse that is ALREADY stuck. The
+        // refusal vocabulary belongs to outcomes that found nothing wrong.
+        Assert.DoesNotContain("Nothing was changed", detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- restore preflight: the stack the record describes ----------------
+    //
+    // The flip path refuses before it elevates; the standalone restore used to
+    // elevate on anything a parseable sentinel asked for. Both halves of that
+    // are unsafe: the recorded value is only meaningful while the driver it
+    // was recorded under is still the bound one, and a Mode A with no record
+    // at all is a dead wheel, not a no-op.
+
+    [Fact]
+    public void RestorePreflight_ProceedsWhileTheRecordedStackIsStillBound()
+    {
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            sentinelPresent: true, DriverStatus.PathAPatched, ModeBObservation.InModeA));
+        // A mouse that is not on the bus does not block the write: the value
+        // goes onto the enum key, which is there whether the mouse is awake or
+        // not, and the record says the filter is off it.
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            sentinelPresent: true, DriverStatus.PathAPatched, ModeBObservation.NotObservable));
+        // An unreadable status is not evidence that the stack changed, and
+        // refusing on it would take away the one-click way out of a dead wheel.
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            sentinelPresent: true, null, ModeBObservation.InModeA));
+    }
+
+    [Theory]
+    [InlineData(DriverStatus.PatchedKmdf)]
+    [InlineData(DriverStatus.StockKmdf)]
+    [InlineData(DriverStatus.NotBound)]
+    [InlineData(DriverStatus.NotInstalled)]
+    [InlineData(DriverStatus.Ok)]
+    public void RestorePreflight_RefusesToWriteOntoADriverTheRecordNeverDescribed(DriverStatus status)
+    {
+        // The record was taken while the patched Apple driver was bound. The
+        // user has chosen a different driver since, and putting the recorded
+        // LowerFilters value back now would bind a filter this stack never
+        // carried - the one thing the flip promises it can never do.
+        foreach (var observed in Enum.GetValues<ModeBObservation>())
+        {
+            Assert.Equal(ModeFlipOutcome.DriverChanged,
+                ModeFlip.RestorePreflightOutcome(sentinelPresent: true, status, observed));
+        }
+    }
+
+    [Fact]
+    public void RestorePreflight_WithNoRecordAndAMouseStuckInModeA_IsAStrandedWheel()
+    {
+        // Nothing recorded, and the mouse is demonstrably split into its
+        // collections: the wheel is dead right now. The old answer here wrote
+        // nothing and reported a restore failure whose own fix was this same
+        // click, which can never succeed without a record.
+        Assert.Equal(ModeFlipOutcome.StrandedInModeA,
+            ModeFlip.RestorePreflightOutcome(
+                sentinelPresent: false, DriverStatus.PathAPatched, ModeBObservation.InModeA));
+        Assert.Equal(ModeFlipOutcome.StrandedInModeA,
+            ModeFlip.RestorePreflightOutcome(sentinelPresent: false, null, ModeBObservation.InModeA));
+    }
+
+    [Fact]
+    public void RestorePreflight_WithNoRecordAndNothingWrong_HasNothingToPutBack()
+    {
+        // Scroll mode is live and nothing was recorded: there is nothing to do
+        // and nothing to warn about.
+        Assert.Equal(ModeFlipOutcome.Ok,
+            ModeFlip.RestorePreflightOutcome(
+                sentinelPresent: false, DriverStatus.PathAPatched, ModeBObservation.InModeB));
+        // No record and no mouse on the bus proves nothing either way, so it
+        // is neither a success nor a dead wheel.
+        Assert.Equal(ModeFlipOutcome.NoInstances,
+            ModeFlip.RestorePreflightOutcome(
+                sentinelPresent: false, DriverStatus.PathAPatched, ModeBObservation.NotObservable));
+    }
+
+    [Fact]
+    public void RestorePreflight_WithNoRecordOnAnotherDriver_IsNotAModeProblemAtAll()
+    {
+        Assert.Equal(ModeFlipOutcome.NotPathA,
+            ModeFlip.RestorePreflightOutcome(
+                sentinelPresent: false, DriverStatus.PatchedKmdf, ModeBObservation.InModeB));
+    }
+
+    [Fact]
+    public void DriverChanged_RefusalNamesTheValueItDidNotWriteAndTheKeyItBelongsOn()
+    {
+        var detail = ModeFlip.DriverChangedDetail(Sentinel(NoValue(), Carrier()));
+
+        // Never a silent refusal: the user asked for a restore and is owed the
+        // reason plus the forensic record, in the recorded order.
+        Assert.Contains("NOT", detail, StringComparison.Ordinal);
+        Assert.Contains("driver", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(DeviceKey, detail, StringComparison.Ordinal);
+        Assert.Contains("applewirelessmouse mouhid", detail, StringComparison.Ordinal);
+        // A record naming no family filter has no value to quote and says so,
+        // rather than naming a key with nothing to put on it.
+        Assert.Contains("no scroll-mode filter",
+            ModeFlip.DriverChangedDetail(Sentinel(NoValue())), StringComparison.Ordinal);
+    }
+
+    // --- restore verdict --------------------------------------------------
+
+    [Fact]
+    public void RestoreVerdict_AMouseOffTheBusIsNotAFailedRestore()
+    {
+        // The recorded value is provably back on the key. A mouse that is
+        // switched off, asleep or out of range is not evidence against that,
+        // and calling it a failure sends the user to re-elevate a restore that
+        // already landed - and leaves the recovery record behind to nag at the
+        // next start.
+        Assert.Equal(ModeFlipOutcome.Ok,
+            ModeFlip.RestoreVerdict(filtersRestored: true, ModeBObservation.NotObservable));
+        Assert.Equal(ModeFlipOutcome.Ok,
+            ModeFlip.RestoreVerdict(filtersRestored: true, ModeBObservation.InModeB));
+    }
+
+    [Fact]
+    public void RestoreVerdict_AMouseStillSplitIntoCollectionsIsStillAFailure()
+    {
+        // Here the mouse IS observable and it still has the shape where the
+        // wheel does not work. The value being right on the key does not buy a
+        // pass over a measurement that contradicts it.
+        Assert.Equal(ModeFlipOutcome.RestoreFailed,
+            ModeFlip.RestoreVerdict(filtersRestored: true, ModeBObservation.InModeA));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(false)]
+    public void RestoreVerdict_UnprovenValueIsAFailureHoweverTheMouseLooks(bool? filtersRestored)
+    {
+        foreach (var observed in Enum.GetValues<ModeBObservation>())
+        {
+            Assert.Equal(ModeFlipOutcome.RestoreFailed,
+                ModeFlip.RestoreVerdict(filtersRestored, observed));
+        }
+    }
+
+    // --- releasing the cycle ----------------------------------------------
+    //
+    // The cycle is one elevated writer plus one tray waiting on its append-only
+    // transcript. It is finished when the WRITER is finished, not when the
+    // tray's patience runs out: a verdict published over a live script reports
+    // an end state the script is still changing, and a slot released under a
+    // live script lets a second elevated writer start on the same keys.
+
+    [Fact]
+    public void CycleRelease_AScriptStillRunningHoldsTheCycleEvenPastTheCeiling()
+    {
+        foreach (var ceiling in new[] { true, false })
+        {
+            foreach (var terminal in new[] { true, false })
+            {
+                var decision = ModeFlip.DecideCycleRelease(
+                    scriptExited: false, terminalObserved: terminal, ceilingExceeded: ceiling);
+
+                Assert.False(decision.MayRelease,
+                    $"released while the elevated writer is alive (terminal={terminal} ceiling={ceiling})");
+                Assert.False(decision.MayPublishVerdict,
+                    $"verdict published over a live writer (terminal={terminal} ceiling={ceiling})");
+            }
+        }
+    }
+
+    [Fact]
+    public void CycleRelease_AFinishedScriptWithItsVerdictPublishesAndReleases()
+    {
+        foreach (var ceiling in new[] { true, false })
+        {
+            var decision = ModeFlip.DecideCycleRelease(
+                scriptExited: true, terminalObserved: true, ceilingExceeded: ceiling);
+
+            Assert.True(decision.MayPublishVerdict);
+            Assert.True(decision.MayRelease);
+            // A script that said its piece and exited is not a failure just
+            // because the tray waited longer than it budgeted for.
+            Assert.False(decision.VerdictIsFailure);
+        }
+    }
+
+    [Fact]
+    public void CycleRelease_AFinishedScriptThatSaidNothingIsAFailureVerdict()
+    {
+        foreach (var ceiling in new[] { true, false })
+        {
+            var decision = ModeFlip.DecideCycleRelease(
+                scriptExited: true, terminalObserved: false, ceilingExceeded: ceiling);
+
+            // The writer is gone, so the slot is free and the tray owes the
+            // user an answer - and the only honest answer for a script that
+            // exited without reporting its end state is a failure.
+            Assert.True(decision.MayRelease);
+            Assert.True(decision.MayPublishVerdict);
+            Assert.True(decision.VerdictIsFailure);
         }
     }
 }
