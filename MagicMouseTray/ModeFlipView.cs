@@ -212,11 +212,22 @@ internal static class ModeFlipView
                     + "will report what it found and put the mouse back.";
 
             case ModeFlipOutcome.DriverChanged:
+                // Three different refusals land here (ModeFlip
+                // .RestorePreflightOutcome) and the text may not assert any one
+                // of them: another driver bound now, a different driver chosen
+                // since, or the recorded driver no longer installed. What is
+                // true of all three is that the recording no longer describes
+                // this mouse - and that it was kept, which is the only reason
+                // the startup offer stops asking.
                 return "No reading was taken, and nothing was changed.\n\n"
-                    + "Magic Tray recorded what to put back for this mouse while one driver was in "
-                    + "use, and a different driver is in use now. Putting that recorded setting "
-                    + "back would change something this driver never had, so Magic Tray refused to "
-                    + "write it.\n\n"
+                    + "Magic Tray recorded what to put back for this mouse while it was set up "
+                    + "with one driver, and that recording no longer describes it: a different "
+                    + "driver is in use, or you have chosen a different one since, or the driver "
+                    + "the recording was made under is no longer installed. Putting that recorded "
+                    + "setting back would bind a driver you did not choose, so Magic Tray refused "
+                    + "to write it.\n\n"
+                    + "The recording is kept. If you go back to the driver it was made under, the "
+                    + "one-click restore works again.\n\n"
                     + "If scrolling is not working on the driver you are using now: open Windows "
                     + "Settings -> Bluetooth & devices, remove this mouse, switch it off and on "
                     + "again, then add it back.";

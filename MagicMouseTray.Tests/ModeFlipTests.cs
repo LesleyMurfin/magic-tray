@@ -791,9 +791,12 @@ public class ModeFlipTests
     // elevate on anything a parseable sentinel asked for. Both halves of that
     // are unsafe: the recorded value would bind a filter a rival stack never
     // carried, and a Mode A with no record at all is a dead wheel, not a
-    // no-op. What the refusal may NOT key off is Mode A's own footprint: the
-    // flip clears the Apple filter from LowerFilters itself, so the status a
-    // stranded mouse reads as is the status the restore has to work on.
+    // no-op. Three things prove the record no longer describes this stack - a
+    // rival filter bound now, a lasting choice of another driver taken since,
+    // and the recorded driver's package gone - and what none of them may be is
+    // Mode A's own footprint: the flip clears the Apple filter from
+    // LowerFilters itself but never removes the package, so a stranded mouse
+    // reads StockKmdf with no rival choice on file and must still proceed.
 
     [Theory]
     [InlineData(DriverStatus.PathAPatched)]
@@ -809,7 +812,16 @@ public class ModeFlipTests
         // readings takes the one-click way out of a dead wheel away from
         // exactly the user who is stranded in it. An unreadable status is not
         // evidence that the stack changed either.
-        Assert.Null(ModeFlip.RestorePreflightOutcome(status));
+        //
+        // This is the stranded user exactly: no rival choice on file, and the
+        // Apple filter PACKAGE still installed - Mode A removes the filter's
+        // registration, never the package.
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            status, lastingChoice: null, appleFilterPackagePresent: true));
+        // The choice the install path writes for this very driver is not a
+        // move away from it.
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            status, Config.Driver0323PathA, appleFilterPackagePresent: true));
     }
 
     [Fact]
@@ -821,7 +833,66 @@ public class ModeFlipTests
         // back here would bind a filter this stack never carried - the one
         // thing the flip promises it can never do.
         Assert.Equal(ModeFlipOutcome.DriverChanged,
-            ModeFlip.RestorePreflightOutcome(DriverStatus.PatchedKmdf));
+            ModeFlip.RestorePreflightOutcome(
+                DriverStatus.PatchedKmdf, lastingChoice: null, appleFilterPackagePresent: true));
+    }
+
+    [Theory]
+    [InlineData(Config.Driver0323Stock)]
+    [InlineData(Config.Driver0323Kmdf)]
+    [InlineData("STOCK")]
+    public void RestorePreflight_RefusesOnceTheUserHasChosenAnotherDriverSince(string choice)
+    {
+        // A lasting radio choice is a decision taken AFTER the record was
+        // written, and the recorded Apple filter is the one thing that choice
+        // ruled out. The status alone cannot tell this user apart from the
+        // stranded one: taking Driver: -> Stock uninstalls the patched Apple
+        // package and leaves the same StockKmdf reading a Mode A mouse gives.
+        // Writing the record here is the silent driver rebind CONTRIBUTING.md
+        // forbids, and when the package went with the choice it names a filter
+        // Windows cannot load - a devnode that will not start.
+        foreach (var status in new DriverStatus?[]
+                 {
+                     DriverStatus.StockKmdf, DriverStatus.NotBound,
+                     DriverStatus.PathAPatched, null,
+                 })
+        {
+            Assert.Equal(ModeFlipOutcome.DriverChanged,
+                ModeFlip.RestorePreflightOutcome(
+                    status, choice, appleFilterPackagePresent: true));
+        }
+    }
+
+    [Fact]
+    public void RestorePreflight_RefusesWhenTheRecordedDriverIsNoLongerInstalled()
+    {
+        // The package the record names is gone, so its name in LowerFilters
+        // would be a filter Windows cannot load. The write is gated on nothing
+        // and the device restart follows it, so the result is a devnode that
+        // will not start - and then a bus with no mouse on it, which reads as
+        // "not connected right now" rather than as the breakage it is.
+        foreach (var status in new DriverStatus?[]
+                 {
+                     DriverStatus.StockKmdf, DriverStatus.NotBound,
+                     DriverStatus.PathAPatched, null,
+                 })
+        {
+            Assert.Equal(ModeFlipOutcome.DriverChanged,
+                ModeFlip.RestorePreflightOutcome(
+                    status, lastingChoice: null, appleFilterPackagePresent: false));
+        }
+    }
+
+    [Fact]
+    public void RestorePreflight_AnUnparseableChoiceIsNotEvidenceOfAnything()
+    {
+        // The gate refuses on proof, never on absence of it: a config value
+        // nothing can read is not a user who moved to another driver, and
+        // treating it as one strands the mouse this record exists to rescue.
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            DriverStatus.StockKmdf, "not-a-driver", appleFilterPackagePresent: true));
+        Assert.Null(ModeFlip.RestorePreflightOutcome(
+            DriverStatus.StockKmdf, "", appleFilterPackagePresent: true));
     }
 
     [Fact]

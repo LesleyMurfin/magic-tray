@@ -275,6 +275,25 @@ internal static class ModeFlip
         return stale;
     }
 
+    // Whether the startup offer has anything to offer: the same gate the
+    // restore itself applies, read BEFORE the modal rather than after it. A
+    // record the restore will refuse keeps the record - correctly, in case the
+    // user moves back - but nothing else clears it either, so without this the
+    // refused case opens every launch with "scrolling may be dead right now"
+    // about a click that cannot help and cannot stop asking.
+    //
+    // The deliberate click on "Restore scroll mode" is not gated here: that
+    // user asked, and is owed the refusal and its reason.
+    internal static bool StartupRestoreIsOfferable()
+    {
+        var lasting = Config.Load().Driver0323;
+        var refused = RestorePreflightOutcome(
+            CurrentV3Status(lasting), lasting, AppleFilterPackageInstalled());
+        if (refused is ModeFlipOutcome outcome)
+            Logger.Log($"{LogPrefix} phase=startup offer=suppressed reason={outcome}");
+        return refused is null;
+    }
+
     // One cycle at a time. Every piece of cycle state is a process-wide path -
     // one sentinel, one script file, one handshake pair - and two cycles
     // racing means two trays each computing "verified" from the other's
@@ -325,9 +344,14 @@ internal static class ModeFlip
     static ModeFlipResult RestoreModeBCore()
     {
         TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var sentinel);
-        var status = CurrentV3Status();
+        // One config read for both the classification and the gate: the status
+        // is already a function of the lasting radio choice, and the gate asks
+        // the same file for the same answer.
+        var lasting = Config.Load().Driver0323;
+        var status = CurrentV3Status(lasting);
+        bool appleFilterPackagePresent = AppleFilterPackageInstalled();
         var observed = ObserveMode();
-        Logger.Log($"{LogPrefix} phase=restore_preflight record={sentinel is not null} status={Render(status)} observed={observed}");
+        Logger.Log($"{LogPrefix} phase=restore_preflight record={sentinel is not null} status={Render(status)} observed={observed} choice={lasting ?? "none"} apple_package={appleFilterPackagePresent}");
 
         if (sentinel is null)
         {
@@ -342,15 +366,15 @@ internal static class ModeFlip
                 : Refusal(answer, observed);
         }
 
-        // The recorded value only means what it meant while no rival family
-        // filter is bound. Writing it onto a KMDF stack would bind a filter
-        // that stack never carried, which is the one thing the flip promises
-        // it can never do. Mode A's own footprint - the Apple filter gone
-        // from LowerFilters - is not that, and must not be refused: it is the
-        // exact state this record exists to undo.
-        if (RestorePreflightOutcome(status) is ModeFlipOutcome refused)
+        // The recorded value only means what it meant on the stack it was
+        // recorded from, and three things say it no longer describes this one -
+        // see RestorePreflightOutcome. Mode A's own footprint, the Apple filter
+        // gone from LowerFilters, is not one of them and must not be refused:
+        // it is the exact state this record exists to undo.
+        if (RestorePreflightOutcome(status, lasting, appleFilterPackagePresent)
+            is ModeFlipOutcome refused)
         {
-            Logger.Log($"{LogPrefix} phase=restore outcome={refused} reason=driver_changed status={Render(status)}");
+            Logger.Log($"{LogPrefix} phase=restore outcome={refused} reason=record_does_not_describe_this_stack status={Render(status)} choice={lasting ?? "none"} apple_package={appleFilterPackagePresent}");
             return new ModeFlipResult(refused, -1, false, DriverChangedDetail(sentinel), observed);
         }
 
@@ -448,7 +472,12 @@ internal static class ModeFlip
             if (string.Equals(terminal, TokenNoTargets, StringComparison.OrdinalIgnoreCase))
                 return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false,
                     HandRecoveryDetail(sentinel), after);
-            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, verified == true,
+            // RestoredToModeB is "the recorded setting was confirmed back", and
+            // this branch is every way that confirmation failed - including the
+            // one where the value reads correctly under a writer the cycle
+            // could not prove had finished. The value alone is in the log line
+            // above as filters_match=.
+            return new ModeFlipResult(ModeFlipOutcome.RestoreFailed, -1, false,
                 RestoreWarning, after);
         }
     }
@@ -636,8 +665,12 @@ internal static class ModeFlip
         else if (started)
             Logger.Log($"{LogPrefix} phase=done sentinel=kept path={SentinelPath} reason=restore-unverified");
 
-        return new ModeFlipResult(outcome, percent, verified == true,
-            DetailFor(outcome, percent, verified == true), observed);
+        // The same flag the sentinel was kept or deleted on: "the recorded
+        // setting was confirmed back", not "the value reads correctly under a
+        // writer that may still be running". The value alone is logged above
+        // as filters_match=.
+        return new ModeFlipResult(outcome, percent, restored,
+            DetailFor(outcome, percent, restored), observed);
     }
 
     // --- decision logic (pure) -------------------------------------------
@@ -700,6 +733,14 @@ internal static class ModeFlip
         // nothing to put back. NotPathA is wrong either way: it is worded as
         // "nothing was changed", which would tell a user whose wheel has
         // already stopped that nothing is wrong.
+        //
+        // Reachable exactly as far as the menu item is: Mode A clears the
+        // Apple filter, so the status above reads PathAPatched only while a
+        // sticky pathA choice is on file, and TrayMenu.ShowPathAModeSwitch
+        // hides the reading item at every other status. A stranded user with
+        // no such choice gets no entry point here at all - the standalone
+        // restore is their door, and it keys on the measurement rather than
+        // on the status for that reason (NoRecordRestoreOutcome).
         if (!appleFilterRegistered)
             return recordPresent
                 ? ModeFlipOutcome.RestoreFailed
@@ -710,16 +751,41 @@ internal static class ModeFlip
     // Whether the STANDALONE restore may write the value it recorded, decided
     // before anything is elevated. null = proceed.
     //
-    // The recorded LowerFilters value is meaningful under the patched Apple
-    // driver, and writing it onto a stack that carries a rival family filter
-    // would bind a filter that stack never carried. Only a rival filter bound
-    // RIGHT NOW is evidence of that: Mode A clears the Apple filter off
-    // LowerFilters itself, so StockKmdf and NotBound are this flip's own
-    // footprint and refusing on them would take the one-click way out of a
-    // dead wheel away from the one user who needs it. An unreadable status is
-    // no evidence either, and is not refused.
-    internal static ModeFlipOutcome? RestorePreflightOutcome(DriverStatus? status) =>
-        status is DriverStatus.PatchedKmdf ? ModeFlipOutcome.DriverChanged : null;
+    // The recorded LowerFilters value is meaningful on the stack it was taken
+    // from: the patched Apple driver, with its filter package installed. Three
+    // things say it no longer describes this stack, and none of them is Mode
+    // A's own footprint:
+    //
+    //   1. A rival family filter bound RIGHT NOW. Writing the recorded value
+    //      here would bind a filter this stack never carried.
+    //   2. A lasting radio choice of stock or KMDF. That is a decision the
+    //      user took AFTER the record was written, and the recorded Apple
+    //      filter is the one thing it ruled out; writing it back is the silent
+    //      driver rebind CONTRIBUTING.md forbids.
+    //   3. The Apple filter package gone. Then the recorded name in
+    //      LowerFilters is a filter Windows cannot load - a devnode that will
+    //      not start, which is strictly worse than not writing at all.
+    //
+    // A stranded Mode A mouse holds none of them: Mode A clears the Apple
+    // filter off LowerFilters but never removes the package, and that user
+    // never chose another driver. So StockKmdf and NotBound on their own are
+    // this flip's own footprint and still proceed - refusing on them would
+    // take the one-click way out of a dead wheel away from the one user who
+    // needs it. An unreadable status is no evidence either, and neither is a
+    // package read that failed (see AppleFilterPackageInstalled): this gate
+    // refuses on proof, never on absence of it.
+    internal static ModeFlipOutcome? RestorePreflightOutcome(
+        DriverStatus? status, string? lastingChoice, bool appleFilterPackagePresent)
+    {
+        if (status is DriverStatus.PatchedKmdf)
+            return ModeFlipOutcome.DriverChanged;
+        var choice = Config.ParseDriver0323(lastingChoice);
+        if (choice == Config.Driver0323Kmdf || choice == Config.Driver0323Stock)
+            return ModeFlipOutcome.DriverChanged;
+        if (!appleFilterPackagePresent)
+            return ModeFlipOutcome.DriverChanged;
+        return null;
+    }
 
     // What is true of the mouse when nothing was recorded to put back. There
     // is no "proceed" here - there is nothing to write - so this always
@@ -840,8 +906,8 @@ internal static class ModeFlip
             "A battery-mode cycle is already running on this mouse. Wait for it to finish, "
             + "then ask again.",
         ModeFlipOutcome.DriverChanged =>
-            "The recovery record describes a driver that is no longer bound, so the recorded "
-            + "value was not written. Nothing was changed.",
+            "The recovery record no longer describes the driver this mouse is set up with, so "
+            + "the recorded value was not written. Nothing was changed.",
         _ => "Unknown result.",
     };
 
@@ -940,15 +1006,17 @@ internal static class ModeFlip
             + "Nothing was changed on this attempt. ",
             "To put it back by hand, set LowerFilters = ");
 
-    // The refusal for a record taken under a driver that is no longer bound.
-    // Never silent: the user asked for a restore, so they are owed the reason
-    // and the forensic record. The recorded value is quoted for reference
-    // only - it is exactly the value that must NOT be written onto this stack.
+    // The refusal for a record that no longer describes this stack - another
+    // driver bound now, a different driver chosen since, or the recorded
+    // driver's package gone. Never silent: the user asked for a restore, so
+    // they are owed the reason and the forensic record. The recorded value is
+    // quoted for reference only - it is exactly the value that must NOT be
+    // written onto this stack.
     internal static string DriverChangedDetail(ModeFlipSentinel sentinel) =>
         RecordedValueDetail(
             sentinel,
-            "Scroll mode was NOT restored: the recovery record was taken while a different "
-            + "driver was bound than the one bound now, so nothing was changed. ",
+            "Scroll mode was NOT restored: the recovery record no longer describes the driver "
+            + "this mouse is set up with, so nothing was changed. ",
             "The record holds LowerFilters = ");
 
     static string RecordedValueDetail(ModeFlipSentinel sentinel, string lead, string quote)
@@ -1792,15 +1860,18 @@ exit 1
     internal sealed record ModeFlipStack(
         IReadOnlyList<ModeFlipTarget> Targets, IReadOnlyList<string> InstanceIds);
 
-    static DriverStatus? CurrentV3Status()
+    // The lasting radio choice matters: Mode A itself clears the Apple
+    // LowerFilters, so a sticky pathA choice is what keeps a mouse found in
+    // Mode A classified as PathAPatched instead of Stock. Callers that also
+    // gate on that choice pass the one they already read, so the classifier
+    // and the gate cannot answer from two different reads of the file.
+    static DriverStatus? CurrentV3Status() => CurrentV3Status(Config.Load().Driver0323);
+
+    static DriverStatus? CurrentV3Status(string? lastingChoice)
     {
         try
         {
-            // The lasting radio choice matters: Mode A itself clears the Apple
-            // LowerFilters, so a sticky pathA choice is what keeps a mouse
-            // found in Mode A classified as PathAPatched instead of Stock.
-            var lasting = Config.Load().Driver0323;
-            foreach (var d in DriverHealthChecker.GetPerDeviceStatus(lasting))
+            foreach (var d in DriverHealthChecker.GetPerDeviceStatus(lastingChoice))
             {
                 if (string.Equals(d.Pid, V3Pid, StringComparison.OrdinalIgnoreCase))
                     return d.Status;
@@ -1811,6 +1882,25 @@ exit 1
         {
             Logger.Log($"{LogPrefix} phase=status err={ex.Message}");
             return null;
+        }
+    }
+
+    // Whether the Apple filter package the record names is still installed.
+    // A read that failed is not evidence that it is gone - the restore gate
+    // refuses on proof only, and treating an unreadable hive as proof would
+    // take the one-click way out away from a stranded user. The flip never
+    // throws (TrayApp.ReportModeFlip is the only reporting path), so the
+    // registry read is contained here.
+    static bool AppleFilterPackageInstalled()
+    {
+        try
+        {
+            return DriverHealthChecker.AppleFilterPackagePresent();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"{LogPrefix} phase=status apple_package=unreadable err={ex.Message}");
+            return true;
         }
     }
 
@@ -2040,7 +2130,15 @@ exit 1
                 if (donePath is not null)
                     WriteDone(donePath, -1);
             }
+            // Exit first, transcript second. An exited writer's transcript is
+            // complete by construction and cannot grow again, so re-reading it
+            // here can only add the verdict the writer appended on its way out.
+            // The other order scores a restore that landed and reported as a
+            // writer that said nothing - unproven, RestoreFailed, record kept -
+            // whenever both the append and the exit fall inside one read.
             bool exited = HasExited(proc);
+            if (exited)
+                transcript = ReadAllTextOrNull(statusPath) ?? transcript;
             decision = DecideCycleRelease(
                 scriptExited: exited,
                 terminalObserved: TerminalToken(transcript).Length > 0,
