@@ -255,7 +255,12 @@ public class DeviceRepairTests
         foreach (var result in new[] { failed, silent, killed, blocked })
         {
             Assert.Equal(RegistryState.Untouched, result.Registry);
-            Assert.DoesNotContain("LowerFilters", result.Detail, StringComparison.Ordinal);
+            // The untouched sentence now names LowerFilters too - it is scoped
+            // to it, like its two siblings - so the word itself is no longer
+            // the tell. What may never appear is either claim that the value
+            // may have moved.
+            Assert.DoesNotContain("already been changed", result.Detail, StringComparison.Ordinal);
+            Assert.DoesNotContain("is not known", result.Detail, StringComparison.Ordinal);
         }
     }
 
@@ -381,10 +386,17 @@ public class DeviceRepairTests
     {
         var script = DeviceRepair.BuildRemoveStaleFiltersScript("030d", Nonce, Keep, [Stale]);
 
-        var write = script.IndexOf("Set-ItemProperty", StringComparison.Ordinal);
+        // The delete-value branch is the FIRST write in the generated script,
+        // ahead of Set-ItemProperty, so the window starts at whichever lands
+        // first - otherwise it skips a real registry write.
+        var set = script.IndexOf("Set-ItemProperty", StringComparison.Ordinal);
+        var remove = script.IndexOf("Remove-ItemProperty", StringComparison.Ordinal);
+        var firstWrite = Math.Min(set, remove);
         var restart = script.IndexOf("/restart-device", StringComparison.Ordinal);
-        Assert.InRange(write, 0, restart);
-        Assert.DoesNotContain("exit 1", script[write..restart], StringComparison.Ordinal);
+        Assert.InRange(firstWrite, 0, restart);
+        // Any exit at all, not just the failure one: the script may not leave
+        // the registry rewritten and the stack un-rebuilt by ANY door.
+        Assert.DoesNotContain("exit ", script[firstWrite..restart], StringComparison.Ordinal);
     }
 
     // --- previous values outlive the console window -----------------------
@@ -409,8 +421,11 @@ public class DeviceRepairTests
         // console window is gone before anyone can read them back.
         var key = script.IndexOf("key=", StringComparison.Ordinal);
         var prev = script.IndexOf("prev=", StringComparison.Ordinal);
+        var count = script.IndexOf("prev-count=", StringComparison.Ordinal);
         Assert.InRange(key, 0, firstWrite);
         Assert.InRange(prev, 0, firstWrite);
+        // The line that closes each block, so a block cut short is detectable.
+        Assert.InRange(count, prev, firstWrite);
         Assert.Contains("Add-Content -LiteralPath $statusFile", script, StringComparison.Ordinal);
     }
 
@@ -438,12 +453,14 @@ public class DeviceRepairTests
 
     /// <summary>
     /// The sidecar is read last-line-wins while the script is still appending
-    /// to it, and the header seeds written=0. If the stage marker were appended
-    /// first, a read landing between the two appends - or one that lost the
-    /// count line to a torn read - would pair 'stage=written' with that seeded
-    /// zero and the tray would tell the user nothing was changed after the
-    /// writes had landed. So each count is appended BEFORE the marker that
-    /// makes it the answer.
+    /// to it, and the header seeds written=0. If the stage marker were
+    /// appended first, a read landing between the two appends would pair
+    /// 'stage=written' with that seeded zero and the tray would tell the user
+    /// nothing was changed after the writes had landed. So each count is
+    /// appended BEFORE the marker that makes it the answer. The other half of
+    /// the guarantee is on the tray side: LaunchElevated reads the sidecar
+    /// with FileShare.ReadWrite, so a read can never deny the script's own
+    /// Add-Content and cost the run a line.
     /// </summary>
     [Fact]
     public void FiltersScript_AppendsTheCountsBeforeTheStageMarker()
@@ -480,6 +497,21 @@ public class DeviceRepairTests
     }
 
     /// <summary>
+    /// The flag the mapper promises an untouched registry on is a fact about
+    /// the script that ran, so it is read off the script text rather than
+    /// restated at the call site: the restart-only script carries neither
+    /// write cmdlet, the stale-filter script carries both.
+    /// </summary>
+    [Fact]
+    public void ScriptHasWritePass_IsReadOffTheScriptThatRan()
+    {
+        Assert.False(DeviceRepair.ScriptHasWritePass(
+            DeviceRepair.BuildScript("030d", Nonce, Keep)));
+        Assert.True(DeviceRepair.ScriptHasWritePass(
+            DeviceRepair.BuildRemoveStaleFiltersScript("030d", Nonce, Keep, [Stale])));
+    }
+
+    /// <summary>
     /// The tray reads every touched key and its exact previous value list out
     /// of the sidecar text, in the order the script recorded them. Device key
     /// and instance key are separate entries even though one path is a prefix
@@ -495,10 +527,12 @@ public class DeviceRepairTests
             "planned=2",
             $"key=0|{DeviceKey}",
             $"prev=0|{Stale}",
+            "prev-count=0|1",
             $"key=1|{InstanceKey}",
             $"prev=1|{Keep}",
             $"prev=1|{Stale}",
             "prev=1|mouhid",
+            "prev-count=1|3",
         ]);
 
         var entries = DeviceRepair.ParseFilterBackup(text);
@@ -511,9 +545,11 @@ public class DeviceRepairTests
     }
 
     /// <summary>
-    /// A key recorded with no previous value, a value line with no key, and a
-    /// report that never reached the registry all yield nothing to restore -
-    /// never a half entry that a hand restore would act on.
+    /// A key recorded with no previous value, a value line with no key, a
+    /// block whose closing prev-count line never arrived or disagrees with the
+    /// values that did, and a report that never reached the registry all yield
+    /// nothing to restore - never a half entry that a hand restore would act
+    /// on.
     /// </summary>
     [Fact]
     public void ParseFilterBackup_IncompleteRecords_YieldNothingToRestore()
@@ -522,6 +558,49 @@ public class DeviceRepairTests
         Assert.Empty(DeviceRepair.ParseFilterBackup(""));
         Assert.Empty(DeviceRepair.ParseFilterBackup($"prev=0|{Stale}"));
         Assert.Empty(DeviceRepair.ParseFilterBackup($"key=0|{DeviceKey}"));
+        Assert.Empty(DeviceRepair.ParseFilterBackup($"key=0|{DeviceKey}\nprev=0|{Stale}"));
+        Assert.Empty(DeviceRepair.ParseFilterBackup(
+            $"key=0|{DeviceKey}\nprev=0|{Stale}\nprev-count=0|2"));
+    }
+
+    /// <summary>
+    /// The sidecar is read while the script is still appending to it, so a
+    /// read can stop anywhere - including inside the burst of prev= lines for
+    /// one key, and the ceiling kill can stop the script there outright. Each
+    /// block's count line is written after its values, so a block cut short
+    /// loses that line and is dropped, while every block that closed before
+    /// the cut still restores. A record that silently listed four of five
+    /// values would have the user drop a surviving filter.
+    /// </summary>
+    [Fact]
+    public void ParseFilterBackup_ABlockCutShort_IsDroppedAndTheOthersSurvive()
+    {
+        var whole = string.Join("\n",
+        [
+            $"key=0|{DeviceKey}",
+            $"prev=0|{Stale}",
+            "prev-count=0|1",
+            $"key=1|{InstanceKey}",
+            $"prev=1|{Keep}",
+            $"prev=1|{Stale}",
+            "prev=1|mouhid",
+            "prev-count=1|3",
+        ]);
+        var cutMidBlock = whole[..whole.IndexOf("prev=1|mouhid", StringComparison.Ordinal)];
+        // The one tear that still parses: a count truncated to a smaller
+        // number. Its values are appended before it, so the block disagrees
+        // with its own count and is dropped rather than restored short.
+        var tornCount = whole.Replace("prev-count=1|3", "prev-count=1|1", StringComparison.Ordinal);
+
+        foreach (var text in new[] { cutMidBlock, tornCount })
+        {
+            var entries = DeviceRepair.ParseFilterBackup(text);
+            Assert.Single(entries);
+            Assert.Equal(DeviceKey, entries[0].KeyPath);
+            Assert.Equal([Stale], entries[0].PreviousValues);
+        }
+
+        Assert.Equal(2, DeviceRepair.ParseFilterBackup(whole).Count);
     }
 
     /// <summary>
@@ -592,6 +671,28 @@ public class DeviceRepairTests
         Assert.Contains(Nonce.ToString(), name, StringComparison.Ordinal);
         Assert.NotEqual(path, DeviceRepair.FilterBackupPath("030d", Nonce + 1));
         Assert.NotEqual(path, DeviceRepair.FilterBackupPath("0323", Nonce));
+    }
+
+    /// <summary>
+    /// docs/ENABLE-DISABLE.md promises "the newest five records are kept", and
+    /// that is a number a user acts on. The enumeration half of the prune can
+    /// only run against the real %APPDATA%, so the selection is the seam: the
+    /// oldest records go, the newest five stay, and a folder under the bound
+    /// loses nothing - including the record the attempt just wrote.
+    /// </summary>
+    [Fact]
+    public void FilterBackupPrune_KeepsTheNewestFiveRecords()
+    {
+        var now = DateTime.UtcNow;
+        var records = Enumerable.Range(0, 8)
+            .Select(i => (Path: $"mm-filters-backup-030d-1-{i}.txt", LastWriteUtc: now.AddMinutes(-i)))
+            .ToArray();
+
+        var pruned = DeviceRepair.FilterBackupsToPrune(records);
+
+        Assert.Equal([records[5].Path, records[6].Path, records[7].Path], pruned.Order());
+        Assert.Empty(DeviceRepair.FilterBackupsToPrune(records.Take(5)));
+        Assert.Empty(DeviceRepair.FilterBackupsToPrune([]));
     }
 
     /// <summary>

@@ -100,9 +100,11 @@ internal readonly record struct RepairProgress(
 // HasWritePass is a fact about the SCRIPT that ran, not about its report: the
 // restart-only script (BuildScript) contains no Set-ItemProperty and no
 // Remove-ItemProperty at all, so for that attempt "nothing was written" is
-// provable whatever the report says - or does not say. It defaults to true
-// because the conservative answer for a script that might write is Unknown,
-// never a promise that HKLM is clean.
+// provable whatever the report says - or does not say. Both production call
+// sites read it off the script text with ScriptHasWritePass rather than
+// restating it, so a script that grows a write cannot keep the promise. It
+// defaults to true because the conservative answer for a script that might
+// write is Unknown, never a promise that HKLM is clean.
 internal readonly record struct RepairEvidence(
     bool Started,
     RepairProgress? Progress,
@@ -559,6 +561,11 @@ foreach ($t in $targets) {
     foreach ($n in @($t.Previous)) {
         Write-Status ("prev=" + $index + "|" + [string]$n)
     }
+    # Values first, their count last. The tray drops a block whose prev-count
+    # line is missing or disagrees with the values that reached it, so a record
+    # cut short - by a tear in the read, or by the ceiling kill landing in this
+    # burst - is never handed to a user as a complete list to paste back.
+    Write-Status ("prev-count=" + $index + "|" + @($t.Previous).Count)
     $index++
     $kept = New-Object System.Collections.Generic.List[string]
     foreach ($n in @($t.Previous)) {
@@ -636,10 +643,12 @@ foreach ($t in $targets) {
         $writeFailures++
     }
 }
-# Counts first, marker last. A reader that lands between these appends - or
-# loses one of them to a torn read - then sees written=0 next to the stage it
-# came in with, never next to 'written', so it can never read the header's
-# seeded zero as proof that the write pass changed nothing.
+# Counts first, marker last: the tray reads this file last-line-wins while the
+# script is still appending to it, so a read that lands between these appends
+# must not see the new marker beside the header's seeded zero. The other half
+# of that guarantee is on the tray side - LaunchElevated reads the sidecar
+# with FileShare.ReadWrite, so its read can never deny this Add-Content and
+# cost the run a status line.
 Write-Status ("written=" + $written)
 Write-Status ("write-failures=" + $writeFailures)
 Write-Status 'stage=written'
@@ -827,6 +836,14 @@ exit 1
         return RegistryState.Untouched;
     }
 
+    // Whether the script that ran can write LowerFilters at all, read off the
+    // script itself rather than restated at the call site: the restart-only
+    // script has neither write cmdlet in it, and a script that grew one must
+    // not keep promising an untouched registry.
+    internal static bool ScriptHasWritePass(string script) =>
+        script.Contains("Set-ItemProperty", StringComparison.Ordinal)
+        || script.Contains("Remove-ItemProperty", StringComparison.Ordinal);
+
     // Total: every end state the two scripts can reach is a value here, and
     // each carries its own sentence because the recovery step differs in every
     // one. Order matters - Started is checked first because UAC is the one
@@ -932,7 +949,11 @@ exit 1
         RegistryState.Unknown =>
             "Whether LowerFilters was changed is not known - check it before running the "
             + "repair again.",
-        _ => "Nothing in the registry was changed.",
+        // Scoped to LowerFilters like its two siblings: the restart-only
+        // repair runs pnputil /restart-device, which does cause registry
+        // activity of its own, and this sentence also sits above the test
+        // signing steps in the filter-blocked dialog.
+        _ => "LowerFilters was not changed in the registry on this PC.",
     };
 
     // What a support log shows, so one line carries BOTH dimensions: an
@@ -968,6 +989,7 @@ exit 1
 
     const string BackupKeyPrefix = "key=";
     const string BackupValuePrefix = "prev=";
+    const string BackupCountPrefix = "prev-count=";
 
     // Next to debug.log, never as debug.log: that file rotates at 1 MB and is
     // redacted for sharing, and this is the only copy of what LowerFilters
@@ -979,21 +1001,24 @@ exit 1
             $"mm-filters-backup-{ValidatePid(pid)}-{ProcIdSegment()}-{ValidateNonce(nonce)}.txt");
 
     // The recorded form: one key= line per key, then one prev= line per value
-    // it held, in order. Both line kinds carry the record index first, so the
-    // rest of the line is the raw path or value - including any '|' or '=' the
-    // registry happened to hold.
+    // it held, in order, then the prev-count= line that closes the block. All
+    // three line kinds carry the record index first, so the rest of the line
+    // is the raw path or value - including any '|' or '=' the registry
+    // happened to hold.
     internal static IReadOnlyList<string> FormatFilterBackup(
         string pid, long nonce, IReadOnlyList<FilterBackupEntry> entries)
     {
         var recorded = entries.Where(e => e.PreviousValues.Count > 0).ToList();
         if (recorded.Count == 0)
             return [];
-        var lines = new List<string>((recorded.Count * 2) + 2)
+        var lines = new List<string>((recorded.Count * 3) + 3)
         {
             $"mm-filters-backup pid={ValidatePid(pid)} nonce={ValidateNonce(nonce)} "
                 + $"utc={DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}",
             "to undo by hand: for each block below set LowerFilters (REG_MULTI_SZ) on that "
                 + "path back to the listed values, in the listed order.",
+            "this file names this PC's Bluetooth device address: keep it local, do not "
+                + "attach it to a public issue.",
         };
         for (var i = 0; i < recorded.Count; i++)
         {
@@ -1001,20 +1026,28 @@ exit 1
             lines.Add(BackupKeyPrefix + index + "|" + recorded[i].KeyPath);
             foreach (var value in recorded[i].PreviousValues)
                 lines.Add(BackupValuePrefix + index + "|" + value);
+            // Values first, their count last, the same ordering the script
+            // uses: the count can only be written once every value above it
+            // is, so a block that ends early loses its count line with it.
+            lines.Add(BackupCountPrefix + index + "|"
+                + recorded[i].PreviousValues.Count.ToString(CultureInfo.InvariantCulture));
         }
         return lines;
     }
 
     // Reads the same form back, out of the backup file or straight out of the
-    // script's status sidecar. A key with no recorded value and a value with no
-    // key are both dropped: a half record is not something a hand restore may
-    // act on.
+    // script's status sidecar. A key with no recorded value, a value with no
+    // key, and a block whose prev-count line is missing or disagrees with the
+    // values that arrived are all dropped. A half record is not something a
+    // hand restore may act on: a block that silently listed four of five
+    // values would have the user drop a surviving filter.
     internal static IReadOnlyList<FilterBackupEntry> ParseFilterBackup(string? text)
     {
         if (string.IsNullOrEmpty(text))
             return [];
-        var order = new List<(string KeyPath, List<string> Values)>();
+        var order = new List<(string Index, string KeyPath, List<string> Values)>();
         var byIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var raw in text.Split('\n'))
         {
             // Only the line separator is stripped: a recorded value keeps its
@@ -1027,7 +1060,14 @@ exit 1
                 if (keyPath.Length == 0 || byIndex.ContainsKey(index))
                     continue;
                 byIndex[index] = order.Count;
-                order.Add((keyPath, []));
+                order.Add((index, keyPath, []));
+            }
+            else if (line.StartsWith(BackupCountPrefix, StringComparison.Ordinal))
+            {
+                if (!SplitRecord(line[BackupCountPrefix.Length..], out var index, out var count))
+                    continue;
+                if (!counts.ContainsKey(index) && TryCount(count, out var expected))
+                    counts[index] = expected;
             }
             else if (line.StartsWith(BackupValuePrefix, StringComparison.Ordinal))
             {
@@ -1038,7 +1078,9 @@ exit 1
             }
         }
         return order
-            .Where(e => e.Values.Count > 0)
+            .Where(e => e.Values.Count > 0
+                && counts.TryGetValue(e.Index, out var expected)
+                && expected == e.Values.Count)
             .Select(e => new FilterBackupEntry(e.KeyPath, e.Values.ToArray()))
             .ToList();
     }
@@ -1105,17 +1147,27 @@ exit 1
     {
         try
         {
-            var stale = new DirectoryInfo(Logger.LogDir)
+            var records = new DirectoryInfo(Logger.LogDir)
                 .GetFiles("mm-filters-backup-*.txt")
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .Skip(KeptFilterBackups);
-            foreach (var file in stale)
+                .Select(f => (Path: f.FullName, LastWriteUtc: f.LastWriteTimeUtc));
+            foreach (var path in FilterBackupsToPrune(records))
             {
-                try { file.Delete(); } catch { /* in use or gone */ }
+                try { File.Delete(path); } catch { /* in use or gone */ }
             }
         }
         catch { /* the folder is unreadable; the record itself is already written */ }
     }
+
+    // Which records the prune deletes, as a pure seam: the bound docs promise
+    // ("the newest five records are kept") is a number a user acts on, and the
+    // enumeration half can only be exercised against the real %APPDATA%.
+    internal static IReadOnlyList<string> FilterBackupsToPrune(
+        IEnumerable<(string Path, DateTime LastWriteUtc)> records) =>
+        records
+            .OrderByDescending(r => r.LastWriteUtc)
+            .Skip(KeptFilterBackups)
+            .Select(r => r.Path)
+            .ToList();
 
     // Shared elevation shape for both repairs: write the script, ShellExecute
     // it with Verb=runas, and poll the status sidecar because ExitCode is
@@ -1158,7 +1210,7 @@ exit 1
                 {
                     // A read that loses to the script's own append keeps the
                     // last good text: it carries the recorded previous values.
-                    try { sidecar = File.ReadAllText(statusPath); }
+                    try { sidecar = ReadSidecar(statusPath); }
                     catch { /* locked mid-append */ }
                     if (IsTerminalResult(ParseProgress(sidecar)?.Result))
                     {
@@ -1199,6 +1251,23 @@ exit 1
     static bool IsTerminalResult(string? result) =>
         result is "ok" or "failed" or "no-instances" or "filter-blocked" or "nothing-to-do";
 
+    // FileShare.ReadWrite | FileShare.Delete, for the reason BugReport's log
+    // tail uses it (BugReport.cs:151): the elevated script is appending to
+    // this file while the loop above reads it. A default-share read denies
+    // that Add-Content for the length of the read, and under the script's
+    // $ErrorActionPreference = 'Continue' the failure is non-terminating, so
+    // the status line is lost for good - a dropped "written=N" would pair the
+    // header's seeded zero with stage=written and report a clean registry over
+    // a rewritten LowerFilters. A lost line is unrecoverable; a torn read is
+    // not, because ParseProgress refuses to parse one.
+    static string ReadSidecar(string path)
+    {
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     // Never throws for NoInstances / FilterBlocked - those are returned so the
     // caller can explain them. Throws only when the request itself is invalid
     // (bad PID, unknown service) or the temp script cannot be written.
@@ -1221,7 +1290,8 @@ exit 1
         Logger.Log($"DEVICE_REPAIR pid={pid} nonce={nonce} svc={svc}");
         var run = LaunchElevated(temp, script, StatusSidecarPath(pid, nonce));
         var progress = ParseProgress(run.Sidecar);
-        // HasWritePass: false - BuildScript restarts devices and reads
+        // HasWritePass is read off the script that actually ran, never
+        // restated here: BuildScript restarts devices and reads
         // SystemStartOptions, and contains no registry write at all, so this
         // attempt cannot have changed LowerFilters even when its report never
         // reaches the tray (an over-the-shoulder elevation writes the sidecar
@@ -1229,7 +1299,8 @@ exit 1
         // status line). Telling the user to go check LowerFilters would be a
         // warning about a change this script has no code to make.
         var result = Decide(
-            new RepairEvidence(run.Started, progress, run.Exit, run.TimedOut, HasWritePass: false));
+            new RepairEvidence(
+                run.Started, progress, run.Exit, run.TimedOut, ScriptHasWritePass(script)));
         Logger.Log($"DEVICE_REPAIR pid={pid} svc={svc} nonce={nonce} "
             + $"exit={run.Exit?.ToString(CultureInfo.InvariantCulture) ?? "n/a"} "
             + $"stage={progress?.Stage.ToString() ?? "none"} timed_out={run.TimedOut} "
@@ -1257,7 +1328,8 @@ exit 1
         var run = LaunchElevated(temp, script, FiltersStatusSidecarPath(pid, nonce));
         var progress = ParseProgress(run.Sidecar);
         var result = Decide(
-            new RepairEvidence(run.Started, progress, run.Exit, run.TimedOut, HasWritePass: true));
+            new RepairEvidence(
+                run.Started, progress, run.Exit, run.TimedOut, ScriptHasWritePass(script)));
         // After the outcome, because the outcome is what says whether there is
         // anything to undo, but from the same sidecar text: this is the only
         // copy of what the keys held - the sidecar lives in %TEMP% and the
