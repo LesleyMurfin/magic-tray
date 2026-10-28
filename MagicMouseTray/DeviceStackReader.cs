@@ -13,13 +13,13 @@ namespace MagicMouseTray;
 //     the driver IMAGE is loaded somewhere in the kernel.
 // After a reboot PnP can rebuild the BTHENUM stack without the filter while both
 // of those still read healthy, which is exactly the dead-wheel case the repair
-// menu used to call "No problems found" (docs/TEST-PLAN.md:21).
+// menu used to call "No problems found" (docs/TEST-PLAN.md:22).
 //
 // DEVPKEY_Device_Stack is the repo's existing ground truth for attachment:
-// scripts/capture-state.ps1:152-157 reads that property and matches the filter
-// name in it, and V3RecycleManager.cs:320-322 already names it the authoritative
-// discriminator. This file is the C# port of that measurement - read-only, no
-// process spawn, one CM query per live instance.
+// scripts/capture-state.ps1:146-155 reads that property and matches the filter
+// name in it, and it is the only measurement of attachment this repo keeps.
+// This file is the C# port of it - read-only, no process spawn, one CM
+// query per live instance.
 internal static class DeviceStackReader
 {
     // devpkey.h line 156 (Windows SDK):
@@ -103,7 +103,7 @@ internal static class DeviceStackReader
     // "\Driver\MagicMouseDriver204Scroll" - while boundFilterName is the verbatim
     // registry service name ("MagicMouseDriver204Scroll"). So the name can only be
     // a SUBSTRING of an entry, which is exactly how the PowerShell measurement
-    // matches it (capture-state.ps1:156, `$stackStr -imatch 'applewirelessmouse'`).
+    // matches it (capture-state.ps1:152, `$StackText.IndexOf($p, ...) -ge 0`).
     //
     // A family filter under ANY name counts as attached, not just the bound one.
     // The planner treats "not attached" as a dead wheel and offers an elevated
@@ -133,7 +133,7 @@ internal static class DeviceStackReader
     // same PID matcher DeviceSnapshotReader.ReadBthenumLayer uses - there is one
     // PID-matching convention, not two. An instance id is
     // BTHENUM\<device key>\<instance key>; the usb\ / hid\vid_ phantom prefixes
-    // DeviceRepair skips (DeviceRepair.cs:169-174) cannot occur here because only
+    // DeviceRepair skips (DeviceRepair.cs:190-195) cannot occur here because only
     // Enum\BTHENUM is enumerated.
     static List<string> LiveInstanceIds(string pid)
     {
