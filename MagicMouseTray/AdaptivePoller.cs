@@ -193,6 +193,12 @@ internal sealed class AdaptivePoller : IDisposable
                     // partial learned-channel streak must not survive to be spent on its
                     // reconnect - MouseBatteryDevice's LIMITATION note names this as the
                     // poller's job, because only a cycle knows what discovery returned.
+                    //
+                    // NOT covered, and no seam is invented to pretend otherwise: reaching it
+                    // needs DeviceRegistry.Discover to return a live HID node on one cycle and
+                    // not the next, and neither exists on the host this suite runs on. Deleting
+                    // this line still leaves the suite green - the same declaration
+                    // MouseBatteryDeviceTests.cs:742-746 makes for the uninspectable node.
                     BatteryChannelMemory.ClearFailedReads(meta.Pid);
                     if (ShouldSkipPid(_config, meta.Pid)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);

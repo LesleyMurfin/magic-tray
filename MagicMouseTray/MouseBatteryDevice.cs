@@ -312,6 +312,14 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // collection fixture: a sibling class on another thread must never be served the canned read
     // one class installed for itself, however careful that class's try/finally is. Production
     // never assigns this field, so a per-thread slot costs nothing there.
+    //
+    // The cost of that isolation: a hook does NOT survive a thread hop. It is installed on the
+    // thread that assigns it and is null everywhere else, so a test that drives a read through
+    // AdaptivePoller.ReadBatteryGuarded (AdaptivePoller.cs:58 runs it as
+    // Task.Run(device.GetBatteryPercent)) finds no hook on the pool thread, silently takes the
+    // real HID path, and fails for a reason unrelated to what it set out to test. No test does
+    // this today. One that wants to either installs the hook on whatever runs on the far side of
+    // the hop, or calls GetBatteryPercent directly and leaves the poller out of it.
     [ThreadStatic]
     internal static Func<string, BatteryChannelAnswer?, int>? ReadCandidateHook;
 
@@ -800,20 +808,21 @@ internal static class BatteryChannelMemory
             }
             // Remove rather than zero: an entry is only worth keeping while a streak is running.
             //
-            // LIMITATION, known and accepted: an entry is cleared on the third strike (here), on
-            // a successful learned read (ClearFailedReads) or in Forget, and nowhere else. A PID
-            // that fails once or twice and then stops being polled at all - unpaired, cable
-            // pulled, or "Show in Magic Tray" unticked so AdaptivePoller.cs:146-147 skips it -
-            // keeps its partial streak for the life of the process. If that mouse comes back in
-            // the same session its learned answer can be dropped on the first or second failure
-            // instead of the third, which is the old one-strike behaviour in precisely the
-            // reconnect case most likely to coincide with a driver change. Clearing streaks for
-            // product ids discovery did not return this cycle is the real fix and it belongs in
-            // the poller, which is the only code that knows what a cycle saw; this store is
-            // called from reads and cannot tell "did not fail" from "was not asked". The
-            // mis-firing direction is forgetting too early, never too late, so the worst case is
-            // one extra probe walk - the same cost the pre-change code paid on every first
-            // failure.
+            // LIMITATION, known and accepted, and now a narrow one: an entry is cleared on the
+            // third strike (here), on a successful learned read (ClearFailedReads), in Forget,
+            // and by the poller (AdaptivePoller.cs:202) for every product id discovery returned
+            // last cycle and not this one. That last clear is what covers the unpaired mouse and
+            // the pulled cable, which used to carry a partial streak into their own reconnect.
+            // What survives is "Show in Magic Tray" unticked: the poller records a skipped
+            // device into seenThisCycle BEFORE it skips it (AdaptivePoller.cs:145-147), so the
+            // cycle counts it as seen and it never reaches the omitted-names set that clears.
+            // A PID that fails once or twice and is then unticked keeps its partial streak for
+            // the life of the process, and on being reticked its learned answer can be dropped
+            // on the first or second failure instead of the third - the old one-strike
+            // behaviour. This store cannot close that itself: it is called from reads and cannot
+            // tell "did not fail" from "was not asked". The mis-firing direction is forgetting
+            // too early, never too late, so the worst case is one extra probe walk - the same
+            // cost the pre-change code paid on every first failure.
             _failedReads.Remove(pid);
             return true;
         }
@@ -880,15 +889,21 @@ internal static class BatteryChannelMemory
         lock (_learnedLogGate) _lastLearnedLog.Remove(pid);
     }
 
-    // The remembered answer stopped working. Log what it was and why it is being dropped, then
-    // drop it: the caller re-probes on the same read and the next success stores the new
-    // answer, so a driver switch shows up in the log as relearn then learn.
+    // The remembered answer stopped working. Drop it and log what it was and why: the caller
+    // re-probes on the same read and the next success stores the new answer, so a driver switch
+    // shows up in the log as relearn then learn.
     internal static void Forget(string pid, BatteryChannelAnswer was, string reason)
     {
-        Logger.Log($"MOUSE_RELEARN pid={pid} was={was.Collection}:{was.Channel} reason={reason}");
         // The expected answer is passed so a read abandoned by ReadBatteryGuarded cannot, on
-        // finally arriving, delete an answer that was learned after it started.
-        Volatile.Read(ref _sink)?.ClearBatteryChannel(pid, was);
+        // finally arriving, delete an answer that was learned after it started. That refusal is
+        // why the clear runs FIRST and the line is written only when it took: a MOUSE_RELEARN
+        // over an answer still sitting in config.ini, with no val=cleared and no probe walk under
+        // it, reads as a driver switch that never happened. The refusal gets no token of its own
+        // because every MOUSE_* token is a documented contract (README.md, docs/DRIVER-MATRIX.md,
+        // docs/ENABLE-DISABLE.md) and a late read losing a race is not an event a reporter needs
+        // named. Unattached - no sink, so nothing was ever stored - is the same non-event.
+        if (Volatile.Read(ref _sink)?.ClearBatteryChannel(pid, was) == true)
+            Logger.Log($"MOUSE_RELEARN pid={pid} was={was.Collection}:{was.Channel} reason={reason}");
         // The strikes were counted against the answer being dropped, so they go with it: a
         // structural forget must not hand inherited strikes to the answer that replaces it.
         ClearFailedReads(pid);

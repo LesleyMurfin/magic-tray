@@ -96,9 +96,16 @@ function Write-Log {
 # node is longer than the address - a thirteenth character the 12-hex belt left
 # behind - it is not an address at all, so the <mac> is swallowed with the rest
 # and the node spells <serial>, rather than publishing the residue beside a
-# token that claims an address was there. The tail class also excludes '#' and
-# '{', because a trailing interface class identifier is the GUID the whitelist
-# above exists to preserve. (3) Two BugReport passes are absent -
+# token that claims an address was there. The tail stops only at the literal
+# '#{' pair that opens a trailing interface class identifier, because that GUID
+# is what the whitelist above exists to preserve. Anchoring on the pair, rather
+# than excluding '#' and '{' individually, is what stops the rule halting at
+# the first '#' inside a serial and publishing the rest of it. The residual
+# failure mode is narrower but real: a serial that itself contains '#{' still
+# publishes everything from that point on, and one that BEGINS with '#{' is not
+# redacted at all. No Apple iSerialNumber has been seen in either shape, and
+# tightening further would start consuming the GUID this carve-out protects.
+# (3) Two BugReport passes are absent -
 # Logger.RedactProfilePaths and the <user> /
 # <host> LocalIdentifiers pass - because no Write-Log argument in this script
 # carries a profile path, an account name or a host name; the one string that
@@ -115,7 +122,7 @@ function ConvertTo-MacSafeText {
         if ($script:MacSafeConstants -contains $m.Value.ToLowerInvariant()) { return $m.Value }
         return '<mac>'
     })
-    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)(<mac>)?[^<>#{\\\s,;\)\]]+', '$1<serial>')
+    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)(<mac>)?(?:(?!#\{)[^<\\\s,;\)\]])+', '$1<serial>')
 }
 
 # --- HID interop ------------------------------------------------------------

@@ -91,7 +91,6 @@ internal sealed class Config
     internal int GlobalThreshold { get; private set; } = 10;
     // Percent picker: 10%, 5%, 1% going down. Time alerts are not a radio.
     internal static readonly int[] ThresholdChoices = { 10, 5, 1 };
-    internal Dictionary<string, int> Thresholds { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
 
     internal bool StartWithWindows { get; private set; }
     // Loaded from older config.ini files. Recycle is gone; the tray ignores this flag.
@@ -113,7 +112,7 @@ internal sealed class Config
     // from the POLL thread (the battery reader learns and forgets as devices answer), while
     // the rest of Config is written from the UI thread.
     //
-    // _gate therefore covers THREE dictionaries, not one. Persist() enumerates Thresholds
+    // _gate therefore covers THREE dictionaries, not one. Persist() enumerates _thresholds
     // and _deviceEnabled as well, and since Persist() can now run on the poll thread, every
     // writer of any of the three has to hold _gate - otherwise the enumeration throws into
     // the bare catch in Persist() and the whole save is dropped with no log line.
@@ -123,6 +122,11 @@ internal sealed class Config
     readonly object _gate = new();
     readonly Dictionary<string, BatteryChannelAnswer> _batteryChannel = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _deviceEnabled = new(StringComparer.OrdinalIgnoreCase);
+    // A private field, not an internal property: the lock rule above is the contract, and an
+    // internal getter on a mutable dictionary hands any caller in the assembly an unguarded
+    // write (config.Thresholds[pid] = n) that the `private set` cannot stop. The supported
+    // shapes are GetThreshold to read and SetThreshold to write.
+    readonly Dictionary<string, int> _thresholds = new(StringComparer.OrdinalIgnoreCase);
 
     Config(string? path = null) => _configPath = path ?? ConfigPath;
 
@@ -145,7 +149,7 @@ internal sealed class Config
                 if (key == "threshold" && int.TryParse(val, out int t) && IsValid(t))
                     cfg.GlobalThreshold = t;
                 else if (key.StartsWith("threshold_") && int.TryParse(val, out int t2) && IsValid(t2))
-                    cfg.Thresholds[key.Substring(10)] = t2;
+                    cfg._thresholds[key.Substring(10)] = t2;
                 else if (key.StartsWith("enabled_") && bool.TryParse(val, out bool en))
                     cfg._deviceEnabled[key.Substring(8)] = en;
                 else if (key == "start_with_windows" && bool.TryParse(val, out bool s))
@@ -179,7 +183,7 @@ internal sealed class Config
         return cfg;
     }
 
-    internal int GetThreshold(string pid) => Thresholds.TryGetValue(pid, out var t) ? t : GlobalThreshold;
+    internal int GetThreshold(string pid) => _thresholds.TryGetValue(pid, out var t) ? t : GlobalThreshold;
 
     internal bool IsDeviceEnabled(string pid) =>
         !_deviceEnabled.TryGetValue(pid, out var enabled) || enabled;
@@ -209,10 +213,10 @@ internal sealed class Config
     internal void SetThreshold(string pid, int value)
     {
         if (!IsValid(value)) return;
-        // Same reason as SetDeviceEnabled: Persist() enumerates Thresholds on the poll thread.
+        // Same reason as SetDeviceEnabled: Persist() enumerates _thresholds on the poll thread.
         lock (_gate)
         {
-            Thresholds[pid] = value;
+            _thresholds[pid] = value;
             Persist();
         }
         Logger.Log($"CONFIG threshold pid={pid} val={value}");
@@ -322,7 +326,7 @@ internal sealed class Config
     // menu persists a threshold from the UI thread, and two threads writing config.ini at
     // once would leave a half-written file behind. Monitor is reentrant, so the callers
     // above may hold _gate already - and they must, because the three foreach loops below
-    // enumerate Thresholds, _deviceEnabled and _batteryChannel. A write to any of them from
+    // enumerate _thresholds, _deviceEnabled and _batteryChannel. A write to any of them from
     // another thread mid-enumeration throws InvalidOperationException into the catch below,
     // which drops the entire save silently.
     void Persist()
@@ -343,7 +347,7 @@ internal sealed class Config
                 };
                 if (!string.IsNullOrEmpty(Driver0323))
                     lines.Add($"driver_0323={Driver0323}");
-                foreach (var kv in Thresholds)
+                foreach (var kv in _thresholds)
                     lines.Add($"threshold_{kv.Key}={kv.Value}");
                 foreach (var kv in _deviceEnabled)
                     lines.Add($"enabled_{kv.Key}={kv.Value.ToString().ToLower()}");

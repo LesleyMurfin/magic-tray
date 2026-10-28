@@ -492,10 +492,13 @@ internal static class DriverAdvisor
                + "Apple's driver, and it has not been shown to be impossible there either. "
                // The cost of changing your mind, from the tester who filed #124: the
                // trade above is laid out side by side, so the one direction of it known
-               // to cost something has to say so. A single report, not a reproduction
-               // here - and worded without the phrase "one tester", which the v2 cells
-               // reserve for the two-report battery grade pinned in DriverAdvisorTests.
-               + "The tester in issue #124 also reports that coming back to this driver "
+               // to cost something has to say so. His words tie the re-pairing to
+               // getting scroll back, not to a driver switch, so this says scroll - the
+               // two are the same move in this menu, but that equivalence is ours. A
+               // single report, not a reproduction here - and worded without the phrase
+               // "one tester", which the v2 cells reserve for the two-report battery
+               // grade pinned in DriverAdvisorTests.
+               + "The tester in issue #124 also reports that getting scroll back "
                + "after Stock Windows meant pairing the mouse again, and that the new "
                + "pairing stopped this app working for them - a single report, so treat "
                + "this as a choice to make once rather than one to flip back and forth."),

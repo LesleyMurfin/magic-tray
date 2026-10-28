@@ -208,15 +208,21 @@ open question.
 - **Apple's driver bound** (the tray's `Boot Camp` radio): Magic Tray found no battery - the row
   reads "Battery unavailable" in the second report. The first tester also saw the wheel scroll
   there; the second did not say either way.
-- **Stock Windows bound:** Magic Tray showed a battery percent - **73%** in the first report and
-  **83%** in the second - and the wheel did not scroll.
+- **Stock Windows bound:** Magic Tray showed a battery percent - **73%** in the first report,
+  stated in a [later comment on #124](https://github.com/LesleyMurfin/magic-tray/issues/124#issuecomment-6266748000),
+  and **83%** in the second - and the wheel did not scroll.
 - **Switching back cost, one report only (REPORTED, not measured):** the first tester wrote that
-  reinstating scroll - that is, going back to Apple's driver after stock Windows - required the
-  mouse to be **paired anew**, "which makes magicmousetray inoperable"
-  ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)). Nobody here has
-  reproduced either half of that: no `0269` has been re-paired on this project's hardware, and
-  what the new pairing broke is unknown. It is one tester's account, which is why the driver
-  choice on this model is worth making **once** rather than toggling to compare.
+  to reinstate scrolling the mouse "has to be paired anew, which makes magicmousetray
+  inoperable"
+  ([issue #124, that comment](https://github.com/LesleyMurfin/magic-tray/issues/124#issuecomment-6266748000)).
+  He described the cost in terms of **getting scroll back**, not in terms of a driver switch.
+  Reading that as the cost of going back to Apple's driver after stock Windows is **this
+  project's inference**, not his wording: in the tray's model the two are the same move, and his
+  own "So it is one or the other" fits it. If the re-pairing is instead a property of restoring
+  scroll by any route, the warning is wider than the Boot Camp row. Nobody here has reproduced
+  either half of it: no `0269` has been re-paired on this project's hardware, and what the new
+  pairing broke is unknown. It is one tester's account, which is why the driver choice on this
+  model is worth making **once** rather than toggling to compare.
 
 **Why the first of those is Unknown and not Dead.** At the time of both reports Magic Tray had a
 fault of its own: device discovery kept only **one HID interface per device**, so a mouse whose
