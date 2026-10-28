@@ -210,6 +210,13 @@ open question.
   there; the second did not say either way.
 - **Stock Windows bound:** Magic Tray showed a battery percent - **73%** in the first report and
   **83%** in the second - and the wheel did not scroll.
+- **Switching back cost, one report only (REPORTED, not measured):** the first tester wrote that
+  reinstating scroll - that is, going back to Apple's driver after stock Windows - required the
+  mouse to be **paired anew**, "which makes magicmousetray inoperable"
+  ([issue #124](https://github.com/LesleyMurfin/magic-tray/issues/124)). Nobody here has
+  reproduced either half of that: no `0269` has been re-paired on this project's hardware, and
+  what the new pairing broke is unknown. It is one tester's account, which is why the driver
+  choice on this model is worth making **once** rather than toggling to compare.
 
 **Why the first of those is Unknown and not Dead.** At the time of both reports Magic Tray had a
 fault of its own: device discovery kept only **one HID interface per device**, so a mouse whose

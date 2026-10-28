@@ -88,11 +88,18 @@ function Write-Log {
 # BugReport scrubs a log tail, where a mangled GUID costs nothing; this report
 # IS the device evidence, and a path whose service GUID reads <mac> no longer
 # says which SDP service the node hangs off. (2) The added serial rule above.
-# It runs LAST, and its tail class excludes '<', so an iSerialNumber that is
-# the unit's Bluetooth address with the separators stripped is already <mac>
-# from the belt and stays <mac>: one spelling of a redacted address is what
-# lets a device correlate between debug.log and a public issue. (3) Two
-# BugReport passes are absent - Logger.RedactProfilePaths and the <user> /
+# It runs LAST, and it consumes an already-redacted <mac> token only when that
+# token is the WHOLE third node, in which case the +1 quantifier finds nothing
+# left to redact and the node stays <mac>: an iSerialNumber that is the unit's
+# Bluetooth address with the separators stripped keeps one spelling, which is
+# what lets a device correlate between debug.log and a public issue. When the
+# node is longer than the address - a thirteenth character the 12-hex belt left
+# behind - it is not an address at all, so the <mac> is swallowed with the rest
+# and the node spells <serial>, rather than publishing the residue beside a
+# token that claims an address was there. The tail class also excludes '#' and
+# '{', because a trailing interface class identifier is the GUID the whitelist
+# above exists to preserve. (3) Two BugReport passes are absent -
+# Logger.RedactProfilePaths and the <user> /
 # <host> LocalIdentifiers pass - because no Write-Log argument in this script
 # carries a profile path, an account name or a host name; the one string that
 # does (the saved file path) goes to Write-Host, outside $script:Lines.
@@ -108,7 +115,7 @@ function ConvertTo-MacSafeText {
         if ($script:MacSafeConstants -contains $m.Value.ToLowerInvariant()) { return $m.Value }
         return '<mac>'
     })
-    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)[^<\\\s,;\)\]]+', '$1<serial>')
+    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)(<mac>)?[^<>#{\\\s,;\)\]]+', '$1<serial>')
 }
 
 # --- HID interop ------------------------------------------------------------

@@ -489,7 +489,16 @@ internal static class DriverAdvisor
                + "fault of its own that could hide the percent by reading the wrong part of "
                + "the mouse, and that fault is fixed in this version, so which of the two "
                + "was to blame is still not known: the percent has not been seen on "
-               + "Apple's driver, and it has not been shown to be impossible there either."),
+               + "Apple's driver, and it has not been shown to be impossible there either. "
+               // The cost of changing your mind, from the tester who filed #124: the
+               // trade above is laid out side by side, so the one direction of it known
+               // to cost something has to say so. A single report, not a reproduction
+               // here - and worded without the phrase "one tester", which the v2 cells
+               // reserve for the two-report battery grade pinned in DriverAdvisorTests.
+               + "The tester in issue #124 also reports that coming back to this driver "
+               + "after Stock Windows meant pairing the mouse again, and that the new "
+               + "pairing stopped this app working for them - a single report, so treat "
+               + "this as a choice to make once rather than one to flip back and forth."),
         new(IdStockWindows,
             TrayMenu.V1V2RadioStockWindows,
             // README.md:201, as for every mouse in this family: no Apple
