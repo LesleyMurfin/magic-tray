@@ -150,7 +150,7 @@ Catalog: [`KnownMice`](MagicMouseTray/MouseBatteryDevice.cs) (CI: [`EveryKnownMo
 |---|---|---|---|---|
 | Magic Mouse 2024 (USB-C) | `0323` | Nothing the tray can install today. The [community-built driver](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/tree/main/v2-kmdf-driver) is not on that branch, so the `KMDF` item tells you it can't find it and stops. The fallback is the patched Apple driver: scrolling **or** battery percent, never both, and nobody has confirmed it | Yes | Yes |
 | Magic Mouse v1 (AA batteries) | `030D` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Yes | Yes |
-| Magic Mouse v2 (Lightning) | `0269` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Not settled. Two testers saw the percent on stock Windows - one of them 83% - and none while Apple's driver was bound ([#124](https://github.com/LesleyMurfin/magic-tray/issues/124), [#164](https://github.com/LesleyMurfin/magic-tray/issues/164)). Both ran a Magic Tray with a battery-detection fault of its own, fixed in the next version, so nobody knows yet whether the driver had anything to do with it | Partly. One tester, who got scrolling from Apple's driver ([#124](https://github.com/LesleyMurfin/magic-tray/issues/124)) |
+| Magic Mouse v2 (Lightning) | `0269` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Not settled. Two testers saw the percent on stock Windows - 73% and 83% - and none while Apple's driver was bound ([#124](https://github.com/LesleyMurfin/magic-tray/issues/124), [#164](https://github.com/LesleyMurfin/magic-tray/issues/164)). Both ran a Magic Tray with a battery-detection fault of its own, fixed in the next version, so nobody knows yet whether the driver had anything to do with it | Partly. One tester, who got scrolling from Apple's driver ([#124](https://github.com/LesleyMurfin/magic-tray/issues/124)) |
 | Apple Wireless Mouse (AA batteries) | `0310` | [Apple's own driver](https://github.com/tealtadpole/MagicMouse2DriversWin11x64), which you download and run | Yes | Should work, nobody has confirmed it yet |
 
 The 2024 mouse has three choices in the menu, and they aren't equal:
@@ -339,6 +339,7 @@ scripts/capture-state.ps1
 scripts/diagnose-driver.ps1
 scripts/diagnose-and-recover.ps1
 scripts/mm-bt-stack-snapshot.ps1
+scripts/mm-hid-report.ps1
 README.txt
 SHA256SUMS
 ```

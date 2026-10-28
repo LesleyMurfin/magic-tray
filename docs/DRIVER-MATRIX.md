@@ -208,8 +208,8 @@ open question.
 - **Apple's driver bound** (the tray's `Boot Camp` radio): Magic Tray found no battery - the row
   reads "Battery unavailable" in the second report. The first tester also saw the wheel scroll
   there; the second did not say either way.
-- **Stock Windows bound:** Magic Tray showed a battery percent - **83%** in the second report,
-  the first number anyone has quoted from a `0269` - and the wheel did not scroll.
+- **Stock Windows bound:** Magic Tray showed a battery percent - **73%** in the first report and
+  **83%** in the second - and the wheel did not scroll.
 
 **Why the first of those is Unknown and not Dead.** At the time of both reports Magic Tray had a
 fault of its own: device discovery kept only **one HID interface per device**, so a mouse whose

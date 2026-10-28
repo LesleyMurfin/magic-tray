@@ -31,6 +31,7 @@ Run mm-devmgr-dump.ps1             ← if snapshot missing and this exists
 | Run diagnose-and-recover.ps1 | `scripts/diagnose-and-recover.ps1` | All catalog PIDs, both filter services, USB phantom vs BTHENUM, config.ini, debug.log tail. Tray does **not** pass `-Repair`. |
 | Run mm-bt-stack-snapshot.ps1 | `scripts/mm-bt-stack-snapshot.ps1` | BT HID stack + filter chain. Preferred over devmgr. |
 | Run mm-devmgr-dump.ps1 | `scripts/mm-devmgr-dump.ps1` | Fallback when snapshot is absent. |
+| Run mm-hid-report.ps1 | `scripts/mm-hid-report.ps1` | Read-only HID capture: every present Apple interface, its collections and which battery channel answers on each. Always its own slot, never the stack-dump slot. |
 
 Not on the menu: mm-rev-eng, mm-magicutilities-capture, ETW/tracelog, wheel counter, mm-state-flip, or any other lab script.
 
@@ -76,7 +77,7 @@ WindowsDesktop, resolver only. No live HID. No `Process.Start`.
 - Snapshot missing, devmgr present → stack-dump path is devmgr.
 - Missing name → null. Allowlist does not include mm-rev-eng, mm-magicutilities-capture, mm-state-flip, or ETW scripts.
 - `StartInfo` is `powershell.exe` with `-File` and the script path. Arguments do not mention `driver-state.txt`.
-- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run diagnose-and-recover.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`. No `PATH-A` in labels.
+- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run diagnose-and-recover.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`, `Run mm-hid-report.ps1`. No `PATH-A` in labels.
 
 ## Non-goals
 
