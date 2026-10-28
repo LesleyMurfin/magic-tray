@@ -367,12 +367,20 @@ public class ConfigTests : IDisposable
     // thread that persists must always be able to read its own save back off disk.
     //
     // The only timing-dependent event on the pass path is catching a half-written file, and
-    // that is handled by skipping, never by failing. Persist() writes the single
+    // per observation that is handled by skipping, never by failing. Persist() writes the single
     // battery_channel line LAST, so a snapshot whose final line is a terminated
     // battery_channel_<pid>= line is necessarily a whole file; anything else is a torn read
     // and is not counted as an observation at all. A complete snapshot carrying the PREVIOUS
     // report id is a dropped save, and nothing on the pass path depends on interleaving, core
     // count or scheduling.
+    //
+    // In aggregate there is exactly one timing-dependent failure mode: the
+    // Assert.True(complete > 0, ...) floor at the end of this method fails if EVERY observation
+    // across both rounds tore. That floor is deliberate - without it a run that observed nothing
+    // would report green - so a red here with the "observed nothing" message means the runner was
+    // loaded enough to tear all 50 reads, not that a save was dropped. A dropped save fails the
+    // SECOND assert instead, and names the observation it first happened on. For scale: on an
+    // idle 8-core Linux host 25 to 43 of the 50 snapshots came back complete, with zero dropped.
     static void AssertAConcurrentWriterCannotSwallowASave(string pid, Action<Config, string> write)
     {
         var expectedKey = Config.BatteryChannelKeyPrefix + pid + "=";
@@ -390,6 +398,19 @@ public class ConfigTests : IDisposable
                 var cfg = Config.Load(path);
                 for (int i = 0; i < GateSeedKeys; i++) write(cfg, $"seed{round}x{i}");
 
+                // LOG VOLUME, declared not throttled: write() is Config.SetThreshold /
+                // SetDeviceEnabled, each of which calls Logger.Log after releasing the lock, and
+                // Logger.Log writes unconditionally to %APPDATA%\MagicMouseTray\debug.log - no
+                // enable flag, no test seam. This thread spins with no rate limit, so these two
+                // tests add about 139,685 bytes and roughly 480 lines per suite run, against
+                // 3,865 bytes for the whole suite without them: a 36-fold increase. Logger rotates
+                // at 1 MB keeping one spare generation, so roughly every eight suite runs discard
+                // a debug.log.1. On a continuous-integration runner that is harmless; on a
+                // developer's workstation it is the installed application's own log being rotated
+                // out from under them. The rate is deliberate: throttling the writer narrows the
+                // enumeration window these tests exist to hit - the mutants were killed at 24
+                // dropped saves of 36 observations and 19 of 39 - so the cost is declared here
+                // rather than paid down. A Logger test seam is filed as follow-up on issue #183.
                 hammer = new Thread(() =>
                 {
                     for (int i = 0; Volatile.Read(ref stop) == 0; i++) write(cfg, $"hammer{round}x{i}");

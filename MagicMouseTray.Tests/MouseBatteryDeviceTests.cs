@@ -686,7 +686,8 @@ public class MouseBatteryDeviceTests
     // says, because MOUSE_CHANNEL_FAIL is the line a relearn is read off and three of them in a
     // row is the whole N3 policy. Reachable here only as far as this host allows - a read that
     // reaches RunAttempt needs kernel32 - so the failure is stood in for by the call the failure
-    // path makes, MouseBatteryDevice.cs:534, and what is asserted is the part that could
+    // path makes, the BatteryChannelMemory.ForgetLearnedLog in MouseBatteryDevice.ReadLearnedChannel's
+    // uninspectable-node branch, and what is asserted is the part that could
     // silently rot: the success AFTER the failures must not be taken for a repeat of the success
     // BEFORE them, three polls and one relearn earlier.
     [Fact]
@@ -740,7 +741,8 @@ public class MouseBatteryDeviceTests
     // ReadLearnedChannel.
     //
     // NOT covered, and nothing below pretends otherwise: the ForgetLearnedLog on the
-    // uninspectable node (MouseBatteryDevice.cs:532) sits in ReadLearnedChannel ABOVE this call,
+    // uninspectable node - the branch MouseBatteryDevice.ReadLearnedChannel takes when TryInspect
+    // returns false - sits in ReadLearnedChannel ABOVE this call,
     // so no input to LearnedLogLines can reach it. Driving it needs an opened device handle and
     // a hid.dll descriptor read, and neither exists on the host this suite runs on. Deleting
     // that line still leaves the suite green.
