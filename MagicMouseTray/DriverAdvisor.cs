@@ -243,13 +243,13 @@ internal static class DriverAdvisor
     // unified mouse collection instead - read-only HidP_GetValueCaps gives one
     // feature value cap, report id 0x47, usage page 0x0006 usage 0x0020,
     // 8 bits, logical 0..100, FeatureReportByteLength 2, and no 0xFF00 /
-    // 0x0014 top level anywhere - which is exactly
-    // MouseBatteryDevice.ReadV1V2Feature's unifiedApple branch. That is the
-    // path the 97% came back on.
+    // 0x0014 top level anywhere - which is exactly the declared Feature 0x47
+    // attempt MouseBatteryDevice.AttemptOrder puts first on such a node. That
+    // is the path the 97% came back on.
     //
     // The one limit on that measurement is the MODEL, and the model is the PID.
     // The percent is read by this app itself, off HID through
-    // MouseBatteryDevice.ReadV1V2Feature's unifiedApple branch, so it does not
+    // MouseBatteryDevice.ReadV1V2Feature's Feature 0x47 attempt, so it does not
     // depend on which scroll filter is bound - the 030D's channel is a FEATURE
     // report the device answers, not the v3's COL02 input collection that the
     // Apple filter's presence appears and disappears with. Both rows of the
@@ -358,10 +358,11 @@ internal static class DriverAdvisor
     //    Pro 26H2 (26300.9550), model A1657, with a tray screenshot of each
     //    route: the row reads "Battery unavailable" beside the Boot Camp
     //    badge, and "83%" beside "Not bound", where scrolling does nothing.
-    //    Three things #124 did not carry and #164 does: the Magic Tray
-    //    version, the Windows version, and a PERCENTAGE. 83% is the first
-    //    actual number anyone has reported off a 0269 - #124 said only that a
-    //    percent appeared. What #164 does NOT state in so many words is the
+    //    Two things #124 did not carry and #164 does: the Magic Tray version
+    //    and the Windows version. Both reports do carry a percentage: #124
+    //    reported 73% on stock Windows (comment 6266748000, 2026-10-19) and
+    //    #164 reports 83%, and neither is a reading taken by this project.
+    //    What #164 does NOT state in so many words is the
     //    wheel on Boot Camp; that is implied by its contrast ("However, if the
     //    stock Windows driver is selected ... scrolling does not work") and
     //    stated outright only by #124, so the Scroll cell below still rests on
@@ -379,11 +380,13 @@ internal static class DriverAdvisor
     //        after the report-id byte.
     //    There is NO Generic Device Controls (0x0006) battery-strength
     //    (0x0020) Feature anywhere in that descriptor. So the 030D's unified
-    //    Feature 0x47 channel DOES NOT EXIST on this model:
-    //    MouseBatteryDevice.ReadV1V2Feature's unifiedApple branch can never
-    //    fire on a 0269, only its splitVendor branch can, and only when the
-    //    node this app opened IS the FF00/0014 collection - which Windows
-    //    exposes as the &Col02 interface.
+    //    Feature 0x47 channel DOES NOT EXIST on this model: the Feature 0x47
+    //    attempt can never ANSWER on a 0269. MouseBatteryDevice.AttemptOrder
+    //    builds both attempts every time, so it is still made - the expected
+    //    outcome is a logged MOUSE_CHANNEL_FAIL - and only the Input 0x90
+    //    attempt can produce a percent, and only when the node this app opened
+    //    IS the FF00/0014 collection - which Windows exposes as the &Col02
+    //    interface.
     //
     // 3. LIVE SHAPE COMPARISON, measured on this project's own PC 2026-09-21,
     //    over Bluetooth, with the mm-hid survey:
@@ -431,11 +434,11 @@ internal static class DriverAdvisor
     // has not been shown to be impossible there either.
     //
     // The Stock Windows row is a different claim with different backing: both
-    // testers SAW the percent there, one of them 83%, and the descriptor shows
-    // a channel that can deliver it (Input 0x90 on the vendor collection, the
-    // splitVendor branch). Two independent observations plus a mechanism are
-    // enough for Works; it is still not a reading of this project's own, and
-    // the copy says who saw it.
+    // testers SAW a percent there - 73% in #124, 83% in #164 - and the
+    // descriptor shows a channel that can deliver it (the Input 0x90 attempt
+    // on the vendor collection). Two independent observations plus a mechanism
+    // are enough for Works; it is still not a reading of this project's own,
+    // and the copy says who saw it.
     //
     // Never copied here, in any form: the 030D's Feature 0x47 measurement - a
     // different model's descriptor, and this dump shows that channel is absent
@@ -480,13 +483,13 @@ internal static class DriverAdvisor
                + "job, so the result is the same either way. This app only opens the download "
                + "page for the INF package; it installs nothing itself. Two testers with a "
                + "Magic Mouse v2 have reported that the wheel scrolls on this driver but no "
-               + "battery percent appears (issues #124 and #164); both saw the percent on "
-               + "Stock Windows instead, where the wheel is dead, and one of them read 83% "
-               + "there. Both were running a version of this app that had a fault of its own "
-               + "that could hide the percent by reading the wrong part of the mouse, and "
-               + "that fault is fixed in this version, so which of the two was to blame is "
-               + "still not known: the percent has not been seen on Apple's driver, and it "
-               + "has not been shown to be impossible there either."),
+               + "battery percent appears (issues #124 and #164); both read a percent on "
+               + "Stock Windows instead, where the wheel is dead - 73% for one of them and "
+               + "83% for the other. Both were running a version of this app that had a "
+               + "fault of its own that could hide the percent by reading the wrong part of "
+               + "the mouse, and that fault is fixed in this version, so which of the two "
+               + "was to blame is still not known: the percent has not been seen on "
+               + "Apple's driver, and it has not been shown to be impossible there either."),
         new(IdStockWindows,
             TrayMenu.V1V2RadioStockWindows,
             // README.md:201, as for every mouse in this family: no Apple
@@ -494,15 +497,16 @@ internal static class DriverAdvisor
             // field.
             Pointer: CapabilityExpectation.Works,
             Scroll: CapabilityExpectation.Dead,
-            // Works: the percent both testers actually saw, on this route, one
-            // of them 83%, and the descriptor above shows the channel it can
-            // have arrived on - Input 0x90 on the FF00/0014 vendor collection,
-            // never the 030D's Feature 0x47, which this model does not have.
+            // Works: the percent both testers actually read, on this route -
+            // 73% in #124 and 83% in #164 - and the descriptor above shows the
+            // channel it can have arrived on - Input 0x90 on the FF00/0014
+            // vendor collection, never the 030D's Feature 0x47, which this
+            // model does not have.
             Battery: CapabilityExpectation.Works,
             Recommended: false,
             Why: "Windows' own driver. The pointer works and the battery percent reads - two "
-               + "testers with a Magic Mouse v2 have reported it, one of them 83% (issues "
-               + "#124 and #164) - but the wheel does nothing."),
+               + "testers with a Magic Mouse v2 have both read one, 73% and 83% (issues #124 "
+               + "and #164) - but the wheel does nothing."),
     ];
 
     // The table for a v1/v2-family PID this project has NO evidence about at
@@ -774,17 +778,20 @@ internal static class DriverAdvisor
     // truth. MouseBatteryDevice.KnownMice carries 030E, 0265 and 0324, and
     // MouseBatteryDevice.GetBatteryPercent routes every trackpad kind to
     // ReadV1V2Feature; only MagicMouseV3 / 0323 takes ReadV3Rid90, which is the
-    // fixed "Input 0x90 on COL02" path. So a trackpad's channel is whatever its
-    // own descriptor declares, resolved at read time: Input report 0x90 when
-    // the node this app opened is itself the 0xFF00 / 0x0014 vendor collection
-    // (the splitVendor branch), otherwise the Generic Device Controls
-    // battery-strength FEATURE report HidP_GetValueCaps finds (report 0x47 on
-    // the measured 030D - the unifiedApple branch).
+    // fixed "Input 0x90 on COL02" path. So a trackpad gets BOTH channels tried
+    // on whatever node this app opened - MouseBatteryDevice.AttemptOrder always
+    // builds both - and its own descriptor only decides which goes first: the
+    // Input report 0x90 attempt leads when the node is itself the 0xFF00 /
+    // 0x0014 vendor collection, otherwise the Generic Device Controls
+    // battery-strength FEATURE report HidP_GetValueCaps finds leads (report
+    // 0x47 on the measured 030D). The undeclared one is still attempted, and
+    // the expected outcome when it does not answer is a logged
+    // MOUSE_CHANNEL_FAIL.
     //
     // The claim this comment used to make - "Input report 0x90 on the COL02
     // collection" - was the v3's path copied onto devices that never take it.
     // It was the PROSE that was corrected, not the read: with no trackpad to
-    // measure there is no evidence the descriptor-driven path is wrong, and
+    // measure there is no evidence the probe order is wrong, and
     // rewriting a read to match a sentence would be exactly the guess this file
     // exists to refuse. The SDP patch
     // (scripts/kbd-patch-cachedservices.ps1) is keyboard-only and never touches
