@@ -140,7 +140,11 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
         IntPtr evt = HidNative.CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
         try
         {
-            var buf = new byte[reportLen];
+            // Pinned for the whole pending window, not just for the ReadFile call: the
+            // marshaller pins a blittable array only until the call returns, and this read
+            // returns ERROR_IO_PENDING immediately, so an ordinary array could be relocated
+            // while the driver still holds the address it was handed.
+            var buf = GC.AllocateArray<byte>(reportLen, pinned: true);
             var ov = new HidNative.OVERLAPPED { hEvent = evt };
             if (!HidNative.ReadFile(handle, buf, (uint)buf.Length, IntPtr.Zero, ref ov))
             {
@@ -150,11 +154,18 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
                     // CancelIo only REQUESTS cancellation: the read can still be in flight when
                     // it returns. Without waiting for the cancelled I/O to finish, the finally
                     // below closes the event and this frame returns while the kernel still owns
-                    // `ov` (a local on a frame that is going away) and `buf` (an unpinned managed
-                    // array) - it would later signal a closed-and-possibly-reused handle and
-                    // write into memory this frame no longer owns. GetOverlappedResult with
-                    // bWait=true blocks until the cancellation has actually completed; the result
-                    // is uninteresting, only the completion is.
+                    // `ov` (a local on a frame that is going away) - it would later signal a
+                    // closed-and-possibly-reused handle and write into stack memory this frame
+                    // no longer owns. GetOverlappedResult with bWait=true blocks until the
+                    // cancellation has actually completed; the result is uninteresting, only the
+                    // completion is. `buf` is a separate problem that keeping this frame alive
+                    // does not solve, because a managed array lives on the heap and the GC can
+                    // move it regardless; that is what the pinned allocation above is for.
+                    //
+                    // This wait is deliberately unbounded, unlike every other wait in this file,
+                    // which uses TIMEOUT_MS: a driver that ignores CancelIo parks this worker for
+                    // good, and that is the lesser evil, because AdaptivePoller.ReadBatteryGuarded
+                    // has already abandoned the read by the time we get here.
                     HidNative.CancelIo(handle);
                     HidNative.GetOverlappedResult(handle, ref ov, out _, true);
                     return null;
