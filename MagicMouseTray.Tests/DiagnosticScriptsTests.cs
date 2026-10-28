@@ -98,18 +98,21 @@ public class DiagnosticScriptsTests
         }
     }
 
-    // The allowlist is the menu's claim about what this package can run. A name
-    // on it that the package does not contain is a claim with nothing behind
-    // it: the item silently never appears, the design doc and this suite keep
-    // describing it, and a reporter is told to use a script nobody can find.
+    // MenuScriptNames is the pinned registry of allowlisted script names, not
+    // what the menu consults: TrayApp.BuildMenu resolves each constant by name
+    // and nothing in production reads this array. It is still the list this
+    // package declares it can run, and a name on it that the package does not
+    // contain is a declaration with nothing behind it: the design doc and this
+    // suite keep describing it, and a reporter is told to use a script nobody
+    // can find.
     [Fact]
-    public void Allowlist_OffersOnlyScriptsThisRepoShips()
+    public void Allowlist_ListsOnlyScriptsThisRepoShips()
     {
         foreach (var name in DiagnosticScripts.MenuScriptNames)
         {
             Assert.True(
                 RepoTree.ScriptExists(name),
-                $"MenuScriptNames registers {name}, which is in neither scripts/ nor the repo root.");
+                $"DiagnosticScripts.MenuScriptNames lists {name}, which is in neither scripts/ nor the repo root.");
         }
     }
 

@@ -44,14 +44,18 @@ public class ScriptHonestyTests
         var mentions = script.LinesWhere(l =>
             PsScript.IsVisibleOutput(l) && l.Contains("$txt", StringComparison.Ordinal));
         Assert.NotEmpty(mentions);
+        var tryEnd = script.BlockEndLine(tryOpener);
         foreach (var line in mentions)
         {
             Assert.True(
-                script.Depth(line) > 0,
-                $"{DiagnoseAndRecover}:{line + 1} tells the user about the report path at top level, "
-                    + "i.e. unconditionally, whether or not the write happened.");
+                script.IsGuardedBy(line, tryOpener),
+                $"{DiagnoseAndRecover}:{line + 1} tells the user about the report path outside the try/catch "
+                    + "that guards the write, i.e. whether or not the write happened.");
         }
-        Assert.Contains(mentions, line => line > write && script.Depth(line) > 0);
+
+        // ...and the success announcement sits in the try body itself, after
+        // the write it reports, where the write is proven to have returned.
+        Assert.Contains(mentions, line => line > write && line < tryEnd);
     }
 
     // The failure path must reach the user on the same channel as everything
@@ -103,8 +107,10 @@ public class ScriptHonestyTests
         var script = PsScript.Load(CaptureState);
         var seed = script.SingleLineWhere(l => Regex.IsMatch(l, @"^\s*filterInStack\s*="));
 
-        Assert.Contains("$null", script.Raw[seed], StringComparison.Ordinal);
-        Assert.DoesNotContain("$false", script.Raw[seed], StringComparison.Ordinal);
+        // Code, not Raw: the blanked view drops the trailing comment, so this
+        // reads the seeded value and only the seeded value.
+        Assert.Contains("$null", script.Code[seed], StringComparison.Ordinal);
+        Assert.DoesNotContain("$false", script.Code[seed], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -231,7 +237,6 @@ internal sealed class PsScript
     readonly string[] _raw;
     readonly string[] _code;
     readonly int[] _opener;
-    readonly int[] _depth;
 
     PsScript(string name, string[] raw, string[] code)
     {
@@ -239,13 +244,11 @@ internal sealed class PsScript
         _raw = raw;
         _code = code;
         _opener = new int[code.Length];
-        _depth = new int[code.Length];
 
         var stack = new Stack<int>();
         for (var i = 0; i < code.Length; i++)
         {
             _opener[i] = stack.Count > 0 ? stack.Peek() : -1;
-            _depth[i] = stack.Count;
             foreach (var c in code[i])
             {
                 if (c == '{')
@@ -269,8 +272,6 @@ internal sealed class PsScript
     }
 
     public static bool IsVisibleOutput(string text) => VisibleOutput.IsMatch(text);
-
-    public int Depth(int line) => _depth[line];
 
     public IReadOnlyList<int> LinesWhere(Func<string, bool> predicate) =>
         Enumerable.Range(0, _raw.Length).Where(i => predicate(_raw[i])).ToList();
@@ -316,26 +317,50 @@ internal sealed class PsScript
         return string.Join("\n", _raw.Skip(openerLine).Take(end - openerLine + 1));
     }
 
-    // Raw text of the catch clause (or clauses) attached to a try block.
-    public string CatchTextFor(int tryOpenerLine)
+    // Opening line of the catch clause attached to a try block, or -1.
+    public int CatchOpenerFor(int tryOpenerLine)
     {
         var end = BlockEndLine(tryOpenerLine);
         if (end < 0)
-            return "";
+            return -1;
 
         for (var line = end; line < _code.Length && line <= end + 2; line++)
         {
-            var at = Regex.Match(_code[line], @"\bcatch\b");
-            if (!at.Success)
-                continue;
-
-            var bodyEnd = BlockEndLine(line, at.Index);
-            if (bodyEnd < line)
-                return _raw[line];
-            return string.Join("\n", _raw.Skip(line).Take(bodyEnd - line + 1));
+            if (Regex.IsMatch(_code[line], @"\bcatch\b"))
+                return line;
         }
 
-        return "";
+        return -1;
+    }
+
+    // Raw text of the catch clause (or clauses) attached to a try block.
+    public string CatchTextFor(int tryOpenerLine)
+    {
+        var line = CatchOpenerFor(tryOpenerLine);
+        if (line < 0)
+            return "";
+
+        var at = Regex.Match(_code[line], @"\bcatch\b");
+        var bodyEnd = BlockEndLine(line, at.Index);
+        if (bodyEnd < line)
+            return _raw[line];
+        return string.Join("\n", _raw.Skip(line).Take(bodyEnd - line + 1));
+    }
+
+    // True when `line` sits inside the try block opened at `tryOpenerLine`, or
+    // inside the catch clause attached to it: the two regions where the
+    // outcome of the guarded statement is known. Any other nesting - a
+    // neighbouring if, an unrelated loop - is not guarded by this try.
+    public bool IsGuardedBy(int line, int tryOpenerLine)
+    {
+        var catchOpener = CatchOpenerFor(tryOpenerLine);
+        for (var at = _opener[line]; at >= 0; at = _opener[at])
+        {
+            if (at == tryOpenerLine || at == catchOpener)
+                return true;
+        }
+
+        return false;
     }
 
     int BlockEndLine(int line, int startColumn)

@@ -771,8 +771,10 @@ if ($Repair) {
 }
 
 $txt = Join-Path $OutDir "diagnose-and-recover-$ts.txt"
+$reportSaved = $false
 try {
     $Lines | Set-Content -LiteralPath $txt -Encoding UTF8 -ErrorAction Stop
+    $reportSaved = $true
     Write-Log ''
     Write-Log "Saved: $txt" 'Green'
 } catch {
@@ -780,8 +782,11 @@ try {
     Write-Log ("Report NOT saved to {0}: {1}" -f $txt, $_.Exception.Message) 'Red'
 }
 
+# Only when the report was actually produced: copying a file the write above
+# already reported as NOT saved can only fail, and a second failure line for
+# the same cause reads as a second, independent fault.
 $appDir = Join-Path $env:APPDATA 'MagicMouseTray'
-if (Test-Path -LiteralPath $appDir -PathType Container) {
+if ($reportSaved -and (Test-Path -LiteralPath $appDir -PathType Container)) {
     try {
         $copyTo = Join-Path $appDir ("diagnose-and-recover-$ts.txt")
         $srcFull = [IO.Path]::GetFullPath($txt)
