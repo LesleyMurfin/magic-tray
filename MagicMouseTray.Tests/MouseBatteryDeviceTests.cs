@@ -626,4 +626,95 @@ public class MouseBatteryDeviceTests
             try { Directory.Delete(dir, recursive: true); } catch { }
         }
     }
+
+    // Review nit N4. The learned-channel read costs exactly ONE HID call and wrote THREE lines
+    // for it - MOUSE_CHANNEL_TRY, MOUSE_CHANNEL_OK, MOUSE_BATTERY_OK - on every poll of a mouse
+    // whose answer was identical to the last few thousand. Logger.cs rotates at 1 MB keeping one
+    // generation and has no level or dedup facility of its own, so a steady device evicted the
+    // probe walk, the learn and the driver change: exactly the history a bug report is opened
+    // about. Measured against the real Logger: 10 steady polls wrote 30 lines before, 3 after.
+    //
+    // The comparand is the ordered line SET, word for word, kept per PID because
+    // DeviceRegistry.Discover rebuilds every device object each poll and an instance field would
+    // have nothing left to compare against. That store is process-wide, so each test below owns
+    // its own PID.
+    //
+    // A fresh list every call: RepeatsLastLearnedLog takes ownership of the one it is handed.
+    static List<string> LearnedLines(string pid, int pct, string bytes) =>
+    [
+        $"MOUSE_CHANNEL_TRY pid={pid} col=col02 channel=input90 rid=0x90 declared=true",
+        $"MOUSE_CHANNEL_OK pid={pid} col=col02 channel=input90 rid=0x90 pct={pct} bytes=[{bytes}]",
+        $"MOUSE_BATTERY_OK device=Magic Mouse v2 pct={pct}% (split)",
+    ];
+
+    [Fact]
+    public void LearnedLog_PrintsOnce_ThenGoesQuiet_AndPrintsAgainWhenTheReadChanges()
+    {
+        const string pid = "d4a1";
+
+        // Poll 1 of 10: a line set this PID has not written before, so it is written.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // Polls 2..10: same device, same channel, same percent, same report head. Three lines
+        // for the ten polls, where this path used to write thirty.
+        for (int poll = 2; poll <= 10; poll++)
+            Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // The battery moved: the trio is written again, and the new reading becomes the thing
+        // the next poll is compared against.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 04 48")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 04 48")));
+
+        // Word-for-word, not "same percent": MOUSE_CHANNEL_OK carries bytes=[...], so a report
+        // head that moves while the percent holds still prints. That is the whole reason the
+        // comparison is on the text and not on the reading.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 05 48")));
+    }
+
+    // A failed learned read is never deduplicated: ReadLearnedChannel flushes it whatever it
+    // says, because MOUSE_CHANNEL_FAIL is the line a relearn is read off and three of them in a
+    // row is the whole N3 policy. Reachable here only as far as this host allows - a read that
+    // reaches RunAttempt needs kernel32 - so the failure is stood in for by the call the failure
+    // path makes, MouseBatteryDevice.cs:534, and what is asserted is the part that could
+    // silently rot: the success AFTER the failures must not be taken for a repeat of the success
+    // BEFORE them, three polls and one relearn earlier.
+    [Fact]
+    public void LearnedLog_AFailedReadClearsTheMemory_SoTheSuccessAfterItPrints()
+    {
+        const string pid = "d4a2";
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // Three failed polls. Each one printed its MOUSE_CHANNEL_FAIL unconditionally and each
+        // one dropped the remembered set, so no failure can ever be swallowed by a repeat of an
+        // earlier failure either.
+        for (int strike = 1; strike <= 3; strike++)
+        {
+            BatteryChannelMemory.ForgetLearnedLog(pid);
+            Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+            BatteryChannelMemory.ForgetLearnedLog(pid);
+        }
+
+        // The mouse woke up and answered what it answered before the idle spell. It prints.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+    }
+
+    // Forget drops the learned answer, the failure streak AND the log memory. The last one
+    // matters even when the relearned channel is the same channel at the same percent: that read
+    // is the FIRST read of a replacement answer, and a MOUSE_RELEARN with no read under it is
+    // the log of a device nobody can diagnose.
+    [Fact]
+    public void Forget_MakesTheNextLearnedReadPrintAgain()
+    {
+        const string pid = "d4a3";
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        BatteryChannelMemory.Forget(
+            pid, new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90), "read_failed");
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+    }
 }

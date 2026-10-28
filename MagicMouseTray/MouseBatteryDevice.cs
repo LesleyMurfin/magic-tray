@@ -735,8 +735,10 @@ internal static class BatteryChannelMemory
             Logger.Log($"MOUSE_CHANNEL_LEARNED pid={pid} col={answer.Collection} channel={answer.Channel} rid=0x{answer.ReportId:X2}");
     }
 
-    // Three consecutive failures before a learned answer is dropped - the same threshold
-    // AdaptivePoller.cs:156-160 uses before it collapses a device to -3.
+    // Three consecutive failures before a learned answer is dropped. AdaptivePoller.cs:156-165
+    // happens to use three as well, but it is NOT the same test - it keys on DeviceName, counts
+    // only -1 (a -2 resets it) and lives on the poller - so the two must not be changed as a
+    // pair or reasoned about as one.
     internal const int ForgetAfterFailures = 3;
 
     // The streak lives beside the learned answer and not on a MouseBatteryDevice for the same
@@ -744,8 +746,19 @@ internal static class BatteryChannelMemory
     // so an instance counter would read 1 forever and nothing would ever be forgotten. Keyed
     // the way Config._batteryChannel is (Config.cs:117) - DeviceRegistry.ExtractPid takes the
     // PID off whichever path discovery ordered first, and the USB and Bluetooth path forms
-    // disagree on case. Written from the poll thread, and a read-modify-write needs the lock
-    // Config uses for _batteryChannel; a Volatile read would not make it atomic.
+    // disagree on case. The read-modify-write needs the lock Config uses for _batteryChannel; a
+    // Volatile read would not make it atomic.
+    //
+    // "One strike per poll" is NOT guaranteed, and the paragraph above may be read as if it
+    // were. AdaptivePoller.ReadBatteryGuarded (AdaptivePoller.cs:54-70) runs each read as
+    // Task.Run(device.GetBatteryPercent) and, on timeout, logs POLL_DEVICE_TIMEOUT and returns
+    // without cancelling anything - the abandoned task keeps running and still counts its strike
+    // here, because this streak is process-wide and keyed on product id while the device objects
+    // are rebuilt every cycle. So an abandoned read and the next cycle's read can spend two
+    // strikes between them and three strikes can land in two polls. The lock keeps the count
+    // itself correct; what is approximate is the mapping from strikes to polls. The error only
+    // ever runs towards forgetting SOONER - that is, back towards the one-strike behaviour this
+    // replaced - never towards holding a dead answer longer, so it cannot defeat self-healing.
     static readonly object _failGate = new();
     static readonly Dictionary<string, int> _failedReads = new(StringComparer.OrdinalIgnoreCase);
 
@@ -762,8 +775,22 @@ internal static class BatteryChannelMemory
                 _failedReads[pid] = fails;
                 return false;
             }
-            // Remove rather than zero: a PID that stops failing must not be left in this
-            // dictionary for the life of the process.
+            // Remove rather than zero: an entry is only worth keeping while a streak is running.
+            //
+            // LIMITATION, known and accepted: an entry is cleared on the third strike (here), on
+            // a successful learned read (ClearFailedReads) or in Forget, and nowhere else. A PID
+            // that fails once or twice and then stops being polled at all - unpaired, cable
+            // pulled, or "Show in Magic Tray" unticked so AdaptivePoller.cs:146-147 skips it -
+            // keeps its partial streak for the life of the process. If that mouse comes back in
+            // the same session its learned answer can be dropped on the first or second failure
+            // instead of the third, which is the old one-strike behaviour in precisely the
+            // reconnect case most likely to coincide with a driver change. Clearing streaks for
+            // product ids discovery did not return this cycle is the real fix and it belongs in
+            // the poller, which is the only code that knows what a cycle saw; this store is
+            // called from reads and cannot tell "did not fail" from "was not asked". The
+            // mis-firing direction is forgetting too early, never too late, so the worst case is
+            // one extra probe walk - the same cost the pre-change code paid on every first
+            // failure.
             _failedReads.Remove(pid);
             return true;
         }
@@ -776,6 +803,52 @@ internal static class BatteryChannelMemory
         lock (_failGate) _failedReads.Remove(pid);
     }
 
+    // What the learned-path read of this PID last WROTE to the log, in order. Keyed by PID for
+    // the same reason the answer and the strike count are: DeviceRegistry.Discover rebuilds
+    // every MouseBatteryDevice each poll, so an instance field would have nothing to compare
+    // against by the next tick. Guarded the way MouseBatteryDevice.V3SkipLogged is, and for the
+    // same reason: the poll thread is the writer.
+    static readonly object _learnedLogGate = new();
+    static readonly Dictionary<string, List<string>> _lastLearnedLog = new(StringComparer.OrdinalIgnoreCase);
+
+    // True when these lines repeat, word for word and in order, what this PID's learned read
+    // last wrote - the caller then writes nothing at all. False takes ownership of the list as
+    // the new comparand, so the caller must not reuse it afterwards.
+    //
+    // Word-for-word and not "same percent", because MOUSE_CHANNEL_OK carries bytes=[...]: a
+    // report head that moves while the percent holds still prints, and only a genuinely
+    // identical outcome goes quiet. A changed declared= or col= prints for the same reason.
+    internal static bool RepeatsLastLearnedLog(string pid, List<string> lines)
+    {
+        lock (_learnedLogGate)
+        {
+            if (_lastLearnedLog.TryGetValue(pid, out var last) && last.Count == lines.Count)
+            {
+                bool same = true;
+                for (int i = 0; i < last.Count; i++)
+                {
+                    if (!string.Equals(last[i], lines[i], StringComparison.Ordinal))
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+                if (same) return true;
+            }
+            _lastLearnedLog[pid] = lines;
+            return false;
+        }
+    }
+
+    // Drops the comparand, so this PID's next learned read prints whatever it finds. Called on
+    // every failed learned read, on a node that could not be inspected, and from Forget: the
+    // first read of a REPLACEMENT answer has to appear under its MOUSE_RELEARN even when the
+    // relearned channel and percent happen to match the answer that was dropped.
+    internal static void ForgetLearnedLog(string pid)
+    {
+        lock (_learnedLogGate) _lastLearnedLog.Remove(pid);
+    }
+
     // The remembered answer stopped working. Log what it was and why it is being dropped, then
     // drop it: the caller re-probes on the same read and the next success stores the new
     // answer, so a driver switch shows up in the log as relearn then learn.
@@ -786,5 +859,8 @@ internal static class BatteryChannelMemory
         // The strikes were counted against the answer being dropped, so they go with it: a
         // structural forget must not hand inherited strikes to the answer that replaces it.
         ClearFailedReads(pid);
+        // And the log memory goes with it too, or the first read of the relearned answer is
+        // mistaken for a repeat of the one that just failed.
+        ForgetLearnedLog(pid);
     }
 }
