@@ -29,9 +29,10 @@ namespace MagicMouseTray.Tests;
 /// reads" are not here because their consent is raised one level down, in
 /// DriverInstaller.Offer*.
 ///
-/// So a command added later with no confirmation text fails here AND is
-/// refused at runtime rather than running unasked - the gate is the rule, not
-/// a habit.
+/// The list is hand-maintained and the menu does not iterate it, so a command
+/// added later is caught here only once it is listed; what holds without that
+/// is <see cref="TrayMenu.Consented"/>, which refuses an unworded command at
+/// runtime instead of running it unasked.
 /// </remarks>
 public class MutatingCommandConsentTests
 {

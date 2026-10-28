@@ -501,7 +501,9 @@ internal static class TrayMenu
     internal const int OfflineRowPct = -1;
 
     // The catalog's own name for a bare PID, or null for a PID this app ships
-    // no support for.
+    // no support for. Production reads the name and the kind together through
+    // TryCatalogEntry (OfflineRows); this one-value form exists for the
+    // catalog-coverage test that walks every PID the health sweep skips.
     internal static string? CatalogName(string? pid) =>
         TryCatalogEntry(pid, out var name, out _) ? name : null;
 
@@ -555,6 +557,13 @@ internal static class TrayMenu
     // still has one. A device with a live pointer child the poll nonetheless
     // failed to read is missing from the menu just as completely as a stopped
     // one.
+    //
+    // That includes a device turned off with "Show in Magic Tray": the poller
+    // skips its PID (AdaptivePoller.ShouldSkipPid), so it is absent, so it
+    // draws a row here - and that is the intended answer, not an oversight. A
+    // hidden mouse already behaves this way (ShouldShowHealthRow never reads
+    // the config), the row labels itself "Off in this app", and hiding a row
+    // must not be a way to lose the only item that starts the device again.
     internal static bool ShouldShowOfflineRow(
         IEnumerable<string> shownPids, string? pid, string? catalogName, DeviceSnapshot? snapshot)
     {
@@ -642,6 +651,13 @@ internal static class TrayMenu
     internal static TrayDeviceCommand StopInWindowsCommand =>
         new(CommandStopInWindows, StopInWindows, StopInWindowsPrompt);
 
+    // Every command above, in one list, so a test can read the wording of all
+    // four at once. It is hand-maintained and the menu does not iterate it -
+    // BuildDeviceRow and BuildWindowsDeviceMenu build their items from the
+    // four factories one at a time - so this list pins the words of the
+    // commands that exist, and a fifth mutating item added tomorrow has to be
+    // added here by hand. The runtime guard for the one it would miss is
+    // Consented below, which fail-closes on empty consent text.
     internal static IReadOnlyList<TrayDeviceCommand> MutatingCommands(
         string pid, bool hasRecordedSetting) =>
     [
@@ -657,9 +673,10 @@ internal static class TrayMenu
     // cost, then change the device" is this one method rather than a
     // hand-written copy inside every click handler.
     //
-    // A command carrying no consent text is never asked and never runs: an
-    // unworded mutating command is the bug this table exists to catch, and
-    // refusing to run it is the half of that which is safe at runtime.
+    // A command carrying no consent text is never asked and never runs, so an
+    // unworded mutating command cannot change anything at runtime - that is
+    // the half of the rule this method can keep on its own, whether or not
+    // the list above names the command.
     internal static bool Consented(TrayDeviceCommand command, Func<string, bool> ask)
     {
         ArgumentNullException.ThrowIfNull(ask);

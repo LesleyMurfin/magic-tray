@@ -46,7 +46,7 @@ Disconnect after a last good reading well above 1% is not death.
 
 Two different things used to live in one checkbox called **Enabled on this PC**. They are now two items on the device row, because one of them is a Windows change that can fail and the other cannot.
 
-**Show in Magic Tray** (on by default) is the tray's own setting. Uncheck it and the tray hides that row and stops reading its battery. Nothing is elevated, no administrator prompt appears, and Windows is not touched at all — the device keeps working.
+**Show in Magic Tray** (on by default) is the tray's own setting. Uncheck it and the tray stops polling that device and reading its battery. Nothing is elevated, no administrator prompt appears, and Windows is not touched at all — the device keeps working. The row usually goes with it; where a row is still drawn (a device Windows is not driving right now keeps one, so **Start this device in Windows** stays reachable) its battery reads `Off in this app`.
 
 **Windows device → Stop this device in Windows** is the one that changes Windows. It asks first, then needs administrator approval, and disables that device's **Bluetooth / HID** nodes on this PC (never USB charge leftovers). The pointer or keyboard stops here so a Mac can use it. Pairing is unchanged. **Start this device in Windows** puts it back; if Windows is already driving the device the tray says there is nothing to change and runs nothing, so no approval is asked for.
 
