@@ -12,8 +12,16 @@ agents: [RunLayerA, RunLayerB, RunLayerC, RunLayerD]
 
 **Run date:** 2026-10-13  
 **Executors:** short-lived agents `RunLayerA|B|C|D`  
-**Detail files:** `TEST-RESULTS-{A,B,C,D}.md`  
 **Matrix:** [`TEST-MATRIX.md`](./TEST-MATRIX.md)
+
+**Provenance — read before quoting any number below.** This is the *upstream kit* run,
+executed against the `agents` tree and its Orca-scale index, not against magic-tray. The
+per-layer raw logs (`TEST-RESULTS-{A,B,C,D}.md`) were never shipped with the portable kit,
+so they are not linked here. Layer B and Layer C figures (TypeScript paths such as
+`src/main/ipc/app.ts`, 32,585 files, a 214 MB `graph.db`) describe that tree. magic-tray is
+C#, ships no `.aco/graph.db`, and has no `aco-index-publish.yml`, so B, C and D are **SKIP**
+here — see the conditional notes in `TEST-MATRIX.md`. Only Layer A is reproducible in this
+repo. No magic-tray results are recorded in this file.
 
 ## Executive scorecard
 
@@ -120,11 +128,7 @@ agents: [RunLayerA, RunLayerB, RunLayerC, RunLayerD]
 | File | Role |
 |------|------|
 | [`TEST-MATRIX.md`](./TEST-MATRIX.md) | What to run |
-| [`TEST-RESULTS-A.md`](./TEST-RESULTS-A.md) | Layer A raw |
-| [`TEST-RESULTS-B.md`](./TEST-RESULTS-B.md) | Layer B raw |
-| [`TEST-RESULTS-C.md`](./TEST-RESULTS-C.md) | Layer C raw |
-| [`TEST-RESULTS-D.md`](./TEST-RESULTS-D.md) | Layer D raw |
-| This file | Consolidated comparison |
+| This file | Consolidated upstream comparison (Layer A reproducible here; B/C/D upstream-only) |
 
 ## Bottom line
 
