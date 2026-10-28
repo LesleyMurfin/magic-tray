@@ -410,22 +410,23 @@ internal static class DriverAdvisor
 
     // --- Magic Trackpad: one choice ----------------------------------------
     //
-    // README.md:187 "Battery only: percent, enable, threshold, time alerts.
-    // No KMDF / Boot Camp radios." README.md:191-193 trackpad table: Driver
-    // "None", Scroll "n/a", Battery "Yes".
+    // README.md's "Trackpads it knows" section (:190) promises "Battery
+    // percent, the enable switch, the warning level and the time warnings.
+    // There's no scroll or gesture driver for a trackpad." - and its table
+    // (:194-196) carries Battery "Yes" on all three trackpad PIDs.
     // A trackpad therefore gets one driver story and NotApplicable scroll. The
     // app can offer the Boot Camp trackpad INF for the v1 pad
     // (TrayMenu.ShowTrackpadV1BootCamp), but that is a separate device-row
     // offer and not a scroll choice this layer can predict scroll for, so it is
     // deliberately not a second option here.
     //
-    // BATTERY: Unknown, and that README "Yes" is exactly the kind of sentence
-    // the header of this file forbids promoting a cell with. No trackpad has
-    // ever been paired to the PC this app is developed against -
-    // docs/DRIVER-MATRIX.md:59 and :167 record the whole kind as
-    // "UNMEASURED here", and TrackpadBatterySentence below says in prose that
-    // which report a trackpad answers on "has never been confirmed here". The
-    // cell now says the same thing the paragraph does. Unknown is untested
+    // BATTERY: Unknown. The README "Yes" above is hedged - "though no tester
+    // has confirmed it yet" - because no trackpad has ever been paired to the
+    // PC this app is developed against: docs/DRIVER-MATRIX.md:59 records the
+    // whole kind as "UNMEASURED here", :169-172 repeats that in prose, and
+    // TrackpadBatterySentence below says of which report a trackpad answers
+    // on that it "has never been confirmed here". The cell now says the same
+    // thing the paragraph does. Unknown is untested
     // hardware, never a missing capability, and no patch state is evidence
     // about a trackpad: the SDP patch is keyboard-only.
     static readonly DriverOption[] TrackpadOptions =
@@ -718,6 +719,10 @@ internal static class DriverAdvisor
     // The mice are unchanged: 0323 is the measured 2024 mouse (Input 0x90 on
     // COL02, :55) and the v1/v2 family still asks the single-argument model
     // gate above, so 030D keeps its 97% and 0269 / 0310 stay unmeasured.
+    // The first two arms are stated, not dispatched: OptionsFor returns the
+    // mouse tables before it ever reaches them. They are here so the
+    // invariant can be asserted over every kind in one place, rather than
+    // once per table.
     internal static bool HasMeasuredBattery(DeviceKind kind, string? pid, SdpPatchState? sdp)
     {
         if (TrayMenu.IsV3(kind, pid))

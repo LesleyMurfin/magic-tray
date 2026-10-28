@@ -79,7 +79,7 @@ The `KMDF` item is wired up and waiting, but the driver it would install [isn't 
 |---|---|---|
 | Mouse battery in the tray | Yes | Yes |
 | Keyboard battery | Yes, after a one-time unlock you run | Yes |
-| Trackpad battery | Yes. No scroll or gesture driver. | Yes, plus a paid trackpad suite |
+| Trackpad battery | Yes, though no tester has confirmed it yet. No scroll or gesture driver. | Yes, plus a paid trackpad suite |
 | Battery warnings | Yes, at 10, 5 and 1 percent. See [docs/ALERTS.md](docs/ALERTS.md). | Customizable percent alerts |
 | Help with mouse scrolling | Yes, after you pick it and confirm | Yes, with its own drivers |
 | Has Microsoft checked the driver? | Depends on the bound file, not the model. Apple's driver still passes, however you installed it, and stock Windows drivers are Microsoft's own. The community KMDF build is signed only by itself, so that is the one needing the Windows startup setting. | Yes. Works with Secure Boot on. |

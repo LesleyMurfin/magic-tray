@@ -11,22 +11,25 @@ namespace MagicMouseTray.Tests;
 // 0269 and 0310 carry Unknown because no hardware was ever read. The same rule
 // was never applied to the other two kinds:
 //
-//   KeyboardOptions  (DriverAdvisor.cs:388) - Battery: Works, unconditionally,
-//     while the percent on a keyboard does not come from a driver at all. It
-//     comes from this repo's one-time SDP cache patch
-//     (scripts/kbd-patch-cachedservices.ps1), and KeyboardBatteryDevice returns
-//     -2 until that patch lands. docs/DRIVER-MATRIX.md:54 states the measured
-//     result as the patch's result ("the one-time SDP cache patch, not a
-//     driver ... MEASURED", live read [47 0E] at :158). An UNPATCHED keyboard
-//     is therefore a device this app has measured NOT reading a percent, and
-//     the menu told it "battery yes" anyway.
+//   KeyboardOptions  (DriverAdvisor.KeyboardStockOption) - Battery: Works,
+//     unconditionally, while the percent on a keyboard does not come from a
+//     driver at all. It comes from this repo's one-time SDP cache patch
+//     (scripts/kbd-patch-cachedservices.ps1), and KeyboardBatteryDevice
+//     returns -2 until that patch lands. The Magic Keyboard row of "Per
+//     model: pointer, scroll, battery, Test Mode" (docs/DRIVER-MATRIX.md:58)
+//     states the measured result as the patch's result ("the one-time SDP
+//     cache patch, not a driver ... MEASURED", live read [47 0E] at :162).
+//     An UNPATCHED keyboard is therefore a device this app has measured NOT
+//     reading a percent, and the menu told it "battery yes" anyway.
 //
-//   TrackpadOptions  (DriverAdvisor.cs:411) - Battery: Works, on a kind
-//     docs/DRIVER-MATRIX.md:55 calls "UNMEASURED here - no trackpad has been
-//     hardware-tested in this project" and :166-168 repeats, and which
-//     DriverAdvisor's own prose (TrackpadBatterySentence) admits has never been
-//     paired to this project's PC. The advisor's paragraph says "has never been
-//     confirmed here" in the same breath as the capability cell says yes.
+//   TrackpadOptions  (DriverAdvisor.TrackpadOptions) - Battery: Works, on a
+//     kind the Magic Trackpad row of that same table
+//     (docs/DRIVER-MATRIX.md:59) calls "UNMEASURED here - no trackpad has
+//     been hardware-tested in this project", which the "### Magic Trackpad"
+//     section (:169-172) repeats in prose, and which DriverAdvisor's own
+//     prose (TrackpadBatterySentence) admits has never been paired to this
+//     project's PC. The advisor's paragraph says "has never been confirmed
+//     here" in the same breath as the capability cell says yes.
 //
 // So this file pins the rule as ONE invariant over every kind rather than as
 // per-cell copy: an affirmative battery prediction requires a measurement of
@@ -55,15 +58,16 @@ public class BatteryClaimHonestyTests
         (DeviceKind Kind, string? Pid, SdpPatchState? Sdp, bool Measured)[] table =
         [
             // Magic Mouse 2024: the battery is read by this app on the
-            // reference PC, Input 0x90 on COL02 (docs/DRIVER-MATRIX.md:51
-            // "MEASURED"). No patch is involved, so no patch state moves it.
+            // reference PC, Input 0x90 on COL02 (the 0323 row of "Per model",
+            // docs/DRIVER-MATRIX.md:55 "MEASURED"). No patch is involved, so
+            // no patch state moves it.
             (DeviceKind.MagicMouseV3, V3Pid, null, true),
             (DeviceKind.MagicMouseV3, V3Pid, SdpPatchState.NotApplied, true),
             // Magic Mouse v1 030D: 97% through the unified Feature 0x47
-            // (:52 "MEASURED: 97% on live hardware").
+            // (:56 "MEASURED: 97% on live hardware").
             (DeviceKind.MagicMouseV1, "030d", null, true),
             (DeviceKind.MagicMouseV1, "030D", SdpPatchState.Unknown, true),
-            // v2 0269 and the Apple Wireless Mouse 0310: :53 "UNMEASURED".
+            // v2 0269 and the Apple Wireless Mouse 0310: :57 "UNMEASURED".
             // 0310 arrives as DeviceKind.MagicMouseV1 on purpose (battery
             // chemistry), so the kind may not promote it.
             (DeviceKind.MagicMouseV2, "0269", null, false),
@@ -71,7 +75,7 @@ public class BatteryClaimHonestyTests
             (DeviceKind.MagicMouseV2, "0310", SdpPatchState.Applied, false),
             (DeviceKind.MagicMouseV1, null, null, false),
             // Magic Keyboard: the measurement is the PATCHED keyboard's
-            // (:54, :158). Unpatched, unreadable and never-checked are three
+            // (:58, :162). Unpatched, unreadable and never-checked are three
             // different states and none of them is that measurement.
             (DeviceKind.MagicKeyboard, KeyboardPid, SdpPatchState.Applied, true),
             (DeviceKind.MagicKeyboard, KeyboardPid, SdpPatchState.NotApplied, false),
@@ -79,7 +83,7 @@ public class BatteryClaimHonestyTests
             (DeviceKind.MagicKeyboard, KeyboardPid, null, false),
             (DeviceKind.MagicKeyboard, "0320", SdpPatchState.Applied, true),
             (DeviceKind.MagicKeyboard, "0320", null, false),
-            // Magic Trackpad: :55 "UNMEASURED here - no trackpad has been
+            // Magic Trackpad: :59 "UNMEASURED here - no trackpad has been
             // hardware-tested in this project". No patch state can change that:
             // the SDP patch is keyboard-only and never touches a trackpad.
             (DeviceKind.MagicTrackpadV1, "030e", SdpPatchState.Applied, false),
@@ -283,7 +287,7 @@ public class BatteryClaimHonestyTests
 
     // The default overloads are what a caller holding no reading gets (the
     // shipped dialog and menu now pass the device's own patch state -
-    // TrayApp.cs:177, :1761 and :2124), so the default has to be the honest
+    // TrayApp.cs:177, :1761 and :2125), so the default has to be the honest
     // one: no patch state read means no affirmative claim.
     [Theory]
     [InlineData(DeviceKind.MagicKeyboard, "0320")]

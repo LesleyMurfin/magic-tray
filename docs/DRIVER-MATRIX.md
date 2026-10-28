@@ -30,17 +30,17 @@ hex digits after `PID_`). Then:
 - **Magic Mouse v1 (AA batteries) `030D`, Magic Mouse v2 (Lightning) `0269`, Apple Wireless
   Mouse (AA) `0310`.** Install **Apple's own mouse driver** (`applewirelessmouse.sys`). Scroll
   works on all three, and **no Windows security setting has to change** - Apple signed the file
-  and Microsoft countersigned it. Battery percent is **MEASURED on the `030D` only** (97%,
-  Feature `0x47`); `0269` and `0310` are **UNMEASURED** here, so the tray says Unknown for them
-  rather than copying the v1's result. You do **not** run Apple's Boot Camp installer; see
-  [the two install routes](#the-two-install-routes-for-the-apple-filter).
+  and Microsoft countersigned it. The tray reads battery percent on all three; only the `030D`
+  is **MEASURED** here (97%, Feature `0x47`). `0269` and `0310` are **UNMEASURED**, so the
+  driver advice predicts Unknown for them, not the v1's result. You do **not** run Apple's
+  Boot Camp installer; see [the two install routes](#the-two-install-routes-for-the-apple-filter).
 - **Magic Keyboard / Apple Wireless Keyboard.** There is nothing to scroll and no driver to
   install. Battery percent needs one **registry patch** you run once:
   [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1).
-- **Magic Trackpad.** The pointer works on Windows' own driver. Battery percent is
-  **UNMEASURED** here - no trackpad has been hardware-tested in this project - so the tray says
-  Unknown rather than yes. This project ships **no** trackpad scroll or gesture driver, and
-  there is no radio to pick.
+- **Magic Trackpad.** The pointer works on Windows' own driver, and the tray reads the battery
+  percent off the same stack. No trackpad has been hardware-tested in this project, so that read
+  is **UNMEASURED** here and the driver advice predicts Unknown rather than yes. This project
+  ships **no** trackpad scroll or gesture driver, and there is no radio to pick.
 
 If you only remember one thing: **scroll on a Magic Mouse always comes from a vendor filter
 driver sitting under Windows' HID stack. Battery percent never does - it comes off the mouse
