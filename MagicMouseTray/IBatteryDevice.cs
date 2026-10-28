@@ -19,6 +19,14 @@ public interface IBatteryDevice
     DeviceKind Kind { get; }
 
     /// <summary>
+    /// The HID interface path this instance reads. Unique per interface and stable within a
+    /// discovery cycle, so per-interface state can be keyed by path. DeviceName cannot serve
+    /// that purpose: it is per model, and AdaptivePoller deliberately groups several
+    /// interfaces under one name.
+    /// </summary>
+    string DevicePath { get; }
+
+    /// <summary>
     /// Returns battery percentage (1-100), or a sentinel:
     ///   -1  device not found or disconnected, the read timed out, or the read succeeded
     ///       and answered with something that is not a level

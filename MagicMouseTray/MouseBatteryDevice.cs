@@ -89,9 +89,9 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     public string Pid { get; }
     public DeviceKind Kind { get; }
 
-    // The HID interface this instance reads. Discovery returns one device per interface
-    // path, so tests use this to assert which interfaces survived.
-    internal string DevicePath => _path;
+    // The HID interface this instance reads. Part of the IBatteryDevice contract: discovery
+    // returns one device per interface path, and AdaptivePoller keys per-interface state by it.
+    public string DevicePath => _path;
 
     internal MouseBatteryDevice(string path, string displayName, DeviceKind kind)
     {

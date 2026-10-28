@@ -87,6 +87,7 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
     public string DeviceName { get; }
     public string Pid { get; }
     public DeviceKind Kind => DeviceKind.MagicKeyboard;
+    public string DevicePath => _path;
 
     internal KeyboardBatteryDevice(string path, string displayName)
     {
