@@ -251,10 +251,12 @@ internal static class RepairPlanner
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
         // the property this repo's own capture script reads on the live
         // BTHENUM instance, noting there that LowerFilters and sc query only
-        // prove registration (scripts/capture-state.ps1:212-221, with the name
-        // match against the returned string list in Test-StackHasFilter), and the one the recovery script
-        // names the discriminator for this exact post-reboot case
-        // (scripts/diagnose-and-recover.ps1:266-268). FilterInStack carries it
+        // prove registration (scripts/capture-state.ps1, the
+        // `$state.filterInStack` assignment, with the name match against the
+        // returned string list in Test-StackHasFilter), and the one the
+        // recovery script names the discriminator for this exact post-reboot
+        // case (scripts/diagnose-and-recover.ps1, the header comment over
+        // Get-DeviceStackEntry). FilterInStack carries it
         // into the planner. The A5/A6 pass rule in
         // docs/TEST-PLAN.md had already named this exact shape - wheel dead
         // while the BOUND filter service reports RUNNING - as a failure with
@@ -455,7 +457,53 @@ internal static class RepairPlanner
         return findings;
     }
 
-    // The 0-findings arm says what PlanOne actually looked at, and no more.
+    // Was every driver/connection signal the rules can fire on actually
+    // resolved on this PC? Two of the four are tri-states whose null means
+    // "never measured": rule 2b fires only on FilterInStack == false (:276)
+    // and rule 2c only on PointerChildLive == false (:315), so on a PC where
+    // DEVPKEY_Device_Stack is unreadable (TEST-PLAN D19) or no Bluetooth
+    // COL01 child key exists (D26) both read null, no rule fires, and the
+    // count of findings alone cannot tell "checked and clean" apart from
+    // "never checked".
+    //
+    // The shape of the test deliberately mirrors the reader's own probe
+    // gates, so a null that exists because nothing was probed ON PURPOSE is
+    // never counted as a gap:
+    //   "bool? filterInStack = bth.InstanceCount > 0 && bound is not null"
+    //       (DeviceSnapshotReader.cs:168)
+    //   "bool? pointerChildLive = bth.InstanceCount > 0"
+    //       (DeviceSnapshotReader.cs:181)
+    // A device with no live BTHENUM instance is never probed at all - the
+    // "do not pay for devices this PC never had" discipline - and a catalog
+    // device this PC never owned must not drag the row down to the weaker
+    // claim. Likewise, nothing filter-like bound means there is no stack
+    // membership to read: on a connected Magic Keyboard (TEST-PLAN D31) no
+    // vendor scroll filter applies at all, so FilterInStack is null by
+    // construction and forever, and treating that as a failed measurement
+    // would pin the weaker wording permanently on every keyboard-only PC. A
+    // bound filter whose stack read failed is the real gap.
+    //
+    // The weakest evidence on the PC wins, because the row speaks for the
+    // whole PC: one unread device among otherwise fully measured ones is
+    // still a claim the checker cannot make.
+    static bool EvidenceComplete(IReadOnlyList<DeviceSnapshot> snapshots)
+    {
+        for (int i = 0; i < snapshots.Count; i++)
+        {
+            var snapshot = snapshots[i];
+            if (snapshot.BthenumLiveCount <= 0)
+                continue;
+            if (snapshot.PointerChildLive is null)
+                return false;
+            if (snapshot.BoundFilterName is not null && snapshot.FilterInStack is null)
+                return false;
+        }
+        return true;
+    }
+
+    // The 0-findings arm says what PlanOne actually looked at, and no more -
+    // and it only says it about signals that were really read.
+    //
     // The rules above read driver state (is the bound filter's service
     // running, is a rival build registered beside it, is the filter in the
     // live device stack, is the package installed) and connection state (are
@@ -489,15 +537,30 @@ internal static class RepairPlanner
     // keeps the row reassuring where it is entitled to be and silent where it
     // measured nothing.
     //
-    // The one- and many-finding arms are unchanged: a confirmed fault keeps
+    // Silence from the rules is not the same as a clean bill of health, so
+    // the full sentence is EARNED, not default: it is spoken only when
+    // EvidenceComplete holds, i.e. every signal a rule could have fired on was
+    // actually resolved. Where a signal was not read, the row says so instead
+    // - otherwise a checker that could not read driver attachment or the
+    // pointer child would report that there are no driver or connection
+    // problems, which is the same false reassurance, one level in, that
+    // narrowing "No problems found" to this scope set out to remove.
+    //
+    // Incomplete evidence only ever softens the ALL-CLEAR. Once there is
+    // something to report, what was not measured is no longer the headline:
+    // the one- and many-finding arms are unchanged, so a confirmed fault keeps
     // the bare fault voice the rest of the menu is ranked against (the
     // PRECEDENCE note in ConfigFactView).
-    internal static string MenuLabel(IReadOnlyList<RepairFinding> findings) => findings.Count switch
-    {
-        0 => "No driver or connection problems found",
-        1 => findings[0].Title,
-        _ => $"{findings.Count} problems found",
-    };
+    internal static string MenuLabel(
+        IReadOnlyList<RepairFinding> findings, IReadOnlyList<DeviceSnapshot> snapshots) =>
+        findings.Count switch
+        {
+            0 => EvidenceComplete(snapshots)
+                ? "No driver or connection problems found"
+                : "No driver or connection problems found - some checks could not run",
+            1 => findings[0].Title,
+            _ => $"{findings.Count} problems found",
+        };
 
     // Fallback only: what this PID is EXPECTED to ride when nothing is bound.
     // 0323 rides the patched KMDF filter; every other Apple mouse rides the Boot Camp filter.

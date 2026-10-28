@@ -831,7 +831,8 @@ internal sealed class TrayApp : IDisposable
             UpdateBatteryReadsVisibility();
         };
 
-        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings)));
+        _repairItem = new ToolStripMenuItem(
+            TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings, _snapshots)));
         if (_findings.Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
@@ -2328,7 +2329,7 @@ internal sealed class TrayApp : IDisposable
         {
             if (_repairItem != null)
             {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings);
+                _repairItem.Text = RepairPlanner.MenuLabel(_findings, _snapshots);
                 _repairItem.ForeColor = _findings.Count > 0
                     ? Color.OrangeRed
                     : SystemColors.ControlText;
@@ -2357,8 +2358,11 @@ internal sealed class TrayApp : IDisposable
     /// Check is the one reader on this refresh that can start a process: it
     /// may reach a single <c>bcdedit /enum {current}</c> READ when the
     /// registry cannot answer the signing question, and its own header says
-    /// so and says it belongs on a background read and never on a UI thread
-    /// (SystemConfigChecker.cs:21-23, 145-151). The device targets are
+    /// so (the READ-ONLY AND SECURITY-NEUTRAL BY CONSTRUCTION block at the top
+    /// of SystemConfigChecker) while the thread-placement note inside
+    /// <see cref="SystemConfigChecker.Check"/> says it belongs on the same
+    /// background snapshot read the other readers use, never on a UI thread.
+    /// The device targets are
     /// UI-owned state, so they are sampled on the calling thread and only the
     /// finished facts cross back.
     /// </remarks>
@@ -2849,7 +2853,8 @@ internal sealed class TrayApp : IDisposable
             // The same words as the top-of-menu row, taken from the row's own
             // label, so the answer to "Check for problems now" cannot claim a
             // wider all-clear than the row directly above it.
-            ToastNotifier.Show(TrayMenu.ProductName, $"{RepairPlanner.MenuLabel(_findings)}.");
+            ToastNotifier.Show(
+                TrayMenu.ProductName, $"{RepairPlanner.MenuLabel(_findings, _snapshots)}.");
             return;
         }
 
