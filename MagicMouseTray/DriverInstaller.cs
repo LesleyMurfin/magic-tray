@@ -790,7 +790,8 @@ foreach ($id in $restart) {
                 + "pairing it again and retrying is the next thing to try.",
             KeyboardPatchExitNotPatched =>
                 "Nothing in this keyboard's Bluetooth cache could be unlocked, so nothing was "
-                + "changed. The log below says what blocked each record.",
+                + "changed. The log below says what stopped it - an unrecognised layout, or a "
+                + "record or whole cache entry Windows would not let the unlock read or write.",
             KeyboardPatchExitPartial =>
                 "Part of this keyboard's Bluetooth cache was unlocked, but at least one record "
                 + "was blocked. Turn Bluetooth off and on again - the percent may already "

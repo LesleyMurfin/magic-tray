@@ -262,9 +262,13 @@ function Edit-Blob {
     $new[$strLenOffset]    = [byte]($Blob[$strLenOffset]   + 4)
     $new[$innerLenOffset]  = [byte]($Blob[$innerLenOffset] + 4)
     $new[$outerLenOffset]  = [byte]($Blob[$outerLenOffset] + 4)
+    # The three 8-bit fields above throw on overflow and isolate the record.
+    # This one is masked into two bytes, so it has to be checked to fail the
+    # same way instead of wrapping into a shorter record than it describes.
     $newTopLen = $topLen + 4
-    $new[$topLenHigh] = [byte](($newTopLen -shr 8) -band 0xFF)
-    $new[$topLenLow]  = [byte]( $newTopLen        -band 0xFF)
+    if ($newTopLen -gt 0xFFFF) { throw "Top record length $newTopLen does not fit the 16-bit field in $Source" }
+    $new[$topLenHigh] = [byte]($newTopLen -shr 8)
+    $new[$topLenLow]  = [byte]($newTopLen -band 0xFF)
 
     Write-Step "[$Source] new lengths: outer=$($new[$outerLenOffset]) inner=$($new[$innerLenOffset]) str=$($new[$strLenOffset]) top=$newTopLen"
 

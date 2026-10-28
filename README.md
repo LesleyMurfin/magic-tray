@@ -219,7 +219,7 @@ Running the script from a clone rather than a release:
 .\scripts\kbd-patch-cachedservices.ps1 -Mac aabbccddeeff
 ```
 
-`-Mac` is required and has no default, for the script and for the wrapper alike. Device Manager → Bluetooth → your keyboard → Details → **Bluetooth device address** (12 hex digits; colons are optional).
+`-Mac` is required and has no default, for the script and for the wrapper alike. Device Manager → Bluetooth → your keyboard → Details → **Bluetooth device address** (12 hex digits; colons are optional). Add `-DryRun` to compute the patched bytes, save them beside the backups and write nothing to the registry.
 
 ---
 
