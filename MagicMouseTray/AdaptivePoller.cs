@@ -239,18 +239,29 @@ internal sealed class AdaptivePoller : IDisposable
     }
 
     // One device's interfaces, read in a rotating order. The scan ends at the first timeout
-    // (ScanEndsHere), which bounds the tick but makes the scan order load-bearing: Discover
-    // re-derives the same paths in the same index order every tick, so a wedged interface
-    // sitting first would hide every interface behind it on every tick, forever - the same "only
-    // an interface that never reports survives" outcome DeviceRegistry refuses to cause one
-    // layer up. So the start rotates: a scan that got no reading and did not get to see
-    // everything moves on by one, which gives every interface its turn within interfaces.Count
-    // ticks at a cost, per device per tick, of the group budget plus at most the one per-read
-    // budget a launch started just under the deadline can overrun it by. A device that answered
-    // keeps the start it answered from, because that start is exactly the one that put a live
-    // interface ahead of the wedged one - so the wedge is then never read again, and the leaked
-    // worker is paid once rather than on every tick. If that interface later stops answering the
-    // start advances again and the others, wedge included, get their turn back.
+    // (ScanEndsHere), which bounds the tick but makes the scan order load-bearing. Discover
+    // re-derives the paths every tick and SetupDiEnumDeviceInterfaces is not documented to
+    // return them in a stable order, so the index a path sits at is NOT guaranteed to be the
+    // index it had last tick. What is guaranteed is that a scan which always started at index 0
+    // would let whichever interface landed first - wedged or not - hide the ones behind it, the
+    // same "only an interface that never reports survives" outcome DeviceRegistry refuses to
+    // cause one layer up. So the start rotates: a scan that got no reading and did not get to
+    // see everything moves on by one, which gives every interface its turn within
+    // interfaces.Count ticks at a cost, per device per tick, of the group budget plus at most
+    // the one per-read budget a launch started just under the deadline can overrun it by. A
+    // device that answered keeps the start it answered from, because that start is the one that
+    // put a live interface ahead of the wedged one, and the leaked worker is paid once rather
+    // than on every tick. If that interface later stops answering the start advances again and
+    // the others get their turn back.
+    //
+    // Rotation is index-keyed, so a reordered enumeration can shuffle which interface a given
+    // start lands on, and the stored start is taken modulo interfaces.Count so a group that
+    // shrank stays in range. That residual asymmetry is tolerable because the starvation hazard
+    // no longer rides on the index: WedgeTracker is keyed by IBatteryDevice.DevicePath
+    // (ShouldSkip / RecordTimeout / RecordAnswer above), so a wedged interface is skipped before
+    // it is launched whatever index it turns up at, and the interfaces behind it are reached in
+    // the same tick. The worst a reorder can cost is a turn taken out of order, not a turn
+    // never taken.
     //
     // The rotation rule is "no real reading AND the scan was cut short": the loop stopped - on a
     // timeout or on the group budget - with an interface left that it never examined. Those

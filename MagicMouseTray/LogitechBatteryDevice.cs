@@ -57,9 +57,15 @@ internal sealed class LogitechBatteryDevice : IBatteryDevice
     // has ever held a Logitech row, so no name->kind lookup regresses - Kind is the fixed
     // LogitechMouse either way.
     //
-    // Consequence: a config entry keyed "logi" no longer matches and the device returns to its
-    // default-enabled state. That is acceptable only because this whole path is behind
-    // Config.EnableThirdParty, which ships off, so no shipped-on configuration can hold one.
+    // Consequence for an upgraded config.ini: a pre-split entry keyed "logi" still matches. See
+    // Config.IsDeviceEnabled - an explicit enabled_<pid> line is consulted first and wins in
+    // both directions, and only when there is none does a DeviceKind.LogitechMouse lookup fall
+    // back to the legacy "logi" key, so enabled_logi=false keeps suppressing every Logitech
+    // product until the user sets a per-product key. The legacy line can only ever suppress (a
+    // legacy true, like an absent key, is the ordinary default), and Persist retains it rather
+    // than expanding it into per-product lines or dropping it: which Logitech products this PC
+    // owns is not knowable from the file, so expanding is guesswork and dropping re-enables the
+    // rest of them.
     public string DeviceName { get; }
     public string Pid { get; }
     public DeviceKind Kind => DeviceKind.LogitechMouse;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-using System.Reflection;
 using MagicMouseTray;
 using Xunit;
 
@@ -260,34 +259,10 @@ public class ConfigTests : IDisposable
     //   Logitech products this user owns is not knowable from the config file, so expanding it
     //   is guesswork and dropping it re-enables the rest of them at the next Persist.
     //
-    // Required production change, minimal and source-compatible with every current call site:
-    //
-    //     internal bool IsDeviceEnabled(string pid, DeviceKind? kind = null)
-    //
-    // ordered: explicit per-product key, then the legacy "logi" key when kind is
-    // DeviceKind.LogitechMouse, then the existing default of enabled. The call sites that know
-    // the kind (AdaptivePoller.ShouldSkipPid, which already has it in scope at both call sites,
-    // and the tray row builder) pass it; every other call site stays as it is.
-    //
-    // That method does not exist yet, which is what makes the cases below red. They reach it by
-    // reflection ONLY so the rest of the suite still builds against today's Config; the day it
-    // lands, this helper's body becomes `cfg.IsDeviceEnabled(pid, kind)` and the reflection goes.
-    static bool Enabled(Config cfg, string pid, DeviceKind? kind)
-    {
-        var m = typeof(Config).GetMethod(
-            nameof(Config.IsDeviceEnabled),
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null,
-            types: new[] { typeof(string), typeof(DeviceKind?) },
-            modifiers: null);
-        Assert.True(m is not null,
-            "Config.IsDeviceEnabled(string pid, DeviceKind? kind = null) does not exist: a legacy "
-            + "enabled_logi=false must keep suppressing Logitech products after the per-product "
-            + "PID split, or a device the user switched off comes back on upgrade.");
-        Assert.True(m!.GetParameters()[1].HasDefaultValue,
-            "kind must be optional, so the call sites that only hold a PID keep compiling unchanged.");
-        return (bool)m.Invoke(cfg, new object?[] { pid, kind })!;
-    }
+    // IsDeviceEnabled orders the lookup: explicit per-product key, then the legacy "logi" key
+    // when kind is DeviceKind.LogitechMouse, then the existing default of enabled. kind is
+    // optional, so the call sites that only hold a PID compile unchanged.
+    static bool Enabled(Config cfg, string pid, DeviceKind? kind) => cfg.IsDeviceEnabled(pid, kind);
 
     // b034 and 4069 are two different Logitech products: under the old identity both were
     // "logi", under the new one they are two rows and two checkboxes.
