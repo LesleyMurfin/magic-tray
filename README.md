@@ -209,7 +209,8 @@ Your keyboard keeps the standard Windows Bluetooth driver. There's no Apple soft
 - Running **Fix battery reads** again is safe. A keyboard that already carries the unlock is reported as already done and nothing is written, so a second run can't break anything.
 - Re-pairing the keyboard erases the unlock. Run **Fix battery reads** once more. Until you do, the tray lists the keyboard and shows the battery as blocked.
 - A run that starts writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log` (`%TEMP%\MagicMouseTray\` instead, on the rare PC where `%APPDATA%` isn't set); if that file can't be written, every message naming it says so, with the reason. If the unlock won't apply, attach the log to your bug report - it holds the reason.
-- Before a record is changed, its original bytes are saved in the same directory as the log, as `backup-<subkey>-<value>-<stamp>.bin`. Nothing outside that directory and the keyboard's own cached record is touched.
+- Before a record is changed, its original bytes are saved in the same directory as the log, as `backup-<mac>-<subkey>-<value>-<stamp>.bin`. The address is in the name because every keyboard's backups land in that one directory, and two keyboards can easily use the same value name. Nothing outside that directory and the keyboard's own cached record is touched.
+- Changed your mind? In the tray, open your keyboard and click **Undo battery fix**: Magic Tray puts the newest saved original back, so the record is exactly what Windows wrote before the unlock. Running it yourself is `Install-KeyboardBattery.cmd -Mac aabbccddeeff -Restore` from an administrator Command Prompt. Turn Bluetooth off and on again afterwards - the percent goes back to blocked only once the radio has cycled.
 
 Full page, including what the unlock changes: [Keyboard battery](https://magictray.app/keyboard.html#unlock).
 

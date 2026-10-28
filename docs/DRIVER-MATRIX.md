@@ -188,9 +188,23 @@ Operational facts:
   the unlock cannot be applied; the tray quotes its tail when a run exits non-zero, and says the
   run left no readable log when there is none.
 - Before a record is written, its original bytes are saved in the same directory as the log, as
-  `backup-<subkey>-<value>-<stamp>.bin`; `-DryRun` writes the bytes it would have stored beside
-  them as `patched-<subkey>-<value>-<stamp>.bin` for byte comparison. Nothing outside that
-  directory and the device's own BTHPORT cache values is touched.
+  `backup-<mac>-<subkey>-<value>-<stamp>.bin`; `-DryRun` writes the bytes it would have stored
+  beside them as `patched-<mac>-<subkey>-<value>-<stamp>.bin` for byte comparison. The MAC is in
+  the name because every device's backups land in that one flat directory and a value name such
+  as `00010000` repeats across devices, so without it a restore could not tell two paired
+  keyboards' backups apart. Nothing outside that directory and the device's own BTHPORT cache
+  values is touched.
+- **The unlock is reversible.** `-Restore` restores only and never patches: for the given `-Mac`
+  it groups that directory's `backup-<mac>-...` files by subkey and value name, takes the newest
+  of each group (the one that matches the current pairing), writes the current bytes aside as
+  `prerestore-<mac>-<subkey>-<value>-<stamp>.bin` first, and puts the original back.
+  `-Restore -DryRun` reports what it would restore and writes nothing. The exit codes carry the
+  same shape with restore meanings: `0` every record named by a backup is stock now (restored by
+  this run, or already stock) and nothing was blocked; `1` the run stopped before it could report;
+  `2` no usable backup for this MAC in the backup directory, so nothing was read or written; `3`
+  nothing could be restored - everything was blocked; `4` partial - at least one record is stock
+  again and at least one was blocked. The tray's **Undo battery fix** item on the keyboard row
+  runs it.
 - `hidbth` only re-reads `CachedServices` when the Bluetooth radio cycles, so **the percent
   appears only after Bluetooth is turned off and on again**.
 - **Re-pairing the keyboard erases the patch.**

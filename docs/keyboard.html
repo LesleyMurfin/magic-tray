@@ -210,10 +210,18 @@
           },
           {
             "@type": "Question",
+            "name": "Can I undo the unlock?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. The unlock saves your keyboard's original bytes before it writes them, and Undo battery fix in the Magic Tray menu puts the newest saved original back, so the Bluetooth record is exactly what Windows wrote before. Running the script yourself, that is Install-KeyboardBattery.cmd -Mac aabbccddeeff -Restore from an administrator Command Prompt. Turn Bluetooth off and on again afterwards: the percent goes back to blocked only once the radio has cycled. If no saved original is there any more, the run says so and changes nothing."
+            }
+          },
+          {
+            "@type": "Question",
             "name": "The unlock won't apply. What do I send you?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A run that starts writes a log to %APPDATA%\\MagicMouseTray\\kbd-patch-<stamp>.log, or %TEMP%\\MagicMouseTray\\ on a PC where %APPDATA% is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as backup-<subkey>-<value>-<stamp>.bin. Attach the newest log to your report: it records what the script found and why it stopped."
+              "text": "A run that starts writes a log to %APPDATA%\\MagicMouseTray\\kbd-patch-<stamp>.log, or %TEMP%\\MagicMouseTray\\ on a PC where %APPDATA% is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as backup-<mac>-<subkey>-<value>-<stamp>.bin, the keyboard's own Bluetooth address in the name so that two keyboards' backups cannot be mistaken for each other. Attach the newest log to your report: it records what the script found and why it stopped."
             }
           }
         ]
@@ -270,6 +278,8 @@
       <p>That last step isn't optional: with the unlock already in the registry, the percent stays blocked until Bluetooth has been turned off and on once.</p>
 
       <p>Ran it twice? No harm done. If the unlock is already in place, Magic Tray says so and changes nothing.</p>
+
+      <p>Want it back the way it was? The unlock saves your keyboard's original bytes before it writes anything, so nothing is lost. Open your keyboard in the Magic Tray menu and click <strong>Undo battery fix</strong>: the newest saved original goes back into the Bluetooth record, and after Bluetooth is turned off and on again the percent reads as blocked once more, exactly as it did before the unlock. From a Command Prompt that is <code>Install-KeyboardBattery.cmd -Mac aabbccddeeff -Restore</code>. If there is no saved original left - you re-paired the keyboard, or cleared the folder - the run tells you so and changes nothing.</p>
 
       <p>The percent shows in the menu: <a href="battery.html#read">where to look</a> and <a href="battery.html#alerts">low battery warnings</a>.</p>
 
@@ -332,8 +342,10 @@
         <dd>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</dd>
         <dt>Is it safe to run the unlock twice?</dt>
         <dd>Yes. A keyboard that already carries the unlock is reported as already done and nothing is written, so a repeat run can't damage anything. If you've run it and the percent still hasn't appeared, turn Bluetooth off and on again rather than running it a third time.</dd>
+        <dt>Can I undo the unlock?</dt>
+        <dd>Yes. The unlock saves your keyboard's original bytes before it writes them, and <strong>Undo battery fix</strong> in the Magic Tray menu puts the newest saved original back, so the Bluetooth record is exactly what Windows wrote before. Running the script yourself, that is <code>Install-KeyboardBattery.cmd -Mac aabbccddeeff -Restore</code> from an administrator Command Prompt. Turn Bluetooth off and on again afterwards: the percent goes back to blocked only once the radio has cycled. If no saved original is there any more, the run says so and changes nothing.</dd>
         <dt>The unlock won't apply. What do I send you?</dt>
-        <dd>A run that starts writes a log to <code>%APPDATA%\MagicMouseTray\kbd-patch-&lt;stamp&gt;.log</code>, or <code>%TEMP%\MagicMouseTray\</code> on a PC where <code>%APPDATA%</code> is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as <code>backup-&lt;subkey&gt;-&lt;value&gt;-&lt;stamp&gt;.bin</code>. Attach the newest log to your <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">report</a>: it records what the script found and why it stopped.</dd>
+        <dd>A run that starts writes a log to <code>%APPDATA%\MagicMouseTray\kbd-patch-&lt;stamp&gt;.log</code>, or <code>%TEMP%\MagicMouseTray\</code> on a PC where <code>%APPDATA%</code> is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as <code>backup-&lt;mac&gt;-&lt;subkey&gt;-&lt;value&gt;-&lt;stamp&gt;.bin</code>, the keyboard's own Bluetooth address in the name so that two keyboards' backups cannot be mistaken for each other. Attach the newest log to your <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">report</a>: it records what the script found and why it stopped.</dd>
       </dl>
 
       <details>
