@@ -12,14 +12,17 @@ namespace MagicMouseTray;
 // choice only on Confirmed: the user agreed and the step was launched without
 // an immediate error. Cancelled means the user declined and nothing ran.
 // Failed means the offer was refused or errored. Unavailable means the package
-// or device fact the offer needs is not on this branch / this machine, which
-// is a repo or hardware state and not a user error.
+// or device fact the offer needs is not in the pinned package / on this machine, which
+// is a repo or hardware state and not a user error. IntegrityFailed means the
+// downloaded package did not match its pin and was refused before anything was
+// extracted or run, which is not a retryable download error.
 internal enum InstallOutcome
 {
     Confirmed,
     Cancelled,
     Failed,
     Unavailable,
+    IntegrityFailed,
 }
 
 // User-initiated driver offers. Never silent. KMDF never falls back to
@@ -353,13 +356,14 @@ foreach ($id in $restart) {
         return template.Replace("__PID__", pid, StringComparison.Ordinal);
     }
 
-    // 0323: snapshot default main of magic-mouse-v3-windows-fix and run
+    // 0323: download the pinned commit of magic-mouse-v3-windows-fix, verify
+    // it against DriverPackageCatalog.V3ZipSha256, and run
     // v2-kmdf-driver/Install-KMDF.cmd elevated. If the cmd is missing, stop
     // with an error — never fall back to PATH-A.
     internal static async Task<InstallOutcome> OfferV3KmdfInstallAsync(CancellationToken ct = default)
     {
         var prompt = System.Windows.Forms.MessageBox.Show(
-            "The Magic Mouse 2024 (0323) KMDF driver is self-signed. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it.\n\nOK continues with Install-KMDF.cmd. Cancel aborts.",
+            "The Magic Mouse 2024 (0323) KMDF driver is self-signed. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it.\n\nThis downloads one pinned commit of magic-mouse-v3-windows-fix from GitHub, checks it against the SHA-256 built into this version, and runs v2-kmdf-driver/Install-KMDF.cmd as administrator.\n\nOK continues with Install-KMDF.cmd. Cancel aborts.",
             "Magic Tray",
             System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
@@ -369,10 +373,15 @@ foreach ($id in $restart) {
             return InstallOutcome.Cancelled;
         }
 
-        string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            if (pull.Refusal is { } refusal)
+            {
+                Logger.Log($"DRIVER_KMDF_ABORTED integrity status={pull.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
         }
         catch (Exception ex)
         {
@@ -380,15 +389,19 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
+        var extractDir = V3PackageDir;
         var script = FindKmdfOneClick(extractDir, DriverPackageCatalog.KmdfInstallCmdRelativePath);
         if (script is null)
         {
-            // The cmd not being on the branch is a repo state, not a user
-            // error, and never a reason to fall back to PATH-A.
+            // The cmd not being in the pinned commit is a repo state, not a
+            // user error, and never a reason to fall back to PATH-A.
             ShowBlocked(
-                $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
-                $"'{DriverPackageCatalog.V3RepoRef}' but " +
-                $"{DriverPackageCatalog.KmdfInstallCmdRelativePath} is not on this branch. " +
+                $"Pulled {DriverPackageCatalog.V3RepoUrl} at pinned commit " +
+                $"{DriverPackageCatalog.V3RepoCommit} but " +
+                $"{DriverPackageCatalog.KmdfInstallCmdRelativePath} is not in that commit. " +
                 "Will not run PATH-A Install-MagicMousePatch.ps1. " +
                 "Will not patch applewirelessmouse.sys.");
             return InstallOutcome.Unavailable;
@@ -449,10 +462,15 @@ foreach ($id in $restart) {
             return InstallOutcome.Cancelled;
         }
 
-        string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            if (pull.Refusal is { } refusal)
+            {
+                Logger.Log($"DRIVER_PATHA_ABORTED integrity status={pull.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
         }
         catch (Exception ex)
         {
@@ -460,13 +478,17 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
+        var extractDir = V3PackageDir;
         var script = FindPathAInstaller(extractDir, DriverPackageCatalog.PathAInstallScriptRelativePath);
         if (script is null)
         {
             ShowBlocked(
-                $"Cloned {DriverPackageCatalog.V3RepoUrl} default branch " +
-                $"'{DriverPackageCatalog.V3RepoRef}' but " +
-                $"{DriverPackageCatalog.PathAInstallScriptRelativePath} is not on this branch. " +
+                $"Pulled {DriverPackageCatalog.V3RepoUrl} at pinned commit " +
+                $"{DriverPackageCatalog.V3RepoCommit} but " +
+                $"{DriverPackageCatalog.PathAInstallScriptRelativePath} is not in that commit. " +
                 "Will not run v2-kmdf-driver/Install-KMDF.cmd. " +
                 "Will not fall back to KMDF.");
             return InstallOutcome.Unavailable;
@@ -540,10 +562,15 @@ foreach ($id in $restart) {
             return InstallOutcome.Cancelled;
         }
 
-        string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            var pull = await DownloadV3PinnedPackageAsync(ct);
+            if (pull.Refusal is { } refusal)
+            {
+                Logger.Log($"DRIVER_STOCK_ABORTED integrity status={pull.Status}");
+                ShowBlocked(refusal.Message);
+                return refusal.Outcome;
+            }
         }
         catch (Exception ex)
         {
@@ -551,14 +578,18 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
+        var extractDir = V3PackageDir;
         var kmdfUninstall = FindKmdfUninstaller(extractDir);
         var pathAUninstall = FindPathAUninstaller(extractDir);
         if (kmdfUninstall is null && pathAUninstall is null)
         {
             ShowBlocked(
                 $"{DriverPackageCatalog.KmdfUninstallCmdRelativePath} and " +
-                $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} are not on " +
-                $"{DriverPackageCatalog.V3RepoUrl} default branch '{DriverPackageCatalog.V3RepoRef}'. " +
+                $"{DriverPackageCatalog.PathAUninstallScriptRelativePath} are not in " +
+                $"{DriverPackageCatalog.V3RepoUrl} pinned commit {DriverPackageCatalog.V3RepoCommit}. " +
                 "Will not run FLIP:NoFilter as Stock.");
             return InstallOutcome.Unavailable;
         }
@@ -718,22 +749,128 @@ foreach ($id in $restart) {
         "Re-pairing the keyboard can undo it.\n\n" +
         "OK continues. Cancel aborts.";
 
-    internal static async Task<string> DownloadV3DefaultBranchAsync(CancellationToken ct)
+    // Where a verified pull leaves the package. Only the first 12 characters
+    // of the commit are spent here: GitHub's archive already names its own
+    // root <repo>-<40 hex>, and the script the elevated step runs has to stay
+    // inside MAX_PATH. The digest, not the folder name, is the trust boundary.
+    internal static string V3PackageDir => Path.Combine(
+        CacheRoot,
+        $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoCommit[..12]}");
+
+    // The version before the pin cached its unverified pull as
+    // <repo>-main, and moving the pin leaves the previous <repo>-<prefix>
+    // behind. Nothing reads either any more, but bytes nobody checked must
+    // not sit in a user-writable directory for good, so a verified pull
+    // sweeps every sibling that is not the one it just wrote. Scoped to the
+    // v3 package's own names: nothing else in the cache is touched.
+    internal static void PurgeStalePackageDirs(string cacheRoot, string keepDir)
     {
-        Directory.CreateDirectory(CacheRoot);
-        var zipPath = Path.Combine(CacheRoot, $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoRef}.zip");
-        var extractDir = Path.Combine(CacheRoot, $"{DriverPackageCatalog.V3RepoName}-{DriverPackageCatalog.V3RepoRef}");
+        if (!Directory.Exists(cacheRoot))
+            return;
+
+        var keep = Path.GetFullPath(keepDir).TrimEnd(Path.DirectorySeparatorChar);
+        foreach (var dir in Directory.EnumerateDirectories(
+            cacheRoot, $"{DriverPackageCatalog.V3RepoName}-*", SearchOption.TopDirectoryOnly))
+        {
+            if (string.Equals(
+                Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                keep,
+                StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                Directory.Delete(dir, recursive: true);
+                Logger.Log($"DRIVER_CACHE_PURGED path={dir}");
+            }
+            catch (IOException ex)
+            {
+                Logger.Log($"DRIVER_CACHE_PURGE_FAILED path={dir} error={ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.Log($"DRIVER_CACHE_PURGE_FAILED path={dir} error={ex.Message}");
+            }
+        }
+    }
+
+    // The pinned zip is downloaded to a temporary file OUTSIDE the driver
+    // cache, hashed there, and only then extracted: a package that does not
+    // match DriverPackageCatalog.V3ZipSha256 never reaches the cache the
+    // elevated step reads from, and is never unpacked or executed. A null
+    // Refusal is the only thing that lets a caller read V3PackageDir.
+    internal static async Task<(DriverPackageRefusal? Refusal, PackageIntegrity Status)>
+        DownloadV3PinnedPackageAsync(CancellationToken ct)
+    {
         var url = DriverPackageCatalog.V3ZipUrl;
+        var staged = Path.Combine(
+            Path.GetTempPath(),
+            $"{DriverPackageCatalog.V3RepoName}-{Guid.NewGuid():N}.zip");
 
         Logger.Log($"DRIVER_PULL url={url}");
-        await using (var net = await Http.GetStreamAsync(url, ct))
-        await using (var file = File.Create(zipPath))
-            await net.CopyToAsync(file, ct);
+        try
+        {
+            await using (var net = await Http.GetStreamAsync(url, ct))
+            await using (var file = File.Create(staged))
+                await net.CopyToAsync(file, ct);
 
+            var integrity = ExtractVerifiedPackage(
+                staged, DriverPackageCatalog.V3ZipSha256, V3PackageDir);
+            if (DriverPackageVerifier.RefusalFor(integrity) is { } refusal)
+            {
+                Logger.Log(
+                    $"DRIVER_PULL_REFUSED status={integrity.Status} " +
+                    $"expected={integrity.ExpectedDigest} actual={integrity.ActualDigest}");
+                return (refusal, integrity.Status);
+            }
+
+            PurgeStalePackageDirs(CacheRoot, V3PackageDir);
+            Logger.Log(
+                $"DRIVER_PULL_VERIFIED commit={DriverPackageCatalog.V3RepoCommit} " +
+                $"sha256={integrity.ActualDigest}");
+            return (null, integrity.Status);
+        }
+        finally
+        {
+            // Best effort: a staging file that cannot be deleted must not turn
+            // a verified install into a reported download failure. It is still
+            // recorded - a refused payload left behind in %TEMP%, and every
+            // retry's copy of it, has to be traceable to a line in the log.
+            try
+            {
+                if (File.Exists(staged))
+                    File.Delete(staged);
+            }
+            catch (IOException ex)
+            {
+                Logger.Log($"DRIVER_STAGE_ORPHANED path={staged} error={ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.Log($"DRIVER_STAGE_ORPHANED path={staged} error={ex.Message}");
+            }
+        }
+    }
+
+    // Extracts only what hashes to the pin. A package that fails leaves the
+    // target directory exactly as it was - including a copy that did pass a
+    // check - and creates nothing. One open handle spans the hash and the
+    // extraction, so what is unpacked is what was hashed.
+    internal static PackageIntegrityResult ExtractVerifiedPackage(
+        string zipPath, string? expectedSha256, string extractDir)
+    {
+        using var zip = File.OpenRead(zipPath);
+        var integrity = DriverPackageVerifier.Verify(expectedSha256, zip);
+
+        if (!integrity.Verified)
+            return integrity;
+
+        zip.Position = 0;
+        using var archive = new ZipArchive(zip, ZipArchiveMode.Read);
         if (Directory.Exists(extractDir))
             Directory.Delete(extractDir, recursive: true);
-        ZipFile.ExtractToDirectory(zipPath, extractDir);
-        return extractDir;
+        archive.ExtractToDirectory(extractDir);
+        return integrity;
     }
 
     // PATH-A patched applewirelessmouse.sys. Blocks KMDF lookup from picking
@@ -764,7 +901,8 @@ foreach ($id in $restart) {
             && n.EndsWith("/" + DriverPackageCatalog.KmdfUninstallCmdName, StringComparison.OrdinalIgnoreCase);
     }
 
-    // Install-KMDF.cmd under v2-kmdf-driver only. Null if default branch has not landed it.
+    // Install-KMDF.cmd under v2-kmdf-driver only. Null if the pinned commit
+    // does not carry it.
     internal static string? FindKmdfOneClick(string extractRoot, string pathInRepo)
     {
         if (!Directory.Exists(extractRoot))

@@ -24,7 +24,6 @@ public class DriverPackageCatalogTests
             DriverPackageCatalog.KeyboardPatchScriptPath);
         Assert.Equal("MagicMouseDriver", DriverPackageCatalog.PatchedKmdfServiceName);
         Assert.Equal("MagicMouseDriver.sys", DriverPackageCatalog.PatchedKmdfSysFileName);
-        Assert.Equal("main", DriverPackageCatalog.V3RepoRef);
         Assert.Equal("v1-binary-patch/installer/Install-MagicMousePatch.ps1",
             DriverPackageCatalog.PathAInstallScriptRelativePath);
         Assert.Equal("v1-binary-patch/installer/Uninstall-MagicMousePatch.ps1",
@@ -41,8 +40,10 @@ public class DriverPackageCatalogTests
         Assert.Equal("Install-KMDF.cmd", DriverPackageCatalog.KmdfOneClickName);
         Assert.Equal("Uninstall-KMDF.cmd", DriverPackageCatalog.KmdfUninstallCmdName);
         Assert.DoesNotContain("FLIP:NoFilter", DriverPackageCatalog.KmdfUninstallCmdRelativePath);
+        // The archive the installer downloads, extracts and runs elevated is
+        // addressed by the catalogue's pinned commit, never by a branch head.
         Assert.Equal(
-            "https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/refs/heads/main.zip",
+            $"https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/{DriverPackageCatalog.V3RepoCommit}.zip",
             DriverPackageCatalog.V3ZipUrl);
     }
 
@@ -525,5 +526,104 @@ public class DriverPackageCatalogTests
         Assert.Contains(reason, text, StringComparison.Ordinal);
         // It did not claim a decline it never observed.
         Assert.DoesNotContain("was declined", text, StringComparison.Ordinal);
+    }
+
+    // The v3 zip is downloaded, extracted and then run elevated. A ref that
+    // can move - a branch head, a tag - means whoever moves it next decides
+    // what runs as administrator on every machine that clicks the radio. Only
+    // a 40-hex commit id names bytes that cannot change under us.
+    [Fact]
+    public void V3Package_IsAddressedByAnImmutableCommit_NotAMovableRef()
+    {
+        var url = DriverPackageCatalog.V3ZipUrl;
+
+        Assert.Matches(@"^https://github\.com/LesleyMurfin/magic-mouse-v3-windows-fix/archive/[0-9a-f]{40}\.zip$", url);
+        Assert.Matches("^[0-9a-f]{40}$", DriverPackageCatalog.V3RepoCommit);
+        Assert.NotEqual(new string('0', 40), DriverPackageCatalog.V3RepoCommit);
+
+        // Neither of GitHub's movable archive shapes: refs/heads/<branch> is a
+        // branch head, refs/tags/<tag> is a tag that can be force-moved.
+        Assert.DoesNotContain("refs/heads", url, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("refs/tags", url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("main")]
+    [InlineData("master")]
+    [InlineData("HEAD")]
+    [InlineData("develop")]
+    public void V3Package_ArchiveUrl_NamesNoBranch(string movableRef)
+    {
+        var url = DriverPackageCatalog.V3ZipUrl;
+
+        Assert.DoesNotContain($"/{movableRef}.zip", url, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain($"/heads/{movableRef}", url, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(DriverPackageCatalog.V3RepoCommit, movableRef, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // A pinned commit says which bytes were meant. It does not say the bytes
+    // that arrived are those bytes: a TLS-terminating proxy or a tampered
+    // mirror answers any URL. The catalogue therefore also carries the
+    // known-good SHA-256 the installer checks before it extracts anything.
+    [Fact]
+    public void V3Package_CarriesAKnownGoodSha256_ForTheBytesItWillExecute()
+    {
+        Assert.Matches("^[0-9a-f]{64}$", DriverPackageCatalog.V3ZipSha256);
+
+        // Not a placeholder: all-zero, and the digest of zero bytes, are the
+        // two values that would wave an empty or stubbed download through.
+        Assert.NotEqual(new string('0', 64), DriverPackageCatalog.V3ZipSha256);
+        Assert.NotEqual(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            DriverPackageCatalog.V3ZipSha256);
+    }
+
+    // The commit and the digest have to move together or the genuine package
+    // is refused on every installed copy. The job that downloads the archive
+    // and compares it (`Driver pin`) is advisory - it filters by path, so it
+    // cannot be a required check. driver-pin.lock is a second written record
+    // of the pair, and this test is what makes it binding: it runs in
+    // `Build and test`, which is required. What that stops is a half edit -
+    // one of the two files moved, the other not. It is not a digest check: a
+    // commit bumped in both the catalogue and the lock, with the stale digest
+    // left in both, passes here and is caught only by the advisory download.
+    [Fact]
+    public void V3Package_Pin_MatchesTheCommittedLock()
+    {
+        var lockFile = ReadPinLock();
+
+        Assert.Equal(DriverPackageCatalog.V3RepoCommit, lockFile["commit"]);
+        Assert.Equal(DriverPackageCatalog.V3ZipSha256, lockFile["sha256"]);
+    }
+
+    // driver-pin.lock is embedded in this assembly rather than read off disk:
+    // the test runs from bin/, the lock lives at the repository root, and
+    // walking up for it would make the test depend on the layout of the
+    // output directory.
+    private static Dictionary<string, string> ReadPinLock()
+    {
+        using var stream = typeof(DriverPackageCatalogTests).Assembly
+            .GetManifestResourceStream("driver-pin.lock");
+        Assert.NotNull(stream);
+
+        using var reader = new StreamReader(stream!);
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            var text = line.Trim();
+            if (text.Length == 0 || text.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var parts = text.Split(' ', 2, StringSplitOptions.TrimEntries);
+            Assert.Equal(2, parts.Length);
+            pairs[parts[0]] = parts[1];
+        }
+
+        // A lock that lost a line must fail loudly, not pass vacuously.
+        Assert.Equal(new[] { "commit", "sha256" }, pairs.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        return pairs;
     }
 }

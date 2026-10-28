@@ -1,0 +1,77 @@
+# Driver package pin check.
+#
+# The tray hard-pins the SHA-256 of the v3 driver package it downloads,
+# extracts and hands to an elevated cmd.exe, and refuses anything else. That
+# makes the two constants in MagicMouseTray/DriverPackageCatalog.cs
+# load-bearing in both directions: the right digest stops a substituted
+# payload, a stale or mistyped one refuses the genuine package on every
+# installed copy - KMDF, patched Apple and the Stock restore alike. GitHub
+# generates /archive/<sha>.zip on demand rather than storing it, so nothing
+# short of a download proves the pin still describes the bytes that arrive.
+# This job is that download.
+#
+# Deliberately not a required check: it filters its `pull_request` trigger by
+# path, and a required check may never do that - a check a path filter skips
+# reports no conclusion at all, and a required check that never reports blocks
+# the pull request forever (.github/workflows/README.md). Host downtime is not
+# the reason: scripts/check-driver-pin.ps1 treats a failed download as "not
+# checked" (::warning, exit 0), so an unreachable host is already a green run.
+# What being advisory costs is that a red run here - bytes arrived and
+# disagreed - does not itself block a merge. driver-pin.lock records the same
+# commit and digest, and the required `Build and test` fails if either
+# catalogue constant moves without it, so a half edit cannot merge; a commit
+# bumped in both files with the stale digest left in both still can. Only this
+# download proves the digest, and this job reads the lock too, so all three
+# records have to agree.
+# The weekly schedule is the point of the rest: an archive regenerated upstream
+# breaks every installed copy, and waiting for the next pull request to notice
+# is too late.
+name: Driver pin
+
+on:
+  # Path filters are safe here only because this check is not required: a
+  # required check skipped by a path filter never reports and blocks the PR.
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'MagicMouseTray/DriverPackageCatalog.cs'
+      - 'driver-pin.lock'
+      - 'scripts/check-driver-pin.ps1'
+      - '.github/workflows/driver-pin.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'MagicMouseTray/DriverPackageCatalog.cs'
+      - 'driver-pin.lock'
+      - 'scripts/check-driver-pin.ps1'
+      - '.github/workflows/driver-pin.yml'
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: driver-pin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  driver-pin:
+    name: Driver pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pwsh is preinstalled on the ubuntu-latest image, and the checker only
+      # reads two text files and hashes a download, so no Windows runner is
+      # needed.
+      - name: Check the pinned driver package against its digest
+        run: pwsh -File scripts/check-driver-pin.ps1

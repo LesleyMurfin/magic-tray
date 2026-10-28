@@ -16,4 +16,12 @@
   <ItemGroup>
     <ProjectReference Include="..\MagicMouseTray\MagicMouseTray.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The driver pin tripwire. DriverPackageCatalogTests compares
+         DriverPackageCatalog's two pin constants against this file, so neither
+         can move alone without reddening the required `Build and test` check.
+         Embedded rather than copied: the lock lives at the repository root and
+         the test must not have to find it from bin/. -->
+    <EmbeddedResource Include="..\driver-pin.lock" LogicalName="driver-pin.lock" />
+  </ItemGroup>
 </Project>

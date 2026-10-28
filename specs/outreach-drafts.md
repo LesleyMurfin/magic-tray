@@ -373,8 +373,8 @@ What it does not do, so nobody wastes an evening:
   paid tool that does them properly and I am not trying to replace it.
 - No scrolling fix for the 2024 USB-C Magic Mouse. Apple's Windows driver package has no entry for
   that model's device code, so Windows never loads a scroll driver for it. A community driver is
-  being worked on and is not published, so there is nothing to download today. Battery percent on
-  that mouse does work, with no driver at all.
+  being worked on and has no signed build yet: its installer is there, but it stops before it
+  installs anything. Battery percent on that mouse does work, with no driver at all.
 - It cannot turn off Windows driver-signature enforcement or Memory integrity for you, and it
   never tries.
 
@@ -412,8 +412,8 @@ The part that is fixable today: [pick one]
   driver, no Apple software, no Test Mode. Re-pairing undoes it:
   https://magictray.app/keyboard.html#unlock
 - 0323 (the 2024 USB-C mouse): battery percent works with no driver at all. Scrolling does not,
-  because Apple's package has no entry for 0323. The community driver isn't published, so there
-  is nothing to download for it yet: https://magictray.app/v3.html
+  because Apple's package has no entry for 0323. The community driver has no signed build yet, so
+  its installer stops before installing anything: https://magictray.app/magic-mouse-2024.html
 
 Disclosure: I wrote the free app on that site, so take the recommendation with that in mind. It is
 MIT licensed, there is no subscription and no trial. It shows the battery percent in the tray and
@@ -461,9 +461,10 @@ re-pairing the keyboard erases it.
 The 2024 USB-C mouse. It reports PID 0323. Apple's Windows driver package lists the older Magic
 Mouse PIDs and never listed this one, so Windows finds no match and never loads a scroll driver.
 Battery percent works with no driver at all — it arrives in byte 2 of input report 0x90 on the
-second HID collection — but one-finger scrolling needs a filter driver, and the community one is
-not published yet. So: if you have the 2024 mouse, this gives you a battery percentage and no
-scrolling, and I would rather say that here than have you find out after downloading.
+second HID collection — but one-finger scrolling needs a filter driver, and the community one has
+no signed build yet: its installer is in the package and stops without one. So: if you have the
+2024 mouse, this gives you a battery percentage and no scrolling, and I would rather say that here
+than have you find out after downloading.
 
 What it deliberately does not do: gestures, tap-to-click, media-key remapping, or any trackpad
 driver. Magic Utilities is paid and does those; I am not trying to clone it. For the older mice
@@ -497,9 +498,9 @@ in feature report 0x47. Apple's applewirelessmouse.sys claims the LowerFilter sl
 Notes on the parts people usually conflate:
 
 - Battery percent on 0323 needs no driver at all, on Windows 10 and 11.
-- Scrolling on 0323 has no published fix. Our KMDF driver is not released — the installer is not
-  on the branch — so there is nothing to download, and I would rather say that than imply
-  otherwise.
+- Scrolling on 0323 has no published fix. Our KMDF driver is not released — the package carries
+  the installer but no signed driver binary, so the installer stops — and I would rather say that
+  than imply otherwise.
 - 030D, 0269 and 0310 take Apple's own signed INF, so no signature-enforcement changes are needed
   for those three. That trips people up in both directions.
 
@@ -557,11 +558,11 @@ the drafts.
 | Nothing about Windows changes and no desktop warning appears on that route | `docs/drivers.html` body |
 | 2024 USB-C mouse is PID `0323`, model A3204; Apple's package never listed `0323` | `docs/llms.txt` device names; `docs/v3.html` FAQ |
 | Battery percent on `0323` works with no driver at all | `docs/v3.html` FAQ and page body |
-| The community KMDF driver for `0323` is not published; nothing to download | `docs/v3.html`; `README.md` driver table; `docs/drivers.html` FAQ |
+| No signed build of the community KMDF driver for `0323`; the package carries the installer, which stops without one | `docs/magic-mouse-2024.html` FAQ; `README.md` driver table; `docs/drivers.html` FAQ |
 | Two HID collections, `COL01` movement/finger, `COL02` battery | `docs/v3.html` technical details |
 | Battery is byte 2 of input report `0x90` on `COL02`, not feature `0x47` | `docs/v3.html`; `docs/llms.txt` |
 | `applewirelessmouse.sys` uses the LowerFilter slot for `030D`/`0269`; the community driver claims it for `0323` | `docs/v3.html` technical details |
-| The KMDF installer is not on the driver repo's branch, so that path errors | `README.md` "Building from source" |
+| The pinned commit carries `v2-kmdf-driver/Install-KMDF.cmd` but no signed driver binary, so that path runs the installer and reports its failure | `README.md` "Building from source" |
 | The app cannot turn off signature enforcement or Memory integrity; no `bcdedit` anywhere | `docs/llms.txt`; `README.md` |
 | No gestures, no tap-to-click, no media-key remapping, no trackpad driver | `README.md` comparison table; `docs/llms.txt` "Scope", point 2 |
 | Buy Magic Utilities if you need gestures or the trackpad suite | `README.md` comparison table |
@@ -582,7 +583,7 @@ Each of these is either true-but-overstating, or unproven. None of it appears in
 - **The patched-Apple route for `0323`.** It exists, and it trades scrolling against battery, needs
   signature enforcement disabled and Memory integrity off, and nobody has confirmed it works. An
   unconfirmed route that costs you a security setting is not something to recommend to a stranger,
-  so the drafts say "the community driver isn't published" and stop.
+  so the drafts say "the community driver has no signed build yet" and stop.
 - **WHQL, Microsoft signing, Secure Boot.** Explicitly forbidden by `docs/SEARCH.md` until the
   driver is actually signed.
 - **The word "supported" for any of the nine unconfirmed devices.** The drafts use "recognised by
