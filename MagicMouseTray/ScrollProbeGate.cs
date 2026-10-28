@@ -31,21 +31,24 @@ internal sealed class ScrollProbeGate
 
     // The run, or null when a probe is already in flight. start is invoked
     // synchronously on the caller's thread, so a caller that wants its setup on
-    // the UI thread gets it there.
+    // the UI thread gets it there - and INSIDE the claim, because a throw
+    // between claiming the slot and reaching the probe's own catch would
+    // otherwise leak the claim and leave this process unable to run the probe
+    // ever again. A start that throws releases, reports, and leaves a finished
+    // run behind: nothing is flung back through a menu click handler.
     internal Task? TryStart(Func<Task> start)
     {
         if (Interlocked.CompareExchange(ref _inFlight, 1, 0) != 0)
             return null;
 
-        var started = start();
-        return Finish(started);
+        return Run(start);
     }
 
-    async Task Finish(Task started)
+    async Task Run(Func<Task> start)
     {
         try
         {
-            await started.ConfigureAwait(false);
+            await start().ConfigureAwait(false);
         }
         catch (Exception ex)
         {

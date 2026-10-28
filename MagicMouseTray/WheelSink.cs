@@ -437,6 +437,16 @@ internal sealed class RawInputMouseSource : IRawMouseSource
     // PumpDrainTimeout and can no longer see - from overlapping the next one.
     static readonly SemaphoreSlim RegistrationGate = new(1, 1);
 
+    // How long a pump waits for the previous one to let the process registration
+    // go. Bounded on purpose: the leg's clock starts with the pump and runs
+    // whether or not the registration is ever granted (WheelSink.cs:179-195,
+    // RepairPlanner.ScrollProbeLeg), so an orphaned pump that never unwinds
+    // would otherwise hold every later leg at zero records for the lifetime of
+    // the process, silently. Losing the wait gives up the window instead, and
+    // says so in the log: an empty window is no verdict, and a logged one can be
+    // told apart from a mouse that sent nothing.
+    static readonly TimeSpan RegistrationWait = TimeSpan.FromSeconds(2);
+
     public Task PumpAsync(Action<RawMouseRecord> onRecord, CancellationToken ct)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -469,7 +479,11 @@ internal sealed class RawInputMouseSource : IRawMouseSource
     {
         try
         {
-            RegistrationGate.Wait(ct);
+            if (!RegistrationGate.Wait(RegistrationWait, ct))
+            {
+                Logger.Log("WHEEL_SINK_REGISTRATION_BUSY");
+                return;
+            }
         }
         catch (OperationCanceledException)
         {

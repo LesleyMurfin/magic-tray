@@ -2927,6 +2927,10 @@ internal sealed class TrayApp : IDisposable
     // ScrollProbeGate.
     readonly ScrollProbeGate _scrollProbeGate = new(
         ex => Logger.Log($"SCROLL_PROBE_START_FAILED err={ex.Message}"));
+    // The filter service key the CURRENT probe samples its touch evidence from.
+    // A field and not a capture: the sink is cached for the process and would
+    // otherwise hold the first probe's key for the lifetime of the app.
+    string _scrollProbeService = "";
 
     // Offered only where the driver state leaves a dead wheel UNEXPLAINED: a
     // live v3 whose filter is bound, running and actually in the device stack.
@@ -2999,7 +3003,15 @@ internal sealed class TrayApp : IDisposable
     {
         var started = _scrollProbeGate.TryStart(() =>
         {
-            var service = RepairPlanner.FilterServiceFor(snapshot);
+            // The sink is built once and kept for the process (the decoder proof
+            // is sticky inside it), so the Diag key it samples CANNOT be captured
+            // into that one closure: after a filter rebind, or on a second v3,
+            // every later leg would sample Void and ActiveDuration from the first
+            // probe's service key - the two inputs LegMeasured needs before it
+            // will admit a fault. The field is written here, inside the gate's
+            // claim and before the pump exists, and read on the sink's sampling
+            // thread; one probe at a time is what makes that safe.
+            _scrollProbeService = RepairPlanner.FilterServiceFor(snapshot);
             // MultitouchAdvancingFresh, not MultitouchAdvancing: the memoised
             // verdict answers true for a full minute after the last counter
             // advance (DeviceDiagReader.cs:326), and the user arrives here having
@@ -3013,7 +3025,7 @@ internal sealed class TrayApp : IDisposable
             // only about the sample that just elapsed (WheelSink.cs:145-156).
             _wheelSink ??= new RawInputWheelSink(
                 new RawInputMouseSource(),
-                () => DeviceDiagReader.MultitouchAdvancingFresh(service));
+                () => DeviceDiagReader.MultitouchAdvancingFresh(_scrollProbeService));
             var sink = _wheelSink;
 
             return Task.Run(async () =>
@@ -3030,7 +3042,12 @@ internal sealed class TrayApp : IDisposable
         });
 
         if (started is null)
+        {
             Logger.Log($"SCROLL_PROBE_BUSY pid={snapshot.Pid}");
+            // Asked twice, answered twice. Silence here is a menu item that
+            // visibly does nothing while a leg the user cannot see runs on.
+            TellOnUi(RepairPlanner.ScrollProbeAlreadyRunning);
+        }
     }
 
     async Task RunScrollProbeAsync(DeviceSnapshot snapshot, IWheelSink sink)

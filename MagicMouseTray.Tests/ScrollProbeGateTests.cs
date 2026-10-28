@@ -37,6 +37,12 @@ public class ScrollProbeGateTests
         Assert.Null(second);
         Assert.True(gate.Busy);
 
+        // And refusal has something to say. A menu item that visibly does
+        // nothing is how the user learns to click it again.
+        Assert.Contains("still running", RepairPlanner.ScrollProbeAlreadyRunning);
+        Assert.Contains(
+            "Only one scroll test can run at a time", RepairPlanner.ScrollProbeAlreadyRunning);
+
         finish.SetResult();
         await first;
     }

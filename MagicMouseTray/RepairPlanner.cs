@@ -664,6 +664,19 @@ internal static class RepairPlanner
         + "step.\n\n"
         + "OK starts the test. Cancel changes nothing.";
 
+    // Said when a second check is asked for while one is still measuring. No
+    // dialog is on screen during a ten-second leg, so the tray menu stays
+    // clickable and this is reachable by hand. Refusing silently would leave
+    // the user watching a menu that did nothing; running anyway would hand
+    // both probes the same process-wide raw-input registration and let the
+    // first one to unwind silence the other, which reads downstream as a dead
+    // wheel on healthy hardware. So it says which of the two happened.
+    internal const string ScrollProbeAlreadyRunning =
+        "The scroll test for this mouse is still running - the step it asked you to do is "
+        + "waiting behind this message. Finish that step, or cancel it, and then start the "
+        + "test again. Only one scroll test can run at a time: two would be listening to the "
+        + "same mouse messages, and neither would measure what it thinks it measured.";
+
     // What the user is asked to do, in order. The control gesture runs FIRST so
     // an abandoned flow leaves the positive control rather than the ambiguous
     // half.
