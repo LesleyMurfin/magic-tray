@@ -228,7 +228,10 @@ internal static class DriverAdvisor
     //
     //   MOUSE_BATTERY_OK device=Magic Mouse v1 pct=97% (unified Feature 0x47)
     //   REPAIR_SNAPSHOT pid=030d bt=2 usb=0 bound=applewirelessmouse
-    //                   svc=running ... batt=97
+    //                   svc=true pkg=true ... batt=97
+    //
+    // (the capture predates the tri-state log format and read svc=running on
+    // the day; svc=true pkg=true is the same reading in today's vocabulary)
     //
     // So issue #22 is answered for v1, but not the way it was framed. The v1
     // has NO COL02 and no Input 0x90: one collection-less HID node,
@@ -418,8 +421,8 @@ internal static class DriverAdvisor
     //
     // These two kinds were the one family this layer could only speak about in
     // the negative. DriverHealthChecker never looks at them - it is called
-    // with skipNonScroll: true (DriverHealthChecker.cs:406) and its gate at
-    // :494-498 drops every PID in NonScrollApplePids - so their DriverStatus
+    // with skipNonScroll: true (DriverHealthChecker.cs:449) and its gate at
+    // :537 drops every PID in NonScrollApplePids - so their DriverStatus
     // arrives null, CurrentOptionId cannot name an option, and the advice fell
     // through to UnidentifiedStateClause: "The driver bound to this device has
     // not been read yet, so what works cannot be confirmed." On a Magic
@@ -444,10 +447,10 @@ internal static class DriverAdvisor
     // read-only. Their results arrive here as data.
     //
     // Why this is not a new DriverStatus member: that enum is mouse-shaped.
-    // Classify (DriverHealthChecker.cs:279-280) would call a keyboard
-    // UnknownAppleMouse, Aggregate (:355-376) would poison the global status,
-    // AfterFilterServiceState (:311-321) would flip Ok to NotBound, and
-    // BoundCandidates / PreferredBoundName (:75-142) are filtered to the
+    // Classify (DriverHealthChecker.cs:277-280) would call a keyboard
+    // UnknownAppleMouse, Aggregate (:387-413) would poison the global status,
+    // AfterFilterServiceState (:316-325) would flip Ok to NotBound, and
+    // BoundCandidates / PreferredBoundName (:82-146) are filtered to the
     // Apple/KMDF service-name families and can never return kbdhid or HidBth.
     // A keyboard therefore gets its own small notion - "here is the stock
     // driver that was read" - and nothing else changes.

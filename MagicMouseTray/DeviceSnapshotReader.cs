@@ -359,14 +359,16 @@ internal static class DeviceSnapshotReader
         return running;
     }
 
-    // Present means the service key exists AND the .sys it points at is on disk.
-    // A leftover key whose file was deleted is not a usable package.
+    // Present means the service key exists AND the .sys it would load - the one
+    // its ImagePath names, or the drivers-directory default the SCM falls back
+    // to - is on disk. A leftover key whose file was deleted is not a usable
+    // package.
     //
     // keyPresent: true the key opened, false there is no such key on this PC,
     //             null the registry read threw.
     // imageOnDisk: true the resolved ImagePath was found, false it was not,
-    //              null ImagePath was missing or unparseable so the file was
-    //              never looked for.
+    //              null there was no path to test at all - ImagePath was
+    //              unparseable, or absent on a service that has no default.
     // A read that threw must not be reported as "not installed": rule 6 sends
     // that user to install a driver that may well be there already.
     internal static bool? InterpretServicePackage(bool? keyPresent, bool? imageOnDisk)
@@ -389,7 +391,8 @@ internal static class DeviceSnapshotReader
             keyPresent = key is not null;
             if (key is not null)
             {
-                var image = ResolveDriverImagePath(key.GetValue("ImagePath") as string);
+                var image = ResolveServiceImage(
+                    serviceName, key.GetValue("ImagePath"), key.GetValue("Type") as int?);
                 if (image is not null)
                     imageOnDisk = File.Exists(image);
             }
@@ -402,6 +405,41 @@ internal static class DeviceSnapshotReader
         }
 
         return InterpretServicePackage(keyPresent, imageOnDisk);
+    }
+
+    // Which file this service would load, or null when that cannot be decided.
+    //
+    // An ABSENT ImagePath is not a failed read: for a driver service the SCM
+    // loads %SystemRoot%\System32\drivers\<ServiceName>.sys instead, so the
+    // answer is still computable and the probe stays measured. KB103000
+    // ("CurrentControlSet\Services Subkey Entries") documents that default
+    // under ImagePath and Type, and it is a DRIVER default: a Win32 service
+    // with no ImagePath has nothing to fall back on.
+    //
+    // A value that is PRESENT but unparseable - a blob instead of a string, or
+    // a string ResolveDriverImagePath refuses - is a different state: the key
+    // named something and we could not read it, which stays unknown. An empty
+    // or whitespace value names nothing, so it counts as absent.
+    internal static string? ResolveServiceImage(
+        string serviceName, object? declaredImagePath, int? serviceType) =>
+        declaredImagePath switch
+        {
+            string declared when !string.IsNullOrWhiteSpace(declared)
+                => ResolveDriverImagePath(declared),
+            null or string => DefaultDriverImage(serviceName, serviceType),
+            _ => null,
+        };
+
+    // SERVICE_KERNEL_DRIVER (1) and SERVICE_FILE_SYSTEM_DRIVER (2) are the two
+    // types the drivers-directory default applies to; every other type, and a
+    // Type that is missing or not a DWORD, leaves the question unanswered.
+    static string? DefaultDriverImage(string serviceName, int? serviceType)
+    {
+        if (serviceType is not (1 or 2) || string.IsNullOrWhiteSpace(serviceName))
+            return null;
+        return UnderWindows(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            @"System32\drivers\" + serviceName + ".sys");
     }
 
     // ImagePath forms seen in the wild: "\SystemRoot\System32\drivers\x.sys",

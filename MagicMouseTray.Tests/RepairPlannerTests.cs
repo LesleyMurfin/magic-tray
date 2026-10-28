@@ -309,6 +309,47 @@ public class RepairPlannerTests
     }
 
     [Fact]
+    public void PlanOne_FilterNotInStack_ClaimsThePointerOnlyWhenItWasMeasured()
+    {
+        // The detail text used to open "Pointer movement, clicking and the
+        // battery reading all still work" on every machine this rule fired on,
+        // while the rule reads neither PointerChildLive nor LastBatteryPct.
+        // The battery half is gone for good; the pointer half is allowed only
+        // on a measured true, which is the same evidence rule 2c would use to
+        // say the opposite.
+        var measuredPointer = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: false,
+            pointerChildLive: true));
+        var unreadPointer = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: false,
+            pointerChildLive: null));
+
+        Assert.NotNull(measuredPointer);
+        Assert.Contains("Pointer movement and clicking still work", measuredPointer.Detail);
+
+        Assert.NotNull(unreadPointer);
+        Assert.Equal(RepairProblem.FilterNotInStack, unreadPointer.Problem);
+        Assert.DoesNotContain("Pointer movement", unreadPointer.Detail);
+        Assert.StartsWith("The scroll wheel does nothing.", unreadPointer.Detail);
+
+        // Never claimed by either: nothing in this rule reads the battery.
+        Assert.DoesNotContain("battery", measuredPointer.Detail);
+        Assert.DoesNotContain("battery", unreadPointer.Detail);
+    }
+
+    [Fact]
     public void PlanOne_StackEvidenceUnknown_IsNotAFinding()
     {
         // null is "the stack could not be read", not "the filter is missing".

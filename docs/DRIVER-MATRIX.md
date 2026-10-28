@@ -118,8 +118,12 @@ logical 0..100, `FeatureReportByteLength` 2**, and no `0xFF00` / `0x0014` top le
 
 ```
 MOUSE_BATTERY_OK device=Magic Mouse v1 pct=97% (unified Feature 0x47)
-REPAIR_SNAPSHOT pid=030d bt=2 usb=0 bound=applewirelessmouse svc=running ... batt=97
+REPAIR_SNAPSHOT pid=030d bt=2 usb=0 bound=applewirelessmouse svc=true pkg=true ... batt=97
 ```
+
+The capture predates the tri-state log format, so the service token read `svc=running` on the
+day: `svc=true pkg=true` is what the same healthy machine writes now. Nothing else about the
+reading changed.
 
 Two things follow. First, **no mode flip occurs or is needed** on a v1: a Feature report is
 something the device answers on request, not a collection that appears and disappears with a

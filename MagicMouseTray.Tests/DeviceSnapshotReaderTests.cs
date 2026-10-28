@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System;
 using MagicMouseTray;
 using Xunit;
 
@@ -102,8 +103,8 @@ public class DeviceSnapshotReaderTests
     // keyPresent: true the service key opened, false there is no such key on
     //             this PC, null the registry read threw.
     // imageOnDisk: true the resolved ImagePath was found, false it was not,
-    //              null ImagePath was missing or unparseable so the file was
-    //              never looked for.
+    //              null there was no path to test at all - ImagePath was
+    //              unparseable, or absent on a service that has no default.
     [Theory]
     // Installed: key plus the .sys it points at.
     [InlineData(true, true, true)]
@@ -117,12 +118,51 @@ public class DeviceSnapshotReaderTests
     // "not installed" must not be claimed.
     [InlineData(null, null, null)]
     [InlineData(null, true, null)]
-    // The key opened but its ImagePath could not be resolved, so disk
-    // presence was never tested: again nothing is known.
+    // The key opened but no path could be decided from it - an unparseable
+    // ImagePath, since an ABSENT one resolves to the SCM's own drivers
+    // default (see below) - so disk presence was never tested.
     [InlineData(true, null, null)]
     public void InterpretServicePackage_OnlyAProbeThatAnsweredIsAnAnswer(
         bool? keyPresent, bool? imageOnDisk, bool? expected)
     {
         Assert.Equal(expected, DeviceSnapshotReader.InterpretServicePackage(keyPresent, imageOnDisk));
+    }
+
+    // An absent ImagePath on a driver service is not a failed read. The SCM
+    // loads %SystemRoot%\System32\drivers\<ServiceName>.sys in that case
+    // (KB103000, under ImagePath and Type), so the probe still has a file to
+    // test and the package answer stays measured. Three things this pins that
+    // are easy to get wrong: the default is for DRIVER types only, a value
+    // that is present but unparseable is not the same state as an absent one,
+    // and a declared path always wins.
+    [Theory]
+    // A declared, resolvable path is used as declared.
+    [InlineData("applewirelessmouse", @"\SystemRoot\System32\drivers\appleodd.sys", 1,
+        @"System32\drivers\appleodd.sys")]
+    // Absent on SERVICE_KERNEL_DRIVER / SERVICE_FILE_SYSTEM_DRIVER: the
+    // documented default, named after the service. Empty or blank names
+    // nothing either, so it is the same state as absent.
+    [InlineData("applewirelessmouse", null, 1, @"System32\drivers\applewirelessmouse.sys")]
+    [InlineData("applewirelessmouse", "", 1, @"System32\drivers\applewirelessmouse.sys")]
+    [InlineData("applewirelessmouse", "   ", 2, @"System32\drivers\applewirelessmouse.sys")]
+    // Absent on a Win32 service (0x10), or with Type unreadable: no default
+    // exists, so nothing may be concluded about the package.
+    [InlineData("applewirelessmouse", null, 16, null)]
+    [InlineData("applewirelessmouse", null, null, null)]
+    // Present but unparseable stays unknown even on a driver: a quoted empty
+    // string names nothing the resolver accepts, and a non-string value is
+    // not a path at all.
+    [InlineData("applewirelessmouse", "\"\"", 1, null)]
+    [InlineData("applewirelessmouse", 4, 1, null)]
+    public void ResolveServiceImage_AnAbsentImagePathIsTheDriversDefault_NotAFailedRead(
+        string serviceName, object? declaredImagePath, int? serviceType, string? expectedSuffix)
+    {
+        var image = DeviceSnapshotReader.ResolveServiceImage(
+            serviceName, declaredImagePath, serviceType);
+
+        if (expectedSuffix is null)
+            Assert.Null(image);
+        else
+            Assert.EndsWith(expectedSuffix, image, StringComparison.OrdinalIgnoreCase);
     }
 }

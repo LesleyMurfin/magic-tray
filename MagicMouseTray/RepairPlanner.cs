@@ -300,8 +300,15 @@ internal static class RepairPlanner
                 RepairProblem.FilterNotInStack,
                 RepairAction.RestartBtHidParent,
                 "Scroll wheel is dead - the driver is not attached to this mouse",
-                "Pointer movement, clicking and the battery reading all still work, but the "
-                + "scroll wheel does nothing. The scroll driver ("
+                // Only what was measured on THIS device. PointerChildLive sits
+                // on the same snapshot and can be false or unread, and nothing
+                // in this rule reads the battery at all, so the old opening -
+                // "pointer movement, clicking and the battery reading all still
+                // work" - claimed two capabilities the rule never looked at.
+                (snapshot.PointerChildLive == true
+                    ? "Pointer movement and clicking still work, but the scroll wheel "
+                    : "The scroll wheel ")
+                + "does nothing. The scroll driver ("
                 + FilterServiceFor(snapshot)
                 + ") is installed, and yet Windows built this "
                 + "mouse's Bluetooth connection without it - which is what a restart of Windows "
