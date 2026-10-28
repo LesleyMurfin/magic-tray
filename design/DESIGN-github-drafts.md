@@ -36,7 +36,7 @@ On failure (clipboard / browser), open `https://github.com/LesleyMurfin/magic-tr
 - **What happened** — `(type here)`
 - **Environment** — Magic Tray version, `RuntimeInformation.OSDescription`, optional `0323 lasting choice` (`kmdf` / `pathA` / `stock`), one-line `TroubleshootHint` when it fires
 - **Devices** — Name / PID / Driver / Battery. PID kept. No `BTHENUM` instance path.
-- **Log** — last **40** lines of `%APPDATA%\MagicMouseTray\debug.log`, already redacted. Missing file → `(no debug.log)`.
+- **Log** — last **40** lines of `%APPDATA%\MagicMouseTray\debug.log`, already redacted. Missing file → `(no debug.log)`. Since the learned battery read is de-duplicated — `MOUSE_CHANNEL_TRY` / `MOUSE_CHANNEL_OK` / `MOUSE_BATTERY_OK` are flushed only when the set differs word-for-word from that PID's previous one — those 40 lines now span far more wall-clock time than they used to, which is the point: a tail that carries **one** battery read is a steady device, not a stalled one, and the 40 lines are free to carry the driver, enumeration and enable/disable history instead. `MOUSE_CHANNEL_FAIL` is never de-duplicated, so a failing device still fills the tail with every failed poll.
 
 Title: first device whose Driver is not `Ok`, `n/a`, or `PatchedKmdf` → `bug: PID {pid} {driver} (Magic Tray {version})`. Else first PID, else `bug: Magic Tray {version}`.
 

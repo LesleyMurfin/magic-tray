@@ -269,6 +269,36 @@ trackpad, and no gesture driver is shipped. **The trackpad battery path has not 
 hardware-tested in this project** - the tray reads it like any other Apple battery, but no
 measurement is on record here.
 
+### The learned channel, and what it does to `debug.log`
+
+None of the mechanisms above is chosen from the descriptor alone. The tray probes the device's
+interfaces, and the first collection and channel that answers a percent is remembered per PID in
+`config.ini` as `battery_channel_<pid>`
+([ENABLE-DISABLE.md](ENABLE-DISABLE.md#tray-show-in-magic-tray-and-windows-device)). From the
+next poll on, the read is **one HID call on that one interface** - logged as `MOUSE_CHANNEL_TRY`,
+then `MOUSE_CHANNEL_OK` and `MOUSE_BATTERY_OK`. The answer is forgotten, and the full probe walk
+re-run, only after **three consecutive** failed reads (`MOUSE_RELEARN`), because one failed read
+is an idle Bluetooth mouse.
+
+**Those three learned-path lines are de-duplicated.** They are buffered and written only when the
+set differs word-for-word from the last set that PID wrote - the whole ordered set, so a changed
+percent or a changed `bytes=[...]` head reprints it - and a steady mouse therefore prints them
+once and then nothing: measured, 30 lines over 10 polls before, 3 after. What always prints is
+the first read after learning, any different percent, any failure, `MOUSE_RELEARN`,
+`MOUSE_CHANNEL_LEARNED` and `MOUSE_CANDIDATE_SWITCH`. `MOUSE_CHANNEL_FAIL` is **never**
+suppressed: it prints every poll, so a three-strike streak is always complete in the log and the
+relearn above it is always accounted for. A failure also drops the remembered set, so the first
+success after it prints too, and so does the first read after a relearn even when the channel and
+the percent come back identical. The probe walk itself - an unlearned device, and the re-probe
+after that third failure - keeps its per-attempt logging unchanged, which is the part a reporter
+is usually sending in.
+
+Reading one of these logs: **a repeated `MOUSE_CHANNEL_OK` that is not there means "unchanged",
+not "stopped reading"**. A silence under a `MOUSE_CHANNEL_OK` is a working mouse at a steady
+percent. The reason for the change is `MagicMouseTray/Logger.cs:22,51-60`: the log rotates at
+1 MB keeping exactly one older generation (`debug.log.1`), so a healthy device polling all day
+used to push the driver and enumeration history out of both files before anyone read them.
+
 ---
 
 ## Why the v1 and the v3 differ: one HID node against three

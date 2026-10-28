@@ -313,11 +313,16 @@ Log file: `%APPDATA%\MagicMouseTray\debug.log`
 | Line | Meaning |
 |---|---|
 | `OK battery=83%` | Successful read |
+| `MOUSE_CHANNEL_TRY` / `MOUSE_CHANNEL_OK` / `MOUSE_BATTERY_OK` | The battery read on a remembered channel: what was attempted, what the device answered, what the tray showed. **Printed once, then not again until something changes** — see below |
+| `MOUSE_CHANNEL_FAIL pid=… reason=…` | A battery read that did not answer. Never suppressed: every failed poll is in the log |
+| `MOUSE_CHANNEL_LEARNED` / `MOUSE_RELEARN` / `MOUSE_CANDIDATE_SWITCH` | The remembered channel was found, forgotten after three consecutive failures, or moved to another interface. Never suppressed |
 | `OPEN_FAILED err=5` | COL01 skipped (Windows holds that handle) |
 | `DRIVER_CHECK status=... scm=running\|stopped` | Per-device driver health. `scm=stopped` means the filter .sys is not loaded even if the INF name still says KMDF. |
 | `DEVICE_ENABLE pid=… sidecar=ok\|failed\|no-instances` | Tray enable/disable result |
 | `TOAST_SENT` | Low-battery notification |
 | `CRITICAL_ALERT_SHOWN` | 1% persistent window |
+
+**A repeated `MOUSE_CHANNEL_OK` that is missing means "unchanged", not "stopped reading".** Once a mouse's battery channel is learned, each poll takes one HID call, and the `MOUSE_CHANNEL_TRY` / `MOUSE_CHANNEL_OK` / `MOUSE_BATTERY_OK` trio it produces is held back and written only when that line set differs word-for-word from the previous one for the same PID. A mouse sitting at the same percent therefore prints those three lines once and then nothing at all: measured, 30 lines over 10 polls before, 3 after. The first read after learning, any change of percent, any failure, and any relearn or interface switch always print. The full probe walk over every interface — an unlearned device, and the re-probe after a third consecutive failure — logs every attempt as before. The reason is this file: `Logger` rotates at 1 MB keeping one older generation (`debug.log.1`), so a healthy idle mouse used to evict the history a bug report needs.
 
 After a dead wheel, a failed enable, or a charge/unplug: tray **Diagnostics → Run diagnose-and-recover.ps1**, or elevated `.\scripts\diagnose-and-recover.ps1 -Repair` to restart a stopped-but-bound Bluetooth filter. Do not unpair the v3 for that. Workflow: [docs/ENABLE-DISABLE.md](docs/ENABLE-DISABLE.md). Hardware checklist: [docs/TEST-PLAN.md](docs/TEST-PLAN.md).
 
