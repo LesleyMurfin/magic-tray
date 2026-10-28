@@ -43,8 +43,25 @@ internal sealed record DeviceSnapshot(
     bool Col01Present,
     bool Col02Present,
     string? BoundFilterName,
-    bool FilterPackagePresent,
-    bool FilterServiceRunning,
+    // Is the scroll driver package on this PC at all? Evidence: the service key
+    // plus the .sys file its ImagePath names
+    // (DeviceSnapshotReader.InterpretServicePackage).
+    //   true  - the key is there and so is the driver file.
+    //   false - the probe answered and the package is not usable: no service
+    //           key, or a leftover key whose .sys was deleted.
+    //   null  - the registry read threw, or ImagePath could not be resolved so
+    //           the file was never looked for. No evidence, never a finding.
+    bool? FilterPackagePresent,
+    // Does the SCM report the bound filter service as RUNNING? Evidence: the
+    // STATE line of sc.exe query (DriverHealthChecker.InterpretServiceQuery).
+    //   true  - a filter service on this stack answered RUNNING.
+    //   false - every name on this stack was queried, every query answered,
+    //           and none of them is running. This is the USB-C charge incident.
+    //   null  - no name to ask about, or a query that did not answer (the 2 s
+    //           timeout, a kill, Process.Start failing). No evidence, never a
+    //           finding: "the scroll driver stopped" offers an elevated stack
+    //           restart, which no failed read may buy.
+    bool? FilterServiceRunning,
     bool? ConfigEnabled,
     // Every filter-family service named anywhere on this device's live stack,
     // in the reader's precedence order and with the registry's own casing.
@@ -58,7 +75,7 @@ internal sealed record DeviceSnapshot(
     //   null  - no evidence (nothing readable). Never a finding, ever.
     // This field exists because FilterServiceRunning cannot answer the
     // question: it is the word "RUNNING" in sc query output
-    // (DriverHealthChecker.cs:324-345), which proves only that the driver
+    // (DriverHealthChecker.cs:340-345), which proves only that the driver
     // IMAGE is loaded on this PC, never that the filter attached to this
     // mouse's stack. After a Windows restart PnP can rebuild the BTHENUM
     // stack without the filter while LowerFilters still names it and the
@@ -171,8 +188,8 @@ internal static class RepairPlanner
         // 1. Filter driver is still named on the live stack but its service is dead.
         if (snapshot.BthenumLiveCount > 0
             && snapshot.BoundFilterName is not null
-            && snapshot.FilterPackagePresent
-            && !snapshot.FilterServiceRunning)
+            && snapshot.FilterPackagePresent == true
+            && snapshot.FilterServiceRunning == false)
         {
             return new RepairFinding(
                 snapshot.Pid,
@@ -202,7 +219,7 @@ internal static class RepairPlanner
         // restart first; this rule only fires while the chosen filter runs.
         if (snapshot.BthenumLiveCount > 0
             && snapshot.FilterCandidates.Length > 1
-            && snapshot.FilterServiceRunning)
+            && snapshot.FilterServiceRunning == true)
         {
             var stale = StaleFilters(snapshot);
             // Nothing to strip (every candidate is the bound one) is not a
@@ -245,7 +262,7 @@ internal static class RepairPlanner
         // was byte-identical to a healthy mouse.
         //
         // FilterServiceRunning cannot see this. It is the word "RUNNING" in
-        // sc query output (DriverHealthChecker.cs:324-345): proof that the
+        // sc query output (DriverHealthChecker.cs:340-345): proof that the
         // driver image is loaded on this PC, never proof that the filter
         // attached to THIS mouse. The discriminator is DEVPKEY_Device_Stack -
         // the property this repo's own capture script already trusts
@@ -266,8 +283,8 @@ internal static class RepairPlanner
         // worse than missing the diagnosis on it.
         if (snapshot.BthenumLiveCount > 0
             && snapshot.BoundFilterName is not null
-            && snapshot.FilterPackagePresent
-            && snapshot.FilterServiceRunning
+            && snapshot.FilterPackagePresent == true
+            && snapshot.FilterServiceRunning == true
             && snapshot.FilterInStack == false)
         {
             return new RepairFinding(
@@ -420,7 +437,28 @@ internal static class RepairPlanner
         }
 
         // 6. Connected, but the scroll driver package was never installed (or was removed).
-        if (snapshot.BthenumLiveCount > 0 && !snapshot.FilterPackagePresent)
+        //
+        // Only a device with a wheel may be told to install a scroll driver.
+        // DeviceSnapshotReader.CatalogPids sweeps every Apple PID this app
+        // knows - all three trackpads through MouseBatteryDevice.KnownMice and
+        // the whole of KeyboardBatteryDevice.KnownKeyboards - so without this
+        // guard a PC whose owner has a Magic Keyboard and no Magic Mouse (the
+        // normal state of a PC with no Apple mouse filter package) got a
+        // "Scroll driver is not installed" row per paired keyboard and
+        // trackpad, offering a driver for a wheel the device does not have.
+        // The same devices' own advice already says "Scroll: n/a" (DriverAdvisor
+        // KeyboardOptions / TrackpadOptions) and DeviceCapability.ScrollDriverApplies
+        // keeps the scroll row off their tray rows; the PID table is the only
+        // thing a catalog sweep has to ask, so it reuses
+        // DriverHealthChecker.IsNonScrollPid - the table that already keeps
+        // those devices out of mouse driver status.
+        //
+        // false only: a package probe that could not be read says nothing about
+        // whether the driver is installed, and sending that user to install a
+        // driver they may already have is the nag this planner exists to avoid.
+        if (snapshot.BthenumLiveCount > 0
+            && snapshot.FilterPackagePresent == false
+            && !DriverHealthChecker.IsNonScrollPid(snapshot.Pid))
         {
             return new RepairFinding(
                 snapshot.Pid,

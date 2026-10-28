@@ -62,6 +62,13 @@ internal static class DriverHealthChecker
     internal static bool IsKeyboardPid(string pid) =>
         Array.Exists(KeyboardPids, p => p == pid.ToLowerInvariant());
 
+    // The same table TryParseAppleHidKey's skipNonScroll gate uses, asked from
+    // a bare PID: a device with no wheel can never need a scroll filter.
+    // RepairPlanner's catalog sweep has no DeviceKind to ask
+    // DeviceCapability.ScrollDriverApplies with, only the PID it is walking.
+    internal static bool IsNonScrollPid(string pid) =>
+        Array.Exists(NonScrollApplePids, p => p == pid.ToLowerInvariant());
+
     // Family membership, not exact equality: the live 2024 stack binds
     // MagicMouseDriver204Scroll, a suffixed variant of the catalog constant.
     // The rule itself lives in RepairPlanner - never duplicated here.
@@ -317,10 +324,33 @@ internal static class DriverHealthChecker
         return status;
     }
 
-    internal static bool KernelServiceRunning(string name)
+    // What sc.exe query actually told us, with the process handling lifted out
+    // so it can be tested off-Windows (the shape DeviceDiagReader.ScanWatcherLog
+    // already uses).
+    //   completed - the query ran to exit. false covers the 2 s WaitForExit
+    //               timeout and the kill that follows it, where whatever text
+    //               arrived is partial and proves nothing.
+    //   output    - sc.exe stdout. Null or blank means nothing came back.
+    // "RUNNING" is the word sc.exe prints in the STATE line. Anything else that
+    // ANSWERED is a measured false, including "the specified service does not
+    // exist": the SCM replied, and a service that is not installed is not
+    // running. A query that did not answer is null - never "stopped", because
+    // RepairPlanner reads a false here as "the scroll driver stopped" and
+    // offers an elevated restart of the mouse's Bluetooth stack for it.
+    internal static bool? InterpretServiceQuery(bool completed, string? output)
+    {
+        if (!completed || string.IsNullOrWhiteSpace(output))
+            return null;
+        return output.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    // Tri-state: true RUNNING, false the SCM answered and it is not running,
+    // null the query could not be made or did not finish. No name means no
+    // query was ever made, so nothing is known either.
+    internal static bool? KernelServiceRunning(string name)
     {
         if (string.IsNullOrEmpty(name))
-            return false;
+            return null;
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo
@@ -334,21 +364,21 @@ internal static class DriverHealthChecker
             };
             using var p = System.Diagnostics.Process.Start(psi);
             if (p is null)
-                return false;
+                return null;
             var stdout = p.StandardOutput.ReadToEndAsync();
             var stderr = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(2000))
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                return false;
+                return InterpretServiceQuery(completed: false, null);
             }
             var text = stdout.GetAwaiter().GetResult();
             _ = stderr.GetAwaiter().GetResult();
-            return text.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0;
+            return InterpretServiceQuery(completed: true, text);
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
@@ -395,11 +425,17 @@ internal static class DriverHealthChecker
             // sc.exe per name, once per call: this runs on every menu open and poll.
             var scmCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
+            // DriverStatus has no "service state unreadable" member, and the
+            // radio state this feeds must not flip on a query that failed, so
+            // this path keeps treating an unanswered query exactly as it
+            // always has: not running. The tri-state is carried to the user by
+            // DeviceSnapshot.FilterServiceRunning instead, which is the field
+            // the repair findings are raised from.
             bool Running(string name)
             {
                 if (!scmCache.TryGetValue(name, out var run))
                 {
-                    run = KernelServiceRunning(name);
+                    run = KernelServiceRunning(name) ?? false;
                     scmCache[name] = run;
                 }
                 return run;
