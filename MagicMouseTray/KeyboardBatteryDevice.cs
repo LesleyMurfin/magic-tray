@@ -182,7 +182,11 @@ internal sealed class KeyboardBatteryDevice : IBatteryDevice
         // of the live interface and fire the low-battery alert on a healthy keyboard. fbuf[1] is
         // a byte, so the previous >= 0 bound rejected nothing.
         var (pct, marker) = ClassifyFeatureByte(fbuf[1]);
-        Logger.Log($"{marker} device={DeviceName} value={fbuf[1]} (Feature 0x{batteryReportId:X2})");
+        // Keep the healthy line in the same dialect as MOUSE_BATTERY_OK / LOGI_BATTERY_OK:
+        // docs/TEST-PLAN.md rows are read off debug.log by eye, and `pct=` is the token.
+        Logger.Log(pct >= 0
+            ? $"{marker} device={DeviceName} pct={pct}% (Feature 0x{batteryReportId:X2})"
+            : $"{marker} device={DeviceName} value={fbuf[1]} (Feature 0x{batteryReportId:X2})");
         return pct;
     }
 

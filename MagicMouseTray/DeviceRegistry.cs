@@ -27,7 +27,7 @@ internal static class DeviceRegistry
 
         // Collapse only genuinely identical interface paths. Windows enumerated the same
         // USB col02 path twice in one cycle (live log 2026-09-16: two identical
-        // DISCOVER_SKIP_DUPLICATE lines for ...&mi_01&col02#a&16288706&0&0001), so the
+        // DISCOVER_SKIP_DUPLICATE lines for ...&mi_01&col02#<instance>), so the
         // same path string must not produce two devices.
         //
         // Everything else survives. One physical mouse exposes several distinct live col02
