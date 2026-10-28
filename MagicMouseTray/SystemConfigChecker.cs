@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography.Pkcs;
@@ -341,9 +342,10 @@ internal static class SystemConfigChecker
             ? (role == SelfSignedRole.InUse
                 ? "The driver this mouse is bound to is self-signed. "
                 : "The driver package installed for this mouse is self-signed. ")
-            : "The tray could not read the signature on this mouse's driver file, so it is not "
-                + "claiming that driver is self-signed. The Magic Mouse 2024 packages this project "
-                + "builds are self-signed, and Test Mode is what lets Windows load one. ";
+            : "The tray could not read the signature on this mouse's driver file, so it is making "
+                + "no claim either way about how that driver was signed. The Magic Mouse 2024 "
+                + "packages this project builds are self-signed, and Test Mode is what lets "
+                + "Windows load one. ";
 
     // Where the reader goes for the Test Mode story. The v3 page is written
     // about the 0323 packages, so any other model gets the model-neutral
@@ -906,13 +908,7 @@ internal static class SystemConfigChecker
             if (scenario is null)
                 return false;
 
-            return scenario.GetValue("Enabled") switch
-            {
-                int i => i != 0,
-                uint u => u != 0,
-                long l => l != 0,
-                _ => false,
-            };
+            return HvciFromRegistryValue(scenario.GetValue("Enabled"));
         }
         catch (Exception ex)
         {
@@ -920,6 +916,29 @@ internal static class SystemConfigChecker
             return null;
         }
     }
+
+    // What an Enabled value means, with the registry left outside. Policy, MDM
+    // and hand-edited hives all write this value, so the CLR type it comes back
+    // as is not ours to assume:
+    //
+    //   null            we looked and it is not there - "not configured on",
+    //                   the same reading a missing watcher file gets
+    //   int/uint/long   the DWORD or QWORD the policy writes; non-zero is on,
+    //                   and 2 (enabled with UEFI lock) is on as much as 1 is
+    //   anything else   a REG_SZ or REG_BINARY Enabled is data this tray has
+    //                   never measured. Unknown, because calling it "off"
+    //                   would print "Nothing here is blocking a self-signed
+    //                   driver" on a PC whose Memory integrity may well be on.
+    //                   MemoryIntegrityFact renders that as Advisory and
+    //                   SigningSeverity cannot take it to Blocking.
+    internal static bool? HvciFromRegistryValue(object? value) => value switch
+    {
+        null => false,
+        int i => i != 0,
+        uint u => u != 0,
+        long l => l != 0,
+        _ => null,
+    };
 
     // Service key plus .sys on disk for KMDF, service key for the Apple filter:
     // the existing probes in DriverHealthChecker, which already build both paths
@@ -1117,12 +1136,51 @@ internal static class SystemConfigChecker
         return File.Exists(path) ? path : null;
     }
 
+    // What one signature on a file says about who issued it. One entry per
+    // signature ENCOUNTERED, not per signature successfully read: a nested
+    // blob that would not decode, a signer with no certificate in the message,
+    // and a nest deeper than the walk goes are all Unreadable. Dropping them
+    // silently is indistinguishable from reading them and finding them
+    // self-issued, which is exactly how the reference Apple file - a
+    // self-issued WDK signature with two CA-issued WHCP signatures nested in
+    // it - collapses to its self-issued primary alone.
+    internal enum SignerTrust
+    {
+        SelfIssued,  // subject == issuer: the file vouches for itself
+        CaIssued,    // issued by somebody else, so Windows has a chain to follow
+        Unreadable,  // a signature we encountered and did not read
+    }
+
     // Self-signed means every Authenticode signature on the file was issued by
     // itself. That is the whole test: no chain building, and no opinion about
     // WHICH certificate authority a driver came from, because a locally
     // installed root would make a chain build succeed while the kernel still
     // refuses the driver without Test Mode - so trusting a chain would be the
     // one answer we must not give.
+    //
+    //   false  one readable CA-issued signature settles it: Windows loads a
+    //          file when ANY of its signatures is trusted, whatever the ones
+    //          we could not read would have said
+    //   true   every signature was read AND every one was self-issued
+    //   null   nothing to judge (no signature at all), or a set we did not
+    //          finish reading. "We could not read it" must never be rendered
+    //          as "it is self-signed": that is the answer SigningSeverity
+    //          takes to Blocking, which tells the user to switch test signing
+    //          on and Memory integrity off.
+    internal static bool? SelfSignedVerdictFor(IReadOnlyList<SignerTrust> signers)
+    {
+        bool unreadable = false;
+        foreach (var signer in signers)
+        {
+            if (signer == SignerTrust.CaIssued)
+                return false;
+            if (signer == SignerTrust.Unreadable)
+                unreadable = true;
+        }
+
+        return signers.Count == 0 || unreadable ? null : true;
+    }
+
     static bool? SelfSignedVerdict(string path)
     {
         if (!File.Exists(path))
@@ -1132,87 +1190,150 @@ internal static class SystemConfigChecker
         if (pkcs7 is null)
             return null;
 
-        bool anySigner = false;
-        bool anyCaIssued = false;
-        CollectSignerTrust(pkcs7, 0, ref anySigner, ref anyCaIssued);
-        return anySigner ? !anyCaIssued : null;
+        return SelfSignedVerdictFor(SignerTrustIn(pkcs7));
     }
 
     // The PKCS#7 blob in the PE certificate table
     // (IMAGE_DIRECTORY_ENTRY_SECURITY, whose VirtualAddress is a file offset).
     // Authenticode writes one WIN_CERTIFICATE entry, so the first is read.
-    static byte[]? ReadCertificateTable(string path)
+    static byte[]? ReadCertificateTable(string path) =>
+        ReadCertificateTable(File.ReadAllBytes(path));
+
+    // The same parse with the file left outside. EVERY number here comes out of
+    // the image, so every offset is chosen by whoever wrote the file: the
+    // arithmetic is done in long because an e_lfanew of int.MaxValue makes
+    // pe + 24 wrap negative in int arithmetic and a bounds check that wraps
+    // with it passes, and every read is bounds-checked against the real length.
+    // A malformed image is null - never a throw, and never bytes read from
+    // somewhere else in the file.
+    internal static byte[]? ReadCertificateTable(byte[] image)
     {
-        using var file = File.OpenRead(path);
-        using var reader = new BinaryReader(file);
-
-        file.Position = 0x3C;
-        int pe = reader.ReadInt32();
-        if (pe <= 0 || pe + 24 >= file.Length)
+        if (!TryReadUInt32(image, 0x3C, out uint lfanew))
             return null;
 
-        file.Position = pe;
-        if (reader.ReadUInt32() != 0x00004550)   // "PE\0\0"
+        long pe = lfanew;
+        if (!TryReadUInt32(image, pe, out uint signature) || signature != 0x00004550)
+            return null;                                            // "PE\0\0"
+
+        if (!TryReadUInt16(image, pe + 24, out ushort magic))       // optional header
+            return null;
+        long fixedOptional = magic == 0x020B ? 112 : 96;            // PE32+ or PE32
+
+        // NumberOfRvaAndSizes, the optional header's last DWORD, is how many
+        // data directories the image actually has. The security directory is
+        // number four, so below five there is none at all and the bytes at that
+        // offset belong to something else - section headers, or whatever a
+        // hostile file put there. Parsing them anyway produces a signer set,
+        // and then signing advice, out of bytes that are not a signature.
+        if (!TryReadUInt32(image, pe + 24 + fixedOptional - 4, out uint directories)
+            || directories < 5)
             return null;
 
-        file.Position = pe + 24;                 // optional header
-        int directories = pe + 24 + (reader.ReadUInt16() == 0x20B ? 112 : 96);
-        if (directories + 4 * 8 + 8 > file.Length)
+        long security = pe + 24 + fixedOptional + 4 * 8;            // security directory
+        if (!TryReadUInt32(image, security, out uint offset)
+            || !TryReadUInt32(image, security + 4, out uint size))
+            return null;
+        if (offset == 0 || size < 8 || offset + (long)size > image.Length)
             return null;
 
-        file.Position = directories + 4 * 8;     // security directory
-        uint offset = reader.ReadUInt32();
-        uint size = reader.ReadUInt32();
-        if (offset == 0 || size < 8 || (long)offset + size > file.Length)
+        if (!TryReadUInt32(image, offset, out uint length)          // dwLength
+            || !TryReadUInt16(image, offset + 6, out ushort type))  // wCertificateType
+            return null;
+        if (type != 0x0002 || length <= 8 || length > size)         // PKCS_SIGNED_DATA
             return null;
 
-        file.Position = offset;
-        uint length = reader.ReadUInt32();
-        reader.ReadUInt16();                     // wRevision
-        if (reader.ReadUInt16() != 0x0002)       // WIN_CERT_TYPE_PKCS_SIGNED_DATA
-            return null;
-        if (length <= 8 || length > size)
-            return null;
-
-        return reader.ReadBytes((int)(length - 8));
+        return image.AsSpan((int)(offset + 8), (int)(length - 8)).ToArray();
     }
 
-    // Primary signature plus every nested one. Depth is capped because the
-    // attribute is attacker-shaped data: a file we did not build decides how
-    // deep it goes.
-    static void CollectSignerTrust(byte[] pkcs7, int depth, ref bool anySigner, ref bool anyCaIssued)
+    static bool TryReadUInt32(byte[] image, long at, out uint value)
     {
-        if (depth > 4)
-            return;
+        value = 0;
+        if (at < 0 || at + 4 > image.Length)
+            return false;
+        value = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)at));
+        return true;
+    }
 
-        var cms = new SignedCms();
+    static bool TryReadUInt16(byte[] image, long at, out ushort value)
+    {
+        value = 0;
+        if (at < 0 || at + 2 > image.Length)
+            return false;
+        value = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan((int)at));
+        return true;
+    }
+
+    // The primary signature plus every nested one, each as its own entry. Never
+    // throws: the blob is attacker-shaped data, and the caller treats a read
+    // that failed as no evidence rather than as a fault.
+    internal static IReadOnlyList<SignerTrust> SignerTrustIn(byte[] pkcs7)
+    {
+        var signers = new List<SignerTrust>(3);
+        try
+        {
+            CollectSignerTrust(pkcs7, 0, signers);
+        }
+        catch (Exception ex)
+        {
+            // The walk stopped partway, so whatever is already in the list is
+            // an incomplete reading and has to say so.
+            Logger.Log($"SYSTEM_CONFIG_SIGNATURE_WALK_FAILED err={ex.Message}");
+            signers.Add(SignerTrust.Unreadable);
+        }
+
+        return signers;
+    }
+
+    // Depth is capped because the nested-signature attribute is attacker-shaped
+    // data: a file we did not build decides how deep it goes.
+    const int MaxSignatureNesting = 4;
+
+    static void CollectSignerTrust(byte[] pkcs7, int depth, List<SignerTrust> signers)
+    {
+        int before = signers.Count;
+
+        if (depth <= MaxSignatureNesting && TryDecodeSignature(pkcs7, depth, out var cms))
+        {
+            foreach (var signer in cms.SignerInfos)
+            {
+                var cert = signer.Certificate;
+                signers.Add(cert is null
+                    ? SignerTrust.Unreadable
+                    : string.Equals(cert.Subject, cert.Issuer, StringComparison.Ordinal)
+                        ? SignerTrust.SelfIssued
+                        : SignerTrust.CaIssued);
+
+                foreach (var attribute in signer.UnsignedAttributes)
+                {
+                    if (attribute.Oid.Value != NestedSignatureOid)
+                        continue;
+                    foreach (var value in attribute.Values)
+                        CollectSignerTrust(value.RawData, depth + 1, signers);
+                }
+            }
+        }
+
+        // A blob handed to us as a signature that yielded no entry at all - it
+        // would not decode, it carried no signer, or the nest was deeper than
+        // the cap - is one signature we could not read. Adding nothing here is
+        // the defect: an empty set means "no signature on this file", and the
+        // verdict reads that as nothing to judge instead of a truncated read.
+        if (signers.Count == before)
+            signers.Add(SignerTrust.Unreadable);
+    }
+
+    static bool TryDecodeSignature(byte[] pkcs7, int depth, out SignedCms cms)
+    {
+        cms = new SignedCms();
         try
         {
             cms.Decode(pkcs7);
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Log($"SYSTEM_CONFIG_SIGNATURE_DECODE_FAILED depth={depth} err={ex.Message}");
-            return;
-        }
-
-        foreach (var signer in cms.SignerInfos)
-        {
-            var cert = signer.Certificate;
-            if (cert is not null)
-            {
-                anySigner = true;
-                if (!string.Equals(cert.Subject, cert.Issuer, StringComparison.Ordinal))
-                    anyCaIssued = true;
-            }
-
-            foreach (var attribute in signer.UnsignedAttributes)
-            {
-                if (attribute.Oid.Value != NestedSignatureOid)
-                    continue;
-                foreach (var value in attribute.Values)
-                    CollectSignerTrust(value.RawData, depth + 1, ref anySigner, ref anyCaIssued);
-            }
+            return false;
         }
     }
 
