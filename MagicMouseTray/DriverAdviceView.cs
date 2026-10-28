@@ -194,9 +194,15 @@ internal static class DriverAdviceView
     // DriverAdvisor.OptionsFor. A device this app binds no driver for has no
     // choices to predict, and gets no invented rows; use ShowOptions to decide
     // whether the header is worth drawing.
-    internal static IReadOnlyList<string> OptionRowsShort(DeviceKind kind, string? pid)
+    //
+    // sdp is the SDP cache patch reading, passed straight through to
+    // DriverAdvisor: on a Magic Keyboard the battery prediction IS that
+    // patch's state. It defaults to null - no reading taken - which renders
+    // "battery?" rather than a claim.
+    internal static IReadOnlyList<string> OptionRowsShort(
+        DeviceKind kind, string? pid, SdpPatchState? sdp = null)
     {
-        var options = DriverAdvisor.OptionsFor(kind, pid);
+        var options = DriverAdvisor.OptionsFor(kind, pid, sdp);
         if (options.Count == 0)
             return [];
 
@@ -207,9 +213,10 @@ internal static class DriverAdviceView
     }
 
     // The dialog form of the same rows, one long sentence each. NOT menu-safe.
-    internal static IReadOnlyList<string> OptionRows(DeviceKind kind, string? pid)
+    internal static IReadOnlyList<string> OptionRows(
+        DeviceKind kind, string? pid, SdpPatchState? sdp = null)
     {
-        var options = DriverAdvisor.OptionsFor(kind, pid);
+        var options = DriverAdvisor.OptionsFor(kind, pid, sdp);
         if (options.Count == 0)
             return [];
 

@@ -379,18 +379,34 @@ internal static class DriverAdvisor
     // NotApplicable - a keyboard has no wheel to be dead - and the pointer is
     // NotApplicable too, matching DeviceCapability.PointerApplies, which
     // excludes MagicKeyboard.
-    static readonly DriverOption[] KeyboardOptions =
-    [
+    //
+    // BATTERY: "Yes AFTER PATCH" is the whole of what was measured
+    // (docs/DRIVER-MATRIX.md:54, live read [47 0E] at :158), and the percent
+    // does not come from a driver at all - KeyboardBatteryDevice returns -2
+    // until scripts/kbd-patch-cachedservices.ps1 has landed. So this cell is
+    // the PATCH's state and never the driver's: a keyboard known to be patched
+    // is the keyboard that was measured and keeps Works, while not-patched and
+    // not-checked are Unknown - a patch that is not there yet is not a fault,
+    // and per the honesty rules at the top of this file Unknown never means
+    // broken. The row that offers to apply it ("Fix battery reads",
+    // TrayApp.cs:1493-1496) is where that is said. The two tables differ in
+    // that one cell: the driver story, and so the Why, is identical either way.
+    static readonly DriverOption KeyboardStockOption =
         new(IdStockWindows,
             TrayMenu.V3RadioStockWindows,
             Pointer: CapabilityExpectation.NotApplicable,
             Scroll: CapabilityExpectation.NotApplicable,
-            Battery: CapabilityExpectation.Works,
+            Battery: CapabilityExpectation.Unknown,
             Recommended: true,
             Why: "Windows' own keyboard driver is the only choice. There is no scroll "
                + "driver for a keyboard, and battery percent comes from the one-time "
-               + "SDP cache patch rather than from any driver."),
-    ];
+               + "SDP cache patch rather than from any driver, so the percent reads only "
+               + "once that patch is applied to this keyboard.");
+
+    static readonly DriverOption[] KeyboardOptions = [KeyboardStockOption];
+
+    static readonly DriverOption[] PatchedKeyboardOptions =
+        [KeyboardStockOption with { Battery = CapabilityExpectation.Works }];
 
     // --- Magic Trackpad: one choice ----------------------------------------
     //
@@ -402,16 +418,28 @@ internal static class DriverAdvisor
     // (TrayMenu.ShowTrackpadV1BootCamp), but that is a separate device-row
     // offer and not a scroll choice this layer can predict scroll for, so it is
     // deliberately not a second option here.
+    //
+    // BATTERY: Unknown, and that README "Yes" is exactly the kind of sentence
+    // the header of this file forbids promoting a cell with. No trackpad has
+    // ever been paired to the PC this app is developed against -
+    // docs/DRIVER-MATRIX.md:55 and :166-168 record the whole kind as
+    // "UNMEASURED here", and TrackpadBatterySentence below says in prose that
+    // which report a trackpad answers on "has never been confirmed here". The
+    // cell now says the same thing the paragraph does. Unknown is untested
+    // hardware, never a missing capability, and no patch state is evidence
+    // about a trackpad: the SDP patch is keyboard-only.
     static readonly DriverOption[] TrackpadOptions =
     [
         new(IdStockWindows,
             TrayMenu.V3RadioStockWindows,
             Pointer: CapabilityExpectation.Works,
             Scroll: CapabilityExpectation.NotApplicable,
-            Battery: CapabilityExpectation.Works,
+            Battery: CapabilityExpectation.Unknown,
             Recommended: true,
-            Why: "Windows' own driver is the only choice. Pointer and battery work; "
-               + "this app ships no trackpad scroll or gesture driver."),
+            Why: "Windows' own driver is the only choice. The pointer works and this app "
+               + "ships no trackpad scroll or gesture driver. Whether the battery percent "
+               + "reads is not confirmed: no trackpad has ever been paired to the PC this "
+               + "app was built against, so nothing here is installed or applied for it."),
     ];
 
     // --- What a keyboard or a trackpad is ACTUALLY running -----------------
@@ -680,9 +708,37 @@ internal static class DriverAdvisor
     internal static bool HasMeasuredBattery(string? pid) =>
         pid is not null && pid.Equals("030d", StringComparison.OrdinalIgnoreCase);
 
+    // The same rule over every kind this app predicts for: an affirmative
+    // battery cell requires a measurement of THIS device in THIS state, and a
+    // PID alone cannot carry two of the three facts that decide it -
+    //   kind, because a trackpad has no measurement at any PID
+    //     (docs/DRIVER-MATRIX.md:55 "UNMEASURED here"), and
+    //   the SDP patch state, because a keyboard's measurement is the PATCHED
+    //     keyboard's (:54, :158) and nothing predicts a percent without it.
+    // The mice are unchanged: 0323 is the measured 2024 mouse (Input 0x90 on
+    // COL02, :51) and the v1/v2 family still asks the single-argument model
+    // gate above, so 030D keeps its 97% and 0269 / 0310 stay unmeasured.
+    internal static bool HasMeasuredBattery(DeviceKind kind, string? pid, SdpPatchState? sdp)
+    {
+        if (TrayMenu.IsV3(kind, pid))
+            return true;
+        if (TrayMenu.IsV1V2Mouse(kind))
+            return HasMeasuredBattery(pid);
+        if (kind == DeviceKind.MagicKeyboard)
+            return sdp == SdpPatchState.Applied;
+        // Trackpads, and anything this app binds no driver for.
+        return false;
+    }
+
     // IsV3 first so a 0323 that arrived with some other DeviceKind still gets
     // the v3 story, exactly as TrayMenu.IsV3 is used elsewhere.
-    internal static IReadOnlyList<DriverOption> OptionsFor(DeviceKind kind, string? pid)
+    //
+    // sdp is the SDP cache patch reading (SdpPatchReader), and it reaches only
+    // the one kind whose battery prediction is the patch's state. It defaults
+    // to null - no reading taken - which is NOT the patched keyboard, so a
+    // caller that has not read the patch gets no affirmative battery claim.
+    internal static IReadOnlyList<DriverOption> OptionsFor(
+        DeviceKind kind, string? pid, SdpPatchState? sdp = null)
     {
         if (TrayMenu.IsV3(kind, pid))
             return V3Options;
@@ -695,7 +751,11 @@ internal static class DriverAdvisor
         if (TrayMenu.IsV1V2Mouse(kind))
             return HasMeasuredBattery(pid) ? MeasuredV1Options : UnconfirmedBatteryOptions;
         if (kind == DeviceKind.MagicKeyboard)
-            return KeyboardOptions;
+        {
+            return HasMeasuredBattery(kind, pid, sdp)
+                ? PatchedKeyboardOptions
+                : KeyboardOptions;
+        }
         if (kind is DeviceKind.MagicTrackpadV1 or DeviceKind.MagicTrackpadV2
                  or DeviceKind.MagicTrackpadV3)
             return TrackpadOptions;
