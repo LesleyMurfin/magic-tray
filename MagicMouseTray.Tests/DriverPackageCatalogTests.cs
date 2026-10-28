@@ -442,12 +442,9 @@ public class DriverPackageCatalogTests
         Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
     }
 
-    // Issue #162: the first run patched the cache, every later click re-ran a
-    // script whose landmark that first run had consumed, and the only thing
-    // the user was ever shown was "powershell.exe exited 1". The script's exit
-    // codes now carry what happened, and these are the words they turn into.
+    // The exit codes the script defines, in the words they turn into here.
     [Fact]
-    public void KeyboardSdpPatch_FailureNamesTheCauseTheLogAndTheBytes()
+    public void KeyboardSdpPatch_FailureNamesTheOutcomeAndTheLog()
     {
         var noRecord = DriverInstaller.KeyboardSdpFailureMessage(
             DriverInstaller.KeyboardPatchExitNoRecord, @"C:\logs\kbd-patch.log", null);
@@ -460,20 +457,20 @@ public class DriverPackageCatalogTests
             DriverInstaller.KeyboardPatchExitNotPatched,
             @"C:\logs\kbd-patch.log",
             "[CachedServices\\00010000] bytes around RID 0x47");
-        Assert.Contains("layout the unlock does not recognise", unknownShape,
-            StringComparison.Ordinal);
+        Assert.Contains("could be unlocked", unknownShape, StringComparison.Ordinal);
         // the tail is quoted, because the elevated console is hidden and this
         // dialog is the only place the script's own words can appear
         Assert.Contains("bytes around RID 0x47", unknownShape, StringComparison.Ordinal);
 
         // An exit code this app does not know is reported as itself, never
         // dressed up as a cause it cannot prove - and never as an untouched
-        // registry either: an unnamed code includes PowerShell's own 1 for a
-        // terminating error, which can land after one blob was rewritten.
+        // registry either: an unnamed code includes PowerShell's own 1, which
+        // can land before the registry was opened or after one blob was
+        // rewritten.
         var unknownCode = DriverInstaller.KeyboardSdpFailureMessage(7, @"C:\logs\x.log", null);
         Assert.Contains("exit code 7", unknownCode, StringComparison.Ordinal);
         Assert.DoesNotContain("No Bluetooth record", unknownCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("does not recognise", unknownCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("could be unlocked", unknownCode, StringComparison.Ordinal);
         Assert.Contains("before it could report", unknownCode, StringComparison.Ordinal);
         Assert.Contains("may already carry the unlock", unknownCode, StringComparison.Ordinal);
         Assert.Contains("backed up", unknownCode, StringComparison.Ordinal);
@@ -532,9 +529,8 @@ public class DriverPackageCatalogTests
         Assert.False(DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.Unknown));
     }
 
-    // Exit 4 is the run that unlocked some records and was blocked on another.
-    // Reporting it as a plain failure would hide a cache that is half unlocked,
-    // and reporting it as success is what exit 0 used to do.
+    // Exit 4 is the run that unlocked some records and was blocked on another,
+    // so the dialog has to name both halves.
     [Fact]
     public void KeyboardSdpPatch_PartialExitSaysHalfTheCacheIsUnlocked()
     {
@@ -543,18 +539,35 @@ public class DriverPackageCatalogTests
             @"C:\logs\kbd-patch.log",
             "SUMMARY patched=1 blocked=1");
 
-        Assert.Equal(4, DriverInstaller.KeyboardPatchExitPartial);
         // what happened: part unlocked, part not
         Assert.Contains("Part of this keyboard's Bluetooth cache was unlocked", partial,
             StringComparison.Ordinal);
-        Assert.Contains("left untouched", partial, StringComparison.Ordinal);
+        Assert.Contains("was blocked", partial, StringComparison.Ordinal);
         // never the "nothing was changed" of exits 2 and 3
         Assert.DoesNotContain("nothing was changed", partial, StringComparison.Ordinal);
         // the step that can still produce a percent, and the way to report the rest
         Assert.Contains("Turn Bluetooth off and on again", partial, StringComparison.Ordinal);
-        Assert.Contains("report the untouched record", partial, StringComparison.Ordinal);
+        Assert.Contains("report the blocked record", partial, StringComparison.Ordinal);
         Assert.Contains(@"Log: C:\logs\kbd-patch.log", partial, StringComparison.Ordinal);
         Assert.Contains("SUMMARY patched=1 blocked=1", partial, StringComparison.Ordinal);
+    }
+
+    // The elevated identity can fail to write the log at all, and then the
+    // dialog's "Log: <path>" points at a file that does not exist. Say so, so
+    // the user reports the missing log instead of hunting for it.
+    [Fact]
+    public void KeyboardSdpPatch_FailureSaysWhenNoLogWasReadable()
+    {
+        var noLog = DriverInstaller.KeyboardSdpFailureMessage(
+            DriverInstaller.KeyboardPatchExitNotPatched, @"C:\logs\kbd-patch.log", null);
+
+        Assert.Contains("no readable log at that path", noLog, StringComparison.Ordinal);
+
+        var withLog = DriverInstaller.KeyboardSdpFailureMessage(
+            DriverInstaller.KeyboardPatchExitNotPatched, @"C:\logs\kbd-patch.log",
+            "SUMMARY patched=0 blocked=2");
+        Assert.DoesNotContain("no readable log", withLog, StringComparison.Ordinal);
+        Assert.Contains("SUMMARY patched=0 blocked=2", withLog, StringComparison.Ordinal);
     }
 
     [Fact]

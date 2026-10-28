@@ -58,8 +58,8 @@ public class SdpPatchReaderTests
 
     static byte[] Patched() => Bytes(PatchedHex);
 
-    // The stock blob, derived by running the script's surgery
-    // (scripts/kbd-patch-cachedservices.ps1:110-122) BACKWARDS on the measured
+    // The stock blob, derived by running the script's surgery (Edit-Blob in
+    // scripts/kbd-patch-cachedservices.ps1) BACKWARDS on the measured
     // patched bytes: delete the four inserted bytes and give the four SDP length
     // fields their four bytes back. No unpatched Apple keyboard is paired to this
     // PC, so this is the only honest way to get a stock fixture - it is the exact

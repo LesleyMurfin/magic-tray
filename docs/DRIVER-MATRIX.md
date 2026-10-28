@@ -160,34 +160,39 @@ which declares `0x47` as a **Feature** report. Afterwards `FeatureReportByteLeng
 
 Operational facts:
 
-- The script **requires `-Mac`** (there is no default).
-- It is **idempotent**: a record already carrying `09 20 B1 02` within 96 bytes of `85 47` is
-  reported as already patched and left untouched, so re-running the unlock is safe and is not an
-  error. Each cache subkey is handled on its own - a record whose descriptor shape is not
-  recognised is reported and skipped, and the records after it are still processed.
-- **Exit codes:** `0` the cache carries the unlock (newly patched or already there) and no record
-  was blocked, `2` nothing was blocked and no cached record for that MAC carries Report ID `0x47`
-  (wrong `-Mac`, or the keyboard was never paired on this PC), `3` every record carrying `0x47`
-  was blocked and none could be patched - the registry is left unchanged, and the bytes around
-  the RID are dumped to the log for a bug report, `4` partial: at least one record was unlocked
-  or already carried the unlock **and** at least one other candidate record was blocked - the
-  cache is partly unlocked, the blocked records are left exactly as they were, and the log names
-  them with the same hex dump. The bytes are dumped for every blocked record, whichever of `3`
-  or `4` the run ends on.
-- **Any other exit code** (`1`, or anything the script does not define) means the run stopped
-  before it could report its own result: part of the cache may already carry the unlock, and the
-  original blobs are in the backup `.bin` files beside the log. The tray quotes the log rather
-  than claiming the registry is untouched. A rejected `-Mac` is this shape too - it exits `1`,
-  having written the reason to the log first.
-- Every run appends to a log (`-LogPath`, default
+- The script **requires `-Mac`**, 12 hex digits (there is no default).
+- It is **idempotent**: a record already carrying `09 20 B1 02` in the 96-byte window that
+  follows an `85 47` site is reported as already patched and left untouched, so re-running the
+  unlock is safe and is not an error. Each cache subkey is handled on its own - a record that
+  cannot be unlocked is reported and skipped, and the records after it are still processed.
+- **Exit codes:** `0` every candidate record carries the unlock (inserted by this run or already
+  there) and nothing was blocked; `1` the run stopped before it could report - either `-Mac` was
+  not 12 hex digits, in which case nothing was read or written, or a failure outside the
+  per-record isolation, in which case records before it may already have been rewritten; `2`
+  nothing was blocked and no cached record for that MAC carries Report ID `0x47` (wrong `-Mac`,
+  or the keyboard was never paired on this PC); `3` nothing could be unlocked - every candidate
+  record was blocked, or no record could be examined at all because a cache subkey could not be
+  opened; `4` partial: at least one record carries the unlock **and** at least one other was
+  blocked, so the cache is partly unlocked and the blocked records are left exactly as they were.
+- A blocked record has many causes - a descriptor shape the script does not recognise, a record
+  it could not read, back up or write, a subkey it could not open at all - and the log names the
+  cause for each one. The bytes around the RID are dumped for the records that got far enough to
+  have any: a subkey that would not open yields no dump.
+- A `-DryRun` that reaches `0` or `4` **wrote nothing to the registry** and says so; `4` there
+  means some other candidate record would have been blocked.
+- A run that gets as far as the script appends to a log (`-LogPath`, default
   `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`, or `%TEMP%\MagicMouseTray\` when `%APPDATA%`
-  is unset). That file is what to attach when the unlock cannot be applied; the tray quotes its
-  tail when a run exits non-zero.
+  is unset); when that file cannot be written, every message naming it says so and gives the
+  reason instead of a path. A command line PowerShell rejects at parameter binding (`-Mac` with
+  no value) never reaches the script, so it leaves no log at all. The log is what to attach when
+  the unlock cannot be applied; the tray quotes its tail when a run exits non-zero, and says the
+  run left no readable log when there is none.
 - Before a record is written, its original bytes are saved in the same directory as the log, as
-  `backup-<subkey>-<value>-<stamp>.bin`. Nothing outside that directory and the device's own
-  BTHPORT cache values is touched.
-- `hidbth` only re-reads `CachedServices` on reconnect, so **the percent appears only after
-  Bluetooth is turned off and on again** (or the keyboard reconnects).
+  `backup-<subkey>-<value>-<stamp>.bin`; `-DryRun` writes the bytes it would have stored beside
+  them as `patched-<subkey>-<value>-<stamp>.bin` for byte comparison. Nothing outside that
+  directory and the device's own BTHPORT cache values is touched.
+- `hidbth` only re-reads `CachedServices` when the Bluetooth radio cycles, so **the percent
+  appears only after Bluetooth is turned off and on again**.
 - **Re-pairing the keyboard erases the patch.**
 
 Details: [README, Keyboard battery](../README.md#keyboard-battery).

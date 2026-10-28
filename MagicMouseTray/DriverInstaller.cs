@@ -660,19 +660,8 @@ foreach ($id in $restart) {
     // The script requires -Mac - never omit it. Confirm-first like every other
     // elevated offer: Cancel runs nothing at all.
     //
-    // Three things this does beyond launching the script, all of them the
-    // report in issue #162 (A1314 ISO, PID 0256):
-    //   * it refuses to run at all when the read-back already says Applied.
-    //     The first run there DID patch the cache; every later click re-ran a
-    //     script whose stock landmark its own first run had consumed, and the
-    //     user was shown "powershell.exe exited 1" for a keyboard that was
-    //     already unlocked. The script is idempotent now, so this guard is
-    //     about the user's question - "did it work?" - not about safety.
-    //   * after a run that exited 0 it names the step the script's own last
-    //     line names: hidbth only re-reads CachedServices when the radio
-    //     cycles. RunElevated hides the window, so that line reached nobody.
-    //   * on a non-zero exit it quotes the script's run log, which is why the
-    //     -LogPath argument exists: an exit code alone diagnoses nothing.
+    // RunElevated hides the console, so the script's own words reach the user
+    // only through the dialogs below and the -LogPath it is given.
     internal static InstallOutcome OfferKeyboardSdpPatch()
     {
         var script = FindKeyboardPatchScript();
@@ -735,11 +724,8 @@ foreach ($id in $restart) {
         }
 
         // Every non-zero exit is Failed with the script's own words, exit 4
-        // (PARTIAL) included: a half-unlocked cache is the same shape of
-        // outcome as the half-finished Stock restore above, which is Failed
-        // plus a message naming the half that happened rather than Confirmed
-        // for the half that did. Confirmed here would put "the battery unlock
-        // ran" on a run that left a record behind.
+        // (PARTIAL) included: a half-unlocked cache is reported as the half
+        // that happened, never as success for the half that did.
         if (exitCode != 0)
         {
             Logger.Log($"DRIVER_SDP_FAILED exit={exitCode}");
@@ -764,35 +750,30 @@ foreach ($id in $restart) {
 
     // Exit codes kbd-patch-cachedservices.ps1 defines in its own header. 0 is
     // "the cache carries the unlock and nothing was blocked" - newly inserted
-    // OR already there, which is why a second run is no longer an error
-    // anywhere in this path. 4 is the mixed run: at least one record carries
-    // the unlock AND at least one candidate record was blocked, which 0 used
-    // to swallow.
+    // OR already there. 4 is the mixed run: at least one record carries the
+    // unlock AND at least one candidate record was blocked.
     internal const int KeyboardPatchExitNoRecord = 2;
     internal const int KeyboardPatchExitNotPatched = 3;
     internal const int KeyboardPatchExitPartial = 4;
 
-    // One log per run, named like the script's own default, in the TRAY's
-    // %APPDATA% rather than the elevated process's: a UAC prompt answered with
-    // a different administrator account has a different profile, and the tray
-    // must be able to read back the run it started.
+    // The log goes in the TRAY's profile, not the elevated process's: a UAC
+    // prompt answered with a different administrator account has a different
+    // %APPDATA%, and the tray must be able to read back the run it started.
     internal static string NewKeyboardPatchLogPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MagicMouseTray",
+        Logger.LogDir,
         $"kbd-patch-{DateTime.Now:yyyyMMdd-HHmmss}.log");
 
     internal static string KeyboardSdpAlreadyAppliedMessage() =>
         "The battery unlock is already in this keyboard's Bluetooth record, so nothing was run. "
         + "Windows only re-reads that record when the Bluetooth radio cycles: turn Bluetooth off "
-        + "and on again (or switch the keyboard off and on), and the percent appears within a "
-        + "minute or two.\n\n"
+        + "and on again, and the percent appears within a minute or two.\n\n"
         + "Re-pairing the keyboard erases the unlock - that is the one case where this needs "
         + "running again.";
 
     internal static string KeyboardSdpNextStepMessage() =>
-        "The battery unlock ran. One step is left: turn Bluetooth off and on again (or switch "
-        + "the keyboard off and on), because Windows only re-reads the keyboard's Bluetooth "
-        + "record when the radio cycles. The percent appears within a minute or two.\n\n"
+        "This keyboard's Bluetooth record now carries the battery unlock. One step is left: "
+        + "turn Bluetooth off and on again, because Windows only re-reads that record when the "
+        + "radio cycles. The percent appears within a minute or two.\n\n"
         + "Running this again later is safe - it reports the unlock as already applied and "
         + "changes nothing.";
 
@@ -805,36 +786,34 @@ foreach ($id in $restart) {
         {
             KeyboardPatchExitNoRecord =>
                 "No Bluetooth record for this keyboard carries the battery report, so nothing "
-                + "was changed. That usually means the keyboard is paired to a different PC or "
-                + "adapter than the one Magic Tray read.",
+                + "was changed. Windows rebuilds that record when the keyboard re-pairs, so "
+                + "pairing it again and retrying is the next thing to try.",
             KeyboardPatchExitNotPatched =>
-                "This keyboard's Bluetooth record carries the battery report in a layout the "
-                + "unlock does not recognise, so nothing was changed. The log below has the "
-                + "bytes needed to add support for it.",
+                "Nothing in this keyboard's Bluetooth cache could be unlocked, so nothing was "
+                + "changed. The log below says what blocked each record.",
             KeyboardPatchExitPartial =>
                 "Part of this keyboard's Bluetooth cache was unlocked, but at least one record "
-                + "was left untouched because its layout was not recognised. Turn Bluetooth off "
-                + "and on again (or switch the keyboard off and on) - the percent may already "
-                + "appear. If it does not, please report the untouched record and the log below.",
-            // Not "nothing was changed": an exit code this app does not name
-            // includes PowerShell's own 1 for a terminating error, which can
-            // land after one record has already been rewritten.
+                + "was blocked. Turn Bluetooth off and on again - the percent may already "
+                + "appear. If it does not, please report the blocked record and the log below.",
+            // An exit code this app does not name includes PowerShell's own 1,
+            // which can land before the registry was opened at all or after one
+            // record has already been rewritten.
             _ =>
                 $"The battery unlock stopped with exit code {exitCode} before it could report "
                 + "what it did. Part of this keyboard's Bluetooth cache may already carry the "
-                + "unlock, so this is not a run that left the registry as it was. The original "
-                + "bytes of every record it touched are backed up next to the log.",
+                + "unlock. The original bytes of every record it touched are backed up in the "
+                + "log's own directory.",
         };
 
         var text = head + $"\n\nLog: {logPath}";
-        if (!string.IsNullOrWhiteSpace(logTail))
-            text += $"\n\n{logTail}";
+        text += string.IsNullOrWhiteSpace(logTail)
+            ? "\n\nThe run left no readable log at that path, which is itself worth reporting."
+            : $"\n\n{logTail}";
         return text;
     }
 
-    // Last lines of the run log, if it is there at all. A log that cannot be
-    // read is not a second failure to report: the caller still has its own
-    // message.
+    // Last lines of the run log, if it is there at all; null when it is not,
+    // which the caller's dialog says in so many words.
     internal static string? ReadPatchLogTail(string path, int maxLines = 12)
     {
         try
@@ -1149,7 +1128,7 @@ foreach ($id in $restart) {
     // has to be shown here or the user never sees why nothing happened.
     static void ShowBlocked(string message)
     {
-        Logger.Log($"DRIVER_BLOCKED err={message}");
+        Logger.Log($"DRIVER_BLOCKED err={message.Replace("\n", " ").Replace("\r", " ")}");
         System.Windows.Forms.MessageBox.Show(
             message,
             "Magic Tray",

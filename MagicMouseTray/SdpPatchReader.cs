@@ -13,8 +13,7 @@ namespace MagicMouseTray;
 // COL02 close inside the descriptor blob that BTHPORT caches, which makes col02
 // expose a Feature ValueCap so HidD_GetFeature(0x47) returns the percent.
 // KeyboardBatteryDevice.GetBatteryPercent returns -2 while that cap is missing
-// and 0..100 once it is there. Until now nothing ever READ BACK whether the
-// patch landed, so the tray could only offer it, never report it.
+// and 0..100 once it is there.
 //
 // What the script does, byte for byte (Edit-Blob in
 // kbd-patch-cachedservices.ps1):
@@ -87,15 +86,12 @@ internal static class SdpPatchReader
     static readonly byte[] StockClose = [0x81, 0x02, 0xC0, 0xC0];
 
     // How far past `85 47` a close still belongs to the COL02 battery
-    // collection. This is the script's own search window, verbatim: its
-    // Find-ByteSequence takes -End as the LAST CANDIDATE START INDEX and is
-    // called with rid+2+96, so the script will accept a close whose first byte
-    // is anywhere in [rid+2, rid+2+96]. Changing this number changes which
-    // records the reader and the script disagree about, so it is the shared
-    // constant and not a tunable. Beyond the window the byte pair is some
-    // other collection's business and proves nothing about the battery report
-    // - deliberately Unknown, not a guess in either direction. Live delta is
-    // 281-258 = 23 bytes.
+    // collection, as a last candidate START index: the script's own
+    // Find-ByteSequence -End, verbatim, so a close whose first byte is
+    // anywhere in [rid+2, rid+2+96] is accepted by both halves. Beyond the
+    // window the byte pair is some other collection's business and proves
+    // nothing about the battery report - deliberately Unknown, not a guess in
+    // either direction. Live delta is 281-258 = 23 bytes.
     const int RidWindowBytes = 96;
 
     // The script inserts the marker at closeOffset + 2 (between `81 02` and
@@ -143,28 +139,15 @@ internal static class SdpPatchReader
                 continue;
             anyCandidate = true;
 
-            // Two bounds, not one, because two conventions meet here. IndexOf's
-            // `end` is EXCLUSIVE and bounds the END of the match, while the
-            // script's -End is the last candidate START index - so a needle of
-            // length n whose last legal start is s needs end = s + n. The close
-            // the script can accept starts at most at rid+2+96; the marker it
-            // can write starts at most two bytes further on, at
-            // rid+2+96+MarkerOffsetFromClose. Clamped to the record so a short
-            // blob is read, never over-read.
-            int closeEnd = Math.Min(
-                record.Length, i + 2 + RidWindowBytes + StockClose.Length);
-            int markerEnd = Math.Min(
-                record.Length,
-                i + 2 + RidWindowBytes + MarkerOffsetFromClose + PatchMarker.Length);
-
-            int at = IndexOf(record, PatchMarker, i + 2, markerEnd);
+            int at = IndexOf(
+                record, PatchMarker, i + 2, i + 2 + RidWindowBytes + MarkerOffsetFromClose);
             if (at >= 0)
             {
                 markerOffset = at;
                 return SdpPatchState.Applied;
             }
 
-            if (IndexOf(record, StockClose, i + 2, closeEnd) >= 0)
+            if (IndexOf(record, StockClose, i + 2, i + 2 + RidWindowBytes) >= 0)
                 anyStockClose = true;
         }
 
@@ -329,9 +312,13 @@ internal static class SdpPatchReader
         return n == 12 ? new string(buffer) : null;
     }
 
-    static int IndexOf(byte[] haystack, byte[] needle, int start, int end)
+    // `lastStart` is the last index the needle may START at, inclusive - the
+    // convention Find-ByteSequence's -End uses - clamped to the record so a
+    // short blob is read, never over-read.
+    static int IndexOf(byte[] haystack, byte[] needle, int start, int lastStart)
     {
-        for (int i = Math.Max(0, start); i + needle.Length <= end; i++)
+        int last = Math.Min(lastStart, haystack.Length - needle.Length);
+        for (int i = Math.Max(0, start); i <= last; i++)
         {
             int k = 0;
             while (k < needle.Length && haystack[i + k] == needle[k])
