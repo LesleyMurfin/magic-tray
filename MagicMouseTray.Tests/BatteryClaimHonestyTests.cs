@@ -281,9 +281,10 @@ public class BatteryClaimHonestyTests
                 DeviceKind.MagicKeyboard, KeyboardPid, SdpPatchState.Applied)));
     }
 
-    // The default overloads are what the shipped menu and dialog call today
-    // (TrayApp.cs:177 and :2120 pass no patch state at all), so the default has
-    // to be the honest one: no patch state read means no affirmative claim.
+    // The default overloads are what a caller holding no reading gets (the
+    // shipped dialog and menu now pass the device's own patch state -
+    // TrayApp.cs:177, :1761 and :2124), so the default has to be the honest
+    // one: no patch state read means no affirmative claim.
     [Theory]
     [InlineData(DeviceKind.MagicKeyboard, "0320")]
     [InlineData(DeviceKind.MagicKeyboard, KeyboardPid)]

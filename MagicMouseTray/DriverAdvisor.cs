@@ -381,7 +381,7 @@ internal static class DriverAdvisor
     // excludes MagicKeyboard.
     //
     // BATTERY: "Yes AFTER PATCH" is the whole of what was measured
-    // (docs/DRIVER-MATRIX.md:54, live read [47 0E] at :158), and the percent
+    // (docs/DRIVER-MATRIX.md:58, live read [47 0E] at :162), and the percent
     // does not come from a driver at all - KeyboardBatteryDevice returns -2
     // until scripts/kbd-patch-cachedservices.ps1 has landed. So this cell is
     // the PATCH's state and never the driver's: a keyboard known to be patched
@@ -389,7 +389,7 @@ internal static class DriverAdvisor
     // not-checked are Unknown - a patch that is not there yet is not a fault,
     // and per the honesty rules at the top of this file Unknown never means
     // broken. The row that offers to apply it ("Fix battery reads",
-    // TrayApp.cs:1493-1496) is where that is said. The two tables differ in
+    // TrayApp.cs:1589-1593) is where that is said. The two tables differ in
     // that one cell: the driver story, and so the Why, is identical either way.
     static readonly DriverOption KeyboardStockOption =
         new(IdStockWindows,
@@ -422,7 +422,7 @@ internal static class DriverAdvisor
     // BATTERY: Unknown, and that README "Yes" is exactly the kind of sentence
     // the header of this file forbids promoting a cell with. No trackpad has
     // ever been paired to the PC this app is developed against -
-    // docs/DRIVER-MATRIX.md:55 and :166-168 record the whole kind as
+    // docs/DRIVER-MATRIX.md:59 and :167 record the whole kind as
     // "UNMEASURED here", and TrackpadBatterySentence below says in prose that
     // which report a trackpad answers on "has never been confirmed here". The
     // cell now says the same thing the paragraph does. Unknown is untested
@@ -712,11 +712,11 @@ internal static class DriverAdvisor
     // battery cell requires a measurement of THIS device in THIS state, and a
     // PID alone cannot carry two of the three facts that decide it -
     //   kind, because a trackpad has no measurement at any PID
-    //     (docs/DRIVER-MATRIX.md:55 "UNMEASURED here"), and
+    //     (docs/DRIVER-MATRIX.md:59 "UNMEASURED here"), and
     //   the SDP patch state, because a keyboard's measurement is the PATCHED
-    //     keyboard's (:54, :158) and nothing predicts a percent without it.
+    //     keyboard's (:58, :162) and nothing predicts a percent without it.
     // The mice are unchanged: 0323 is the measured 2024 mouse (Input 0x90 on
-    // COL02, :51) and the v1/v2 family still asks the single-argument model
+    // COL02, :55) and the v1/v2 family still asks the single-argument model
     // gate above, so 030D keeps its 97% and 0269 / 0310 stay unmeasured.
     internal static bool HasMeasuredBattery(DeviceKind kind, string? pid, SdpPatchState? sdp)
     {
