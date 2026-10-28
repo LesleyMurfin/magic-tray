@@ -275,10 +275,16 @@ None of the mechanisms above is chosen from the descriptor alone. The tray probe
 interfaces, and the first collection and channel that answers a percent is remembered per PID in
 `config.ini` as `battery_channel_<pid>`
 ([ENABLE-DISABLE.md](ENABLE-DISABLE.md#tray-show-in-magic-tray-and-windows-device)). From the
-next poll on, the read is **one HID call on that one interface** - logged as `MOUSE_CHANNEL_TRY`,
-then `MOUSE_CHANNEL_OK` and `MOUSE_BATTERY_OK`. The answer is forgotten, and the full probe walk
-re-run, only after **three consecutive** failed reads (`MOUSE_RELEARN`), because one failed read
-is an idle Bluetooth mouse.
+next poll on, the read is **one HID call on that one interface**, and what it writes to
+`debug.log` depends on whether it has anything new to say. A learned read whose outcome differs
+from that PID's last one writes `MOUSE_CHANNEL_TRY`, then `MOUSE_CHANNEL_OK` and
+`MOUSE_BATTERY_OK`; a learned read that repeats the last outcome word for word writes **nothing
+at all**; a learned read that FAILS writes `MOUSE_CHANNEL_TRY` and `MOUSE_CHANNEL_FAIL` every
+time, which is what makes a relearn diagnosable. The full probe walk - an unlearned device, or
+the re-probe after the third strike - is not buffered and writes `MOUSE_CHANNEL_TRY` plus
+`MOUSE_CHANNEL_OK` or `MOUSE_CHANNEL_FAIL` for **every attempt it makes**. The answer is
+forgotten, and that walk re-run, only after **three consecutive** failed reads (`MOUSE_RELEARN`),
+because one failed read is an idle Bluetooth mouse.
 
 **Those three learned-path lines are de-duplicated.** They are buffered and written only when the
 set differs word-for-word from the last set that PID wrote - the whole ordered set, so a changed
