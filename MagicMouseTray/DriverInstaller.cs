@@ -752,6 +752,11 @@ foreach ($id in $restart) {
     // "the cache carries the unlock and nothing was blocked" - newly inserted
     // OR already there. 4 is the mixed run: at least one record carries the
     // unlock AND at least one candidate record was blocked.
+    //
+    // A -Restore run exits on the same numbers from the same script, so these
+    // constants are shared rather than copied: on a restore 2 means there is no
+    // usable backup for this keyboard, 3 means nothing could be put back, and 4
+    // means part of the cache is stock again and part was blocked.
     internal const int KeyboardPatchExitNoRecord = 2;
     internal const int KeyboardPatchExitNotPatched = 3;
     internal const int KeyboardPatchExitPartial = 4;
@@ -837,8 +842,170 @@ foreach ($id in $restart) {
         $"This runs {DriverPackageCatalog.KeyboardPatchScriptPath} -Mac {mac} for this Magic Keyboard. " +
         "It changes the Bluetooth SDP cache entry for that keyboard so Windows exposes its battery. " +
         "It needs one administrator approval and changes nothing else. " +
-        "Re-pairing the keyboard can undo it.\n\n" +
+        "The original record is backed up first, and \"Undo battery fix\" in the tray menu puts it " +
+        "back from that backup.\n\n" +
         "OK continues. Cancel aborts.";
+
+    // Keyboard PATH-C, backwards. Same script, same -Mac discovery, same
+    // confirm-first rule: Cancel runs nothing at all. The script reads the
+    // newest backup it wrote for this MAC and writes those original bytes back,
+    // so this offer only has to find the script, the MAC, and the user's
+    // agreement.
+    //
+    // RunElevated hides the console, so the script's own words reach the user
+    // only through the dialogs below and the -LogPath it is given.
+    internal static InstallOutcome OfferKeyboardSdpRestore()
+    {
+        var script = FindKeyboardPatchScript();
+        if (script is null)
+        {
+            ShowBlocked(
+                $"{DriverPackageCatalog.KeyboardPatchScriptPath} not found next to the tray.");
+            return InstallOutcome.Unavailable;
+        }
+
+        var mac = TryDiscoverKeyboardMac();
+        if (mac is null)
+        {
+            ShowBlocked(
+                "Could not discover a Magic Keyboard Bluetooth MAC. " +
+                "Refusing to run kbd-patch-cachedservices.ps1 without -Mac.");
+            return InstallOutcome.Unavailable;
+        }
+
+        // Unavailable, not Failed: the unlock this offer would undo is not in
+        // this keyboard's record. Nothing ran, nothing is wrong, and the user
+        // is told so instead of being shown a failure.
+        if (SkipsKeyboardSdpRestore(SdpPatchReader.ForMac(mac)))
+        {
+            Logger.Log("DRIVER_SDP_RESTORE_SKIPPED reason=not-applied");
+            ShowInfo(KeyboardSdpRestoreNothingToUndoMessage());
+            return InstallOutcome.Unavailable;
+        }
+
+        var prompt = System.Windows.Forms.MessageBox.Show(
+            KeyboardSdpRestorePrompt(mac),
+            "Magic Tray",
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning);
+        if (prompt != System.Windows.Forms.DialogResult.OK)
+        {
+            Logger.Log("DRIVER_SDP_RESTORE_ABORTED cancelled");
+            return InstallOutcome.Cancelled;
+        }
+
+        var logPath = NewKeyboardRestoreLogPath();
+        var args =
+            $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mac \"{mac}\" -Restore " +
+            $"-LogPath \"{logPath}\"";
+        Logger.Log($"DRIVER_SDP_RESTORE script={script} mac={mac}");
+        int exitCode;
+        try
+        {
+            exitCode = RunElevatedExitCode("powershell.exe", args);
+        }
+        catch (Exception ex) when (IsUacDeclined(ex))
+        {
+            Logger.Log("DRIVER_SDP_RESTORE_ABORTED cancelled reason=uac-declined");
+            return InstallOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            ShowBlocked(ex.Message);
+            return InstallOutcome.Failed;
+        }
+
+        // Every non-zero exit is Failed with the script's own words, exit 4
+        // (PARTIAL) included: a half-restored cache is reported as the half
+        // that happened, never as success for the half that did not.
+        if (exitCode != 0)
+        {
+            Logger.Log($"DRIVER_SDP_RESTORE_FAILED exit={exitCode}");
+            ShowBlocked(
+                KeyboardSdpRestoreFailureMessage(exitCode, logPath, ReadPatchLogTail(logPath)));
+            return InstallOutcome.Failed;
+        }
+
+        Logger.Log("DRIVER_SDP_RESTORE_DONE exit=0");
+        ShowInfo(KeyboardSdpRestoreDoneMessage());
+        return InstallOutcome.Confirmed;
+    }
+
+    // NotApplied is the ONLY read-back meaning "there is nothing to undo": the
+    // marker is not in the cache, so the record is already the one the backup
+    // holds. Applied is the exact state this offer exists for, and Unknown is
+    // no evidence at all - an unreadable hive, a record in a shape this reader
+    // does not parse - so both of those still run the script and let it decide
+    // with its own eyes. Refusing to run on Unknown would turn "I cannot tell"
+    // into "you cannot have it".
+    internal static bool SkipsKeyboardSdpRestore(SdpPatchState state) =>
+        state == SdpPatchState.NotApplied;
+
+    // A separate file name from the patch run's, so a restore is never read
+    // back later as a patch. Same reason for the directory as the patch log:
+    // it goes in the TRAY's profile, because a UAC prompt answered with a
+    // different administrator account has a different %APPDATA%.
+    internal static string NewKeyboardRestoreLogPath() => Path.Combine(
+        Logger.LogDir,
+        $"kbd-restore-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+
+    // States what runs, what it puts back, what the user loses by it, that it
+    // needs one administrator approval, and that Cancel aborts.
+    internal static string KeyboardSdpRestorePrompt(string mac) =>
+        $"This runs {DriverPackageCatalog.KeyboardPatchScriptPath} -Mac {mac} -Restore for this " +
+        "Magic Keyboard. It puts the keyboard's original Bluetooth record back from the backup " +
+        "the battery unlock saved before it wrote. The battery percent stops working as a " +
+        "result - that is what this undoes. It needs one administrator approval and changes " +
+        "nothing else.\n\n" +
+        "OK continues. Cancel aborts.";
+
+    internal static string KeyboardSdpRestoreNothingToUndoMessage() =>
+        "This keyboard's Bluetooth record does not carry the battery unlock, so there is nothing "
+        + "to undo and nothing was run. The record is already the one Windows paired with.\n\n"
+        + "If the percent is still showing, turn Bluetooth off and on again - Windows re-reads "
+        + "the record only when the radio cycles, and it may still be holding the old one.";
+
+    internal static string KeyboardSdpRestoreDoneMessage() =>
+        "This keyboard's original Bluetooth record is back in place, from the backup the unlock "
+        + "saved. One step is left: turn Bluetooth off and on again, because Windows only "
+        + "re-reads that record when the radio cycles. The battery percent then stops being "
+        + "reported.\n\n"
+        + "Running the battery fix again later puts the unlock back.";
+
+    // The script's own last lines, not a guess at what an exit code meant. The
+    // tail is included because the elevated console is hidden, so this dialog
+    // and debug.log are the only places its words can appear.
+    internal static string KeyboardSdpRestoreFailureMessage(int exitCode, string logPath, string? logTail)
+    {
+        var head = exitCode switch
+        {
+            KeyboardPatchExitNoRecord =>
+                "No backup of this keyboard's original Bluetooth record was found, so nothing "
+                + "was read and nothing was changed. Backups are only written by the battery "
+                + "unlock itself, and they live in the log's own directory.",
+            KeyboardPatchExitNotPatched =>
+                "Nothing in this keyboard's Bluetooth cache could be put back, so nothing was "
+                + "changed. The log below says what blocked each record.",
+            KeyboardPatchExitPartial =>
+                "Part of this keyboard's Bluetooth cache is back to its original record, but at "
+                + "least one record was blocked. Turn Bluetooth off and on again to see what "
+                + "Windows reports now, and please report the blocked record and the log below.",
+            // An exit code this app does not name includes PowerShell's own 1,
+            // which can land before the registry was opened at all or after one
+            // record has already been written back.
+            _ =>
+                $"The undo stopped with exit code {exitCode} before it could report what it did. "
+                + "Part of this keyboard's Bluetooth cache may already be back to its original "
+                + "record. The bytes it replaced are themselves backed up in the log's own "
+                + "directory, so nothing it read is lost.",
+        };
+
+        var text = head + $"\n\nLog: {logPath}";
+        text += string.IsNullOrWhiteSpace(logTail)
+            ? "\n\nThe run left no readable log at that path, which is itself worth reporting."
+            : $"\n\n{logTail}";
+        return text;
+    }
 
     internal static async Task<string> DownloadV3DefaultBranchAsync(CancellationToken ct)
     {
