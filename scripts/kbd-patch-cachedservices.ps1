@@ -45,10 +45,12 @@
 #   3  nothing could be unlocked: every candidate record was blocked, or no
 #      record could be examined at all (an unreadable cache subkey). The log
 #      says which, per record.
-#   4  PARTIAL: at least one record carries the unlock (patched here or already
-#      present) AND at least one other was blocked. The unlocked records are
-#      real and need a Bluetooth toggle; the blocked ones are untouched and the
-#      log holds their bytes. A -DryRun that reaches this wrote nothing.
+#   4  PARTIAL: at least one record carries the unlock - inserted by this run,
+#      already present, or, under -DryRun, computed and saved beside the log -
+#      AND at least one other record, or a whole cache subkey, was blocked.
+#      Outside -DryRun the unlocked records are real and need a Bluetooth
+#      toggle; the blocked ones are untouched and the log holds their bytes. A
+#      -DryRun that reaches this wrote nothing.
 
 [CmdletBinding()]
 param(
@@ -72,7 +74,10 @@ $ErrorActionPreference = 'Stop'
 # it: one directory holds this run's transcript, the backup-*.bin originals and
 # any -DryRun patched-*.bin. Nothing here depends on -Mac, and the run most
 # worth reading is the one that rejected its own arguments.
-$stamp = Get-Date -Format yyyyMMdd-HHmmss
+# Unique per run, not per second: two runs started inside the same second must
+# not name one backup file, or the second would overwrite the originals the
+# first saved. A PID cannot be shared by two live processes.
+$stamp = '{0}-{1}' -f (Get-Date -Format yyyyMMdd-HHmmss), $PID
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     $defaultDir = if ($env:APPDATA) {
         Join-Path $env:APPDATA 'MagicMouseTray'
@@ -98,12 +103,25 @@ try {
 # this script, so every line goes to the log too. A log that cannot be written
 # must never be the reason a keyboard stays unpatched: the first failure is
 # remembered, reported once at the end, and not retried per line.
+#
+# CWE-532: four messages below tell the user to paste this log into a public
+# issue tracker, so the two identifiers it carries - the keyboard's address and
+# the Windows account name in every path beside the log - are redacted here, at
+# the one sink every line passes through. The rules and the `<mac>`/`<user>`
+# tokens are MagicMouseTray/Logger.cs's, so the same address redacted at either
+# sink is the same string; only the shapes this script can write are ported,
+# and each is anchored on a delimiter an address carries but a hex dump does
+# not. The console copy is the operator's own screen and keeps the address, so
+# that "check the -Mac value" can be acted on.
 function Write-Step {
     param([string]$Text)
     Write-Host $Text
     if ($script:logFailure) { return }
+    $line = $Text -replace '\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', '<mac>'
+    $line = $line -replace '(?<=\bmac=|\\Devices\\)[0-9A-Fa-f]{12}', '<mac>'
+    $line = $line -replace '(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)', '<user>'
     try {
-        Add-Content -LiteralPath $LogPath -Value $Text
+        Add-Content -LiteralPath $LogPath -Value $line
     } catch {
         $script:logFailure = $_.Exception.Message
     }
@@ -113,6 +131,15 @@ function Write-Step {
 # such, with the reason, so no line ever points at a file that is not there.
 function Get-LogRef {
     if ($script:logFailure) { "NOT WRITTEN ($LogPath - $script:logFailure)" } else { $LogPath }
+}
+
+# A registry value name is not a file name: it may legally hold '\', '/' or
+# ':', so interpolating one into a backup path can steer the write out of
+# $backupDir entirely. Everything outside the safe set becomes '_'; the log
+# line beside it still names the record by its real name.
+function ConvertTo-FileNamePart {
+    param([string]$Name)
+    $Name -replace '[^0-9A-Za-z._-]', '_'
 }
 
 # -Mac is validated only now, with a log to fail into. The throw ends the run
@@ -314,7 +341,8 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
 
         # Backup first, and only for a record this run is about to change. A
         # record whose original cannot be saved is not one this run will touch.
-        $backup = Join-Path $backupDir "backup-$subkey-$($prop.Name)-$stamp.bin"
+        $namePart = ConvertTo-FileNamePart $prop.Name
+        $backup = Join-Path $backupDir "backup-$subkey-$namePart-$stamp.bin"
         try {
             [IO.File]::WriteAllBytes($backup, $val)
         } catch {
@@ -339,7 +367,7 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
         }
 
         if ($DryRun) {
-            $patchedFile = Join-Path $backupDir "patched-$subkey-$($prop.Name)-$stamp.bin"
+            $patchedFile = Join-Path $backupDir "patched-$subkey-$namePart-$stamp.bin"
             try {
                 [IO.File]::WriteAllBytes($patchedFile, $new)
             } catch {
@@ -374,11 +402,14 @@ Write-Step "Log: $logRef"
 # cache this script could not fix, and the caller has to be told both halves.
 $progress = $patched + $already + $wouldPatch
 
+# $blocked counts records and whole unreadable subkeys alike, and a subkey
+# holds an unknown number of records, so the messages below say how many things
+# were blocked without claiming they were all records.
 if ($blocked -gt 0 -and $progress -gt 0) {
     if ($DryRun) {
         Write-Step "DRY-RUN PARTIAL. $wouldPatch record(s) would be patched and $already already carry the unlock, but $blocked could not be patched. Nothing was written to the registry by this run. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
     } else {
-        Write-Step "PARTIAL. $patched record(s) patched and $already already carried the unlock, but $blocked record(s) could not be patched. The records that now carry the unlock are real - toggle BT off/on for hidbth to re-read CachedServices - and the blocked ones were left exactly as they were. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
+        Write-Step "PARTIAL. $patched record(s) patched and $already already carried the unlock, but $blocked could not be patched. The records that now carry the unlock are real - toggle BT off/on for hidbth to re-read CachedServices - and the blocked ones were left exactly as they were. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
     }
     exit 4
 }

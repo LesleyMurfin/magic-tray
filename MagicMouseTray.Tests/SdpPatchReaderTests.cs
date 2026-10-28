@@ -16,6 +16,9 @@ namespace MagicMouseTray.Tests;
 // of that half which is machine-independent: garbage or absent input is Unknown
 // and never an exception, because a caller drawing a menu row must never be
 // handed a throw for a device it merely cannot identify.
+//
+// The hive enumeration itself stays out: what it feeds is CacheVerdict, and
+// both that rule and the per-record verdicts it counts are pinned below.
 public class SdpPatchReaderTests
 {
     // HKLM\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices
@@ -408,6 +411,22 @@ public class SdpPatchReaderTests
     public void AbsentPidIsUnknown(string? pid)
     {
         Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.ForPid(pid));
+    }
+
+    // A cache is Applied only when no candidate record is still stock. The mix
+    // matters: one patched record and one stock record is what a re-pair that
+    // rewrote a single subkey leaves behind, and one idempotent re-run of the
+    // script finishes it - so the verdict that gates that run must not call it
+    // done. Unknown-shaped records reach neither count.
+    [Theory]
+    [InlineData(2, 0, SdpPatchState.Applied)]
+    [InlineData(1, 1, SdpPatchState.NotApplied)]
+    [InlineData(0, 2, SdpPatchState.NotApplied)]
+    [InlineData(0, 0, SdpPatchState.Unknown)]
+    public void AStockRecordAnywhereInTheCacheOutranksAPatchedOne(
+        int patched, int stock, SdpPatchState expected)
+    {
+        Assert.Equal(expected, SdpPatchReader.CacheVerdict(patched, stock));
     }
 
     // No BTHENUM parent can match this, on any machine, so the answer is

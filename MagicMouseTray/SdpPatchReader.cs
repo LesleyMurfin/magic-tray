@@ -53,10 +53,12 @@ namespace MagicMouseTray;
 // carries RID 0x47.
 internal enum SdpPatchState
 {
-    // A candidate record (one carrying RID 0x47) contains the insertion marker.
+    // A candidate record (one carrying RID 0x47) contains the insertion marker;
+    // for a whole cache, every candidate record does.
     Applied,
 
-    // A candidate record carries the untouched COL02 close and no marker.
+    // A candidate record carries the untouched COL02 close and no marker; for a
+    // whole cache, at least one does and there is still work for the script.
     NotApplied,
 
     // No MAC, no readable subtree, no candidate record, or a candidate record
@@ -157,15 +159,8 @@ internal static class SdpPatchReader
         return anyStockClose ? SdpPatchState.NotApplied : SdpPatchState.Unknown;
     }
 
-    // Registry half. Never writes, never needs elevation, never throws.
-    //
-    // Both cache subkeys vote and a single Applied wins, which is what the
-    // script's own loop implies - it patches every RID-0x47 record it finds in
-    // both subkeys, so a record still carrying the marker means the insertion is
-    // present in the cache hidbth reparses on the next BT toggle. A mixed
-    // outcome (one patched, one stock - possible after a re-pair rewrites only
-    // one cache) still reports Applied, and the log line prints both counts so
-    // the mix is visible rather than silently folded away.
+    // Registry half. Never writes, never needs elevation, never throws. Both
+    // cache subkeys are enumerated into the two counts CacheVerdict decides on.
     internal static SdpPatchState ForMac(string? mac)
     {
         var normalized = NormalizeMac(mac);
@@ -223,13 +218,28 @@ internal static class SdpPatchReader
             return SdpPatchState.Unknown;
         }
 
-        var verdict = patched > 0 ? SdpPatchState.Applied
-            : stock > 0 ? SdpPatchState.NotApplied
-            : SdpPatchState.Unknown;
+        var verdict = CacheVerdict(patched, stock);
 
         Log(normalized, verdict, candidates, patched, stock, markerOffset);
         return verdict;
     }
+
+    // The per-cache rule, the opposite of the precedence Classify uses inside a
+    // single blob: there a marker wins, because `09 20 b1 02` beside RID 0x47
+    // has exactly one writer while `81 02 c0 c0` is an ordinary close any other
+    // collection may repeat. Across records a stock one wins instead - it is a
+    // battery collection the script would patch, and the script patches every
+    // candidate record in both subkeys, so while one remains the cache is
+    // unfinished. This verdict gates an action: OfferKeyboardSdpPatch declines
+    // to run at all on Applied, so a mixed cache - what a re-pair that rewrites
+    // only one subkey leaves behind - would otherwise be told "already applied"
+    // and never completed, though one idempotent re-run would finish it.
+    // Records Classify calls Unknown are not candidates and are not counted
+    // here; the script would not patch them either.
+    internal static SdpPatchState CacheVerdict(int patched, int stock) =>
+        stock > 0 ? SdpPatchState.NotApplied
+        : patched > 0 ? SdpPatchState.Applied
+        : SdpPatchState.Unknown;
 
     // Resolves the MAC from the live BTHENUM instance for this PID, then asks
     // ForMac. The MAC lives in the instance-id tail
@@ -331,7 +341,8 @@ internal static class SdpPatchReader
 
     // One line per query, the shape DeviceStackReader.cs:94-95 established.
     // values = candidate records only (blobs carrying RID 0x47); the patched/
-    // stock split is printed so a mixed cache is visible in the log.
+    // stock split is printed because a NotApplied verdict with patched>0 is the
+    // half-done cache, and the counts are the only place that shows it.
     static void Log(string mac, SdpPatchState state, int values, int patched, int stock, int markerOffset)
     {
         Logger.Log($"SDP_PATCH mac={mac} state={Describe(state)} values={values} "

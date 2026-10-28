@@ -455,12 +455,12 @@ internal static class DriverAdvisor
     // Battery is a SEPARATE story from the driver on both kinds, and the two
     // kinds do not share it:
     //   keyboard - the percent needs this repo's one-time patch of the
-    //     Bluetooth SDP cache (scripts/kbd-patch-cachedservices.ps1:37-38,
-    //     :129 insert 09 20 B1 02 where a stock record carries 81 02 C0 C0),
-    //     NOT a driver. KeyboardBatteryDevice.GetBatteryPercent returns -2
-    //     until it is applied. SdpPatchReader now reads back whether it
-    //     landed, so applied / not applied / could not check are three
-    //     different sentences below, and Unknown NEVER implies missing.
+    //     Bluetooth SDP cache (Edit-Blob in kbd-patch-cachedservices.ps1
+    //     inserts 09 20 B1 02 where a stock record carries 81 02 C0 C0), NOT
+    //     a driver. KeyboardBatteryDevice.GetBatteryPercent returns -2 until
+    //     it is applied. SdpPatchReader now reads back whether it landed, so
+    //     applied / not applied / could not check are three different
+    //     sentences below, and Unknown NEVER implies missing.
     //   trackpad - no patch at all; see TrackpadBatterySentence.
     internal static string? StockDriverLine(
         DeviceKind kind, string? pid, StockDriverInfo? info, SdpPatchState? sdp)
