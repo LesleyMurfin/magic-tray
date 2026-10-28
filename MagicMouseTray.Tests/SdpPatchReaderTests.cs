@@ -418,15 +418,13 @@ public class SdpPatchReaderTests
     // rewrote a single subkey leaves behind, and one idempotent re-run of the
     // script finishes it - so the verdict that gates that run must not call it
     // done. Unknown-shaped records reach neither count.
-    [Theory]
-    [InlineData(2, 0, SdpPatchState.Applied)]
-    [InlineData(1, 1, SdpPatchState.NotApplied)]
-    [InlineData(0, 2, SdpPatchState.NotApplied)]
-    [InlineData(0, 0, SdpPatchState.Unknown)]
-    public void AStockRecordAnywhereInTheCacheOutranksAPatchedOne(
-        int patched, int stock, SdpPatchState expected)
+    [Fact]
+    public void AStockRecordAnywhereInTheCacheOutranksAPatchedOne()
     {
-        Assert.Equal(expected, SdpPatchReader.CacheVerdict(patched, stock));
+        Assert.Equal(SdpPatchState.Applied, SdpPatchReader.CacheVerdict(patched: 2, stock: 0));
+        Assert.Equal(SdpPatchState.NotApplied, SdpPatchReader.CacheVerdict(patched: 1, stock: 1));
+        Assert.Equal(SdpPatchState.NotApplied, SdpPatchReader.CacheVerdict(patched: 0, stock: 2));
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.CacheVerdict(patched: 0, stock: 0));
     }
 
     // No BTHENUM parent can match this, on any machine, so the answer is
