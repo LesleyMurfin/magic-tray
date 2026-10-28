@@ -702,15 +702,24 @@ internal static class TrayMenu
     internal const string CommandRepairApply = "repair-apply";
     internal const string CommandStaleFilterRemoval = "stale-filter-removal";
 
-    // How long each tray command can really block for, and therefore whether
-    // it is allowed to run on the UI thread. The handlers are built from these
-    // entries the same way the consent dialogs are built from
-    // MutatingCommands: the click looks its command up, and the entry decides
-    // whether the work goes to a worker thread.
+    // How long each of the tray's action commands can really block for, and
+    // therefore whether it is allowed to run on the UI thread. These thirteen
+    // are the commands a click launches work from; a menu item that only
+    // reads state is not one of them and is not described here - Diagnostics
+    // -> Check for problems now runs RefreshFindings inline, and both repair
+    // clicks take their own pre-flight snapshot before they reach this table.
+    // That is how they behaved before this table existed and the table does
+    // not change it. The handlers are built from these entries the same way
+    // the consent dialogs are built from MutatingCommands: the click looks
+    // its command up, and the entry decides whether the work goes to a worker
+    // thread.
     //
-    // The ceilings are not opinions. Every one of them is the wait the
-    // production code performs, read from the constant that performs it, so an
-    // entry cannot drift away from the loop it describes. The two Boot Camp
+    // The ceilings are read from the constants the poll loops actually wait
+    // on, never retyped here, so a budget that moves moves in one place. They
+    // bound the waiting, not the whole click: a consent dialog the user has
+    // not answered, a zip extraction and a UAC prompt all sit outside them.
+    // What the table decides is the one thing it can decide safely - whether
+    // the command may stay on the pump at all. The two Boot Camp
     // items are here precisely because they block on nothing - they open a
     // documented page and return - so a zero ceiling is a real state and not
     // a predicate that answers "no" to everything.
@@ -828,10 +837,11 @@ internal static class TrayMenu
     // this window too.
     internal const string ElevatedCommandBusy =
         "Magic Tray is still busy with another command that needs administrator rights, and "
-        + "two of them cannot run at the same time: they share one driver download folder and "
-        + "one device.\n\nLet the first one finish - close any message it has left open, and "
-        + "allow several minutes for a driver install - then try again. Nothing was changed by "
-        + "this click.";
+        + "it runs them one at a time: a second one would ask you to approve a second "
+        + "administrator step while the first is still working - and where the two use the "
+        + "same driver download folder or the same device, it would also undo it.\n\nLet the "
+        + "first one finish - close any message it has left open, and allow several minutes "
+        + "for a driver install - then try again. Nothing was changed by this click.";
 
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
@@ -2729,12 +2739,12 @@ internal sealed class TrayApp : IDisposable
         Logger.Log($"MODE_FLIP_UI outcome={result.Outcome} percent={result.Percent} "
             + $"restored={result.RestoredToModeB} detail={result.Detail}");
 
-        // Null once the WPF host has shut down: a normal exit race, and the
-        // verbatim outcome is already in the log above either way.
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null)
-            return;
-        dispatcher.Invoke(() =>
+        // The one seam, and the same drop this used to spell out for itself:
+        // Application.Current is null once the WPF host has shut down, a
+        // normal exit race, and the verbatim outcome is already in the log
+        // above either way. This is called from inside a marshal hop, so the
+        // Invoke behind it runs the body inline rather than queueing it.
+        UiDispatch.ToUiThread(() =>
         {
             // A real percent enters by the same door a poll read uses, so the
             // tooltip, the device row and this dialog cannot state different
@@ -2761,6 +2771,10 @@ internal sealed class TrayApp : IDisposable
     // modal there would hold the tray icon off the screen until somebody
     // answered it. InvokeAsync from the dispatcher's own thread posts the work
     // and returns, so the ctor finishes and the icon appears first.
+    //
+    // Which is why it is not UiDispatch.ToUiThread: that hop is a blocking
+    // Invoke, and a blocking Invoke from the dispatcher's own thread would
+    // run this modal inline and be the very stall this is written to avoid.
     void OfferStaleModeARestore()
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
@@ -3156,7 +3170,10 @@ internal sealed class TrayApp : IDisposable
     //
     // Both readings cross together because they are read together: the
     // configuration section and the device rows are repainted from the one
-    // trip the refresh already pays for.
+    // trip the refresh already pays for. Not UiDispatch.ToUiThread for the
+    // same reason as the startup offer: this is a repaint the poller posts
+    // and walks away from, and the seam's Invoke would hold the poll thread
+    // until the pump got to it.
     void PublishConfigFacts(
         IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock)
     {

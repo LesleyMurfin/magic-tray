@@ -18,6 +18,11 @@ namespace MagicMouseTray;
 // corruption at worst. So both halves are this one seam: the work runs off
 // the pump, the result is reported on it, and a caller cannot write it the
 // other way round by forgetting.
+//
+// "Blocking" is the whole of the claim. Two places post work to the pump and
+// walk away instead - TrayApp.OfferStaleModeARestore and
+// TrayApp.PublishConfigFacts, both dispatcher.InvokeAsync - and they are not
+// this seam because this seam blocks: each says so at its own site.
 internal static class UiDispatch
 {
     // The production marshal - this is what is handed to RunThenReport below,
@@ -53,15 +58,18 @@ internal static class UiDispatch
             // take the hop, and the window the report needed is going away
             // with it. Anything else the callback throws is a bug in the
             // report itself and belongs to App's DispatcherUnhandledException,
-            // not to one log line and a stale menu.
+            // which logs it and marks it handled (App.xaml.cs:40-44) - the
+            // same one line and the same stale menu, but written where report
+            // bugs are handled rather than swallowed by this seam.
             Logger.Log($"UI_HOP_FAIL err={ex.Message}");
         }
     }
 
     // Same hop for the answers a worker has to wait for - a consent dialog is
-    // a window, and a window belongs on the thread that runs the pump. Nothing
-    // is swallowed here: a caller that cannot ask the user must not carry on
-    // as though it had.
+    // a window, and a window belongs on the thread that runs the pump. With
+    // no dispatcher nothing is swallowed: a caller that cannot ask the user
+    // must not carry on as though it had. Once the hop is taken, an exception
+    // out of the callback is App's to handle, exactly as above.
     internal static T ToUiThread<T>(Func<T> func)
     {
         ArgumentNullException.ThrowIfNull(func);
@@ -77,7 +85,22 @@ internal static class UiDispatch
             throw new InvalidOperationException(
                 "Magic Tray is shutting down, so it cannot ask this question.");
         }
-        return dispatcher.Invoke(func);
+        try
+        {
+            return dispatcher.Invoke(func);
+        }
+        catch (InvalidOperationException ex)
+            when (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            // The same state as the branch above, reached a few instructions
+            // later: the dispatcher began shutting down between the null
+            // check and the Invoke. The caller is told the same way - the
+            // throw is rethrown, not converted into an answer - but it is
+            // logged under its own reason, because a refusal this seam chose
+            // and a race it lost read identically in the log otherwise.
+            Logger.Log($"UI_HOP_REFUSED reason=shutdown-race err={ex.Message}");
+            throw;
+        }
     }
 
     /// <summary>

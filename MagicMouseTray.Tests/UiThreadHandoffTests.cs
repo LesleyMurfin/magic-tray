@@ -190,4 +190,43 @@ public class UiThreadHandoffTests
 
         Assert.Equal(0, ui.Hops);
     }
+
+    // The two below are the only tests in this change whose red state is an
+    // assertion rather than a missing symbol: revert UiDispatch's
+    // no-dispatcher branch to running the callback inline - the exact defect
+    // the previous review reported - and the first one fails while everything
+    // else in the repository stays green.
+    //
+    // They need no setup. The test assembly never constructs a WPF
+    // Application, so Application.Current is null for the whole run and the
+    // branch is reached directly.
+    [Fact]
+    public void ToUiThread_WithNoDispatcher_DropsTheReportInsteadOfRunningItOnTheWorker()
+    {
+        // The window between the WPF host shutting down and the process
+        // exiting - and this test host. What the hop carries is a modal, a
+        // tray-icon repaint or a menu rebuild, so there is no thread left
+        // that may legally run it.
+        Assert.Null(System.Windows.Application.Current);
+
+        var ran = false;
+        UiDispatch.ToUiThread(() => { ran = true; });
+
+        Assert.False(ran, "the report ran on the calling thread instead of being dropped");
+    }
+
+    [Fact]
+    public void ToUiThread_WithNoDispatcher_RefusesAnAnswerRatherThanGivingOneForTheUser()
+    {
+        // An answer cannot be dropped the way a report can: returning a
+        // default DialogResult would consent on the user's behalf, and
+        // raising the window here would put a modal on a worker thread.
+        Assert.Null(System.Windows.Application.Current);
+
+        var refused = Assert.Throws<InvalidOperationException>(() =>
+        {
+            _ = UiDispatch.ToUiThread(() => System.Windows.Forms.DialogResult.OK);
+        });
+        Assert.Contains("shutting down", refused.Message, StringComparison.Ordinal);
+    }
 }

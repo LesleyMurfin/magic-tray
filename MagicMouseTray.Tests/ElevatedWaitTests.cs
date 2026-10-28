@@ -202,4 +202,30 @@ public class ElevatedWaitTests
         Assert.Contains("UAC", declined.Detail, StringComparison.OrdinalIgnoreCase);
         Assert.NotEqual(started.Detail, declined.Detail);
     }
+
+    [Fact]
+    public void RepairSidecarWait_TheSettleWindowIsMeasuredFromTheExit_NotFromTheStartOfTheWait()
+    {
+        // DeviceRepair runs the same pattern against its own ceiling, and it
+        // kept the semantics corrected above: a launcher first seen gone at
+        // the forty-second mark was "gone without a report" on its very first
+        // pass, spending none of the grace a lagging Set-Content needs.
+        Assert.False(DeviceRepair.GoneWithoutAReport(reportSeen: false, sinceExit: TimeSpan.Zero));
+        Assert.False(DeviceRepair.GoneWithoutAReport(
+            reportSeen: false,
+            sinceExit: DeviceRepair.SidecarSettle - TimeSpan.FromMilliseconds(1)));
+        Assert.True(DeviceRepair.GoneWithoutAReport(
+            reportSeen: false, sinceExit: DeviceRepair.SidecarSettle));
+
+        // Still running: no exit to age, so nothing is concluded from it.
+        Assert.False(DeviceRepair.GoneWithoutAReport(reportSeen: false, sinceExit: null));
+
+        // A report that was read wins however long the launcher has been
+        // gone - the precedence NextWaitStep keeps, kept here too.
+        Assert.False(DeviceRepair.GoneWithoutAReport(
+            reportSeen: true, sinceExit: TimeSpan.FromMinutes(10)));
+
+        // One grace window, one number, both files.
+        Assert.Equal(DeviceEnable.ElevatedWaitSettle, DeviceRepair.SidecarSettle);
+    }
 }
