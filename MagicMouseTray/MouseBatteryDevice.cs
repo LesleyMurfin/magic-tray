@@ -51,6 +51,13 @@
 // in config.ini (BatteryChannelMemory, one battery call per poll from then on), and
 // throws that memory away the moment it stops working - which is what makes a Boot Camp to
 // Stock driver switch self-healing without the user doing anything.
+//
+// A well-formed 0x90 report whose percent byte is 0 now answers -2 where the pre-fix code
+// answered -1. That is user-visible: DeviceCapability renders -1 as "No reading" and -2 as
+// "Battery unavailable (Windows sends no report)". The device DID answer, so -1 - "nothing
+// came back" - is the one claim the tray may not make about it; -2 says what actually
+// happened. The case this reaches is the just-charged cable phantom of DeviceRegistry.cs:27-30,
+// which answers HidD_GetInputReport with a zero percent byte.
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -179,11 +186,18 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 if (pct >= MinValidPercent)
                 {
                     _preferred = idx;
+                    BatteryChannelMemory.ClearFailedReads(Pid);
                     return pct;
                 }
-                // Do not keep failing silently on a stale answer: forget it and fall through
-                // to the full probe walk on THIS read, so one poll both notices the change
-                // and finds the new channel. The next success writes the new answer.
+                // Three consecutive failures before the answer is dropped, the same threshold
+                // AdaptivePoller uses before it collapses a device to -3: one failed read is a
+                // Bluetooth mouse that has gone idle, not a driver change, and forgetting on it
+                // makes an idle mouse thrash learn - forget - relearn every poll.
+                if (!BatteryChannelMemory.CountFailedRead(Pid))
+                    return pct;
+                // Third strike: forget and fall through to the full probe walk on THIS read, so
+                // one poll both notices the change and finds the new channel. The next success
+                // writes the new answer.
                 BatteryChannelMemory.Forget(Pid, answer,
                     pct == -2 ? "answered_unusable" : "read_failed");
             }
@@ -637,6 +651,47 @@ internal static class BatteryChannelMemory
             Logger.Log($"MOUSE_CHANNEL_LEARNED pid={pid} col={answer.Collection} channel={answer.Channel} rid=0x{answer.ReportId:X2}");
     }
 
+    // Three consecutive failures before a learned answer is dropped - the same threshold
+    // AdaptivePoller.cs:156-160 uses before it collapses a device to -3.
+    internal const int ForgetAfterFailures = 3;
+
+    // The streak lives beside the learned answer and not on a MouseBatteryDevice for the same
+    // reason the answer does: DeviceRegistry.Discover rebuilds every device object each poll,
+    // so an instance counter would read 1 forever and nothing would ever be forgotten. Keyed
+    // the way Config._batteryChannel is (Config.cs:117) - DeviceRegistry.ExtractPid takes the
+    // PID off whichever path discovery ordered first, and the USB and Bluetooth path forms
+    // disagree on case. Written from the poll thread, and a read-modify-write needs the lock
+    // Config uses for _batteryChannel; a Volatile read would not make it atomic.
+    static readonly object _failGate = new();
+    static readonly Dictionary<string, int> _failedReads = new(StringComparer.OrdinalIgnoreCase);
+
+    // Records ONE failed read of this PID's remembered channel; true means the caller must now
+    // forget it. The count resets as it reports the limit, so the answer that replaces this one
+    // starts with its own three strikes instead of inheriting a full count.
+    internal static bool CountFailedRead(string pid)
+    {
+        lock (_failGate)
+        {
+            _failedReads.TryGetValue(pid, out int fails);
+            if (++fails < ForgetAfterFailures)
+            {
+                _failedReads[pid] = fails;
+                return false;
+            }
+            // Remove rather than zero: a PID that stops failing must not be left in this
+            // dictionary for the life of the process.
+            _failedReads.Remove(pid);
+            return true;
+        }
+    }
+
+    // Consecutive, not cumulative: one good read drops the streak. A mouse that misses a read
+    // every few hours must never accumulate its way to a relearn while the channel still works.
+    internal static void ClearFailedReads(string pid)
+    {
+        lock (_failGate) _failedReads.Remove(pid);
+    }
+
     // The remembered answer stopped working. Log what it was and why it is being dropped, then
     // drop it: the caller re-probes on the same read and the next success stores the new
     // answer, so a driver switch shows up in the log as relearn then learn.
@@ -644,5 +699,8 @@ internal static class BatteryChannelMemory
     {
         Logger.Log($"MOUSE_RELEARN pid={pid} was={was.Collection}:{was.Channel} reason={reason}");
         Volatile.Read(ref _sink)?.ClearBatteryChannel(pid);
+        // The strikes were counted against the answer being dropped, so they go with it: a
+        // structural forget must not hand inherited strikes to the answer that replaces it.
+        ClearFailedReads(pid);
     }
 }

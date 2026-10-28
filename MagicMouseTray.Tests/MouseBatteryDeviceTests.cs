@@ -447,4 +447,78 @@ public class MouseBatteryDeviceTests
         BatteryChannelMemory.Learn("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
         Assert.Null(BatteryChannelMemory.Get("0269"));
     }
+
+    // Issue #124 / #164 follow-up, nit N3. A Bluetooth mouse that has just gone idle fails a
+    // single read as a matter of course - that is why TryInput90 already retries three times
+    // 50 ms apart - so forgetting the learned channel on the first failure makes an idle mouse
+    // thrash learn -> forget -> relearn: two config.ini rewrites and four log lines per poll,
+    // and MOUSE_RELEARN stops meaning "the driver changed". Three consecutive failures is the
+    // threshold AdaptivePoller already uses before it collapses a device to -3.
+    //
+    // The streak store is process-wide and keyed on PID (a MouseBatteryDevice is rebuilt by
+    // DeviceRegistry.Discover on every poll, so nothing counted in an instance field survives
+    // to the next read), so each test here uses a PID of its own.
+    [Fact]
+    public void FailedRead_KeepsTheLearnedChannelTwice_AndForgetsOnTheThird()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa01"));
+
+        // The count resets as it reports the limit, so the NEXT learned answer gets its own
+        // three strikes rather than being dropped on its first bad read.
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa01"));
+    }
+
+    // Consecutive, not cumulative: a mouse that misses a read every few hours over months must
+    // never accumulate its way to a relearn while the channel is still answering.
+    [Fact]
+    public void SuccessfulRead_ResetsTheFailureStreak()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+
+        BatteryChannelMemory.ClearFailedReads("fa02");
+
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa02"));
+    }
+
+    // One streak per device: a user with a Magic Mouse and a Magic Trackpad, one of them idle,
+    // must not have the idle one's failures spend the other's strikes. PID case follows
+    // Config's OrdinalIgnoreCase channel store - DeviceRegistry.ExtractPid takes the PID off
+    // whichever path discovery ordered first, and USB and Bluetooth paths do not agree on case.
+    [Fact]
+    public void FailureStreaks_AreCountedPerDevice_CaseInsensitively()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fb03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("FA03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fb03"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa03"));
+
+        // The other device is still on two of three.
+        Assert.True(BatteryChannelMemory.CountFailedRead("FB03"));
+    }
+
+    // collection_absent is structural, not transient: the remembered collection is not among
+    // this mouse's interfaces any more (the 0323 loses &col02 when Apple's filter is bound), so
+    // that path forgets on the spot. Any half-counted streak has to go with the answer it was
+    // counted against, or the relearned channel inherits strikes it never earned.
+    [Fact]
+    public void Forget_ClearsTheFailureStreak()
+    {
+        var answer = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+
+        BatteryChannelMemory.Forget("fa04", answer, "collection_absent");
+
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa04"));
+    }
 }
