@@ -164,7 +164,7 @@ internal static class Logger
     // redacted for a PUBLIC issue still correlate.
     //
     // CWE-532. Driver and device work logs absolute script paths -
-    // DRIVER_SDP (DriverInstaller.cs:694), DRIVER_KMDF_ONECLICK (:403),
+    // DRIVER_SDP (DriverInstaller.cs:720), DRIVER_KMDF_ONECLICK (:403),
     // DRIVER_PATHA_ONECLICK (:482), DRIVER_STOCK_UNBIND (:575, :587) - and
     // every elevated script and status sidecar is created under
     // Path.GetTempPath() (DeviceEnable.ScriptPath:155, DeviceRepair.cs:644,

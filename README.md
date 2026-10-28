@@ -204,11 +204,12 @@ Reports so far: [docs/TESTED.md](docs/TESTED.md). Which trackpad is yours: [Whic
 Your keyboard keeps the standard Windows Bluetooth driver. There's no Apple software to install, and no Windows startup setting to change. One unlock turns the percent on.
 
 - In the tray, open your keyboard and click **Fix battery reads**. Magic Tray finds the keyboard's Bluetooth address on its own, asks your permission, then runs the unlock.
-- Prefer to run it yourself? Every release ships `Install-KeyboardBattery.cmd`. Right-click it and pick **Run as administrator**.
+- Prefer to run it yourself? Every release ships `Install-KeyboardBattery.cmd`, but it needs the keyboard's Bluetooth address: right-clicking it and picking **Run as administrator** passes no address, so it only prints its usage and stops. Open an **administrator** Command Prompt in the folder you downloaded it to and run `Install-KeyboardBattery.cmd -Mac aabbccddeeff`, with your keyboard's own address in place of `aabbccddeeff`. Device Manager → Bluetooth → your keyboard → Details → **Bluetooth device address** (12 hex digits; colons are optional).
 - **Turn Bluetooth off and on again.** This step is required: Windows only re-reads the keyboard's cached record when it reconnects, so the percent stays blocked until you do it (unplugging and re-pairing is not needed - switching the keyboard off and on again works too).
 - Running **Fix battery reads** again is safe. A keyboard that already carries the unlock is reported as already done and nothing is written, so a second run can't break anything.
 - Re-pairing the keyboard erases the unlock. Run **Fix battery reads** once more. Until you do, the tray lists the keyboard and shows the battery as blocked.
-- Every run writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`. If the unlock won't apply, attach that file to your bug report - it holds the reason.
+- Every run writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log` (`%TEMP%\MagicMouseTray\` instead, on the rare PC where `%APPDATA%` isn't set). If the unlock won't apply, attach that file to your bug report - it holds the reason.
+- Before a record is changed, its original bytes are saved next to that log as `backup-<subkey>-<name>-<stamp>.bin`. Nothing else on the PC is touched.
 
 Full page, including what the unlock changes: [Keyboard battery](https://magictray.app/keyboard.html#unlock).
 

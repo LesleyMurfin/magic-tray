@@ -695,7 +695,7 @@ foreach ($id in $restart) {
         // Unavailable, not Failed: the unpatched record this offer needs is
         // not on this machine. Nothing ran, nothing is wrong, and the user is
         // told what is actually left to do.
-        if (SdpPatchReader.ForMac(mac) == SdpPatchState.Applied)
+        if (SkipsKeyboardSdpPatch(SdpPatchReader.ForMac(mac)))
         {
             Logger.Log("DRIVER_SDP_SKIPPED reason=already-applied");
             ShowInfo(KeyboardSdpAlreadyAppliedMessage());
@@ -734,6 +734,12 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
+        // Every non-zero exit is Failed with the script's own words, exit 4
+        // (PARTIAL) included: a half-unlocked cache is the same shape of
+        // outcome as the half-finished Stock restore above, which is Failed
+        // plus a message naming the half that happened rather than Confirmed
+        // for the half that did. Confirmed here would put "the battery unlock
+        // ran" on a run that left a record behind.
         if (exitCode != 0)
         {
             Logger.Log($"DRIVER_SDP_FAILED exit={exitCode}");
@@ -746,11 +752,25 @@ foreach ($id in $restart) {
         return InstallOutcome.Confirmed;
     }
 
+    // Applied is the ONLY read-back meaning "there is nothing to do": the
+    // marker is in the cache, so running the script again would only confirm
+    // it. NotApplied is the exact state this offer exists for, and Unknown is
+    // no evidence at all - an unreadable hive, a record in a shape this reader
+    // does not parse - so both of those still run the script and let it decide
+    // with its own eyes. Refusing to run on Unknown would turn "I cannot tell"
+    // into "you cannot have it".
+    internal static bool SkipsKeyboardSdpPatch(SdpPatchState state) =>
+        state == SdpPatchState.Applied;
+
     // Exit codes kbd-patch-cachedservices.ps1 defines in its own header. 0 is
-    // "the cache carries the unlock" - newly inserted OR already there, which
-    // is why a second run is no longer an error anywhere in this path.
+    // "the cache carries the unlock and nothing was blocked" - newly inserted
+    // OR already there, which is why a second run is no longer an error
+    // anywhere in this path. 4 is the mixed run: at least one record carries
+    // the unlock AND at least one candidate record was blocked, which 0 used
+    // to swallow.
     internal const int KeyboardPatchExitNoRecord = 2;
     internal const int KeyboardPatchExitNotPatched = 3;
+    internal const int KeyboardPatchExitPartial = 4;
 
     // One log per run, named like the script's own default, in the TRAY's
     // %APPDATA% rather than the elevated process's: a UAC prompt answered with
@@ -791,9 +811,19 @@ foreach ($id in $restart) {
                 "This keyboard's Bluetooth record carries the battery report in a layout the "
                 + "unlock does not recognise, so nothing was changed. The log below has the "
                 + "bytes needed to add support for it.",
+            KeyboardPatchExitPartial =>
+                "Part of this keyboard's Bluetooth cache was unlocked, but at least one record "
+                + "was left untouched because its layout was not recognised. Turn Bluetooth off "
+                + "and on again (or switch the keyboard off and on) - the percent may already "
+                + "appear. If it does not, please report the untouched record and the log below.",
+            // Not "nothing was changed": an exit code this app does not name
+            // includes PowerShell's own 1 for a terminating error, which can
+            // land after one record has already been rewritten.
             _ =>
-                $"The battery unlock stopped with exit code {exitCode} and the registry was left "
-                + "as it was.",
+                $"The battery unlock stopped with exit code {exitCode} before it could report "
+                + "what it did. Part of this keyboard's Bluetooth cache may already carry the "
+                + "unlock, so this is not a run that left the registry as it was. The original "
+                + "bytes of every record it touched are backed up next to the log.",
         };
 
         var text = head + $"\n\nLog: {logPath}";

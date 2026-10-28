@@ -16,9 +16,11 @@ namespace MagicMouseTray;
 // and 0..100 once it is there. Until now nothing ever READ BACK whether the
 // patch landed, so the tray could only offer it, never report it.
 //
-// What the script does, byte for byte (kbd-patch-cachedservices.ps1:45-122):
+// What the script does, byte for byte (Edit-Blob in
+// kbd-patch-cachedservices.ps1):
 //   * finds the RID marker `85 47`;
-//   * finds the COL02 close `81 02 C0 C0` within the following 64 bytes;
+//   * finds the COL02 close `81 02 C0 C0` starting within the following 96
+//     bytes;
 //   * inserts `09 20 B1 02` BETWEEN the `81 02` and the `C0 C0`, i.e. at
 //     closeOffset + 2, and bumps four SDP length fields by 4.
 // So a patched record contains `09 20 B1 02` just after the RID and, at that
@@ -84,14 +86,22 @@ internal static class SdpPatchReader
     // End Collection bytes.
     static readonly byte[] StockClose = [0x81, 0x02, 0xC0, 0xC0];
 
-    // How far past `85 47` a marker still belongs to the COL02 battery
-    // collection. The script itself only searches closeOffset in
-    // [rid+2, rid+64) and then inserts at closeOffset+2, so anything the script
-    // could have written lands below rid+70; 96 is that bound with slack.
-    // Beyond the window the byte pair is some other collection's business and
-    // proves nothing about the battery report - deliberately Unknown, not a
-    // guess in either direction. Live delta is 281-258 = 23 bytes.
+    // How far past `85 47` a close still belongs to the COL02 battery
+    // collection. This is the script's own search window, verbatim: its
+    // Find-ByteSequence takes -End as the LAST CANDIDATE START INDEX and is
+    // called with rid+2+96, so the script will accept a close whose first byte
+    // is anywhere in [rid+2, rid+2+96]. Changing this number changes which
+    // records the reader and the script disagree about, so it is the shared
+    // constant and not a tunable. Beyond the window the byte pair is some
+    // other collection's business and proves nothing about the battery report
+    // - deliberately Unknown, not a guess in either direction. Live delta is
+    // 281-258 = 23 bytes.
     const int RidWindowBytes = 96;
+
+    // The script inserts the marker at closeOffset + 2 (between `81 02` and
+    // `C0 C0`), so the furthest marker the script can write starts two bytes
+    // past the furthest close it can accept.
+    const int MarkerOffsetFromClose = 2;
 
     // Shortest blob that could carry `85 47` plus a four-byte fingerprint.
     const int MinCandidateBytes = 6;
@@ -133,15 +143,28 @@ internal static class SdpPatchReader
                 continue;
             anyCandidate = true;
 
-            int windowEnd = Math.Min(record.Length, i + 2 + RidWindowBytes);
-            int at = IndexOf(record, PatchMarker, i + 2, windowEnd);
+            // Two bounds, not one, because two conventions meet here. IndexOf's
+            // `end` is EXCLUSIVE and bounds the END of the match, while the
+            // script's -End is the last candidate START index - so a needle of
+            // length n whose last legal start is s needs end = s + n. The close
+            // the script can accept starts at most at rid+2+96; the marker it
+            // can write starts at most two bytes further on, at
+            // rid+2+96+MarkerOffsetFromClose. Clamped to the record so a short
+            // blob is read, never over-read.
+            int closeEnd = Math.Min(
+                record.Length, i + 2 + RidWindowBytes + StockClose.Length);
+            int markerEnd = Math.Min(
+                record.Length,
+                i + 2 + RidWindowBytes + MarkerOffsetFromClose + PatchMarker.Length);
+
+            int at = IndexOf(record, PatchMarker, i + 2, markerEnd);
             if (at >= 0)
             {
                 markerOffset = at;
                 return SdpPatchState.Applied;
             }
 
-            if (IndexOf(record, StockClose, i + 2, windowEnd) >= 0)
+            if (IndexOf(record, StockClose, i + 2, closeEnd) >= 0)
                 anyStockClose = true;
         }
 
@@ -286,9 +309,8 @@ internal static class SdpPatchReader
     }
 
     // 12 hex digits, lowercase, separators tolerated - the same normalization
-    // the patch script applies to its -Mac argument
-    // (kbd-patch-cachedservices.ps1:23-26), so the key this reads is exactly the
-    // key that would be written.
+    // the -Mac parameter of kbd-patch-cachedservices.ps1 applies to its
+    // argument, so the key this reads is exactly the key that would be written.
     internal static string? NormalizeMac(string? mac)
     {
         if (string.IsNullOrEmpty(mac))

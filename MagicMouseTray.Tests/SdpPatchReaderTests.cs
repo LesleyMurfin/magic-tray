@@ -235,8 +235,9 @@ public class SdpPatchReaderTests
     }
 
     // The window is what ties a fingerprint to the BATTERY collection. The
-    // script only ever searches 64 bytes past the RID and inserts at close+2, so
-    // a marker far away was written by something else and proves nothing.
+    // script searches for the close within 96 bytes of the RID and inserts at
+    // close+2, so a marker far away was written by something else and proves
+    // nothing.
     [Fact]
     public void PatchMarkerFarFromReportId47IsUnknown()
     {
@@ -265,6 +266,87 @@ public class SdpPatchReaderTests
         Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(blob));
     }
 
+    // THE BOUNDARY. Everything above tests a fingerprint 200 bytes out, which
+    // is nowhere near the edge the script actually writes to - which is exactly
+    // why a reader that cut the window 6 bytes short of the script shipped.
+    // These two fixtures sit ON the edge.
+    //
+    // The script accepts a close whose first byte is anywhere in
+    // [rid+2, rid+2+96] (its Find-ByteSequence -End is the last candidate START
+    // index), and inserts the marker at close+2. With the measured RID at 258
+    // that makes 258+2+96 = 356 the last close the script will act on and
+    // 358 the furthest marker it can leave behind. 357 and 359 are one byte
+    // past what the script can produce, so they are some other collection's
+    // bytes and must stay Unknown: the reader must agree with the script at the
+    // edge in BOTH directions, not merely cover it.
+
+    // The measured patched record with its marker moved to `offset`. The blob
+    // carries no `81 02 c0 c0` at all (LiveFixtureHasTheMeasuredShape), so the
+    // marker is the only thing that can decide it.
+    static byte[] PatchedWithMarkerAt(int offset)
+    {
+        var blob = Patched();
+        for (int i = 0; i < 4; i++)
+            blob[MarkerOffset + i] = 0x75;
+        blob[offset] = 0x09;
+        blob[offset + 1] = 0x20;
+        blob[offset + 2] = 0xB1;
+        blob[offset + 3] = 0x02;
+        return blob;
+    }
+
+    // The stock pre-image with its COL02 close moved to `offset`. It carries no
+    // marker, so the close is the only thing that can decide it.
+    static byte[] StockWithCloseAt(int offset)
+    {
+        var blob = Stock();
+        for (int i = 0; i < 4; i++)
+            blob[279 + i] = 0x75;
+        blob[offset] = 0x81;
+        blob[offset + 1] = 0x02;
+        blob[offset + 2] = 0xC0;
+        blob[offset + 3] = 0xC0;
+        return blob;
+    }
+
+    [Fact]
+    public void MarkerAtTheFurthestOffsetTheScriptCanWriteIsApplied()
+    {
+        const int last = RidOffset + 2 + 96 + 2;   // 358
+
+        var onTheEdge = PatchedWithMarkerAt(last);
+        Assert.Equal(1, Count(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+        Assert.Equal(last, IndexOf(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+        Assert.Equal(0, Count(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+
+        var state = SdpPatchReader.Classify(onTheEdge, out var at);
+        Assert.Equal(SdpPatchState.Applied, state);
+        Assert.Equal(last, at);
+
+        // One byte further than the script can insert: not this collection's
+        // marker, so no claim either way.
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(PatchedWithMarkerAt(last + 1)));
+    }
+
+    [Fact]
+    public void StockCloseAtTheFurthestOffsetTheScriptCanPatchIsNotApplied()
+    {
+        const int last = RidOffset + 2 + 96;       // 356
+
+        var onTheEdge = StockWithCloseAt(last);
+        Assert.Equal(1, Count(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+        Assert.Equal(last, IndexOf(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+        Assert.Equal(-1, IndexOf(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+
+        // The script would patch this record, so the reader owes the user the
+        // offer: NotApplied, never Unknown.
+        Assert.Equal(SdpPatchState.NotApplied, SdpPatchReader.Classify(onTheEdge));
+
+        // One byte further than the script will search: it would not touch this
+        // record, so neither does the reader.
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(StockWithCloseAt(last + 1)));
+    }
+
     // A record whose FIRST `85 47` site is unpatched while a later one carries
     // the marker still reads Applied: one patched battery collection is enough.
     [Fact]
@@ -290,10 +372,10 @@ public class SdpPatchReaderTests
         Assert.Equal(210, at);
     }
 
-    // The key this reads must be the key the script would write
-    // (kbd-patch-cachedservices.ps1:23-26): 12 hex digits, lowercase,
-    // separators tolerated. Anything else addresses no device, so it is Unknown
-    // rather than a lookup under a bogus path.
+    // The key this reads must be the key the script would write: the -Mac
+    // normalization in kbd-patch-cachedservices.ps1 keeps 12 hex digits,
+    // lowercase, separators tolerated. Anything else addresses no device, so it
+    // is Unknown rather than a lookup under a bogus path.
     [Theory]
     [InlineData("e806884b0741", "e806884b0741")]
     [InlineData("E8:06:88:4B:07:41", "e806884b0741")]

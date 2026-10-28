@@ -163,14 +163,29 @@ Operational facts:
 - The script **requires `-Mac`** (there is no default).
 - It is **idempotent**: a record already carrying `09 20 B1 02` within 96 bytes of `85 47` is
   reported as already patched and left untouched, so re-running the unlock is safe and is not an
-  error. Each cache subkey is handled on its own - one unpatchable record does not abort the rest.
-- **Exit codes:** `0` the cache carries the unlock (newly patched or already there), `2` no cached
-  record for that MAC carries Report ID `0x47` (wrong `-Mac`, or the keyboard was never paired on
-  this PC), `3` a record carries `0x47` but could not be patched - nothing is written, and the
-  bytes around the RID are dumped to the log for a bug report.
+  error. Each cache subkey is handled on its own - a record whose descriptor shape is not
+  recognised is reported and skipped, and the records after it are still processed.
+- **Exit codes:** `0` the cache carries the unlock (newly patched or already there) and no record
+  was blocked, `2` nothing was blocked and no cached record for that MAC carries Report ID `0x47`
+  (wrong `-Mac`, or the keyboard was never paired on this PC), `3` every record carrying `0x47`
+  was blocked and none could be patched - the registry is left unchanged, and the bytes around
+  the RID are dumped to the log for a bug report, `4` partial: at least one record was unlocked
+  or already carried the unlock **and** at least one other candidate record was blocked - the
+  cache is partly unlocked, the blocked records are left exactly as they were, and the log names
+  them with the same hex dump. The bytes are dumped for every blocked record, whichever of `3`
+  or `4` the run ends on.
+- **Any other exit code** (`1`, or anything the script does not define) means the run stopped
+  before it could report its own result: part of the cache may already carry the unlock, and the
+  original blobs are in the backup `.bin` files beside the log. The tray quotes the log rather
+  than claiming the registry is untouched. A rejected `-Mac` is this shape too - it exits `1`,
+  having written the reason to the log first.
 - Every run appends to a log (`-LogPath`, default
-  `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`). That file is what to attach when the unlock
-  cannot be applied; the tray quotes its tail when a run exits non-zero.
+  `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`, or `%TEMP%\MagicMouseTray\` when `%APPDATA%`
+  is unset). That file is what to attach when the unlock cannot be applied; the tray quotes its
+  tail when a run exits non-zero.
+- Before a record is written, its original bytes are saved in the same directory as the log, as
+  `backup-<subkey>-<value>-<stamp>.bin`. Nothing outside that directory and the device's own
+  BTHPORT cache values is touched.
 - `hidbth` only re-reads `CachedServices` on reconnect, so **the percent appears only after
   Bluetooth is turned off and on again** (or the keyboard reconnects).
 - **Re-pairing the keyboard erases the patch.**

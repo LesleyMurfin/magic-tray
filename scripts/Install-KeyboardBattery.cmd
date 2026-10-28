@@ -38,9 +38,19 @@ if not exist "%PATCH%" (
   exit /b 1
 )
 
+set "ISDRY="
+echo(%*| findstr /I /C:"-DryRun" >nul && set "ISDRY=1"
+
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PATCH%" %*
 set "ERR=%ERRORLEVEL%"
 echo.
-echo Toggle Bluetooth off and on so Windows re-reads the SDP cache.
+if defined ISDRY (
+  echo Dry run: nothing was written to the registry.
+) else if "%ERR%"=="0" (
+  echo Toggle Bluetooth off and on so Windows re-reads the SDP cache.
+) else (
+  echo The unlock did not finish for every record - exit code %ERR%.
+  echo Read the log named above: it says which record was left alone and why.
+)
 pause
 exit /b %ERR%

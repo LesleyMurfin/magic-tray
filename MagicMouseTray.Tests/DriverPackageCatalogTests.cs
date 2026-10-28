@@ -467,11 +467,16 @@ public class DriverPackageCatalogTests
         Assert.Contains("bytes around RID 0x47", unknownShape, StringComparison.Ordinal);
 
         // An exit code this app does not know is reported as itself, never
-        // dressed up as a cause it cannot prove.
+        // dressed up as a cause it cannot prove - and never as an untouched
+        // registry either: an unnamed code includes PowerShell's own 1 for a
+        // terminating error, which can land after one blob was rewritten.
         var unknownCode = DriverInstaller.KeyboardSdpFailureMessage(7, @"C:\logs\x.log", null);
         Assert.Contains("exit code 7", unknownCode, StringComparison.Ordinal);
         Assert.DoesNotContain("No Bluetooth record", unknownCode, StringComparison.Ordinal);
         Assert.DoesNotContain("does not recognise", unknownCode, StringComparison.Ordinal);
+        Assert.Contains("before it could report", unknownCode, StringComparison.Ordinal);
+        Assert.Contains("may already carry the unlock", unknownCode, StringComparison.Ordinal);
+        Assert.Contains("backed up", unknownCode, StringComparison.Ordinal);
     }
 
     // Both halves of "it already worked": the state where nothing ran, and the
@@ -511,6 +516,45 @@ public class DriverPackageCatalogTests
         {
             File.Delete(path);
         }
+    }
+
+    // The guard that decides whether the elevated script runs at all. Only an
+    // Applied read-back means "there is nothing to do"; NotApplied is the exact
+    // state the offer exists for, and Unknown is no evidence at all - refusing
+    // on Unknown would turn "I cannot tell" into "you cannot have it". Asserted
+    // on the predicate rather than through OfferKeyboardSdpPatch because that
+    // method reads the live registry and shows message boxes.
+    [Fact]
+    public void KeyboardSdpPatch_OnlyAnAppliedReadBackSkipsTheRun()
+    {
+        Assert.True(DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.Applied));
+        Assert.False(DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.NotApplied));
+        Assert.False(DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.Unknown));
+    }
+
+    // Exit 4 is the run that unlocked some records and was blocked on another.
+    // Reporting it as a plain failure would hide a cache that is half unlocked,
+    // and reporting it as success is what exit 0 used to do.
+    [Fact]
+    public void KeyboardSdpPatch_PartialExitSaysHalfTheCacheIsUnlocked()
+    {
+        var partial = DriverInstaller.KeyboardSdpFailureMessage(
+            DriverInstaller.KeyboardPatchExitPartial,
+            @"C:\logs\kbd-patch.log",
+            "SUMMARY patched=1 blocked=1");
+
+        Assert.Equal(4, DriverInstaller.KeyboardPatchExitPartial);
+        // what happened: part unlocked, part not
+        Assert.Contains("Part of this keyboard's Bluetooth cache was unlocked", partial,
+            StringComparison.Ordinal);
+        Assert.Contains("left untouched", partial, StringComparison.Ordinal);
+        // never the "nothing was changed" of exits 2 and 3
+        Assert.DoesNotContain("nothing was changed", partial, StringComparison.Ordinal);
+        // the step that can still produce a percent, and the way to report the rest
+        Assert.Contains("Turn Bluetooth off and on again", partial, StringComparison.Ordinal);
+        Assert.Contains("report the untouched record", partial, StringComparison.Ordinal);
+        Assert.Contains(@"Log: C:\logs\kbd-patch.log", partial, StringComparison.Ordinal);
+        Assert.Contains("SUMMARY patched=1 blocked=1", partial, StringComparison.Ordinal);
     }
 
     [Fact]
