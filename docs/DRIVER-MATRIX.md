@@ -170,10 +170,12 @@ Operational facts:
   not 12 hex digits, in which case nothing was read or written, or a failure outside the
   per-record isolation, in which case records before it may already have been rewritten; `2`
   nothing was blocked and no cached record for that MAC carries Report ID `0x47` (wrong `-Mac`,
-  or the keyboard was never paired on this PC); `3` nothing could be unlocked - every candidate
-  record was blocked, or no record could be examined at all because a cache subkey could not be
-  opened; `4` partial: at least one record carries the unlock **and** at least one other was
-  blocked, so the cache is partly unlocked and the blocked records are left exactly as they were.
+  or the keyboard was never paired on this PC); `3` at least one candidate record was examined
+  and every one of them was blocked, so nothing could be unlocked; `4` partial: at least one
+  record carries the unlock **and** at least one other was blocked, so the cache is partly
+  unlocked and the blocked records are left exactly as they were; `5` no record could be
+  examined at all because every cache subkey present would not open - a registry permissions
+  problem on that PC, not a descriptor the script failed to understand.
 - A blocked record has many causes - a descriptor shape the script does not recognise, a record
   it could not read, back up or write, a subkey it could not open at all - and the log names the
   cause for each one. The bytes around the RID are dumped for the records that got far enough to

@@ -74,6 +74,22 @@ public class DiagnosticScriptsTests
         Assert.Null(DiagnosticScripts.FindStackDump(tree.Start));
     }
 
+    // What the walk returns is run elevated, so an ancestor only counts when it
+    // is the checkout the exe was built in. A user who copied the exe alone out
+    // of a release leaves ancestors like Downloads, the profile and C:\ - all
+    // writable without elevation - and a scripts\ folder planted in one of them
+    // must never be found.
+    [Fact]
+    public void Find_IgnoresAScriptsFolderInAnAncestorThatIsNotTheCheckout()
+    {
+        using var tree = FakeTree.Create(sourceCheckout: false);
+        tree.WriteScripts("capture-state.ps1");
+        tree.WriteRoot("diagnose-driver.ps1");
+
+        Assert.Null(DiagnosticScripts.Find(DiagnosticScripts.CaptureState, tree.Start));
+        Assert.Null(DiagnosticScripts.Find(DiagnosticScripts.DiagnoseDriver, tree.Start));
+    }
+
     [Fact]
     public void Allowlist_IsExistingScripts_NotDumpOrSkippedLabs()
     {
@@ -156,7 +172,10 @@ public class DiagnosticScriptsTests
             _scripts = scripts;
         }
 
-        public static FakeTree Create(bool createScripts = true)
+        // sourceCheckout writes the csproj the resolvers look for before they
+        // trust an ancestor; a real `dotnet run` tree always has it, and only
+        // the planted-script case above is built without it.
+        public static FakeTree Create(bool createScripts = true, bool sourceCheckout = true)
         {
             var root = Path.Combine(Path.GetTempPath(), "mm-diag-" + Guid.NewGuid().ToString("N"));
             var start = Path.Combine(root, "MagicMouseTray", "bin", "Release", "net8", "win-x64");
@@ -164,6 +183,11 @@ public class DiagnosticScriptsTests
             Directory.CreateDirectory(start);
             if (createScripts)
                 Directory.CreateDirectory(scripts);
+            if (sourceCheckout)
+            {
+                File.WriteAllText(
+                    Path.Combine(root, "MagicMouseTray", "MagicMouseTray.csproj"), "<Project />");
+            }
             return new FakeTree(root, start, scripts);
         }
 

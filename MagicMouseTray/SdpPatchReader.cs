@@ -53,18 +53,27 @@ namespace MagicMouseTray;
 // carries RID 0x47.
 internal enum SdpPatchState
 {
-    // A candidate record (one carrying RID 0x47) contains the insertion marker;
-    // for a whole cache, every candidate record does.
+    // A record contains the insertion marker; for a whole cache, at least one
+    // record does.
     Applied,
 
-    // A candidate record carries the untouched COL02 close and no marker; for a
-    // whole cache, at least one does and there is still work for the script.
+    // A record carries the untouched COL02 close and no marker; for a whole
+    // cache, no record carries the marker and at least one still carries the
+    // close.
     NotApplied,
 
     // No MAC, no readable subtree, no candidate record, or a candidate record
     // whose shape matches neither fingerprint. No evidence - not a fault.
     Unknown,
 }
+
+// What one device's cache holds, counted instead of folded, because the two
+// questions asked of it do not have the same answer. A report asks whether the
+// unlock is in the cache; the gate on the elevated run asks whether anything
+// is left to do, and that includes a candidate record neither fingerprint
+// decides - the script counts those as candidates too and blocks on them.
+// Candidates - Patched - Stock is how many are in neither shape.
+internal readonly record struct SdpCacheCensus(int Candidates, int Patched, int Stock);
 
 internal static class SdpPatchReader
 {
@@ -101,9 +110,6 @@ internal static class SdpPatchReader
     // past the furthest close it can accept.
     const int MarkerOffsetFromClose = 2;
 
-    // Shortest blob that could carry `85 47` plus a four-byte fingerprint.
-    const int MinCandidateBytes = 6;
-
     // Pure half - the whole decision, no registry. Decision table:
     //
     //   no `85 47` anywhere ................................ Unknown
@@ -120,17 +126,22 @@ internal static class SdpPatchReader
     // honesty rule only forbids claiming Applied WITHOUT the marker.
     // Set-ItemProperty replaces a value whole, so there is no torn half-write
     // to protect against inside a single blob.
-    internal static SdpPatchState Classify(byte[]? record) => Classify(record, out _);
+    internal static SdpPatchState Classify(byte[]? record) => Classify(record, out _, out _);
 
-    // markerOffset is the absolute offset of the patch marker when the answer is
-    // Applied, and -1 otherwise. It exists for the log line.
-    internal static SdpPatchState Classify(byte[]? record, out int markerOffset)
+    // markerOffset is the absolute offset of the patch marker when the answer
+    // is Applied, and -1 otherwise; it exists for the log line. candidate says
+    // the blob carried `85 47` at all - which Applied and NotApplied imply but
+    // Unknown does not, and that is the point: an Unknown CANDIDATE is a
+    // battery record in a shape this reader cannot decide, which the script
+    // counts as work it could not finish. Both exist for a caller that has to
+    // count records rather than name one.
+    internal static SdpPatchState Classify(byte[]? record, out int markerOffset, out bool candidate)
     {
         markerOffset = -1;
-        if (record is null || record.Length < MinCandidateBytes)
+        candidate = false;
+        if (record is null)
             return SdpPatchState.Unknown;
 
-        bool anyCandidate = false;
         bool anyStockClose = false;
 
         // Two passes over the RID sites so that a patched site anywhere in the
@@ -139,7 +150,7 @@ internal static class SdpPatchReader
         {
             if (record[i] != Rid47[0] || record[i + 1] != Rid47[1])
                 continue;
-            anyCandidate = true;
+            candidate = true;
 
             int at = IndexOf(
                 record, PatchMarker, i + 2, i + 2 + RidWindowBytes + MarkerOffsetFromClose);
@@ -153,21 +164,19 @@ internal static class SdpPatchReader
                 anyStockClose = true;
         }
 
-        if (!anyCandidate)
-            return SdpPatchState.Unknown;
-
         return anyStockClose ? SdpPatchState.NotApplied : SdpPatchState.Unknown;
     }
 
     // Registry half. Never writes, never needs elevation, never throws. Both
-    // cache subkeys are enumerated into the two counts CacheVerdict decides on.
-    internal static SdpPatchState ForMac(string? mac)
+    // cache subkeys are enumerated into one census of this device's cache; an
+    // empty census is what "nothing readable here" looks like.
+    internal static SdpCacheCensus CensusForMac(string? mac)
     {
         var normalized = NormalizeMac(mac);
         if (normalized is null)
         {
-            Log(mac is null || mac.Length == 0 ? "none" : "invalid", SdpPatchState.Unknown, 0, 0, 0, -1);
-            return SdpPatchState.Unknown;
+            Log(mac is null || mac.Length == 0 ? "none" : "invalid", default, -1);
+            return default;
         }
 
         int candidates = 0;
@@ -191,21 +200,26 @@ internal static class SdpPatchReader
                     if (cache.GetValue(valueName) is not byte[] blob)
                         continue;
 
-                    var state = Classify(blob, out var at);
+                    var state = Classify(blob, out var at, out var candidate);
+                    // Blobs without RID 0x47 are the non-HID service records
+                    // (84/85 bytes live). They are not candidates and do not
+                    // vote. A candidate in a shape neither fingerprint decides
+                    // is counted and stays in neither column - the script sees
+                    // the same record, blocks on it and dumps its bytes.
+                    if (!candidate)
+                        continue;
+
+                    candidates++;
                     if (state == SdpPatchState.Applied)
                     {
-                        candidates++;
                         patched++;
                         if (markerOffset < 0)
                             markerOffset = at;
                     }
                     else if (state == SdpPatchState.NotApplied)
                     {
-                        candidates++;
                         stock++;
                     }
-                    // Unknown blobs are the non-HID service records (84/85 bytes
-                    // live). They are not candidates and do not vote.
                 }
             }
         }
@@ -215,30 +229,30 @@ internal static class SdpPatchReader
             // mid-enumeration (a re-pair does exactly that), anything else the
             // registry can raise: we learned nothing. Not a fault.
             Logger.Log($"SDP_PATCH_FAILED mac={normalized} err={ex.Message}");
-            return SdpPatchState.Unknown;
+            return default;
         }
 
-        var verdict = CacheVerdict(patched, stock);
-
-        Log(normalized, verdict, candidates, patched, stock, markerOffset);
-        return verdict;
+        var census = new SdpCacheCensus(candidates, patched, stock);
+        Log(normalized, census, markerOffset);
+        return census;
     }
 
-    // The per-cache rule, the opposite of the precedence Classify uses inside a
-    // single blob: there a marker wins, because `09 20 b1 02` beside RID 0x47
-    // has exactly one writer while `81 02 c0 c0` is an ordinary close any other
-    // collection may repeat. Across records a stock one wins instead - it is a
-    // battery collection the script would patch, and the script patches every
-    // candidate record in both subkeys, so while one remains the cache is
-    // unfinished. This verdict gates an action: OfferKeyboardSdpPatch declines
-    // to run at all on Applied, so a mixed cache - what a re-pair that rewrites
-    // only one subkey leaves behind - would otherwise be told "already applied"
-    // and never completed, though one idempotent re-run would finish it.
-    // Records Classify calls Unknown are not candidates and are not counted
-    // here; the script would not patch them either.
-    internal static SdpPatchState CacheVerdict(int patched, int stock) =>
-        stock > 0 ? SdpPatchState.NotApplied
-        : patched > 0 ? SdpPatchState.Applied
+    internal static SdpPatchState ForMac(string? mac) => CacheVerdict(CensusForMac(mac));
+
+    // The verdict the STATUS consumers read - DriverAdvisor's battery sentence
+    // and DeviceCapability's row. A report answers "is the unlock in this
+    // cache", and `09 20 b1 02` beside RID 0x47 is positive evidence of it with
+    // exactly one writer, so one patched record speaks for the cache: where
+    // only some records carry it, hidbth may well be parsing one that does and
+    // showing a percent, and a sentence calling the unlock absent would
+    // contradict the number beside it. A stock record wins only when nothing is
+    // patched, which is the same precedence Classify uses inside one blob.
+    // "Is there still work for the script" is a different question with a
+    // different answer and is asked elsewhere, on the census itself:
+    // DriverInstaller.SkipsKeyboardSdpPatch.
+    internal static SdpPatchState CacheVerdict(SdpCacheCensus cache) =>
+        cache.Patched > 0 ? SdpPatchState.Applied
+        : cache.Stock > 0 ? SdpPatchState.NotApplied
         : SdpPatchState.Unknown;
 
     // Resolves the MAC from the live BTHENUM instance for this PID, then asks
@@ -340,13 +354,15 @@ internal static class SdpPatchReader
     }
 
     // One line per query, the shape DeviceStackReader.cs:94-95 established.
-    // values = candidate records only (blobs carrying RID 0x47); the patched/
-    // stock split is printed because a NotApplied verdict with patched>0 is the
-    // half-done cache, and the counts are the only place that shows it.
-    static void Log(string mac, SdpPatchState state, int values, int patched, int stock, int markerOffset)
+    // values = candidate records only (blobs carrying RID 0x47), decided or
+    // not; the patched/stock split is printed because patched + stock short of
+    // values is the cache holding a record this reader cannot decide, and
+    // patched short of values is the half-done cache the gate refuses to skip.
+    static void Log(string mac, SdpCacheCensus cache, int markerOffset)
     {
-        Logger.Log($"SDP_PATCH mac={mac} state={Describe(state)} values={values} "
-            + $"patched={patched} stock={stock} marker_at={markerOffset}");
+        Logger.Log($"SDP_PATCH mac={mac} state={Describe(CacheVerdict(cache))} "
+            + $"values={cache.Candidates} patched={cache.Patched} stock={cache.Stock} "
+            + $"marker_at={markerOffset}");
     }
 
     internal static string Describe(SdpPatchState state) => state switch

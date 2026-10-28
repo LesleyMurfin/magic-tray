@@ -208,7 +208,7 @@ Your keyboard keeps the standard Windows Bluetooth driver. There's no Apple soft
 - **Turn Bluetooth off and on again.** This step is required: `hidbth` re-reads the keyboard's cached record only when the radio cycles, so until then the percent stays blocked even though the unlock is in the registry.
 - Running **Fix battery reads** again is safe. A keyboard that already carries the unlock is reported as already done and nothing is written, so a second run can't break anything.
 - Re-pairing the keyboard erases the unlock. Run **Fix battery reads** once more. Until you do, the tray lists the keyboard and shows the battery as blocked.
-- A run that starts writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log` (`%TEMP%\MagicMouseTray\` instead, on the rare PC where `%APPDATA%` isn't set); if that file can't be written, every message naming it says so, with the reason. If the unlock won't apply, attach the log to your bug report - it holds the reason.
+- A run that starts writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log` (`%TEMP%\MagicMouseTray\` instead, on the rare PC where `%APPDATA%` isn't set); if that file can't be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. If the unlock won't apply, attach the log to your bug report - it holds the reason.
 - Before a record is changed, its original bytes are saved in the same directory as the log, as `backup-<subkey>-<value>-<stamp>.bin`. Nothing outside that directory and the keyboard's own cached record is touched.
 
 Full page, including what the unlock changes: [Keyboard battery](https://magictray.app/keyboard.html#unlock).

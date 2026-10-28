@@ -7,7 +7,9 @@
 # Run elevated. Modifies HKLM. Backs up original blobs first.
 # Requires -Mac (12 hex digits). No default MAC. The log and the backups share
 # one directory: -LogPath's own, or %APPDATA%\MagicMouseTray by default, or
-# %TEMP%\MagicMouseTray if APPDATA is unset.
+# %TEMP%\MagicMouseTray if APPDATA is unset. A -LogPath directory that cannot
+# be prepared costs this run its log only: the backups fall back to that same
+# default directory, and the unlock still runs.
 #
 # RUNNING THIS TWICE IS SAFE AND IS NOT AN ERROR (issue #162). The insert is
 # idempotent: a record that already carries `09 20 B1 02` beside `85 47` is
@@ -36,21 +38,26 @@
 #      this run, or already there - and nothing was blocked. Cycling Bluetooth
 #      is what makes hidbth re-read it. A -DryRun that would have patched also
 #      exits 0 and says in so many words that it wrote nothing.
-#   1  the run stopped before it could report: -Mac was not 12 hex digits
-#      (nothing was read or written), or something failed outside the
+#   1  the run stopped before it could report: -Mac was not 12 hex digits, or
+#      no directory could be prepared to hold the backup copies (in both cases
+#      nothing was read or written), or something failed outside the
 #      per-record isolation above, in which case records before it may already
 #      have been rewritten. The log holds it.
 #   2  no cached record for this MAC carries Report ID 0x47, and nothing was
 #      blocked: wrong -Mac, or this keyboard has never been paired on this PC.
-#   3  nothing could be unlocked: every candidate record was blocked, or no
-#      record could be examined at all (an unreadable cache subkey). The log
-#      says which, per record.
+#   3  at least one candidate record was examined and every one of them was
+#      blocked: a descriptor shape this script does not recognise, or a record
+#      Windows would not let it read, back up or write. The log says which,
+#      per record, with the bytes around the RID.
 #   4  PARTIAL: at least one record carries the unlock - inserted by this run,
 #      already present, or, under -DryRun, computed and saved beside the log -
 #      AND at least one other record, or a whole cache subkey, was blocked.
 #      Outside -DryRun the unlocked records are real and need a Bluetooth
 #      toggle; the blocked ones are untouched and the log holds their bytes. A
 #      -DryRun that reaches this wrote nothing.
+#   5  no record could be examined at all: every cache subkey present for this
+#      MAC refused to open, so nothing was read and nothing was written. That
+#      is this PC's registry permissions, not this keyboard's descriptor.
 
 [CmdletBinding()]
 param(
@@ -78,25 +85,40 @@ $ErrorActionPreference = 'Stop'
 # not name one backup file, or the second would overwrite the originals the
 # first saved. A PID cannot be shared by two live processes.
 $stamp = '{0}-{1}' -f (Get-Date -Format yyyyMMdd-HHmmss), $PID
+
+# This script's own directory: where -LogPath defaults to, and where the
+# backups fall back to when -LogPath's directory cannot be prepared.
+function Get-DefaultDir {
+    $root = if ($env:APPDATA) { $env:APPDATA } else { $env:TEMP }
+    Join-Path $root 'MagicMouseTray'
+}
+
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
-    $defaultDir = if ($env:APPDATA) {
-        Join-Path $env:APPDATA 'MagicMouseTray'
-    } else {
-        Join-Path $env:TEMP 'MagicMouseTray'
-    }
-    $LogPath = Join-Path $defaultDir "kbd-patch-$stamp.log"
+    $LogPath = Join-Path (Get-DefaultDir) "kbd-patch-$stamp.log"
 }
 $LogPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
-$backupDir = Split-Path -Parent $LogPath
 
-# A directory that cannot be created costs this run its log, not its purpose.
-$script:logFailure = $null
-try {
-    if (-not (Test-Path $backupDir)) {
-        New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+# The reason a directory cannot hold this run's files, or $null when it can.
+function Get-DirectoryFailure {
+    param([string]$Path)
+    try {
+        if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Force -Path $Path | Out-Null }
+        return $null
+    } catch {
+        return $_.Exception.Message
     }
-} catch {
-    $script:logFailure = $_.Exception.Message
+}
+
+# A directory that cannot be created costs this run its log, not its purpose:
+# the backups fall back to the default directory, the originals are still
+# saved and the unlock still runs. Only -LogPath is lost.
+$logDir = Split-Path -Parent $LogPath
+$script:logFailure = Get-DirectoryFailure $logDir
+$backupDir = $logDir
+$backupFailure = $null
+if ($script:logFailure) {
+    $backupDir = Get-DefaultDir
+    $backupFailure = Get-DirectoryFailure $backupDir
 }
 
 # The console is the product here, but it is also hidden when the tray elevates
@@ -114,10 +136,12 @@ try {
 # not. The console copy is the operator's own screen and keeps the address, so
 # that "check the -Mac value" can be acted on.
 function Write-Step {
-    param([string]$Text)
+    # The log copy differs from the console copy only where the console has to
+    # keep something the log must not: see the rejected -Mac below.
+    param([string]$Text, [string]$LogText = $Text)
     Write-Host $Text
     if ($script:logFailure) { return }
-    $line = $Text -replace '\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', '<mac>'
+    $line = $LogText -replace '\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', '<mac>'
     $line = $line -replace '(?<=\bmac=|\\Devices\\)[0-9A-Fa-f]{12}', '<mac>'
     $line = $line -replace '(?<=\\Users\\)[^\\\r\n]+?(?=\\|\r|\n|$)', '<user>'
     try {
@@ -142,6 +166,17 @@ function ConvertTo-FileNamePart {
     $Name -replace '[^0-9A-Za-z._-]', '_'
 }
 
+# The log is gone but the run is not, so the console - the only sink left -
+# says what happened to it and where the originals are going instead.
+if ($script:logFailure) {
+    $instead = if ($backupFailure) {
+        "and $backupDir cannot hold the backup copies either ($backupFailure)"
+    } else {
+        "the backup copies go to $backupDir instead"
+    }
+    Write-Step "NO LOG. $LogPath could not be prepared ($script:logFailure); $instead."
+}
+
 # -Mac is validated only now, with a log to fail into. The throw ends the run
 # with exit code 1 and the registry is never opened, which is what the exit
 # code table above promises.
@@ -149,10 +184,26 @@ $rawMac = $Mac
 $Mac = ($Mac -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
 if ($Mac.Length -ne 12) {
     $macError = "-Mac must be 12 hex digits (colons optional). Example: -Mac aabbccddeeff"
-    Write-Step "kbd-patch-cachedservices.ps1 mac=$rawMac dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
+    # CWE-532: a rejected value is the one address shape the redaction rules
+    # cannot match - neither separated nor 12 contiguous hex after `mac=` - so
+    # the token is substituted here. The console keeps the value the user
+    # typed, because "check the -Mac value" has to be actionable.
+    $banner = "kbd-patch-cachedservices.ps1 mac={0} dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
+    Write-Step -Text ($banner -f $rawMac) -LogText ($banner -f '<mac>')
     Write-Step "BAD ARGUMENT. $macError Nothing was read from or written to the registry."
     Write-Step "Log: $(Get-LogRef)"
     throw $macError
+}
+
+Write-Step "kbd-patch-cachedservices.ps1 mac=$Mac dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
+
+# Every record this run changes is backed up first, so a run with nowhere to
+# put the originals has no undo to offer and stops before it reads anything.
+if ($backupFailure) {
+    $backupError = "No directory could be prepared for the backup copies: $backupDir - $backupFailure. Nothing was read from or written to the registry."
+    Write-Step "CANNOT START. $backupError"
+    Write-Step "Log: $(Get-LogRef)"
+    throw $backupError
 }
 
 $base = "HKLM:\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\$Mac"
@@ -200,6 +251,7 @@ function Format-HexWindow {
 # could not find a close.
 function Write-RecordHexDump {
     param([byte[]]$Blob, [int]$Rid47, [string]$Source)
+    $script:hexDumped = $true
     Write-Step "[$Source] bytes around RID 0x47 (report these):"
     # The probes reach a match starting at rid+2+$windowBytes+2, and a match is
     # 4 bytes long, so nothing was found anywhere up to rid+$windowBytes+8.
@@ -275,8 +327,6 @@ function Edit-Blob {
     return $new
 }
 
-Write-Step "kbd-patch-cachedservices.ps1 mac=$Mac dry_run=$($DryRun.IsPresent) started $(Get-Date -Format s)"
-
 # candidates: records carrying RID 0x47. The 84/85-byte service records in the
 # same key carry no battery report and vote on nothing.
 # wouldPatch is -DryRun's own tally: a dry run writes nothing, so it must never
@@ -286,6 +336,10 @@ $patched = 0
 $already = 0
 $blocked = 0
 $wouldPatch = 0
+
+# Whether the log holds a hex excerpt of the keyboard's own SDP response: see
+# $logAsk, which has to say so wherever the user is asked to publish the log.
+$script:hexDumped = $false
 
 foreach ($subkey in 'CachedServices','DynamicCachedServices') {
     $path = "$base\$subkey"
@@ -347,6 +401,16 @@ foreach ($subkey in 'CachedServices','DynamicCachedServices') {
         # record whose original cannot be saved is not one this run will touch.
         $namePart = ConvertTo-FileNamePart $prop.Name
         $backup = Join-Path $backupDir "backup-$subkey-$namePart-$stamp.bin"
+        # Two value names in one subkey can sanitise to one file name, and the
+        # second write would silently replace the first record's original. The
+        # backups are the only undo this script offers, so the collision blocks
+        # the record instead.
+        if (Test-Path $backup) {
+            $blocked++
+            Write-Step "[$source] NOT patched: $backup already holds another record's original from this run - two value names in this subkey sanitise to one file name - so this record was left exactly as it was."
+            Write-RecordHexDump -Blob $val -Rid47 $closeRid -Source $source
+            continue
+        }
         try {
             [IO.File]::WriteAllBytes($backup, $val)
         } catch {
@@ -402,6 +466,11 @@ Write-Step "SUMMARY candidates=$candidates patched=$patched already=$already blo
 $logRef = Get-LogRef
 Write-Step "Log: $logRef"
 
+# A blocked record puts ~120 bytes of the keyboard's own cached record in the
+# log, and no text redaction rule applies to a hex dump, so every message that
+# asks for the log says what it is asking for.
+$logAsk = if ($script:hexDumped) { "$logRef (it quotes a hex excerpt of this keyboard's own cached Bluetooth record)" } else { $logRef }
+
 # One blocked record is not a detail of a successful run: it is the half of the
 # cache this script could not fix, and the caller has to be told both halves.
 $progress = $patched + $already + $wouldPatch
@@ -411,9 +480,9 @@ $progress = $patched + $already + $wouldPatch
 # were blocked without claiming they were all records.
 if ($blocked -gt 0 -and $progress -gt 0) {
     if ($DryRun) {
-        Write-Step "DRY-RUN PARTIAL. $wouldPatch record(s) would be patched and $already already carry the unlock, but $blocked could not be patched. Nothing was written to the registry by this run. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
+        Write-Step "DRY-RUN PARTIAL. $wouldPatch record(s) would be patched and $already already carry the unlock, but $blocked could not be patched. Nothing was written to the registry by this run. Please report $logAsk at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
     } else {
-        Write-Step "PARTIAL. $patched record(s) patched and $already already carried the unlock, but $blocked could not be patched. The records that now carry the unlock are real - toggle BT off/on for hidbth to re-read CachedServices - and the blocked ones were left exactly as they were. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
+        Write-Step "PARTIAL. $patched record(s) patched and $already already carried the unlock, but $blocked could not be patched. The records that now carry the unlock are real - toggle BT off/on for hidbth to re-read CachedServices - and the blocked ones were left exactly as they were. Please report $logAsk at https://github.com/LesleyMurfin/magic-tray/issues so the remaining descriptor shape(s) can be supported."
     }
     exit 4
 }
@@ -429,14 +498,17 @@ if ($progress -gt 0) {
     exit 0
 }
 
-if ($candidates -eq 0 -and $blocked -eq 0) {
-    Write-Step "NO RECORD. Nothing under $base carries Report ID 0x47. Check the -Mac value (Device Manager -> Bluetooth -> the keyboard -> Details -> Bluetooth device address), and that the keyboard is paired with this PC."
-    exit 2
+if ($candidates -eq 0) {
+    if ($blocked -eq 0) {
+        Write-Step "NO RECORD. Nothing under $base carries Report ID 0x47. Check the -Mac value (Device Manager -> Bluetooth -> the keyboard -> Details -> Bluetooth device address), and that the keyboard is paired with this PC."
+        exit 2
+    }
+
+    # No record was ever examined, so nothing here is evidence about this
+    # keyboard's descriptor: the cache itself would not open.
+    Write-Step "NOT PATCHED. $blocked cache subkey(s) could not be read, so no record was examined and the registry was not changed. Please report $logAsk at https://github.com/LesleyMurfin/magic-tray/issues."
+    exit 5
 }
 
-if ($candidates -gt 0) {
-    Write-Step "NOT PATCHED. $candidates record(s) carry Report ID 0x47 and none could be patched; the registry was not changed. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues so this descriptor shape can be supported."
-} else {
-    Write-Step "NOT PATCHED. $blocked cache subkey(s) could not be read, so no record was examined and the registry was not changed. Please report $logRef at https://github.com/LesleyMurfin/magic-tray/issues."
-}
+Write-Step "NOT PATCHED. $candidates record(s) carry Report ID 0x47 and none could be patched; the registry was not changed. Please report $logAsk at https://github.com/LesleyMurfin/magic-tray/issues so this descriptor shape can be supported."
 exit 3

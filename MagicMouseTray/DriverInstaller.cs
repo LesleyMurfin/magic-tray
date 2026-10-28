@@ -684,7 +684,7 @@ foreach ($id in $restart) {
         // Unavailable, not Failed: the unpatched record this offer needs is
         // not on this machine. Nothing ran, nothing is wrong, and the user is
         // told what is actually left to do.
-        if (SkipsKeyboardSdpPatch(SdpPatchReader.ForMac(mac)))
+        if (SkipsKeyboardSdpPatch(SdpPatchReader.CensusForMac(mac)))
         {
             Logger.Log("DRIVER_SDP_SKIPPED reason=already-applied");
             ShowInfo(KeyboardSdpAlreadyAppliedMessage());
@@ -719,7 +719,13 @@ foreach ($id in $restart) {
         }
         catch (Exception ex)
         {
-            ShowBlocked(ex.Message);
+            // The 5-minute timeout in RunElevatedExitCode kills the elevated
+            // process tree mid-loop, so a throw can land between one record
+            // and the next: the same half-finished cache an unnamed exit code
+            // leaves, and it is told the same way rather than as a bare
+            // sentence with no log path and no warning.
+            Logger.Log($"DRIVER_SDP_FAILED err={ex.Message}");
+            ShowBlocked(KeyboardSdpFailureMessage(ex.Message, logPath, ReadPatchLogTail(logPath)));
             return InstallOutcome.Failed;
         }
 
@@ -738,23 +744,31 @@ foreach ($id in $restart) {
         return InstallOutcome.Confirmed;
     }
 
-    // Applied is the ONLY read-back meaning "there is nothing to do": the
-    // marker is in the cache, so running the script again would only confirm
-    // it. NotApplied is the exact state this offer exists for, and Unknown is
-    // no evidence at all - an unreadable hive, a record in a shape this reader
-    // does not parse - so both of those still run the script and let it decide
-    // with its own eyes. Refusing to run on Unknown would turn "I cannot tell"
-    // into "you cannot have it".
-    internal static bool SkipsKeyboardSdpPatch(SdpPatchState state) =>
-        state == SdpPatchState.Applied;
+    // The gate on the elevated run, and a stricter question than the verdict
+    // the status consumers read: not "is the unlock there" but "is there
+    // anything left for the script to do". Only a whole cache that is done
+    // skips the run - at least one record carries the marker and no candidate
+    // record is without it. A half-patched cache, which is what a re-pair that
+    // rewrote one subkey leaves, still has a record the script would patch;
+    // a cache holding a candidate record neither fingerprint decides still has
+    // one the script would dump the bytes of and report as blocked, which is
+    // the evidence the issue tracker needs. An empty census - an unreadable
+    // hive, no candidate at all - is no evidence, and refusing to run on it
+    // would turn "I cannot tell" into "you cannot have it".
+    internal static bool SkipsKeyboardSdpPatch(SdpCacheCensus cache) =>
+        cache.Patched > 0 && cache.Patched == cache.Candidates;
 
     // Exit codes kbd-patch-cachedservices.ps1 defines in its own header. 0 is
     // "the cache carries the unlock and nothing was blocked" - newly inserted
     // OR already there. 4 is the mixed run: at least one record carries the
-    // unlock AND at least one candidate record was blocked.
+    // unlock AND at least one candidate record was blocked. 3 and 5 split the
+    // two ways a run can change nothing: 3 examined records and was refused by
+    // all of them, 5 never got a record to examine because a cache subkey
+    // would not open - different causes, different remedies.
     internal const int KeyboardPatchExitNoRecord = 2;
     internal const int KeyboardPatchExitNotPatched = 3;
     internal const int KeyboardPatchExitPartial = 4;
+    internal const int KeyboardPatchExitCacheUnreadable = 5;
 
     // The log goes in the TRAY's profile, not the elevated process's: a UAC
     // prompt answered with a different administrator account has a different
@@ -789,29 +803,49 @@ foreach ($id in $restart) {
                 + "was changed. Windows rebuilds that record when the keyboard re-pairs, so "
                 + "pairing it again and retrying is the next thing to try.",
             KeyboardPatchExitNotPatched =>
-                "Nothing in this keyboard's Bluetooth cache could be unlocked, so nothing was "
-                + "changed. The log below says what stopped it - an unrecognised layout, or a "
-                + "record or whole cache entry Windows would not let the unlock read or write.",
+                "None of this keyboard's battery records could be unlocked, so nothing was "
+                + "changed. The log below says why for each one - a descriptor shape the unlock "
+                + "does not recognise, or a record Windows would not let it read, back up or write.",
+            KeyboardPatchExitCacheUnreadable =>
+                "Nothing in this keyboard's Bluetooth cache could be read, so the unlock could "
+                + "not even look at a record: Windows refused to open the cache itself. That is "
+                + "a permissions problem with this PC's registry, not a fault of the keyboard or "
+                + "its Bluetooth record.",
             KeyboardPatchExitPartial =>
-                "Part of this keyboard's Bluetooth cache was unlocked, but at least one record "
-                + "was blocked. Turn Bluetooth off and on again - the percent may already "
-                + "appear. If it does not, please report the blocked record and the log below.",
+                "Part of this keyboard's Bluetooth cache was unlocked, but not all of it. "
+                + "Turn Bluetooth off and on again - the percent may already appear. If it "
+                + "does not, please report the log below.",
             // An exit code this app does not name includes PowerShell's own 1,
             // which can land before the registry was opened at all or after one
             // record has already been rewritten.
             _ =>
                 $"The battery unlock stopped with exit code {exitCode} before it could report "
-                + "what it did. Part of this keyboard's Bluetooth cache may already carry the "
-                + "unlock. The original bytes of every record it touched are backed up in the "
-                + "log's own directory.",
+                + $"what it did. {UnfinishedRunState}",
         };
 
-        var text = head + $"\n\nLog: {logPath}";
-        text += string.IsNullOrWhiteSpace(logTail)
-            ? "\n\nThe run left no readable log at that path, which is itself worth reporting."
-            : $"\n\n{logTail}";
-        return text;
+        return WithLogTail(head, logPath, logTail);
     }
+
+    // A throw out of the elevated run reports the same state an unnamed exit
+    // code does, with the exception's own words in place of the code.
+    internal static string KeyboardSdpFailureMessage(string failure, string logPath, string? logTail) =>
+        WithLogTail(
+            $"The battery unlock could not be run to the end. {UnfinishedRunState}\n\n{failure}",
+            logPath,
+            logTail);
+
+    // What any stop without a report leaves behind: the script patches record
+    // by record, so one may already be rewritten, and it backs up the original
+    // bytes of every record it touches before it writes.
+    const string UnfinishedRunState =
+        "Part of this keyboard's Bluetooth cache may already carry the unlock. The original "
+        + "bytes of every record it touched are backed up in the log's own directory.";
+
+    // Where the log is, and that a missing one is itself worth reporting.
+    static string WithLogTail(string head, string logPath, string? logTail) =>
+        head + $"\n\nLog: {logPath}" + (string.IsNullOrWhiteSpace(logTail)
+            ? "\n\nThe run left no readable log at that path, which is itself worth reporting."
+            : $"\n\n{logTail}");
 
     // Last lines of the run log, if it is there at all; null when it is not,
     // which the caller's dialog says in so many words.
@@ -1009,9 +1043,12 @@ foreach ($id in $restart) {
         foreach (var p in names)
             if (File.Exists(p)) return p;
 
+        // Only a checkout ancestor counts: what this returns is run elevated
+        // (DriverPackageCatalog.IsSourceCheckout).
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (var i = 0; i < 6 && dir is not null; i++, dir = dir.Parent)
         {
+            if (!DriverPackageCatalog.IsSourceCheckout(dir.FullName)) continue;
             var candidate = Path.Combine(dir.FullName, DriverPackageCatalog.KeyboardPatchScriptPath);
             if (File.Exists(candidate)) return candidate;
         }
@@ -1141,7 +1178,7 @@ foreach ($id in $restart) {
     // failed, and there is one more step the user has to take.
     static void ShowInfo(string message)
     {
-        Logger.Log($"DRIVER_INFO msg={message.Replace("\n", " ")}");
+        Logger.Log($"DRIVER_INFO msg={message.Replace("\n", " ").Replace("\r", " ")}");
         System.Windows.Forms.MessageBox.Show(
             message,
             "Magic Tray",

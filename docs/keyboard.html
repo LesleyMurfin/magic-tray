@@ -213,7 +213,7 @@
             "name": "The unlock won't apply. What do I send you?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A run that starts writes a log to %APPDATA%\\MagicMouseTray\\kbd-patch-<stamp>.log, or %TEMP%\\MagicMouseTray\\ on a PC where %APPDATA% is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as backup-<subkey>-<value>-<stamp>.bin. Attach the newest log to your report: it records what the script found and why it stopped."
+              "text": "A run that starts writes a log to %APPDATA%\\MagicMouseTray\\kbd-patch-<stamp>.log, or %TEMP%\\MagicMouseTray\\ on a PC where %APPDATA% is not set; if that file cannot be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. Before a record is changed, its original bytes are saved in the same folder as the log, as backup-<subkey>-<value>-<stamp>.bin. Attach the newest log to your report: it records what the script found and why it stopped."
             }
           }
         ]
@@ -333,7 +333,7 @@
         <dt>Is it safe to run the unlock twice?</dt>
         <dd>Yes. A keyboard that already carries the unlock is reported as already done and nothing is written, so a repeat run can't damage anything. If you've run it and the percent still hasn't appeared, turn Bluetooth off and on again rather than running it a third time.</dd>
         <dt>The unlock won't apply. What do I send you?</dt>
-        <dd>A run that starts writes a log to <code>%APPDATA%\MagicMouseTray\kbd-patch-&lt;stamp&gt;.log</code>, or <code>%TEMP%\MagicMouseTray\</code> on a PC where <code>%APPDATA%</code> is not set; if that file cannot be written, the run says so on screen and gives the reason. Before a record is changed, its original bytes are saved in the same folder as the log, as <code>backup-&lt;subkey&gt;-&lt;value&gt;-&lt;stamp&gt;.bin</code>. Attach the newest log to your <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">report</a>: it records what the script found and why it stopped.</dd>
+        <dd>A run that starts writes a log to <code>%APPDATA%\MagicMouseTray\kbd-patch-&lt;stamp&gt;.log</code>, or <code>%TEMP%\MagicMouseTray\</code> on a PC where <code>%APPDATA%</code> is not set; if that file cannot be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. Before a record is changed, its original bytes are saved in the same folder as the log, as <code>backup-&lt;subkey&gt;-&lt;value&gt;-&lt;stamp&gt;.bin</code>. Attach the newest log to your <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">report</a>: it records what the script found and why it stopped.</dd>
       </dl>
 
       <details>
