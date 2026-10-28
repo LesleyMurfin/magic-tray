@@ -291,12 +291,12 @@
       <p>The tray's <strong>Driver</strong> menu already lists the community driver. Once it's published, picking it will download and install it after you confirm.</p>
       <p>Pick it today and the tray tells you the driver isn't available yet, and nothing on your PC changes.</p>
       <p>The menu's other choice, the patched Apple driver, does have an installer today. On that route you get scrolling or battery, never both, and nobody has confirmed it.</p>
-      <p>Neither driver has been checked by Microsoft, and the startup setting they need lowers a real security protection.</p>
+      <p>Neither driver has been checked by Microsoft, and the Windows settings they need lower real security protections. Magic Tray can put those settings in place for you: <strong>Fix driver signing</strong> is one confirmation dialog listing every step, and after you accept it the app suspends BitLocker for one reboot, turns Memory integrity off, turns Test Mode on and restarts the PC without asking again. Secure Boot is the exception — it is a firmware setting, no Windows program can change it, so the app restarts you into your PC's UEFI setup screen to switch it off there and offers to finish the rest afterwards. Undoing it is offered whenever there is anything to undo, and that undo suspends BitLocker for its own restart in the same way.</p>
       <details id="cost">
-        <summary>What that Windows startup setting costs you</summary>
+        <summary>What those Windows settings cost you</summary>
         <ul class="facts" id="cost-list">
           <li>Windows normally refuses a driver nobody has checked. Now it accepts them from anywhere.</li>
-          <li>Memory integrity has to be off, and that removes a real layer of defence.</li>
+          <li>Memory integrity goes off, and that removes a real layer of defence. The app turns it off for you after your confirmation, and turns it back on when you revert.</li>
           <li>Small grey text sits in your desktop corner. Some games with anti-cheat won't start.</li>
           <li>On a work PC this may be a bad deal. Only you can judge that.</li>
           <li>A Microsoft-checked driver would remove all of it.</li>
@@ -306,6 +306,8 @@
         <summary>Show the technical details</summary>
         <p>The <strong>KMDF</strong> item snapshots the <code>main</code> branch of <code>magic-mouse-v3-windows-fix</code> and looks for <code>v2-kmdf-driver/Install-KMDF.cmd</code>. No copy is on that branch, so the tray tells you the package isn't there and installs nothing. It never quietly switches you to the patched Apple driver instead.</p>
         <p>Both routes need <code>bcdedit /set testsigning on</code> and HVCI off, and both undo. <strong>Patched Apple driver</strong> runs <code>v1-binary-patch/installer/Install-MagicMousePatch.ps1</code>, which is on the branch, with scroll and battery mutually exclusive.</p>
+        <p>The tray does the whole prerequisite sequence for you from a single click and a single confirmation dialog. That dialog names every step, the reboot, the security downgrade and what it does about BitLocker — suspend it for that one restart, so the 48-digit recovery key is not asked for; accept it and the app runs the lot in one elevated pass, with one UAC prompt and no further questions — <code>manage-bde -protectors -disable &lt;SystemDrive&gt; -rebootcount 1</code> on the drive Windows booted from, which is not <code>C:</code> on every PC and is only touched when that drive really is protected, <code>HypervisorEnforcedCodeIntegrity\Enabled=0</code>, <code>bcdedit /set testsigning on</code>, reboot. Only the steps your PC actually needs are run, and if the drive is protected and the suspend fails the app stops there and changes nothing rather than rewriting boot settings. It never happens on a timer, from opening the menu or without that dialog; the one thing that may begin when the tray starts is the single "carry on with the pending fix?" question, and only because your own earlier confirmation left that fix pending. The undo — <code>bcdedit /set testsigning off</code>, Memory integrity back on, and BitLocker suspended for its own restart the same way, because it rewrites the boot configuration too — is on offer whenever there is anything to undo.</p>
+        <p><strong>Secure Boot is firmware, so no program can turn it off.</strong> There is no Windows API for it, and <code>bcdedit /set testsigning on</code> is refused outright while it is on. When the tray finds Secure Boot on, the one thing it can do is <code>shutdown /r /fw</code>: restart the PC straight into the UEFI firmware setup screen, where you switch Secure Boot off yourself. The tray remembers that a fix is pending and, after that reboot, asks once whether to carry on with the remaining steps.</p>
       </details>
 
       <h2 id="faq">Questions</h2>

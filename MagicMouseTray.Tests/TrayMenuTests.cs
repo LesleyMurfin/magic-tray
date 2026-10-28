@@ -558,6 +558,91 @@ public class TrayMenuTests
         Assert.True(TrayMenu.ConfigSectionIsFault([advisory, blocking]));
     }
 
+    [Fact]
+    public void EverySigningReadingLeadsToTheOneFix()
+    {
+        // Secure Boot, Memory integrity and Test Mode are three gates in front
+        // of ONE question - will Windows load this self-signed driver - and one
+        // confirmed action answers all three (AGENTS.md:76). A row that fell
+        // out of this set would get the read-only dialog instead, and the user
+        // would be left to fix that gate by hand after being promised she would
+        // not have to.
+        Assert.True(TrayMenu.IsSigningFact(SystemConfigChecker.TestModeFactId));
+        Assert.True(TrayMenu.IsSigningFact(SystemConfigChecker.MemoryIntegrityFactId));
+        Assert.True(TrayMenu.IsSigningFact(SystemConfigChecker.SecureBootFactId));
+
+        // And nothing else may: the package install and the multitouch watcher
+        // have their own owners, and routing either into an elevated
+        // bcdedit-and-reboot sequence would be running a fix for a problem
+        // nobody reported.
+        Assert.False(TrayMenu.IsSigningFact(SystemConfigChecker.DriverPackageFactId));
+        Assert.False(TrayMenu.IsSigningFact(SystemConfigChecker.WatcherFactId));
+        Assert.False(TrayMenu.IsSigningFact(SystemConfigChecker.RivalClaimantFactId));
+        Assert.False(TrayMenu.IsSigningFact("some-fact-added-later"));
+
+        // The fix row is only offered on a PC that said something about driver
+        // signing at all; anywhere else it would answer a question nobody asked.
+        Assert.False(TrayMenu.HasSigningFact([]));
+        Assert.False(TrayMenu.HasSigningFact(
+            [Fact(SystemConfigChecker.WatcherFactId, "Multitouch watcher is not installed",
+                ConfigSeverity.Advisory)]));
+        Assert.True(TrayMenu.HasSigningFact(
+            [Fact(SystemConfigChecker.WatcherFactId, "Multitouch watcher is not installed",
+                ConfigSeverity.Advisory),
+             Fact(SystemConfigChecker.SecureBootFactId, "Secure Boot is on",
+                ConfigSeverity.Advisory)]));
+    }
+
+    [Fact]
+    public void SigningFixRowsSayWhatTheyDo()
+    {
+        // Both rows are named in dialogs that tell the user where to find them
+        // (ShowFilterBlockedHelp, the outcome texts), so the label and the
+        // reference cannot drift apart without breaking those instructions.
+        Assert.Equal("Fix driver signing", ConfigFactView.SigningFixLabel);
+        Assert.Equal("Undo the driver signing fix", ConfigFactView.SigningFixRevertLabel);
+    }
+
+    [Fact]
+    public void ProblemRow_NeverClaimsHealthWhileAConfigFactBlocksTheDriver()
+    {
+        var blocking = new ConfigFact(
+            SystemConfigChecker.TestModeFactId, "Test Mode is off", ConfigSeverity.Blocking,
+            "Windows will not load a self-signed driver while Test Mode is off.",
+            "Open the Magic Mouse v3 page", "https://magictray.app/v3.html");
+        var advisory = new ConfigFact(
+            SystemConfigChecker.MemoryIntegrityFactId, "Memory integrity state is unknown",
+            ConfigSeverity.Advisory, "d", null, null);
+        var fault = new RepairFinding(
+            "0323", RepairProblem.FilterNotInStack, RepairAction.RestartBtHidParent,
+            "Scroll driver is not attached to this mouse", "d", AutoFixable: true);
+
+        // Nothing standing: the healthy answer is still available, and an
+        // Advisory must not take it away - "we could not read it" is not a
+        // problem the user can be told to fix.
+        Assert.Equal("No problems found", RepairPlanner.MenuLabel([]));
+        Assert.Equal(
+            "No problems found",
+            RepairPlanner.MenuLabel([], ConfigFactView.ProblemTitles([advisory])));
+
+        // One Blocking config fact and no device fault: the row names it, and
+        // the name stays behind the section prefix so it cannot be read as a
+        // measured fault on the device itself (ConfigFactView.cs:16-33).
+        var configOnly = RepairPlanner.MenuLabel([], ConfigFactView.ProblemTitles([blocking, advisory]));
+        Assert.NotEqual("No problems found", configOnly);
+        Assert.StartsWith(ConfigFactView.SectionPrefix + ": ", configOnly, StringComparison.Ordinal);
+        Assert.EndsWith(blocking.Title, configOnly, StringComparison.Ordinal);
+
+        // A device fault alone still owns the bare fault voice.
+        Assert.Equal(fault.Title, RepairPlanner.MenuLabel([fault]));
+
+        // Both standing: one count covering both, because two titles do not fit
+        // one menu row and dropping either would hide a real problem.
+        Assert.Equal(
+            "2 problems found",
+            RepairPlanner.MenuLabel([fault], ConfigFactView.ProblemTitles([blocking])));
+    }
+
 
     [Fact]
     public void ThresholdChoices_Are10_5_1_GoingDown()

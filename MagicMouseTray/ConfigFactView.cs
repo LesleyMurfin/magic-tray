@@ -175,13 +175,51 @@ internal static class ConfigFactView
     // rewording.
     internal static string OwnerLine(string factId) => factId switch
     {
-        // The tray is read-only about the security posture of the PC by
-        // construction (SystemConfigChecker.cs:12-21). Saying so here is what
-        // stops a user waiting for a button that will never exist.
-        SystemConfigChecker.TestModeFactId or SystemConfigChecker.MemoryIntegrityFactId =>
-            "You, by hand, in Windows. Magic Tray never changes Test Mode, Memory integrity, "
-            + "Secure Boot or any other security setting on this PC - it reports what it read and "
-            + "nothing more.",
+        // The signing prerequisites are now ONE user-approved action that then
+        // runs by itself (AGENTS.md:76), so this line promises the shape of
+        // that action rather than a blanket "changes nothing": the single
+        // confirmation that lists every step, the one administrator prompt, the
+        // reboot, and the undo. Dropping any of those four turns a confirmed
+        // sequence back into a silent one, which is why each is spelled out
+        // here and pinned in ConfigFactViewTests.
+        SystemConfigChecker.TestModeFactId =>
+            "You decide once, and Magic Tray carries it out. " + SigningFixLabel + " runs every "
+            + "step this PC needs in one administrator action after the single confirmation that "
+            + "lists them: suspend BitLocker for one restart, turn Memory integrity off, run "
+            + "bcdedit /set testsigning on, and reboot. One question, one administrator prompt, "
+            + "nothing asked after it unprompted - never on a timer, never without that answer. "
+            + "The one thing that can begin at launch is the single question to finish a fix you "
+            + "already confirmed before a firmware restart, and only because that answer left it "
+            + "half done. Secure Boot it cannot touch: that is firmware, so the fix restarts this "
+            + "PC into the firmware screen and you turn it off there. The undo is offered "
+            + "whenever there is anything to undo.",
+
+        // Memory integrity is no longer a hand-operated setting this tray only
+        // reads: the one confirmed sequence writes the HVCI policy value, so
+        // the old "Magic Tray never changes Memory integrity" promise would now
+        // be false and must never come back. What replaces it is the narrower
+        // true promise - only inside that sequence, only after the user's one
+        // answer, and put back by the undo - plus the by-hand route for a user
+        // who would rather do it herself.
+        SystemConfigChecker.MemoryIntegrityFactId =>
+            "You, or Magic Tray with your permission. Memory integrity (HVCI) makes Windows "
+            + "refuse a self-signed driver, so " + SigningFixLabel + " can turn it off for you - "
+            + "only as part of the one confirmed sequence that lists every step, never on a "
+            + "timer, and never unprompted at startup: the only thing launch can raise is the "
+            + "question to finish a fix you already confirmed. The undo turns it back on. By "
+            + "hand it lives in Windows Security -> Device security -> Core isolation.",
+
+        // Secure Boot keeps the absolute promise, because it is the one setting
+        // here that no program can change: it lives in firmware, and
+        // `bcdedit /set testsigning on` is refused while it is on with "The
+        // value is protected by Secure Boot policy". The most the fix does is
+        // restart this PC into the firmware setup screen, and only after the
+        // confirmation that says it will.
+        SystemConfigChecker.SecureBootFactId =>
+            "You, in this PC's firmware. Secure Boot is not a Windows setting - no program can "
+            + "turn it off from inside Windows, and Magic Tray never tries. The most it does is "
+            + "restart this PC into the firmware setup screen, after you confirm that restart, so "
+            + "you can turn Secure Boot off there yourself.",
 
         SystemConfigChecker.DriverPackageFactId =>
             "The driver package. Magic Tray offers the install from its own driver step, and "
@@ -216,5 +254,319 @@ internal static class ConfigFactView
             ? "OK opens " + fact.ActionLabel.Substring(Open.Length)
             : "OK: " + fact.ActionLabel;
         return opens + ". Cancel changes nothing.";
+    }
+
+    // ---- the one action this view may offer -------------------------------
+    //
+    // Everything below renders a SigningFixPlan (SigningFix.cs), built pure
+    // from the readings taken at the moment of the click. The view never
+    // re-derives whether the sequence is possible: SigningFixOffersRun is the
+    // single gate every caller asks, so "may this click reach the elevated
+    // script" is decided in one testable place instead of once per dialog, and
+    // a plan the planner refused cannot be talked back into running by a
+    // wording change here.
+    //
+    // Exactly ONE confirmation stands between a click and the whole sequence,
+    // and it is plan.Prompt - the planner's own words, shown verbatim by the
+    // caller. Nothing in this file may add a second question to the fix path:
+    // every text below is either that prompt's replacement for a resumed fix
+    // (SigningFixResumeText) or an after-the-fact report.
+
+    internal const string SigningFixLabel = "Fix driver signing";
+    internal const string SigningFixRevertLabel = "Undo the driver signing fix";
+
+    // The Blocking facts, in display order. These are the configuration
+    // problems that belong in the "problems found" answer next to the device
+    // faults (TrayApp.ShowRepairFlow). Advisory never qualifies: it covers both
+    // "worth checking" and "we could not read it", and neither is a measured
+    // problem the user can be told to fix (Rank above, and the precedence note
+    // at the top of this file).
+    internal static IReadOnlyList<ConfigFact> Blocking(IReadOnlyList<ConfigFact> facts)
+    {
+        List<ConfigFact>? blocking = null;
+        var ordered = Ordered(facts);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            // Ordered puts Blocking first (Rank == 0), so the first non-Blocking
+            // entry ends the run and the rest of the list needs no visit.
+            if (ordered[i].Severity != ConfigSeverity.Blocking)
+                break;
+            (blocking ??= new List<ConfigFact>(2)).Add(ordered[i]);
+        }
+        return (IReadOnlyList<ConfigFact>?)blocking ?? Array.Empty<ConfigFact>();
+    }
+
+    // The Blocking facts as rows for the top-of-menu problem count
+    // (RepairPlanner.MenuLabel). Each stays behind the section prefix, so a
+    // configuration line can never be read as the bare device-fault voice that
+    // row owns even when it is the only problem standing - the same structural
+    // rule SectionLabel follows, and the reason the precedence note at the top
+    // of this file does not need a severity number to hold.
+    internal static IReadOnlyList<string> ProblemTitles(IReadOnlyList<ConfigFact> facts)
+    {
+        var blocking = Blocking(facts);
+        if (blocking.Count == 0)
+            return Array.Empty<string>();
+        var titles = new List<string>(blocking.Count);
+        for (var i = 0; i < blocking.Count; i++)
+            titles.Add($"{SectionPrefix}: {blocking[i].Title}");
+        return titles;
+    }
+
+    // Whether the elevated sequence may be offered at all. Ready and
+    // NeedsFirmware are the two states with real work behind them; NothingToDo
+    // and Unavailable each get a dialog that runs nothing. The empty-step guard
+    // is belt and braces: a plan with no steps would show a confirmation
+    // listing nothing and then elevate for nothing.
+    internal static bool SigningFixOffersRun(SigningFixPlan plan) =>
+        (plan.State == SigningFixState.Ready || plan.State == SigningFixState.NeedsFirmware)
+        && plan.Steps.Count > 0;
+
+    internal static bool HasStep(SigningFixPlan plan, SigningStep step)
+    {
+        for (var i = 0; i < plan.Steps.Count; i++)
+        {
+            if (plan.Steps[i] == step)
+                return true;
+        }
+        return false;
+    }
+
+    // Unavailable: the planner could not see enough of this PC to predict what
+    // its own steps would do. BlockedReason is the planner's own wording and is
+    // shown verbatim for the same reason a Detail is - a view that re-words a
+    // refusal is a view that can drop the part the user needed. Nothing here
+    // names an OK that runs anything, which is what makes this branch
+    // structurally incapable of reaching SigningFix.RunAsync.
+    //
+    // The one refusal that has a next move is Secure Boot still being on after
+    // the firmware trip, so that case gets the toggle's name and location and
+    // an explicit offer to go round again. Keyed off the planner's reason, not
+    // off the state, because Unavailable is the only state that carries one.
+    internal static string SigningFixBlockedText(SigningFixPlan plan)
+    {
+        var reason = plan.BlockedReason ?? "It could not read enough of this PC's current state "
+            + "to predict what the steps would do, and it will not run a sequence whose effect "
+            + "it cannot predict.";
+        var secureBoot = reason.Contains("Secure Boot", StringComparison.Ordinal);
+
+        var todo = "WHAT YOU NEED TO DO\n"
+            + "- Nothing has been changed on this PC, so there is nothing to undo.\n";
+        if (secureBoot)
+        {
+            todo += "- To try again: start " + SigningFixLabel + " from this menu and it restarts "
+                + "this PC into the firmware setup screen once more.\n"
+                + "- On that screen, the setting to change is named Secure Boot, usually in the "
+                + "Security or the Boot menu. Set it to Disabled, then save and exit (F10 on "
+                + "most PCs).\n";
+        }
+        todo += "- To check the state yourself: bcdedit /enum {current} in an administrator "
+            + "Command Prompt.\n"
+            + "- Diagnostics -> Open logs has what the tray saw.";
+
+        return string.Join("\n\n", new[]
+        {
+            "Magic Tray will not run the driver signing fix on this PC.",
+            reason,
+            todo,
+            "OK closes this and changes nothing.",
+        });
+    }
+
+    // NothingToDo: every prerequisite this fix exists to set is already set.
+    // The honest offer in that state is the way back out, so OK leads to the
+    // undo - and only to the undo's OWN confirmation, never straight into a
+    // run, so the one-confirmation rule holds on that path too.
+    internal static string SigningFixNothingToDoText(SigningFixPlan plan) => string.Join("\n\n", new[]
+    {
+        "This PC is already configured to load the self-signed scroll driver: nothing in the "
+        + "driver signing fix is left to do.",
+        plan.BlockedReason ?? "Test Mode is on, Memory integrity is off and Secure Boot is not "
+            + "refusing the test signing flag. If the wheel is still dead, what is left is a "
+            + "reboot that has not happened yet or a fault on the device itself - the top row of "
+            + "this menu reports those.",
+        "WHAT YOU NEED TO DO\n"
+        + "- Nothing, unless you want this PC put back the way it was.\n"
+        + "- OK shows the undo (" + SigningFixRevertLabel + "): test signing off, Memory "
+        + "integrity back on, one restart, and BitLocker suspended for just that restart.\n"
+        + "- Nothing runs until you accept the undo's own confirmation.",
+        "OK shows the undo. Cancel leaves this PC exactly as it is.",
+    });
+
+    // The undo asked for on a PC that is not in Test Mode. Nothing to take
+    // back, so this states that and claims no change either way - the opposite
+    // mistake to a dialog that reports an undo it never ran.
+    internal static string SigningFixNothingToRevertText(SigningFixPlan plan) =>
+        plan.BlockedReason ?? "There is nothing to undo on this PC: test signing is already off "
+            + "and Memory integrity is not being held off by Magic Tray. Nothing was changed.\n\n"
+            + "WHAT YOU NEED TO DO\n"
+            + "- Nothing. This PC is already in the state the undo would put it in.\n\n"
+            + "OK closes this and changes nothing.";
+
+    // The undo ran. It is the mirror of SigningFixRebootingText and must keep
+    // the same two promises in the other direction: the reboot the user
+    // confirmed is under way, and the way back IN is still on the menu - a user
+    // who undid the fix by mistake is not locked out of redoing it.
+    //
+    // Keyed off the revert-only steps (SigningFix.cs: DisableTestSigning,
+    // EnableHvci), never off the forward ones: the elevated script needs to
+    // know which direction each setting moves, so the two legs carry different
+    // step values and a text that read the forward names would silently
+    // describe nothing. SuspendBitLocker is shared with the forward legs
+    // because the undo rewrites the same boot configuration and needs the same
+    // one-restart suspend to avoid the recovery-key prompt.
+    internal static string SigningFixRevertDoneText(SigningFixPlan plan)
+    {
+        var blocks = new List<string>(6)
+        {
+            "The undo ran and this PC is rebooting now, as the confirmation said it would.",
+            "WHAT YOU NEED TO DO\n"
+            + "- Nothing. Let the PC restart.",
+        };
+
+        if (HasStep(plan, SigningStep.DisableTestSigning))
+        {
+            blocks.Add("After the reboot test signing is off: the Test Mode watermark goes from "
+                + "the desktop, and Windows stops loading the self-signed scroll driver, so the "
+                + "wheel goes back to however it behaved before the fix.");
+        }
+
+        if (HasStep(plan, SigningStep.EnableHvci))
+            blocks.Add("Memory integrity is back on, which is the state Windows ships with.");
+
+        if (HasStep(plan, SigningStep.SuspendBitLocker))
+        {
+            blocks.Add("BitLocker protection is suspended for this one reboot, exactly as the "
+                + "fix itself did it, so the boot configuration change does not ask you for a "
+                + "recovery key. It is active again when Windows comes back.");
+        }
+
+        blocks.Add("TO REDO\n"
+            + "One click: " + SigningFixLabel + " is still on this menu if you want the scroll "
+            + "driver loading again.");
+        return string.Join("\n\n", blocks);
+    }
+
+    // The resumed fix, after the firmware restart. This text REPLACES
+    // plan.Prompt rather than preceding it: a tray that starts with a pending
+    // fix asks exactly one question, and that question has to carry the
+    // planner's own step list inside it or "Yes" would be consent to something
+    // the dialog never named.
+    internal static string SigningFixResumeText(SigningFixPlan plan) => string.Join("\n\n", new[]
+    {
+        "You started the driver signing fix before this PC restarted into its firmware screen. "
+        + "Finish it now?",
+        "WHAT IS LEFT\n"
+        + "- The rest of the fix, below. It is one administrator step and one restart.\n"
+        + "- Answer Yes to run it now, or No to leave this PC exactly as it is.",
+        plan.Prompt,
+        "Yes runs the rest in one administrator step and asks nothing further. No drops the fix "
+        + "and changes nothing - " + SigningFixLabel + " stays on this menu for whenever you want "
+        + "it.",
+    });
+
+    // NeedsFirmware, accepted and run. Secure Boot is a firmware setting and no
+    // OS API can change it, so the sequence stops at the firmware restart and
+    // this text is the whole of the user's part: where the setting is, what to
+    // do there, and that exactly one question is left afterwards.
+    internal static string SigningFixFirmwareText(SigningFixPlan plan)
+    {
+        var blocks = new List<string>(6)
+        {
+            "This PC is restarting into its UEFI firmware setup screen now. Windows is not "
+            + "coming back until you are done there.",
+            "WHAT YOU NEED TO DO ON THE SCREEN THAT IS COMING UP\n"
+            + "- Find the setting named Secure Boot. It is usually under Security, Boot or "
+            + "Authentication.\n"
+            + "- Set it to Disabled.\n"
+            + "- Save and exit (F10 on most PCs). Windows starts again by itself.",
+            "Secure Boot cannot be turned off from inside Windows at all, which is why this "
+            + "restart exists: Magic Tray never touches the setting and cannot.",
+        };
+
+        if (HasStep(plan, SigningStep.SuspendBitLocker))
+        {
+            blocks.Add("BitLocker protection is suspended for this one restart so the firmware "
+                + "change does not ask you for a recovery key. Windows turns it back on by "
+                + "itself at the next boot.");
+        }
+
+        blocks.Add("WHAT HAPPENS WHEN WINDOWS IS BACK\n"
+            + "- Magic Tray asks once whether to finish the rest: Memory integrity off, test "
+            + "signing on, one more reboot. That is the only question left.\n"
+            + "- Answer Yes and it does the rest on its own.\n"
+            + "- If you left the firmware screen without changing Secure Boot, answer No: "
+            + "nothing else on this PC will have moved.");
+        return string.Join("\n\n", blocks);
+    }
+
+    // Ready, accepted and run: every step is done and the reboot is part of the
+    // sequence the user confirmed in plan.Prompt. The undo is named here
+    // because a user who can get into Test Mode is entitled to the way out of
+    // it on the same screen that told her she is in it.
+    internal static string SigningFixRebootingText(SigningFixPlan plan)
+    {
+        var blocks = new List<string>(5)
+        {
+            "The driver signing fix ran and this PC is rebooting now, as the confirmation said "
+            + "it would.",
+            "WHAT YOU NEED TO DO\n"
+            + "- Nothing. Let the PC restart, then try the scroll wheel.",
+        };
+
+        if (HasStep(plan, SigningStep.EnableTestSigning))
+        {
+            blocks.Add("After the reboot Windows shows a Test Mode watermark on the desktop - "
+                + "that watermark is the expected sign it worked. Open the Magic Tray menu then "
+                + "and the scroll driver should be loading.");
+        }
+
+        if (HasStep(plan, SigningStep.SuspendBitLocker))
+        {
+            blocks.Add("BitLocker protection was suspended for this one reboot so the boot "
+                + "configuration change does not ask you for a recovery key. Windows turns it "
+                + "back on by itself.");
+        }
+
+        blocks.Add("TO UNDO\n"
+            + "One click: " + SigningFixRevertLabel + " on the same menu puts test signing back "
+            + "off and Memory integrity back on, over one more reboot, with BitLocker suspended "
+            + "for that reboot the same way this one was.");
+        return string.Join("\n\n", blocks);
+    }
+
+    // UAC declined. The elevated script never started, so this claims no
+    // partial change at all - not one step, not the reboot, not BitLocker.
+    internal static string SigningFixCancelledText() =>
+        "Nothing was changed: the administrator prompt was declined, so none of the steps ran.\n\n"
+        + "WHAT THIS LEFT ON THIS PC\n"
+        + "- This PC is exactly as it was, no reboot is scheduled and BitLocker was not "
+        + "suspended.\n\n"
+        + "WHAT YOU NEED TO DO\n"
+        + "- Nothing, unless you want to try again: " + SigningFixLabel + " stays on this menu "
+        + "for whenever you want it.";
+
+    // The elevated script started and did not report success. The honest claim
+    // is that the result is unknown, never that nothing happened - so the
+    // script's own reported reason is shown VERBATIM rather than summarised: it
+    // is the only evidence of how far the sequence got.
+    internal static string SigningFixFailedText(string? reason)
+    {
+        var blocks = new List<string>(4)
+        {
+            "Something in the driver signing fix did not work, so do not assume the settings "
+            + "moved. Magic Tray could not finish it on this PC.",
+        };
+
+        if (!string.IsNullOrWhiteSpace(reason))
+            blocks.Add("What the elevated step reported:\n" + reason!.Trim());
+
+        blocks.Add("WHAT YOU NEED TO DO\n"
+            + "- Check the state yourself: bcdedit /enum {current} in an administrator Command "
+            + "Prompt.\n"
+            + "- Check Memory integrity in Windows Security -> Device security -> Core "
+            + "isolation.\n"
+            + "- Diagnostics -> Open logs has what the tray saw.");
+        return string.Join("\n\n", blocks);
     }
 }

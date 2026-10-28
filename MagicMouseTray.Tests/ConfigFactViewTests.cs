@@ -189,18 +189,291 @@ public class ConfigFactViewTests
     {
         // Ownership is keyed off the fact id, so a reworded Detail cannot move
         // the fix to the wrong component.
-        Assert.Contains(
-            "never changes Test Mode", ConfigFactView.OwnerLine(SystemConfigChecker.TestModeFactId),
+        var testMode = ConfigFactView.OwnerLine(SystemConfigChecker.TestModeFactId);
+        var memoryIntegrity = ConfigFactView.OwnerLine(SystemConfigChecker.MemoryIntegrityFactId);
+        var secureBoot = ConfigFactView.OwnerLine(SystemConfigChecker.SecureBootFactId);
+
+        // The signing promise is no longer "the tray changes nothing": the tray
+        // runs the whole sequence. What it promises instead is the shape of
+        // that sequence, which is the whole of AGENTS.md:76 - one confirmation
+        // listing every step, one administrator prompt, the reboot, and the
+        // undo. Each is pinned separately because dropping any one of them
+        // turns a confirmed action back into a silent one.
+        Assert.Contains("You decide once", testMode, StringComparison.Ordinal);
+        Assert.Contains(ConfigFactView.SigningFixLabel, testMode, StringComparison.Ordinal);
+        Assert.Contains("one administrator prompt", testMode, StringComparison.Ordinal);
+        Assert.Contains("reboot", testMode, StringComparison.Ordinal);
+        Assert.Contains("BitLocker", testMode, StringComparison.Ordinal);
+        Assert.Contains("never without that answer", testMode, StringComparison.Ordinal);
+        Assert.Contains("never on a timer", testMode, StringComparison.Ordinal);
+        Assert.Contains("undo is offered whenever there is anything to undo", testMode,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "never changes Test Mode", ConfigFactView.OwnerLine(SystemConfigChecker.MemoryIntegrityFactId),
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("never changes Test Mode", testMode, StringComparison.Ordinal);
+
+        // Memory integrity: the one confirmed sequence now writes the HVCI
+        // policy value, so the old blanket promise would be a lie and must stay
+        // deleted. What replaces it names the user's answer, the single
+        // sequence and the undo - and still names the by-hand route.
+        Assert.DoesNotContain(
+            "never changes Memory integrity", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("with your permission", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("one confirmed sequence", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("never unprompted at startup", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("undo turns it back on", memoryIntegrity, StringComparison.Ordinal);
+        Assert.Contains("Core isolation", memoryIntegrity, StringComparison.Ordinal);
+
+        // Secure Boot keeps the ABSOLUTE never-touch promise, because it is the
+        // one setting here that no program can change: it lives in firmware.
+        // This is the line that must not drift when the other two do.
+        Assert.Contains("firmware", secureBoot, StringComparison.Ordinal);
+        Assert.Contains("no program can", secureBoot, StringComparison.Ordinal);
+        Assert.Contains("never tries", secureBoot, StringComparison.Ordinal);
+
         Assert.StartsWith(
             "The driver package.", ConfigFactView.OwnerLine(SystemConfigChecker.DriverPackageFactId),
             StringComparison.Ordinal);
         Assert.StartsWith(
             "You, on this PC.", ConfigFactView.OwnerLine("some-fact-added-later"),
             StringComparison.Ordinal);
+    }
+
+    static SigningFixPlan Plan(SigningFixState state, params SigningStep[] steps) =>
+        new(state, steps, "Prompt body written by the planner.",
+            state == SigningFixState.Unavailable ? "This PC could not be read." : null);
+
+    [Fact]
+    public void OnlyAPlanWithRealStepsMayRun()
+    {
+        // SigningFixOffersRun is the single gate every caller asks before a
+        // click may reach SigningFix.RunAsync. Looping the enum is what keeps a
+        // state added later from defaulting to "runnable".
+        foreach (var state in Enum.GetValues<SigningFixState>())
+        {
+            var runnable = state is SigningFixState.Ready or SigningFixState.NeedsFirmware;
+            Assert.Equal(
+                runnable,
+                ConfigFactView.SigningFixOffersRun(
+                    Plan(state, SigningStep.EnableTestSigning, SigningStep.Reboot)));
+
+            // Runnable on paper but carrying no step is not an offer: it would
+            // confirm nothing and then elevate for nothing.
+            Assert.False(ConfigFactView.SigningFixOffersRun(Plan(state)));
+        }
+    }
+
+    [Fact]
+    public void BlockedAndNothingToDoDialogsNameNoOkThatRunsAnything()
+    {
+        var unavailable = Plan(SigningFixState.Unavailable);
+        var blocked = ConfigFactView.SigningFixBlockedText(unavailable);
+        // The planner's own reason, verbatim - this view never re-words a refusal.
+        Assert.Contains(unavailable.BlockedReason!, blocked, StringComparison.Ordinal);
+        Assert.Contains("Nothing has been changed", blocked, StringComparison.Ordinal);
+        AssertAscii(blocked, allowNewline: true);
+
+        // The one refusal with a next move: Secure Boot still on after the
+        // firmware trip. The dialog has to name the toggle that was missed and
+        // offer the way round again, or the fix dead-ends on a reason alone.
+        var secureBoot = SigningFix.BuildPlan(true, true, false, resuming: true);
+        var blockedBySecureBoot = ConfigFactView.SigningFixBlockedText(secureBoot);
+        Assert.Contains("Secure Boot is still on", blockedBySecureBoot, StringComparison.Ordinal);
+        Assert.Contains("To try again", blockedBySecureBoot, StringComparison.Ordinal);
+        Assert.Contains(
+            "Security or the Boot menu", blockedBySecureBoot, StringComparison.Ordinal);
+        Assert.Contains("Set it to Disabled", blockedBySecureBoot, StringComparison.Ordinal);
+        AssertAscii(blockedBySecureBoot, allowNewline: true);
+
+        var nothing = ConfigFactView.SigningFixNothingToDoText(Plan(SigningFixState.NothingToDo));
+        Assert.Contains("already configured", nothing, StringComparison.Ordinal);
+        // The only thing its OK may do is open the undo's OWN confirmation, so
+        // the one-confirmation rule survives this path as well.
+        Assert.Contains(ConfigFactView.SigningFixRevertLabel, nothing, StringComparison.Ordinal);
+        Assert.Contains("Nothing runs until you accept", nothing, StringComparison.Ordinal);
+        AssertAscii(nothing, allowNewline: true);
+    }
+
+    [Fact]
+    public void SecureBootOnTakesTheFirmwareRoute_AndTheTrayNeverClaimsItCanChangeIt()
+    {
+        // The reference PC as measured: Secure Boot on, HVCI on, test signing
+        // off. Secure Boot is firmware and bcdedit is refused while it is on,
+        // so the ONLY answer is the restart into firmware setup (AGENTS.md:76)
+        // - and the plan has to say so itself rather than leave the view to
+        // infer it.
+        var plan = SigningFix.BuildPlan(
+            secureBootOn: true, hvciOn: true, testSigningOn: false, resuming: false);
+
+        Assert.Equal(SigningFixState.NeedsFirmware, plan.State);
+        Assert.Contains(SigningStep.RebootToFirmware, plan.Steps);
+        Assert.True(ConfigFactView.SigningFixOffersRun(plan));
+
+        var text = ConfigFactView.SigningFixFirmwareText(plan);
+        Assert.Contains("Secure Boot", text, StringComparison.Ordinal);
+        Assert.Contains(
+            "cannot be turned off from inside Windows", text, StringComparison.Ordinal);
+        Assert.Contains("never touches the setting", text, StringComparison.Ordinal);
+        // What she is about to see, and exactly what to change on it.
+        Assert.Contains(
+            "WHAT YOU NEED TO DO ON THE SCREEN THAT IS COMING UP", text, StringComparison.Ordinal);
+        Assert.Contains("- Set it to Disabled.", text, StringComparison.Ordinal);
+        Assert.Contains("Security, Boot or Authentication", text, StringComparison.Ordinal);
+        // Exactly one question is left after the firmware screen, and the user
+        // has to be told that before she walks into it.
+        Assert.Contains("only question left", text, StringComparison.Ordinal);
+        AssertAscii(text, allowNewline: true);
+    }
+
+    [Fact]
+    public void ResumePromptCarriesThePlannersOwnPromptAndBothAnswers()
+    {
+        // The resumed fix gets ONE dialog, so the planner's prompt has to be
+        // inside it verbatim: wrapping it is allowed, replacing its content is
+        // consent to something the dialog never named.
+        var plan = Plan(
+            SigningFixState.Ready, SigningStep.DisableHvci, SigningStep.EnableTestSigning,
+            SigningStep.Reboot);
+        var text = ConfigFactView.SigningFixResumeText(plan);
+
+        Assert.Contains(plan.Prompt, text, StringComparison.Ordinal);
+        Assert.Contains("Finish it now?", text, StringComparison.Ordinal);
+        // What is left, and what she has to answer, before the plan body.
+        Assert.Contains("WHAT IS LEFT", text, StringComparison.Ordinal);
+        Assert.Contains("Answer Yes to run it now", text, StringComparison.Ordinal);
+        Assert.Contains("Yes runs the rest", text, StringComparison.Ordinal);
+        Assert.Contains("No drops the fix and changes nothing", text, StringComparison.Ordinal);
+        AssertAscii(text, allowNewline: true);
+    }
+
+    [Fact]
+    public void OutcomeDialogsClaimOnlyWhatHappened()
+    {
+        var ready = Plan(
+            SigningFixState.Ready, SigningStep.SuspendBitLocker, SigningStep.DisableHvci,
+            SigningStep.EnableTestSigning, SigningStep.Reboot);
+        var rebooting = ConfigFactView.SigningFixRebootingText(ready);
+        Assert.Contains("rebooting now", rebooting, StringComparison.Ordinal);
+        Assert.Contains("watermark", rebooting, StringComparison.Ordinal);
+        Assert.Contains("BitLocker", rebooting, StringComparison.Ordinal);
+        // The way back is named where the user is told she is in Test Mode.
+        Assert.Contains(
+            ConfigFactView.SigningFixRevertLabel, rebooting, StringComparison.Ordinal);
+
+        // A plan that never suspended BitLocker must not claim it did. The undo
+        // line still names BitLocker, because the undo resumes it either way -
+        // what may not appear is the claim that this run suspended anything.
+        var noBitLocker = Plan(
+            SigningFixState.Ready, SigningStep.EnableTestSigning, SigningStep.Reboot);
+        Assert.DoesNotContain(
+            "BitLocker protection was suspended",
+            ConfigFactView.SigningFixRebootingText(noBitLocker), StringComparison.Ordinal);
+
+        // UAC declined: the elevated script never started, so no partial change
+        // may be implied anywhere in this text.
+        var cancelled = ConfigFactView.SigningFixCancelledText();
+        Assert.Contains("Nothing was changed", cancelled, StringComparison.Ordinal);
+        Assert.Contains("none of the steps ran", cancelled, StringComparison.Ordinal);
+        Assert.Contains("no reboot is scheduled", cancelled, StringComparison.Ordinal);
+
+        // The script's own reason is shown verbatim: it is the only evidence of
+        // how far the sequence got, and a summary of it is a summary of the
+        // only thing the user can act on.
+        const string Reason = "bcdedit: The value is protected by Secure Boot policy.";
+        var failed = ConfigFactView.SigningFixFailedText(Reason);
+        Assert.Contains(Reason, failed, StringComparison.Ordinal);
+        Assert.Contains("do not assume the settings moved", failed, StringComparison.Ordinal);
+
+        // No reason is not an empty paragraph claiming the script said nothing.
+        var noReason = ConfigFactView.SigningFixFailedText(null);
+        Assert.DoesNotContain(
+            "What the elevated step reported", noReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n\n\n", noReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RevertTextIsKeyedOffTheRevertStepsAndOffersTheFixAgain()
+    {
+        // The two legs carry different step values because the elevated script
+        // has to know which direction each setting moves (SigningFix.cs), so a
+        // revert text that read the forward names would describe nothing.
+        var revert = Plan(
+            SigningFixState.Ready, SigningStep.SuspendBitLocker, SigningStep.DisableTestSigning,
+            SigningStep.EnableHvci, SigningStep.Reboot);
+        var done = ConfigFactView.SigningFixRevertDoneText(revert);
+
+        Assert.Contains("test signing is off", done, StringComparison.Ordinal);
+        Assert.Contains("Memory integrity is back on", done, StringComparison.Ordinal);
+        // The undo suspends for one restart exactly as the forward fix does; it
+        // never resumes BitLocker, because resuming before the reboot that
+        // rewrites the BCD is what triggers the recovery-key prompt.
+        Assert.DoesNotContain("resumed", done, StringComparison.Ordinal);
+        // Undoing the fix must not lock the user out of redoing it.
+        Assert.Contains(ConfigFactView.SigningFixLabel, done, StringComparison.Ordinal);
+
+        var forward = Plan(
+            SigningFixState.Ready, SigningStep.EnableTestSigning, SigningStep.DisableHvci,
+            SigningStep.Reboot);
+        Assert.DoesNotContain(
+            "Memory integrity is back on", ConfigFactView.SigningFixRevertDoneText(forward),
+            StringComparison.Ordinal);
+
+        var nothing = ConfigFactView.SigningFixNothingToRevertText(Plan(SigningFixState.NothingToDo));
+        Assert.Contains("nothing to undo", nothing, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nothing was changed", nothing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EverySigningFixStringIsPlainAscii()
+    {
+        // Same sweep the fact strings get, over every state and every step set
+        // a plan can carry: these are pasted into bug reports and the tray's
+        // own dialogs mangle anything outside plain ASCII.
+        foreach (var state in Enum.GetValues<SigningFixState>())
+        {
+            foreach (var steps in StepSets())
+            {
+                var plan = new SigningFixPlan(state, steps, "Prompt body.", "A reason.");
+                AssertAscii(ConfigFactView.SigningFixBlockedText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixNothingToDoText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixNothingToRevertText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixResumeText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixFirmwareText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixRebootingText(plan), allowNewline: true);
+                AssertAscii(ConfigFactView.SigningFixRevertDoneText(plan), allowNewline: true);
+            }
+        }
+
+        AssertAscii(ConfigFactView.SigningFixCancelledText(), allowNewline: true);
+        AssertAscii(ConfigFactView.SigningFixFailedText(null), allowNewline: true);
+        AssertAscii(ConfigFactView.SigningFixLabel);
+        AssertAscii(ConfigFactView.SigningFixRevertLabel);
+    }
+
+    static IEnumerable<SigningStep[]> StepSets()
+    {
+        yield return Array.Empty<SigningStep>();
+        yield return Enum.GetValues<SigningStep>();
+        foreach (var step in Enum.GetValues<SigningStep>())
+            yield return [step];
+    }
+
+    [Fact]
+    public void BlockingFacts_AreTheOnesTheProblemRowCounts()
+    {
+        // The repair flow and the top-of-menu row count these. A healthy PC
+        // must contribute nothing, or "No problems found" becomes a lie in the
+        // other direction.
+        Assert.Empty(ConfigFactView.Blocking(HealthyFacts()));
+        Assert.Empty(ConfigFactView.ProblemTitles(HealthyFacts()));
+
+        var blocking = ConfigFactView.Blocking(TestModeOffFacts());
+        var fact = Assert.Single(blocking);
+        Assert.Equal(SystemConfigChecker.TestModeFactId, fact.Id);
+
+        // Every title stays behind the section prefix, so a configuration line
+        // can never be read as the bare device-fault voice the repair row owns.
+        var title = Assert.Single(ConfigFactView.ProblemTitles(TestModeOffFacts()));
+        Assert.StartsWith(ConfigFactView.SectionPrefix + ": ", title, StringComparison.Ordinal);
+        Assert.EndsWith(fact.Title, title, StringComparison.Ordinal);
     }
 
     [Fact]

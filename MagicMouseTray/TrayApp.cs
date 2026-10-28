@@ -404,6 +404,30 @@ internal static class TrayMenu
     internal static bool IsMachineWideFact(string id) =>
         !string.Equals(id, SystemConfigChecker.DriverPackageFactId, StringComparison.Ordinal);
 
+    // The three facts the ONE automated signing fix answers. They are not three
+    // problems with three fixes: Secure Boot, Memory integrity and test signing
+    // are the successive gates Windows puts in front of the same self-signed
+    // driver, and SigningFix.BuildPlan decides which of them this PC actually
+    // needs (AGENTS.md:76). Keyed off the fact id, never off a Title, so a
+    // reworded reading cannot silently drop a row out of the fix.
+    internal static bool IsSigningFact(string id) =>
+        string.Equals(id, SystemConfigChecker.TestModeFactId, StringComparison.Ordinal)
+        || string.Equals(id, SystemConfigChecker.MemoryIntegrityFactId, StringComparison.Ordinal)
+        || string.Equals(id, SystemConfigChecker.SecureBootFactId, StringComparison.Ordinal);
+
+    // Whether this PC said anything about driver signing at all. False means
+    // the checker found no device whose driver signature matters here, and an
+    // offer to "fix driver signing" would be answering a question nobody asked.
+    internal static bool HasSigningFact(IReadOnlyList<ConfigFact> facts)
+    {
+        for (var i = 0; i < facts.Count; i++)
+        {
+            if (IsSigningFact(facts[i].Id))
+                return true;
+        }
+        return false;
+    }
+
     internal static IReadOnlyList<ConfigFact> MergeConfigFacts(
         IEnumerable<IReadOnlyList<ConfigFact>> perDevice)
     {
@@ -664,6 +688,32 @@ internal sealed class TrayApp : IDisposable
     // standing, exactly as a failed snapshot read leaves the previous
     // findings standing.
     IReadOnlyList<ConfigFact> _configFacts = Array.Empty<ConfigFact>();
+    // Whether this PC currently boots with test signing on, read on the same
+    // background trip as the facts above and written only by PublishConfigFacts
+    // on the UI thread. The facts cannot answer this: a Title is the checker's
+    // prose and a menu that keyed an ACTION off prose would change behaviour
+    // the next time that prose is reworded. The undo row is the one thing that
+    // needs the raw reading - it has to be on the menu whenever Test Mode is
+    // on, including on a PC whose devices produce no signing fact at all.
+    bool? _testSigningOn;
+    // How Memory integrity is configured, cached for the same reason and read
+    // on the same trip: the undo has to be offered on a PC the fix already
+    // turned HVCI off on, and that PC may have no signing fact and no test
+    // signing to key off. The STATE and not a bool, because only a measured
+    // Off proves somebody turned it off - a PC that never configured HVCI at
+    // all must not be offered an undo (SystemConfigChecker.HvciState). Same
+    // "null is no evidence, keep what we had" rule as the reading above - a
+    // failed read never blanks it.
+    SystemConfigChecker.HvciState? _hvciState;
+    // One signing-fix dialog at a time. Two clicks on the row - or a click
+    // during the guided walk - would otherwise stack two confirmations and two
+    // elevated runs, which is exactly the "exactly one confirmation" property
+    // the whole flow exists to keep (AGENTS.md:76).
+    bool _signingFixInFlight;
+    // The pending-fix question is asked at most once per process, so a tray
+    // that is restarted twice while the marker stands still only ever asks
+    // once per start and never re-asks itself from any later path.
+    bool _signingResumeAsked;
     // The driver Windows actually has on the devices this app installs nothing
     // for - keyboards and trackpads - plus, for a keyboard, whether this
     // repo's SDP registry patch is in its Bluetooth record. Both are REGISTRY
@@ -801,6 +851,16 @@ internal sealed class TrayApp : IDisposable
 
         if (_config.UpdateCheck)
             _ = CheckForUpdateBackgroundAsync();
+
+        // The ONE startup dialog this app is allowed to raise, and only when
+        // the user herself left a fix half-finished across the firmware reboot
+        // (Config.SigningFixPending, written before that reboot). It asks
+        // nothing when there is nothing pending, nothing to finish, or nothing
+        // the tray can still do - see ResumeSigningFixAsync. Started as a task
+        // rather than called: it reads bcdedit and the registry, which may not
+        // sit on the UI thread, so the tray icon appears while it reads.
+        if (_config.SigningFixPending)
+            _ = ResumeSigningFixAsync();
     }
 
     async Task CheckForUpdateBackgroundAsync()
@@ -838,8 +898,9 @@ internal sealed class TrayApp : IDisposable
             UpdateBatteryReadsVisibility();
         };
 
-        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings)));
-        if (_findings.Count > 0)
+        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(
+            RepairPlanner.MenuLabel(_findings, ConfigFactView.ProblemTitles(_configFacts))));
+        if (_findings.Count > 0 || ConfigFactView.Blocking(_configFacts).Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
         menu.Items.Add(_repairItem);
@@ -1026,9 +1087,19 @@ internal sealed class TrayApp : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
 
-        var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        var semver = asmVer != null ? $"{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "1.0.0";
-        menu.Items.Add(new ToolStripMenuItem(TrayMenu.MenuText($"{TrayMenu.ProductName} {semver}")) { Enabled = false });
+        // The menu header shows the INFORMATIONAL version, not AssemblyVersion:
+        // AssemblyVersion is numeric-only (1.1.2.0) and silently drops the
+        // prerelease suffix, so a test build would be indistinguishable from the
+        // release it was cut from. BugReport.AppVersion() is the same string the
+        // log header and every bug report already carry (Logger.cs:29,
+        // BugReport.cs:32-37), so the menu, the log and an issue all agree.
+        // Everything after '+' is git build metadata (the full commit sha the
+        // SDK appends), which is 40 characters a menu row cannot show and the
+        // reader cannot use. The prerelease suffix before it - "-test.N" - is
+        // the part that distinguishes this build, so only that is kept.
+        var shownVersion = BugReport.AppVersion().Split('+')[0];
+        menu.Items.Add(new ToolStripMenuItem(
+            TrayMenu.MenuText($"{TrayMenu.ProductName} {shownVersion}")) { Enabled = false });
 
         _updateItem = new ToolStripMenuItem(TrayMenu.MenuText("Update available")) { Visible = false };
         _updateItem.Click += (_, _) =>
@@ -2338,13 +2409,7 @@ internal sealed class TrayApp : IDisposable
 
         try
         {
-            if (_repairItem != null)
-            {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings);
-                _repairItem.ForeColor = _findings.Count > 0
-                    ? Color.OrangeRed
-                    : SystemColors.ControlText;
-            }
+            RefreshRepairRow();
 
             RefreshConfigSection();
         }
@@ -2403,6 +2468,8 @@ internal sealed class TrayApp : IDisposable
         {
             IReadOnlyList<ConfigFact>? facts = null;
             IReadOnlyDictionary<string, StockFacts>? stock = null;
+            bool? testSigning = null;
+            SystemConfigChecker.HvciState? hvci = null;
             try
             {
                 try
@@ -2430,14 +2497,40 @@ internal sealed class TrayApp : IDisposable
                 {
                     Logger.Log($"STOCK_FACTS_FAIL err={ex.Message}");
                 }
+
+                // And the raw test signing and Memory integrity readings, which
+                // decide whether the undo row is on the menu. Neither can be
+                // lifted off the facts: a Title is the checker's prose, and a
+                // menu that keyed an ACTION off prose would lose the row the
+                // next time that prose is reworded. Same trip, same thread,
+                // their own catch - and null from a failed read keeps whatever
+                // the menu already had.
+                try
+                {
+                    testSigning = SystemConfigChecker.ReadTestSigningOn();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"TESTSIGNING_READ_FAIL err={ex.Message}");
+                }
+
+                try
+                {
+                    hvci = SystemConfigChecker.ReadHvciConfigured();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"HVCI_READ_FAIL err={ex.Message}");
+                }
             }
             finally
             {
                 System.Threading.Interlocked.Exchange(ref _configReadInFlight, 0);
             }
 
-            if (facts is not null || stock is not null)
-                PublishConfigFacts(facts, stock);
+            if (facts is not null || stock is not null || testSigning is not null
+                || hvci is not null)
+                PublishConfigFacts(facts, stock, testSigning, hvci);
         });
     }
 
@@ -2559,11 +2652,12 @@ internal sealed class TrayApp : IDisposable
     // already-disposed guard the settle tick uses after crossing threads -
     // both are normal exit races, not errors.
     //
-    // Both readings cross together because they are read together: the
-    // configuration section and the device rows are repainted from the one
-    // trip the refresh already pays for.
+    // All four readings cross together because they are read together: the
+    // configuration section, the device rows and the undo row are repainted
+    // from the one trip the refresh already pays for.
     void PublishConfigFacts(
-        IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock)
+        IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock,
+        bool? testSigningOn, SystemConfigChecker.HvciState? hvciState)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null)
@@ -2574,16 +2668,23 @@ internal sealed class TrayApp : IDisposable
             {
                 if (_settleStopped)
                     return;
-                // Null from either reader is no evidence, so that half keeps
-                // the value it had rather than being blanked by a failed read.
+                // Null from any reader is no evidence, so that part keeps the
+                // value it had rather than being blanked by a failed read.
                 if (facts is not null)
                     _configFacts = facts;
                 var stockChanged = stock is not null && !SameStockFacts(_stockFacts, stock);
                 if (stock is not null)
                     _stockFacts = stock;
+                if (testSigningOn is not null)
+                    _testSigningOn = testSigningOn;
+                if (hvciState is not null)
+                    _hvciState = hvciState;
                 try
                 {
                     RefreshConfigSection();
+                    // A Blocking fact is a problem the top-of-menu row counts,
+                    // so the row has to be repainted from this reading too.
+                    RefreshRepairRow();
                     // The device rows carry the driver-in-use line and the
                     // battery's source, so a changed reading has to reach
                     // them. Rebuilt only when the reading actually moved:
@@ -2664,9 +2765,29 @@ internal sealed class TrayApp : IDisposable
         }
     }
 
-    // The collapsed section plus one clickable row per fact. Rebuilt wholesale
-    // on every refresh, the same way the device rows are, so there is no stale
-    // row to invalidate.
+    // The top-of-menu problem row. Its text now depends on two inputs - the
+    // gated device findings and the Blocking configuration facts - so both
+    // refresh paths come through here: RefreshFindings when the device reading
+    // moves, and PublishConfigFacts when the background config read lands.
+    // Without the second call the row would keep claiming "No problems found"
+    // for a whole poll interval after a Blocking Test Mode fact appeared.
+    void RefreshRepairRow()
+    {
+        if (_repairItem is null)
+            return;
+
+        var configProblems = ConfigFactView.ProblemTitles(_configFacts);
+        _repairItem.Text = TrayMenu.MenuText(
+            RepairPlanner.MenuLabel(_findings, configProblems));
+        _repairItem.ForeColor = _findings.Count > 0 || configProblems.Count > 0
+            ? Color.OrangeRed
+            : SystemColors.ControlText;
+    }
+
+    // The collapsed section plus one clickable row per fact, then the actions
+    // this section owns: the one automated driver-signing fix and its undo.
+    // Rebuilt wholesale on every refresh, the same way the device rows are, so
+    // there is no stale row to invalidate.
     void RefreshConfigSection()
     {
         if (_configItem is null)
@@ -2677,8 +2798,20 @@ internal sealed class TrayApp : IDisposable
         if (label is null)
         {
             // No fact at all means nothing about this PC was checked. A row
-            // saying "checked" would claim a verification that never ran.
-            _configItem.Visible = false;
+            // saying "checked" would claim a verification that never ran - but
+            // a PC this app has already put INTO Test Mode is owed the way back
+            // out whether or not a device still produces a signing fact today,
+            // so the undo alone keeps the section alive under its bare name.
+            if (!SigningRevertHasWork)
+            {
+                _configItem.Visible = false;
+                return;
+            }
+
+            _configItem.Text = TrayMenu.MenuText(ConfigFactView.SectionPrefix);
+            _configItem.ForeColor = SystemColors.ControlText;
+            AddSigningRevertRow();
+            _configItem.Visible = true;
             return;
         }
 
@@ -2693,15 +2826,75 @@ internal sealed class TrayApp : IDisposable
             row.Click += (_, _) => ShowConfigFact(scoped);
             _configItem.DropDownItems.Add(row);
         }
+
+        // One row for the whole sequence, below the readings it acts on. It is
+        // the same entry point the signing fact rows use and the same one the
+        // problems-found walk takes, so there is exactly one way into the fix
+        // no matter which row the user clicked.
+        if (TrayMenu.HasSigningFact(_configFacts))
+        {
+            _configItem.DropDownItems.Add(new ToolStripSeparator());
+            var fix = new ToolStripMenuItem(TrayMenu.MenuText(ConfigFactView.SigningFixLabel));
+            fix.Click += (_, _) => _ = OfferSigningFixAsync(resuming: false);
+            _configItem.DropDownItems.Add(fix);
+        }
+
+        AddSigningRevertRow();
         _configItem.Visible = true;
     }
 
-    // The checker's own prose, then the one thing this tray is allowed to do
-    // about it: open a page. A ConfigFact may name a script that ships in a
-    // driver package, and running one from here is exactly what
-    // SystemConfigChecker's read-only contract forbids, so only an http(s)
-    // target gets the OK/Cancel pair that promises to open something.
+    // The undo is offered when this PC is in a state the fix produces: test
+    // signing on, OR Memory integrity configured off. The second clause is the
+    // documented partial failure - the elevated script wrote HVCI Enabled=0 and
+    // then bcdedit was refused, leaving a PC with Memory integrity off, test
+    // signing still off and no route back but regedit. Keyed on the measured
+    // Off and not on "not on", because a PC that never configured Memory
+    // integrity at all has nothing to undo and must not be offered one - which
+    // is the whole reason this is an HvciState rather than a bool?.
+    bool SigningRevertHasWork =>
+        _testSigningOn == true || _hvciState == SystemConfigChecker.HvciState.Off;
+
+    // The revert, on the menu whenever this PC is in a state the fix produces.
+    // The charter requires the way back to be offered wherever the fix is
+    // (AGENTS.md:76), and it is driven by the raw readings rather than by a
+    // fact, so a PC left mid-fix can always get out of it.
+    void AddSigningRevertRow()
+    {
+        if (_configItem is null || !SigningRevertHasWork)
+            return;
+        var revert = new ToolStripMenuItem(TrayMenu.MenuText(ConfigFactView.SigningFixRevertLabel));
+        revert.Click += (_, _) => _ = OfferSigningRevertAsync();
+        _configItem.DropDownItems.Add(revert);
+    }
+
+    // Secure Boot, Memory integrity and Test Mode are three readings of ONE
+    // question - will Windows load this self-signed driver - so all three rows
+    // lead to the one fix that answers it, and the user is never walked through
+    // three dialogs for three gates. Every other fact keeps the read-only
+    // dialog it always had: the checker's own prose, then the one thing this
+    // tray is allowed to do about it, open a page. A ConfigFact may name a
+    // script that ships in a driver package, and running one from here is
+    // exactly what SystemConfigChecker's read-only contract forbids, so only an
+    // http(s) target gets the OK/Cancel pair that promises to open something.
     void ShowConfigFact(ConfigFact fact)
+    {
+        // The fix reads bcdedit and then waits on an elevated process, neither
+        // of which may sit on the UI thread, so it runs as a task started by
+        // this click. Nothing starts it but a click (this handler, the fix row,
+        // and the guided walk which is itself answering a click) or the pending
+        // marker the user's own earlier confirmation wrote: there is no timer
+        // and no poll into OfferSigningFixAsync.
+        if (TrayMenu.IsSigningFact(fact.Id))
+        {
+            _ = OfferSigningFixAsync(resuming: false);
+            return;
+        }
+
+        ShowFactDialog(fact);
+    }
+
+    // The read-only dialog, unchanged: explain, and at most open a page.
+    void ShowFactDialog(ConfigFact fact)
     {
         var openable = !string.IsNullOrEmpty(fact.ActionLabel)
             && TrayMenu.IsHelpUrl(fact.ActionUrlOrScript);
@@ -2715,6 +2908,403 @@ internal sealed class TrayApp : IDisposable
                 : System.Windows.Forms.MessageBoxIcon.Information);
         if (openable && answer == System.Windows.Forms.DialogResult.OK)
             OpenHelpUrl(fact.ActionUrlOrScript!);
+    }
+
+    // Everything the signing fix depends on, read fresh at the moment of the
+    // click rather than lifted off the standing facts. A published fact can be
+    // minutes old and the user may have changed Secure Boot in firmware or run
+    // bcdedit by hand since; confirming a sequence against a stale reading is
+    // how a tool ends up running the wrong steps. A click is a user action, so
+    // the read is allowed here where a poll would not be (AGENTS.md:76) - but
+    // it is still registry reads plus a capped bcdedit, so the caller pays for
+    // it on the thread pool, never on the UI thread (SystemConfigChecker.cs:
+    // 153-159).
+    static (bool? SecureBoot, bool? Hvci, bool? TestSigning) ReadSigningState() =>
+        (SystemConfigChecker.ReadSecureBootOn(),
+            SystemConfigChecker.AsPlanReading(SystemConfigChecker.ReadHvciConfigured()),
+            SystemConfigChecker.ReadTestSigningOn());
+
+    // No evidence is a reading of its own: BuildPlan decides what three nulls
+    // are allowed to offer, not this catch.
+    static async Task<(bool? SecureBoot, bool? Hvci, bool? TestSigning)>
+        ReadSigningStateAsync()
+    {
+        try
+        {
+            return await Task.Run(ReadSigningState).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SIGNING_FIX_READ_FAIL err={ex.Message}");
+            return (null, null, null);
+        }
+    }
+
+    // Three-state reading for the log lines below. Duplicated per file in this
+    // repo (DeviceSnapshotReader.cs:255, SystemConfigChecker.cs:1378) rather
+    // than shared, because "unknown" must never be printed as "false".
+    static string Tri(bool? value) => value switch
+    {
+        true => "true",
+        false => "false",
+        _ => "unknown",
+    };
+
+    // "SuspendBitLocker+DisableHvci+EnableTestSigning+Reboot" for the log, so a
+    // bug report says which steps this PC was actually offered rather than only
+    // which state the planner picked.
+    static string StepList(SigningFixPlan plan)
+    {
+        if (plan.Steps.Count == 0)
+            return "none";
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < plan.Steps.Count; i++)
+        {
+            if (i > 0)
+                sb.Append('+');
+            sb.Append(plan.Steps[i].ToString());
+        }
+        return sb.ToString();
+    }
+
+    // The pending-fix marker, written on every transition rather than only on
+    // change: SigningFix.RunAsync also writes it through its own Config.Load
+    // right before a reboot step, so this instance's in-memory copy can be
+    // behind the file, and a guarded write would then skip the clear that
+    // matters most - the one that stops a finished fix asking to be finished
+    // again at the next start.
+    void SetPendingSigningFix(bool pending, string why)
+    {
+        try
+        {
+            _config.SetSigningFixPending(pending);
+            Logger.Log($"SIGNING_FIX_MARKER pending={(pending ? "true" : "false")} why={why}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SIGNING_FIX_MARKER_FAIL pending={(pending ? "true" : "false")} "
+                + $"why={why} err={ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The one automated driver-signing fix, start to finish: read the PC,
+    /// build the plan, ask the SINGLE confirmation, then run every step this PC
+    /// needs in one elevated pass and never ask again (AGENTS.md:76).
+    ///
+    /// The in-flight flag is what makes "exactly one confirmation" true of the
+    /// process rather than only of this method: two clicks, or a click arriving
+    /// during the guided walk, would otherwise stack two dialogs and two
+    /// elevated runs over the same PC.
+    ///
+    /// Returns true when the caller's guided walk may continue. A declined
+    /// confirmation stops the walk, the same way cancelling a device repair
+    /// does; a plan with nothing to run does not, because nothing was asked.
+    /// </summary>
+    async Task<bool> OfferSigningFixAsync(bool resuming)
+    {
+        if (_signingFixInFlight)
+        {
+            Logger.Log("SIGNING_FIX_BUSY");
+            return true;
+        }
+
+        _signingFixInFlight = true;
+        try
+        {
+            return await RunSigningFixAsync(resuming).ConfigureAwait(true);
+        }
+        finally
+        {
+            _signingFixInFlight = false;
+        }
+    }
+
+    async Task<bool> RunSigningFixAsync(bool resuming)
+    {
+        var state = await ReadSigningStateAsync().ConfigureAwait(true);
+        var plan = SigningFix.BuildPlan(
+            state.SecureBoot, state.Hvci, state.TestSigning, resuming);
+        Logger.Log($"SIGNING_FIX_PLAN state={plan.State} steps={StepList(plan)} "
+            + $"resuming={(resuming ? "true" : "false")} secureboot={Tri(state.SecureBoot)} "
+            + $"hvci={Tri(state.Hvci)} testsigning={Tri(state.TestSigning)}");
+
+        if (plan.State == SigningFixState.NothingToDo)
+        {
+            // Nothing left to set. On the resume path that is the GOOD ending -
+            // the firmware change and the reboot finished the job - and it has
+            // to stay silent: the resume question is the one dialog a startup
+            // may raise, so a second one here would break that outright.
+            SetPendingSigningFix(false, "nothing-to-do");
+            if (resuming)
+                return true;
+
+            // Asked for by hand on a PC that is already configured: the honest
+            // thing to offer is the way back out. OK only opens the undo's own
+            // confirmation - it never runs anything itself, so one confirmation
+            // still stands between this click and any elevation.
+            var offer = System.Windows.Forms.MessageBox.Show(
+                ConfigFactView.SigningFixNothingToDoText(plan), TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OKCancel,
+                System.Windows.Forms.MessageBoxIcon.Information);
+            if (offer == System.Windows.Forms.DialogResult.OK)
+                await RunSigningRevertAsync().ConfigureAwait(true);
+            return true;
+        }
+
+        if (!ConfigFactView.SigningFixOffersRun(plan))
+        {
+            // Unavailable: the planner cannot predict what its own steps would
+            // do here, and in practice it is only ever reached on the resume
+            // path - Secure Boot is still on after the firmware hop. That is
+            // the likeliest way this feature fails, so it is also the one the
+            // user most needs told; staying silent here would end the sequence
+            // with nothing on screen. Showing it keeps the one-confirmation
+            // property: the dialog is OK-only, elevates nothing and runs
+            // nothing - it is the report on a sequence the user already
+            // consented to and that has stopped.
+            SetPendingSigningFix(false, "unavailable");
+            System.Windows.Forms.MessageBox.Show(
+                ConfigFactView.SigningFixBlockedText(plan), TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+            return true;
+        }
+
+        // THE confirmation. plan.Prompt is the planner's own wording - every
+        // step, the BitLocker suspension, the reboot and the revert - and is
+        // shown verbatim: a UI layer that re-words a consent dialog is a UI
+        // layer that can drop the part the user needed to read. On the resume
+        // path the prompt is wrapped by SigningFixResumeText and REPLACED by
+        // it, never preceded by it, so the resumed fix is still one question.
+        var answer = System.Windows.Forms.MessageBox.Show(
+            resuming ? ConfigFactView.SigningFixResumeText(plan) : plan.Prompt,
+            TrayMenu.ProductName,
+            resuming
+                ? System.Windows.Forms.MessageBoxButtons.YesNo
+                : System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning);
+        var agreed = resuming
+            ? answer == System.Windows.Forms.DialogResult.Yes
+            : answer == System.Windows.Forms.DialogResult.OK;
+        if (!agreed)
+        {
+            // A declined resume is the user dropping the fix, so the marker
+            // goes with it: the question is asked once per pending fix, never
+            // every time the tray starts.
+            Logger.Log($"SIGNING_FIX_DECLINED state={plan.State} "
+                + $"resuming={(resuming ? "true" : "false")}");
+            SetPendingSigningFix(false, "declined");
+            return false;
+        }
+
+        // The marker goes down BEFORE the run, because every runnable plan ends
+        // in a reboot and this process will not be alive to write it afterwards.
+        SetPendingSigningFix(true, "accepted");
+
+        var outcome = await RunPlanAsync(plan).ConfigureAwait(true);
+        Logger.Log($"SIGNING_FIX_RUN state={plan.State} outcome={outcome}");
+
+        switch (outcome)
+        {
+            case InstallOutcome.Confirmed when plan.State == SigningFixState.NeedsFirmware:
+                // Secure Boot is firmware: no OS API can turn it off, so the
+                // sequence stops at the restart into firmware setup and the
+                // marker stays set - it is what brings the user back to the
+                // rest of the fix with one question at the next start.
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixFirmwareText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            case InstallOutcome.Confirmed:
+                // Every step ran and the reboot is under way. Nothing is left
+                // to resume, so the marker is cleared; if the reboot wins that
+                // race the next start reads NothingToDo and clears it silently.
+                SetPendingSigningFix(false, "completed");
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixRebootingText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            case InstallOutcome.Cancelled:
+                // UAC declined: the elevated script never started, so nothing
+                // on this PC moved and there is nothing to come back to.
+                SetPendingSigningFix(false, "uac-declined");
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixCancelledText(), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            default:
+                // The script's own reason, verbatim. The marker is cleared
+                // because a failed sequence is not a fix waiting on a reboot,
+                // and re-asking at the next start would hide the failure.
+                SetPendingSigningFix(false, "failed");
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixFailedText(SigningFix.LastFailureReason),
+                    TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+                break;
+        }
+        return true;
+    }
+
+    // The undo the charter requires wherever there is anything to undo: test
+    // signing off, Memory integrity back on, BitLocker suspended for the one
+    // restart that changes the BCD. Same shape as the fix - one confirmation,
+    // one elevated pass - and the same in-flight guard, so an undo and a fix
+    // can never be in the air together.
+    async Task OfferSigningRevertAsync()
+    {
+        if (_signingFixInFlight)
+        {
+            Logger.Log("SIGNING_FIX_BUSY");
+            return;
+        }
+
+        _signingFixInFlight = true;
+        try
+        {
+            await RunSigningRevertAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            _signingFixInFlight = false;
+        }
+    }
+
+    async Task RunSigningRevertAsync()
+    {
+        var state = await ReadSigningStateAsync().ConfigureAwait(true);
+        var plan = SigningFix.BuildRevertPlan(state.TestSigning, state.Hvci);
+        Logger.Log($"SIGNING_REVERT_PLAN state={plan.State} steps={StepList(plan)} "
+            + $"testsigning={Tri(state.TestSigning)} hvci={Tri(state.Hvci)}");
+
+        if (!ConfigFactView.SigningFixOffersRun(plan))
+        {
+            var nothing = plan.State == SigningFixState.NothingToDo;
+            System.Windows.Forms.MessageBox.Show(
+                nothing
+                    ? ConfigFactView.SigningFixNothingToRevertText(plan)
+                    : ConfigFactView.SigningFixBlockedText(plan),
+                TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OK,
+                nothing
+                    ? System.Windows.Forms.MessageBoxIcon.Information
+                    : System.Windows.Forms.MessageBoxIcon.Warning);
+            return;
+        }
+
+        var answer = System.Windows.Forms.MessageBox.Show(
+            plan.Prompt, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning);
+        if (answer != System.Windows.Forms.DialogResult.OK)
+        {
+            Logger.Log("SIGNING_REVERT_DECLINED");
+            return;
+        }
+
+        // An undo is not a fix waiting on a reboot: whatever was pending is
+        // being taken back, so the marker must not survive it and ask the user
+        // to finish something she just undid.
+        SetPendingSigningFix(false, "revert");
+
+        var outcome = await RunPlanAsync(plan).ConfigureAwait(true);
+        Logger.Log($"SIGNING_REVERT_RUN outcome={outcome}");
+
+        switch (outcome)
+        {
+            case InstallOutcome.Confirmed:
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixRevertDoneText(plan), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            case InstallOutcome.Cancelled:
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixCancelledText(), TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                break;
+            default:
+                System.Windows.Forms.MessageBox.Show(
+                    ConfigFactView.SigningFixFailedText(SigningFix.LastFailureReason),
+                    TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+                break;
+        }
+    }
+
+    static async Task<InstallOutcome> RunPlanAsync(SigningFixPlan plan)
+    {
+        try
+        {
+            return await SigningFix.RunAsync(plan).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SIGNING_FIX_RUN_FAIL state={plan.State} err={ex.Message}");
+            return InstallOutcome.Failed;
+        }
+    }
+
+    /// <summary>
+    /// The fix the user started before the firmware restart, resumed. This is
+    /// the ONE dialog a startup may raise and it is raised once per process:
+    /// the marker her own earlier confirmation wrote is the only thing that can
+    /// reach it, and answering either way clears or consumes it.
+    ///
+    /// It asks nothing at all when there is nothing left to finish - a reboot
+    /// that completed the job reads back as NothingToDo and clears the marker
+    /// in silence (RunSigningFixAsync), so a successful fix never greets the
+    /// user with a question about itself.
+    /// </summary>
+    async Task ResumeSigningFixAsync()
+    {
+        if (_signingResumeAsked || !_config.SigningFixPending)
+            return;
+        _signingResumeAsked = true;
+        Logger.Log("SIGNING_FIX_RESUME pending=true");
+        await OfferSigningFixAsync(resuming: true).ConfigureAwait(true);
+    }
+
+    // The configuration half of the guided walk. Secure Boot, Memory integrity
+    // and Test Mode are three readings of ONE question - will Windows load this
+    // self-signed driver - and one fix answers all three, so the first of them
+    // reached takes the whole sequence and the others raise nothing. A walk
+    // that opened a dialog per gate would break the "no further questions" rule
+    // three times over. Everything else is explained and handed to the Windows
+    // page that owns it.
+    async Task WalkConfigProblemsAsync(IReadOnlyList<ConfigFact> problems)
+    {
+        try
+        {
+            var signingOffered = false;
+            for (var i = 0; i < problems.Count; i++)
+            {
+                var fact = problems[i];
+                Logger.Log($"CONFIG_PROBLEM_FLOW id={fact.Id}");
+                if (TrayMenu.IsSigningFact(fact.Id))
+                {
+                    if (signingOffered)
+                        continue;
+                    signingOffered = true;
+                    if (!await OfferSigningFixAsync(resuming: false).ConfigureAwait(true))
+                        return;
+                    continue;
+                }
+
+                ShowFactDialog(fact);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"CONFIG_PROBLEM_FLOW_FAIL err={ex.Message}");
+        }
     }
 
     // "held=0323:FilterNotInStack,0323:ConflictingFilters" for the pending pairs,
@@ -2826,8 +3416,8 @@ internal sealed class TrayApp : IDisposable
     }
 
     /// <summary>
-    /// Guided repair over every current finding. Each finding is explained in plain
-    /// language before anything is changed; Cancel stops the walk.
+    /// Guided repair over every problem standing on this PC. Each one is explained
+    /// in plain language before anything is changed; Cancel stops the walk.
     ///
     /// This is the answer to a direct user question - the top-of-menu row and
     /// "Check for problems now" both land here - so it must never say "No problems
@@ -2836,37 +3426,56 @@ internal sealed class TrayApp : IDisposable
     /// pnputil /restart-device, and during a driver install that fights the
     /// install. Asking does not make a 900 ms fault real. So the honest answer is
     /// the third one: name what is being checked and when it will be decided.
+    ///
+    /// A Blocking configuration fact counts as a problem here for the same
+    /// reason: it is a measured property of this PC that stops the driver
+    /// loading, and since the Test Mode row became actionable it is one this app
+    /// can fix. Answering "No problems found" over it would be both untrue and an
+    /// offer withheld. Device faults are still walked first - a fault on the
+    /// device in front of the user outranks a property of the PC that merely
+    /// explains one (ConfigFactView.cs:16-33).
     /// </summary>
     void ShowRepairFlow()
     {
-        if (_findings.Count == 0)
+        var configProblems = ConfigFactView.Blocking(_configFacts);
+
+        // The gate is still holding something: say so first, as a toast, so the
+        // information survives whether or not a config problem follows it into a
+        // dialog. Unchanged wording - only the early return moved.
+        if (_findings.Count == 0 && _pendingFindings.Count > 0)
         {
-            if (_pendingFindings.Count > 0)
-            {
-                var held = _pendingFindings[0];
-                var more = _pendingFindings.Count > 1
-                    ? $" (and {_pendingFindings.Count - 1} more)"
-                    : string.Empty;
-                Logger.Log($"REPAIR_FLOW_PENDING pending={_pendingFindings.Count} "
-                    + $"pid={held.Pid} problem={held.Problem}");
-                ToastNotifier.Show(TrayMenu.ProductName,
-                    $"Checking a possible problem: {held.Title}{more}.\n"
-                    + "It has not been seen for long enough to be sure it is real - "
-                    + "installing or restarting a driver makes a healthy mouse look faulty "
-                    + "for a few seconds. Open this menu again in about "
-                    + $"{(int)FindingGate.HoldWindow.TotalSeconds} seconds and it will be "
-                    + "reported if it is still there.");
-                return;
-            }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+            var held = _pendingFindings[0];
+            var more = _pendingFindings.Count > 1
+                ? $" (and {_pendingFindings.Count - 1} more)"
+                : string.Empty;
+            Logger.Log($"REPAIR_FLOW_PENDING pending={_pendingFindings.Count} "
+                + $"pid={held.Pid} problem={held.Problem}");
+            ToastNotifier.Show(TrayMenu.ProductName,
+                $"Checking a possible problem: {held.Title}{more}.\n"
+                + "It has not been seen for long enough to be sure it is real - "
+                + "installing or restarting a driver makes a healthy mouse look faulty "
+                + "for a few seconds. Open this menu again in about "
+                + $"{(int)FindingGate.HoldWindow.TotalSeconds} seconds and it will be "
+                + "reported if it is still there.");
+        }
+
+        if (_findings.Count == 0 && configProblems.Count == 0)
+        {
+            // Only claim health when nothing is confirmed, nothing is held and
+            // no configuration fact is blocking the driver.
+            if (_pendingFindings.Count == 0)
+                ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
             return;
         }
 
         foreach (var finding in _findings.ToArray())
         {
             if (!HandleFinding(finding))
-                break;
+                return;
         }
+
+        if (configProblems.Count > 0)
+            _ = WalkConfigProblemsAsync(configProblems);
     }
 
     // Same guided flow, scoped to the one finding shown on a device row.
@@ -3321,16 +3930,29 @@ internal sealed class TrayApp : IDisposable
     }
 
     // WIN32_EXIT 31 / blocked signature: the user has to allow the self-signed driver.
+    //
+    // Every step this needs is now one action the tray can carry out, so this
+    // text points at that action instead of listing three manual chores: the
+    // menu row runs the whole sequence after its single confirmation
+    // (OfferSigningFixAsync), and naming it here is what makes the offer
+    // findable from the failure that needs it. The only part left to the user
+    // is Secure Boot, which lives in firmware and cannot be changed from
+    // Windows at all - the fix restarts the PC into the firmware screen for it.
     void ShowFilterBlockedHelp()
     {
         var body =
             "Windows refused to start the scroll driver.\n\n"
             + "The driver is self-signed, so Windows blocks it until this PC is told to allow it. "
-            + "Three steps, in this order:\n\n"
-            + "1. Turn Test Mode on: in an administrator Command Prompt run "
-            + "bcdedit /set testsigning on\n"
-            + "2. Turn Memory integrity off in Windows Security -> Device security -> Core isolation.\n"
-            + "3. Reboot this PC, then open the Magic Tray menu and run the fix again.\n\n"
+            + "Magic Tray can do that for you: open this menu, then "
+            + ConfigFactView.SectionPrefix + " -> " + ConfigFactView.SigningFixLabel + ".\n\n"
+            + "It lists every step it will take - suspend BitLocker for one restart, turn Memory "
+            + "integrity off, run bcdedit /set testsigning on, reboot - and runs all of them "
+            + "after that one confirmation, with one administrator prompt and no further "
+            + "questions. " + ConfigFactView.SigningFixRevertLabel + " on the same menu undoes "
+            + "all of it.\n\n"
+            + "The one part no program can do is Secure Boot: it is a firmware setting, so if "
+            + "this PC has it on, the fix restarts into the firmware screen and you turn it off "
+            + "there, then answer the one question the tray asks when it comes back up.\n\n"
             + "OK opens the Magic Mouse v3 page with the full walkthrough.";
         var answer = System.Windows.Forms.MessageBox.Show(
             body, TrayMenu.ProductName,

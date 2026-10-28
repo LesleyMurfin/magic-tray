@@ -450,12 +450,28 @@ internal static class RepairPlanner
         return findings;
     }
 
-    internal static string MenuLabel(IReadOnlyList<RepairFinding> findings) => findings.Count switch
+    // The top-of-menu row. Device faults own the bare fault voice here, but a
+    // Blocking configuration fact is a problem on this PC too - Test Mode off
+    // means Windows refuses the driver - so it is counted, and "No problems
+    // found" may never stand over one (TrayApp.ShowRepairFlow).
+    //
+    // Pre-rendered titles rather than the fact objects keep this file free of
+    // the configuration types: all this row needs is a line of text and a
+    // count. The caller passes them already behind the "System config: " prefix
+    // (ConfigFactView.ProblemTitles), which is what stops a config line from
+    // being read as a measured device fault when it is the only problem.
+    internal static string MenuLabel(
+        IReadOnlyList<RepairFinding> findings,
+        IReadOnlyList<string>? configProblemTitles = null)
     {
-        0 => "No problems found",
-        1 => findings[0].Title,
-        _ => $"{findings.Count} problems found",
-    };
+        var config = configProblemTitles?.Count ?? 0;
+        var total = findings.Count + config;
+        if (total == 0)
+            return "No problems found";
+        if (total == 1)
+            return findings.Count == 1 ? findings[0].Title : configProblemTitles![0];
+        return $"{total} problems found";
+    }
 
     // Fallback only: what this PID is EXPECTED to ride when nothing is bound.
     // 0323 rides the patched KMDF filter; every other Apple mouse rides the Boot Camp filter.
