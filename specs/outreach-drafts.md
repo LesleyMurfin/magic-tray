@@ -375,10 +375,13 @@ What it does not do, so nobody wastes an evening:
   that model's device code, so Windows never loads a scroll driver for it. A community driver is
   being worked on and is not published, so there is nothing to download today. Battery percent on
   that mouse does work, with no driver at all.
-- It never turns Memory integrity off or changes Secure Boot for you — those stay manual. It can
-  switch Windows driver-signature enforcement (Test Mode) on or off, but only when you click the
-  item and accept a dialog naming the command, the reboot, the security downgrade and the
-  BitLocker recovery-key risk; never silently, and the undo is always offered.
+- It cannot change Secure Boot, and nothing running on Windows can: that is a firmware setting
+  with no OS API. If Secure Boot is on, the app restarts the PC into the UEFI setup screen so you
+  can switch it off there yourself. What it can do is everything else, behind one confirmation:
+  accept the "Fix driver signing" dialog and it suspends BitLocker for one reboot, turns Memory
+  integrity off, turns Windows driver-signature enforcement off (Test Mode on) and reboots -
+  one dialog, one admin prompt, no further questions. Never silently, and putting it all back is
+  always offered.
 
 The honest state of testing: three devices have been confirmed by a tester — the 2024 Magic Mouse,
 the Magic Mouse v1, and the 2011 Apple Wireless Keyboard. Everything else is recognised by the app
@@ -564,7 +567,7 @@ the drafts.
 | Battery is byte 2 of input report `0x90` on `COL02`, not feature `0x47` | `docs/v3.html`; `docs/llms.txt` |
 | `applewirelessmouse.sys` uses the LowerFilter slot for `030D`/`0269`; the community driver claims it for `0323` | `docs/v3.html` technical details |
 | The KMDF installer is not on the driver repo's branch, so that path errors | `README.md` "Building from source" |
-| The app cannot turn off Memory integrity or change Secure Boot; it can only run `bcdedit /set testsigning on`/`off` from a click plus a confirmation dialog, never silently | `docs/llms.txt`; `README.md` |
+| The app cannot change Secure Boot (firmware, no OS API; it can only reboot into UEFI setup); it can suspend BitLocker for one reboot, turn Memory integrity off and run `bcdedit /set testsigning on`/`off`, all from one click plus one confirmation dialog, never silently | `docs/llms.txt`; `README.md`; `SECURITY.md` |
 | No gestures, no tap-to-click, no media-key remapping, no trackpad driver | `README.md` comparison table; `docs/llms.txt` "Scope", point 2 |
 | Buy Magic Utilities if you need gestures or the trackpad suite | `README.md` comparison table |
 | Three devices tester-confirmed: `0323`, `030D`, `0239`; everything else "should work, nobody has confirmed it yet" | `docs/llms.txt` testers section; `README.md` "Help us test" |
@@ -583,10 +586,11 @@ Each of these is either true-but-overstating, or unproven. None of it appears in
   device they mean.
 - **The patched-Apple route for `0323`.** It exists, and it trades scrolling against battery, needs
   signature enforcement disabled and Memory integrity off, and nobody has confirmed it works. An
-  unconfirmed route that costs you a security setting is not something to recommend to a stranger,
+  unconfirmed route that costs you security settings is not something to recommend to a stranger,
   so the drafts say "the community driver isn't published" and stop.
-- **WHQL, Microsoft signing, Secure Boot.** Explicitly forbidden by `docs/SEARCH.md` until the
-  driver is actually signed.
+- **WHQL and Microsoft signing.** Explicitly forbidden by `docs/SEARCH.md` until the driver is
+  actually signed. Secure Boot may be mentioned only as the firmware setting the app cannot
+  change - never as something Magic Tray turns off.
 - **The word "supported" for any of the nine unconfirmed devices.** The drafts use "recognised by
   the app and confirmed by nobody".
 - **A single number for how many people this affects.** The thread activity counts above are real;

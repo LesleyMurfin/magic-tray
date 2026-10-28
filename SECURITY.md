@@ -1,9 +1,46 @@
 # Security policy
 
 Magic Tray is a free MIT-licensed Windows tray app maintained by one person. It writes to
-`HKLM`, it can patch a Bluetooth SDP `CachedServices` record, and it ships PowerShell scripts
-that are meant to be run elevated. Those are exactly the places a real bug hurts, so please
-report anything you find.
+`HKLM`, it can patch a Bluetooth SDP `CachedServices` record, it ships PowerShell scripts
+that are meant to be run elevated, and — on your explicit confirmation — it turns a Windows
+security feature off. Those are exactly the places a real bug hurts, so please report anything
+you find.
+
+## The app can lower this PC's security, and here is exactly when
+
+State this plainly because it is the most sensitive thing the app does. The self-signed driver a
+Magic Mouse 2024 needs will not load on a stock Windows install, so the tray offers **Fix driver
+signing**. Accepting that one dialog lets the app, in a single elevated pass:
+
+- suspend BitLocker for one reboot (`manage-bde -protectors -disable C: -RebootCount 1`), so the
+  boot-configuration change does not trip a recovery-key prompt;
+- turn **Memory integrity (HVCI)** off by writing
+  `HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity\Enabled=0`
+  — this disables a real kernel security feature;
+- run `bcdedit /set testsigning on`, which makes Windows load kernel drivers nobody has checked;
+- reboot the PC.
+
+All of that is **one** confirmation dialog listing every step, and **one** UAC prompt. There is
+no second question in the middle of the sequence, by design: splitting it would mean several UAC
+prompts for one decision the user already made. Nothing here ever runs at startup, from a poll,
+from a menu open, or from reading the facts the tray displays.
+
+**Secure Boot is firmware and the app cannot change it.** There is no Windows API for it, and
+`bcdedit /set testsigning on` is refused while it is on ("The value is protected by Secure Boot
+policy"). The only thing the app does about it is `shutdown /r /fw`, which restarts the PC into
+its UEFI firmware setup screen so you can switch it off there yourself. The app persists a
+pending-fix marker, and after that reboot asks once whether to continue with the remaining steps;
+declining clears the marker. Any claim that Magic Tray disables Secure Boot is false.
+
+**Everything is revertible, and the revert is always offered:** `bcdedit /set testsigning off`,
+Memory integrity written back on, BitLocker protectors resumed. Secure Boot you turn back on in
+the same firmware screen.
+
+**Reaching any of that without the confirmation dialog is a reportable bug.** A build that
+writes the HVCI value, runs either `bcdedit` command, suspends BitLocker, or reboots the PC
+without the user having accepted that dialog — or that asks for a second UAC prompt it did not
+name — is in scope for a security advisory, and so is a dialog that fails to list a step the
+sequence then performs.
 
 ## Supported versions
 
@@ -42,6 +79,10 @@ No bounty is offered. Please give a fix a reasonable window before disclosing pu
 
 - **The tray app** (`MagicMouseTray`) — privilege handling, the user-initiated driver install
   paths, anything it writes under `HKLM`, and the local log at `%APPDATA%\MagicMouseTray`.
+- **The driver-signing fix** — the elevated script behind **Fix driver signing**, its revert, the
+  pending-fix marker it stores through the firmware reboot, and the confirmation dialog that
+  gates all of it. Anything that performs a step the dialog did not name, performs any step
+  without the dialog, or lets a stale marker resume a sequence the user declined.
 - **The registry / SDP patch script** `scripts/kbd-patch-cachedservices.ps1`, which edits the
   cached Bluetooth service record for a paired Magic Keyboard.
 - **The elevated diagnostic scripts** `scripts/capture-state.ps1`,
@@ -60,14 +101,11 @@ No bounty is offered. Please give a fix a reasonable window before disclosing pu
 - **Magic Utilities** and any other vendor software. No Magic Utilities files ship here.
 - **The SmartScreen warning on an unsigned build.** Known and documented — see
   [README](README.md#why-the-app-is-unsigned-and-what-fixes-it).
-- **Needing test signing on and Memory integrity off** for the patched-Apple scroll route. That
-  is a documented cost you choose. Memory integrity and Secure Boot are never touched by the
-  app — you change those yourself. Test signing the app can switch for you, but only from a menu
-  click you confirm in a dialog naming `bcdedit /set testsigning on`, the reboot, the security
-  downgrade and the BitLocker recovery-key risk; never silently, never at startup, never from a
-  poll, with Secure Boot on reported as blocked and not attempted, and the revert
-  (`bcdedit /set testsigning off`) always offered. A path that reaches either command **without**
-  that confirmation is in scope and worth a report.
+- **The security downgrade itself** — test signing on, Memory integrity off, BitLocker suspended
+  for one reboot — when it followed the **Fix driver signing** confirmation described above. That
+  is a documented cost you chose, it is listed step by step before anything runs, and the revert
+  is always offered. What *is* in scope is any path that reaches one of those changes, or a
+  reboot, **without** that confirmation.
 
 ## Verifying what you downloaded
 

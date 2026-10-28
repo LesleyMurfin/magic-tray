@@ -15,9 +15,10 @@ namespace MagicMouseTray;
 // READ-ONLY AND SECURITY-NEUTRAL BY CONSTRUCTION. This file never changes the
 // security posture of the machine and contains no code that could: no bcdedit
 // WRITE, no HVCI or Device Guard write, no Secure Boot WRITE (the Secure Boot
-// state is read, and only read - it is firmware, and TestModeSwitch refuses an
-// action rather than ever attempting to change it), no signing or certificate
-// change, no service install, no pnputil, no registry write of any kind.
+// state is read, and only read - it is firmware, and SigningFix restarts into
+// the UEFI setup screen rather than ever attempting to change it), no signing
+// or certificate change, no service install, no pnputil, no registry write of
+// any kind.
 // ActionLabel / ActionUrlOrScript may only NAME a
 // documentation URL or a script that already ships in a known package - this
 // file executes neither, and the caller is expected to open, not run, them.
@@ -316,13 +317,41 @@ internal static class SystemConfigChecker
         };
     }
 
-    // Blocking needs a driver we MEASURED to be self-signed and that is
-    // actually bound. Everything else - a package that is merely present, or a
-    // signature we could not read - stays Advisory.
-    static ConfigSeverity SigningSeverity(SelfSignedRole role, bool? selfSigned) =>
-        role == SelfSignedRole.InUse && selfSigned == true
+    // Blocking needs a driver we MEASURED to be self-signed - a signature we
+    // could not read (null) is never more than Advisory, which is the
+    // nagging-a-healthy-PC guarantee this file is shaped around - plus a
+    // reading that measurably explains why it is not working:
+    //
+    //   role InUse        the self-signed driver is bound and the policy
+    //                     reading in front of this call says Windows will not
+    //                     load it. Measured-broken now.
+    //   role Prerequisite the self-signed package is installed and NOTHING is
+    //                     loading it, with Test Mode measured off. That is not
+    //                     a hypothetical: it is the 0323 KMDF filter sitting at
+    //                     Status=Error with testsigning off, the exact shape of
+    //                     the owner's PC, and the reason the package is not
+    //                     bound. It used to be Advisory, which buried the one
+    //                     problem the tray can now fix end to end
+    //                     (SigningFix.BuildPlan), so it blocks.
+    //
+    // prerequisiteBlocks is passed true by the Test Mode row only. That row is
+    // the one that carries the signing fix, and it is the row whose reading
+    // (test signing off) is what keeps an installed package unbound. The Memory
+    // integrity row passes false: on a package that is not bound at all, HVCI
+    // on is the second thing in the way, not the proof that something is
+    // broken, and two Blocking rows for one unbound package would say the PC is
+    // twice as broken as it is.
+    static ConfigSeverity SigningSeverity(
+        SelfSignedRole role, bool? selfSigned, bool prerequisiteBlocks)
+    {
+        if (selfSigned != true)
+            return ConfigSeverity.Advisory;
+        if (role == SelfSignedRole.InUse)
+            return ConfigSeverity.Blocking;
+        return role == SelfSignedRole.Prerequisite && prerequisiteBlocks
             ? ConfigSeverity.Blocking
             : ConfigSeverity.Advisory;
+    }
 
     internal static PackagePath PackagePathFor(DeviceKind kind, string? pid, DriverStatus? status)
     {
@@ -453,7 +482,10 @@ internal static class SystemConfigChecker
         return new ConfigFact(
             TestModeFactId,
             "Test Mode is off",
-            SigningSeverity(role, selfSigned),
+            // Measured test signing OFF, here, is what makes an installed
+            // self-signed package that nothing is loading a problem and not a
+            // note - see SigningSeverity.
+            SigningSeverity(role, selfSigned, prerequisiteBlocks: true),
             clause + consequence + remedy,
             label,
             url);
@@ -514,7 +546,7 @@ internal static class SystemConfigChecker
         return new ConfigFact(
             MemoryIntegrityFactId,
             "Memory integrity is on",
-            SigningSeverity(role, selfSigned),
+            SigningSeverity(role, selfSigned, prerequisiteBlocks: false),
             "Memory integrity (HVCI) is enabled, and Windows refuses to load a self-signed driver "
             + "while it is on. " + clause
             + "Turn it off in Windows Security -> Device security -> Core isolation, then reboot "
@@ -976,7 +1008,11 @@ internal static class SystemConfigChecker
     // there. null is kept for a probe that could not run - and because Enabled
     // is policy rather than the running state, only a POSITIVE read is ever
     // allowed to escalate to Blocking.
-    static bool? ReadHvciOn()
+    // internal, next to ReadTestSigningOn and ReadSecureBootOn: the signing fix
+    // needs the configured HVCI state to decide whether its plan has to write
+    // Enabled=0 at all (SigningFix.BuildPlan), and that read must come from the
+    // same place the fact rows read it from.
+    internal static bool? ReadHvciOn()
     {
         try
         {

@@ -73,7 +73,7 @@ Do **not** vendor or rebuild the KMDF driver here — that lives in `magic-mouse
 ## Hard product constraints
 
 - **0323 battery** is HID Input report `0x90` on COL02 only. Never Feature `0x47`, never WMI as a mouse battery source.
-- Test Mode / HVCI changes are **explicit-user-approved only**: never silent, never automatic, never on startup or a poll. The tray may run `bcdedit /set testsigning on|off` (and the Core-isolation walkthrough) only after a per-action confirmation dialog that names the command, the reboot, the BitLocker recovery-key risk, and the revert path. Secure Boot on → report blocked, never attempt. Always offer the revert action.
+- Driver-signing prerequisites are fixed by **one user-approved action, then automatically**: a single "Fix driver signing" confirmation that lists every step may suspend BitLocker for one reboot, set `HVCI ...\Enabled=0`, run `bcdedit /set testsigning on`, and reboot. One dialog, one UAC prompt, no further questions. Never silent, never without that dialog. Secure Boot is **firmware** — no OS API can turn it off, so the app reboots to UEFI (`shutdown /r /fw`) and the user flips it there; the app resumes the rest after reboot behind one "continue?" prompt. The revert (`testsigning off`, HVCI back on, BitLocker resumed) is always offered.
 - Driver install paths are user-confirmed only; missing KMDF package → unavailable, never fall back to patching `applewirelessmouse.sys`.
 - Device catalog is code (`MouseBatteryDevice.KnownMice`, `KeyboardBatteryDevice.KnownKeyboards`), not README prose.
 

@@ -29,6 +29,17 @@ internal sealed class Config
     // Set once the user has been sent to the repo to star it. Only drives the
     // tray label; the app never contacts GitHub to confirm the star.
     internal bool StarClicked { get; private set; } = false;
+    // "A driver-signing fix is half-done on this PC." Written before the
+    // elevated pass that ends in a restart (SigningFix.RunAsync) and read once
+    // at startup, so the tray can offer to finish the job after the trip to the
+    // firmware setup screen that AGENTS.md:76 describes - Secure Boot cannot be
+    // turned off from Windows, so the fix is necessarily split across a reboot.
+    // Cleared when the fix completes, when the revert runs, and when the user
+    // declines to continue. It is a marker and not a queue: it says only that a
+    // fix was started, never which steps are left - SigningFix.BuildPlan works
+    // that out from fresh readings, so a stale marker can at worst produce one
+    // "nothing to do" answer.
+    internal bool SigningFixPending { get; private set; } = false;
     // Lasting 0323 radio: kmdf | pathA | stock. PathA survives Mode A (no Apple LowerFilters).
     internal const string Driver0323Kmdf = "kmdf";
     internal const string Driver0323PathA = "pathA";
@@ -71,6 +82,8 @@ internal sealed class Config
                     cfg.UpdateCheck = uc;
                 else if (key == "star_clicked" && bool.TryParse(val, out bool sc))
                     cfg.StarClicked = sc;
+                else if (key == "signing_fix_pending" && bool.TryParse(val, out bool sfp))
+                    cfg.SigningFixPending = sfp;
                 else if (key == "driver_0323")
                 {
                     var choice = ParseDriver0323(val);
@@ -150,6 +163,19 @@ internal sealed class Config
         Logger.Log($"CONFIG star_clicked={value}");
     }
 
+    // Same shape as SetStarClicked above, including the no-change early exit:
+    // the marker is written from SigningFix.RunAsync on a thread-pool thread
+    // moments before the PC restarts, and rewriting the whole ini for a value
+    // that is already on disk would be one more chance to be interrupted
+    // mid-write for nothing.
+    internal void SetSigningFixPending(bool value)
+    {
+        if (SigningFixPending == value) return;
+        SigningFixPending = value;
+        Persist();
+        Logger.Log($"CONFIG signing_fix_pending={value.ToString().ToLower()}");
+    }
+
     internal void SetDriver0323(string value)
     {
         var choice = ParseDriver0323(value);
@@ -185,7 +211,8 @@ internal sealed class Config
                 $"enable_v3_recycle={EnableV3Recycle.ToString().ToLower()}",
                 $"enable_third_party={EnableThirdParty.ToString().ToLower()}",
                 $"update_check={UpdateCheck.ToString().ToLower()}",
-                $"star_clicked={StarClicked.ToString().ToLower()}"
+                $"star_clicked={StarClicked.ToString().ToLower()}",
+                $"signing_fix_pending={SigningFixPending.ToString().ToLower()}"
             };
             if (!string.IsNullOrEmpty(Driver0323))
                 lines.Add($"driver_0323={Driver0323}");

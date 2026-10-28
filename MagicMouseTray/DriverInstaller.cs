@@ -959,7 +959,7 @@ foreach ($id in $restart) {
     internal static bool IsUacDeclined(Exception ex) =>
         ex is System.ComponentModel.Win32Exception w && w.NativeErrorCode == 1223;
 
-    // internal so TestModeSwitch can reuse the one elevated-launch path this
+    // internal so the signing paths can reuse the one elevated-launch path this
     // repo has: Verb=runas, wait for exit, non-zero exit throws, and a declined
     // UAC prompt surfaces as Win32 1223 for IsUacDeclined above.
     internal static void RunElevated(

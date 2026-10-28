@@ -24,7 +24,11 @@ namespace MagicMouseTray.Tests;
 //
 // The failure mode this whole file is shaped around is nagging a healthy PC, so
 // the healthy machine has its own test and the "we could not read it" machine
-// must stay at Advisory.
+// must stay at Advisory. Blocking needs a MEASURED self-signed driver and a
+// reading that explains the breakage: either the driver is bound and policy
+// refuses it, or the package is installed, loading nothing, and test signing is
+// measured off (SystemConfigChecker.SigningSeverity). An unread signature never
+// reaches Blocking by any route.
 //
 // The rival-claimant fact is the one reading here that is about the FUTURE -
 // another installed package could win the next rescan - so it is held to the
@@ -115,18 +119,44 @@ public class SystemConfigCheckerTests
     }
 
     [Fact]
-    public void SelfSignedPackagePresentButNotBound_WithTestSigningOff_IsAdvisoryNotBlocking()
+    public void SelfSignedPackagePresentButNotBound_WithTestSigningOff_BlocksOnTestMode()
     {
-        // Blocking is reserved for a driver that is in use. NotBound means the
-        // package is installed and nothing is loading it: Test Mode is the first
-        // thing to check, but nothing is proven broken by it.
+        // The owner's own PC, measured 2026-10-28: the 0323 KMDF filter is
+        // installed and self-signed, nothing is loading it, and test signing is
+        // off. Test Mode being off is WHY the package is not bound, so that row
+        // is Blocking. It used to be Advisory, which buried the one problem the
+        // tray can now fix end to end (SigningFix.BuildPlan).
         var facts = SystemConfigChecker.Evaluate(
             DeviceKind.MagicMouseV3, "0323", DriverStatus.NotBound,
             Readings(testSigning: false, hvci: true, package: true, selfSigned: true));
 
-        Assert.Empty(Blocking(facts));
+        var blocking = Assert.Single(Blocking(facts));
+        Assert.Equal(SystemConfigChecker.TestModeFactId, blocking.Id);
+        Assert.Contains("bcdedit /set testsigning on", blocking.Detail, StringComparison.Ordinal);
+
+        // Memory integrity stays Advisory on a package that is bound to
+        // nothing: HVCI is the second thing in the way, not proof that this PC
+        // is broken, and two Blocking rows for one unbound package would say it
+        // is twice as broken as it is.
         Assert.Equal(ConfigSeverity.Advisory,
-            Fact(facts, SystemConfigChecker.TestModeFactId)!.Severity);
+            Fact(facts, SystemConfigChecker.MemoryIntegrityFactId)!.Severity);
+    }
+
+    [Fact]
+    public void PackagePresentButNotBound_WithAnUnreadSignature_NeverBlocks()
+    {
+        // The same shape with the one reading that must never escalate. The
+        // signature could not be read, so the tray may not claim the package is
+        // self-signed and may not call this PC broken - the unknown-never-blocks
+        // guarantee holds for the installed-but-unbound case too.
+        var facts = SystemConfigChecker.Evaluate(
+            DeviceKind.MagicMouseV3, "0323", DriverStatus.NotBound,
+            Readings(testSigning: false, hvci: true, package: true));
+
+        Assert.Empty(Blocking(facts));
+        var testMode = Fact(facts, SystemConfigChecker.TestModeFactId)!;
+        Assert.Equal(ConfigSeverity.Advisory, testMode.Severity);
+        Assert.Contains("could not read the signature", testMode.Detail, StringComparison.Ordinal);
         Assert.Equal(ConfigSeverity.Advisory,
             Fact(facts, SystemConfigChecker.MemoryIntegrityFactId)!.Severity);
     }
@@ -193,15 +223,18 @@ public class SystemConfigCheckerTests
     }
 
     [Fact]
-    public void SelfSignedFilterInstalledButNotBoundOnAV1_IsAdvisoryNotBlocking()
+    public void SelfSignedFilterInstalledButNotBoundOnAV1_BlocksOnTestMode()
     {
+        // The same rule on a v1: a measured self-signed package that is
+        // installed and loading nothing, with test signing measured off, is a
+        // problem and not a note. The v1 route needs positive evidence to say
+        // anything at all (SystemConfigChecker.cs:305-309), and here it has it.
         var facts = SystemConfigChecker.Evaluate(
             DeviceKind.MagicMouseV1, "030d", DriverStatus.NotBound,
             Readings(testSigning: false, hvci: true, package: true, selfSigned: true));
 
-        Assert.Empty(Blocking(facts));
-        Assert.Equal(ConfigSeverity.Advisory,
-            Fact(facts, SystemConfigChecker.TestModeFactId)!.Severity);
+        var blocking = Assert.Single(Blocking(facts));
+        Assert.Equal(SystemConfigChecker.TestModeFactId, blocking.Id);
     }
 
     [Fact]
