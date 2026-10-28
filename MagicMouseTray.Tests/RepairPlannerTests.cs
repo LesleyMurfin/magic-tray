@@ -691,6 +691,53 @@ public class RepairPlannerTests
         Assert.Null(collapsed);
     }
 
+    // The exact state docs/TEST-PLAN.md D23 and docs/ENABLE-DISABLE.md:126
+    // forbid a fault from: a well-formed 0x90 report whose percent byte is zero,
+    // taken across an interval in which the filter's touch counter really did
+    // climb. The measurement behind those two documents is why - the same
+    // [90 00 00] came back 10/10 over 5 s on a DEAD wheel and 10/10 again on the
+    // same PC with multitouch confirmed flowing - so this shape is one of two
+    // states that are byte-identical from usermode, and no rule may read it as a
+    // defect.
+    private static readonly DateTimeOffset ProbeTakenAt =
+        new(2026, 9, 16, 23, 37, 42, TimeSpan.Zero);
+
+    private static FilterDiagSnapshot Diag(ulong rid12) => new(
+        ProbeTakenAt,
+        DiagAvailability.Ok,
+        BoundKmdfVariant,
+        rid12, rid12, null, null,
+        null, null, null, null,
+        null, null, null, null);
+
+    [Fact]
+    public void PlanOne_ZeroedBatteryPullWhileTheTouchStreamAdvances_RaisesNothing()
+    {
+        // The touch counter climbs across the read, which is the half that used
+        // to turn the zeros into an accusation.
+        var zeroedWhileTouched = RepairPlanner.PlanOne(V3WithProbe(new BatteryProbe(
+            ProbeTakenAt,
+            ZeroReport: true,
+            DiagBefore: Diag(2_095_000),
+            DiagAfter: Diag(2_095_323))));
+
+        Assert.Null(zeroedWhileTouched);
+
+        // And the battery shape that IS measured still reports: a Magic Keyboard
+        // whose percent reads -2 has a pairing record this PC can patch, which is
+        // the one battery fault with a cause behind it (D30). Silence on the
+        // zeroed pull must not have been bought by silencing the battery rules.
+        var blockedKeyboard = RepairPlanner.PlanOne(Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: true,
+            lastBatteryPct: -2));
+
+        Assert.NotNull(blockedKeyboard);
+        Assert.Equal(RepairProblem.BatteryReadBlocked, blockedKeyboard.Problem);
+    }
+
     [Fact]
     public void PlanOne_CapabilityFaultsOnACatalogDeviceThisPcNeverOwned_AreNotFindings()
     {
@@ -1177,6 +1224,47 @@ public class RepairPlannerTests
         // Inconclusive names what was not established, and never passes.
         Assert.Contains("could not confirm two-finger contact", RepairPlanner.ScrollProbeInconclusive);
         Assert.Contains("Run it again", RepairPlanner.ScrollProbeInconclusive);
+    }
+
+    [Fact]
+    public void ScrollProbeConsent_NamesWhatTheProbeDoesAndEverythingItKeeps()
+    {
+        // The one place the user is told what starting this costs them, and the
+        // only thing standing between the string and the code is this test. A
+        // disclosure that enumerates what is NOT touched reads as complete, so
+        // every effect has to be named: the capture itself, that it is wider
+        // than this mouse, and each thing that outlives the window. Nothing
+        // else in the suite reads this string, so a field added to
+        // WheelObservation with nothing added here fails exactly here.
+        var consent = RepairPlanner.ScrollProbeConsent;
+
+        // The capture: RIDEV_INPUTSINK on usage page 1 / usage 2 has no focus
+        // requirement, so Windows delivers every mouse's records, and the
+        // 0x03FF mask counts the click the very next prompt asks for.
+        Assert.Contains("counts the movement, button and scroll messages", consent);
+        Assert.Contains("from any other mouse attached", consent);
+
+        // What survives the window. AbsMotionSum is pointer travel, not a
+        // message count; ActiveDuration comes from the scroll driver's touch
+        // counter, a second source the "messages Windows delivers" sentence
+        // does not cover; and the decoder proof is per device path and sticky
+        // for the sink's life, which is the app's life.
+        Assert.Contains("how far the pointer moved", consent);
+        Assert.Contains("how much of each step the mouse was actually being touched", consent);
+        Assert.Contains("until this app is closed", consent);
+
+        // The claim that was false while three fields said otherwise.
+        Assert.DoesNotContain("nothing but those counts", consent);
+
+        // The reassurances that are true, and still have to be there.
+        Assert.Contains("not which button was pressed", consent);
+        Assert.Contains("not where the pointer was", consent);
+        Assert.Contains("Nothing you type is read at all", consent);
+        Assert.Contains("Nothing is installed", consent);
+        Assert.Contains("no administrator prompt appears", consent);
+
+        // Three legs are possible, so twenty seconds is not a total.
+        Assert.Contains("offers that step once more", consent);
     }
 
     // ================= The rows the findings have to reach ===============

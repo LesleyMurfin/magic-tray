@@ -640,6 +640,30 @@ internal static class RepairPlanner
     // cannot stay silent through a deliberate ten-second gesture.
     internal static readonly TimeSpan ScrollProbeLeg = TimeSpan.FromSeconds(10);
 
+    // The consent the probe is started from. It lives beside the prompts it
+    // introduces so one file holds everything this flow says to the user, and
+    // so what it claims can be pinned by a test: the string is the app's whole
+    // disclosure of a capture the user cannot see happening.
+    internal const string ScrollProbeConsent =
+        "No problem was found with this mouse's driver or its connection - and that is not "
+        + "an answer about the scroll wheel.\n\n"
+        + "This PC cannot tell a mouse whose scrolling is broken from a mouse nobody has "
+        + "scrolled on: both look exactly the same from here. A hand resting on the top "
+        + "surface sends the same stream of touch reports as a hand scrolling, and a "
+        + "working mouse spends most of its time sending no scroll at all. So the only "
+        + "honest way to check is to measure two short gestures while you make them.\n\n"
+        + "It takes about twenty seconds, in two steps of ten - and if the first step "
+        + "sends nothing through, it offers that step once more, which you can turn "
+        + "down. During each step this app counts the movement, button and scroll "
+        + "messages Windows delivers from this mouse - and from any other mouse "
+        + "attached, because Windows hands it all of them - and keeps nothing but those "
+        + "counts, one total of how far the pointer moved, and which mouse they came "
+        + "from: not which button was pressed, not where the pointer was. Nothing you "
+        + "type is read at all. Nothing is installed, nothing is changed on this PC or "
+        + "on the mouse, no administrator prompt appears, and you can stop at any "
+        + "step.\n\n"
+        + "OK starts the test. Cancel changes nothing.";
+
     // What the user is asked to do, in order. The control gesture runs FIRST so
     // an abandoned flow leaves the positive control rather than the ambiguous
     // half.

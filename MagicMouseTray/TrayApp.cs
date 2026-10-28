@@ -2915,23 +2915,18 @@ internal sealed class TrayApp : IDisposable
     // force the user to click every single time.
     IWheelSink? _wheelSink;
     // Whether any observation this process has taken proved the decoder. Drives
-    // the click-first wording, nothing else. It is read at :3045 and |= written
-    // at :3049, :3060 and :3067, all on the probe task; the unsynchronised
-    // read-modify-write is safe BECAUSE _scrollProbeRunning admits one probe
-    // task at a time, and for no other reason.
+    // the click-first wording, nothing else. It is read and `|=` written only on
+    // the probe task; the unsynchronised read-modify-write is safe BECAUSE
+    // _scrollProbeGate admits one probe task at a time, and for no other reason.
     bool _scrollDecoderValidated;
-    // 1 while a probe is running. The raw-input registration the sink's pump
-    // takes out is per PROCESS, not per window (WheelSink.cs:429-438), so a
-    // second overlapping probe does not measure a second window: it retargets
-    // WM_INPUT away from the first pump's window and then, on whichever pump
-    // finishes first, deregisters the process from under the survivor. A leg
-    // silenced after it had already resolved the target path and earned the
-    // sticky decoder proof reads downstream as a genuine zero-notch
-    // measurement, i.e. as "scroll is dead" on a healthy mouse. Reachable by
-    // hand: the tray menu is fully responsive during the twenty seconds of
-    // prompts, so a second click walks ShowRepairFlow -> OfferScrollProbe ->
-    // here while the first probe is mid-leg.
-    int _scrollProbeRunning;
+    // One probe at a time, process-wide: the raw-input registration is per
+    // PROCESS, so two probes silence each other's pump and the survivor reads a
+    // scrolling mouse as silent. Reachable by hand - the tray menu is fully
+    // responsive during the prompts, so a second click walks ShowRepairFlow ->
+    // OfferScrollProbe -> here while the first probe is mid-leg. See
+    // ScrollProbeGate.
+    readonly ScrollProbeGate _scrollProbeGate = new(
+        ex => Logger.Log($"SCROLL_PROBE_START_FAILED err={ex.Message}"));
 
     // Offered only where the driver state leaves a dead wheel UNEXPLAINED: a
     // live v3 whose filter is bound, running and actually in the device stack.
@@ -2981,27 +2976,8 @@ internal sealed class TrayApp : IDisposable
         // and the summed pointer travel abs(lLastX)+abs(lLastY)
         // (WheelSink.cs:261, :304, carried on the observation at :316) - a
         // single total, not positions, but still more than "counts".
-        var intro =
-            "No problem was found with this mouse's driver or its connection - and that is not "
-            + "an answer about the scroll wheel.\n\n"
-            + "This PC cannot tell a mouse whose scrolling is broken from a mouse nobody has "
-            + "scrolled on: both look exactly the same from here. A hand resting on the top "
-            + "surface sends the same stream of touch reports as a hand scrolling, and a "
-            + "working mouse spends most of its time sending no scroll at all. So the only "
-            + "honest way to check is to measure two short gestures while you make them.\n\n"
-            + "It takes about twenty seconds, in two steps of ten - and if the first step "
-            + "sends nothing through, it offers that step once more, which you can turn "
-            + "down. During each step this app counts the movement, button and scroll "
-            + "messages Windows delivers from this mouse - and from any other mouse "
-            + "attached, because Windows hands it all of them - and keeps nothing but those "
-            + "counts, one total of how far the pointer moved, and which mouse they came "
-            + "from: not which button was pressed, not where the pointer was. Nothing you "
-            + "type is read at all. Nothing is installed, nothing is changed on this PC or "
-            + "on the mouse, no administrator prompt appears, and you can stop at any "
-            + "step.\n\n"
-            + "OK starts the test. Cancel changes nothing.";
         if (System.Windows.Forms.MessageBox.Show(
-                intro, TrayMenu.ProductName,
+                RepairPlanner.ScrollProbeConsent, TrayMenu.ProductName,
                 System.Windows.Forms.MessageBoxButtons.OKCancel,
                 System.Windows.Forms.MessageBoxIcon.Information)
             != System.Windows.Forms.DialogResult.OK)
@@ -3018,47 +2994,43 @@ internal sealed class TrayApp : IDisposable
     // with the same dispatcher-is-gone early-out the repair apply path uses
     // (:3100-3105). A probe that resolves after the UI has gone logs and drops.
     // Exactly one probe at a time, because the tray stays clickable throughout:
-    // see _scrollProbeRunning (:2938).
+    // see ScrollProbeGate.
     void StartScrollProbe(DeviceSnapshot snapshot)
     {
-        if (System.Threading.Interlocked.CompareExchange(ref _scrollProbeRunning, 1, 0) != 0)
+        var started = _scrollProbeGate.TryStart(() =>
         {
-            Logger.Log($"SCROLL_PROBE_BUSY pid={snapshot.Pid}");
-            return;
-        }
+            var service = RepairPlanner.FilterServiceFor(snapshot);
+            // MultitouchAdvancingFresh, not MultitouchAdvancing: the memoised
+            // verdict answers true for a full minute after the last counter
+            // advance (DeviceDiagReader.cs:326), and the user arrives here having
+            // just moved the mouse to click the tray icon and an OK button. Every
+            // 250 ms tick of a ten-second leg would therefore read true on a mouse
+            // nobody is touching, which makes Void false and ActiveDuration a full
+            // ten seconds for a leg the user sat out - the one input the verdict
+            // cannot afford to be wrong about, because "the surface was under a
+            // hand and no notch came out" is the entire argument for saying the
+            // wheel is dead. The sink samples it every ActiveTickInterval and asks
+            // only about the sample that just elapsed (WheelSink.cs:145-156).
+            _wheelSink ??= new RawInputWheelSink(
+                new RawInputMouseSource(),
+                () => DeviceDiagReader.MultitouchAdvancingFresh(service));
+            var sink = _wheelSink;
 
-        var service = RepairPlanner.FilterServiceFor(snapshot);
-        // MultitouchAdvancingFresh, not MultitouchAdvancing: the memoised verdict
-        // answers true for a full minute after the last counter advance
-        // (DeviceDiagReader.cs:326), and the user arrives here having just moved
-        // the mouse to click the tray icon and an OK button. Every 250 ms tick of
-        // a ten-second leg would therefore read true on a mouse nobody is
-        // touching, which makes Void false and ActiveDuration a full ten seconds
-        // for a leg the user sat out - the one input the verdict cannot afford to
-        // be wrong about, because "the surface was under a hand and no notch came
-        // out" is the entire argument for saying the wheel is dead. The sink
-        // samples it every ActiveTickInterval and asks only about the sample that
-        // just elapsed (WheelSink.cs:145-156).
-        _wheelSink ??= new RawInputWheelSink(
-            new RawInputMouseSource(),
-            () => DeviceDiagReader.MultitouchAdvancingFresh(service));
-        var sink = _wheelSink;
-
-        _ = Task.Run(async () =>
-        {
-            try
+            return Task.Run(async () =>
             {
-                await RunScrollProbeAsync(snapshot, sink).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"SCROLL_PROBE_FAIL pid={snapshot.Pid} err={ex.Message}");
-            }
-            finally
-            {
-                System.Threading.Volatile.Write(ref _scrollProbeRunning, 0);
-            }
+                try
+                {
+                    await RunScrollProbeAsync(snapshot, sink).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"SCROLL_PROBE_FAIL pid={snapshot.Pid} err={ex.Message}");
+                }
+            });
         });
+
+        if (started is null)
+            Logger.Log($"SCROLL_PROBE_BUSY pid={snapshot.Pid}");
     }
 
     async Task RunScrollProbeAsync(DeviceSnapshot snapshot, IWheelSink sink)
