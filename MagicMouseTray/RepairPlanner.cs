@@ -644,6 +644,29 @@ internal static class RepairPlanner
     // introduces so one file holds everything this flow says to the user, and
     // so what it claims can be pinned by a test: the string is the app's whole
     // disclosure of a capture the user cannot see happening.
+    //
+    // What it may claim is bounded by what WheelObservation carries out of a
+    // window (WheelSink.cs:74-84), and every field of it is named here:
+    //   - the three counters and MouseRecords -> "counts the movement, button
+    //     and scroll messages", widened to "any other mouse attached" because
+    //     RIDEV_INPUTSINK has no focus requirement and every mouse's records
+    //     are decoded before the non-target ones are dropped at projection
+    //     (WheelSink.cs:280, :299);
+    //   - AbsMotionSum -> "how far the pointer moved". A single total of
+    //     abs(lLastX)+abs(lLastY), which is travel and not a message count, so
+    //     "not where the pointer was" does not cover it (WheelSink.cs:261, :304);
+    //   - ActiveDuration -> "how much of each step the mouse was actually being
+    //     touched". A SECOND source: the filter's own multitouch counter,
+    //     sampled every ActiveTickInterval (WheelSink.cs:199-211), not anything
+    //     Windows delivered as a message - and it is quoted back to the user in
+    //     the finding ("during those N seconds of touch"), so a consent that
+    //     described only messages was describing half the measurement;
+    //   - TargetDevicePath and the sink's sticky _validatedPaths set
+    //     (WheelSink.cs:142, :320-327) -> "which mouse they came from" and the
+    //     note that outlasts the test. The sink is cached for the process
+    //     (TrayApp._wheelSink), so that proof is kept until the app closes.
+    // A field added to WheelObservation with nothing added here fails
+    // RepairPlannerTests.ScrollProbeConsent_NamesWhatTheProbeDoesAndEverythingItKeeps.
     internal const string ScrollProbeConsent =
         "No problem was found with this mouse's driver or its connection - and that is not "
         + "an answer about the scroll wheel.\n\n"
@@ -654,14 +677,19 @@ internal static class RepairPlanner
         + "honest way to check is to measure two short gestures while you make them.\n\n"
         + "It takes about twenty seconds, in two steps of ten - and if the first step "
         + "sends nothing through, it offers that step once more, which you can turn "
-        + "down. During each step this app counts the movement, button and scroll "
-        + "messages Windows delivers from this mouse - and from any other mouse "
-        + "attached, because Windows hands it all of them - and keeps nothing but those "
-        + "counts, one total of how far the pointer moved, and which mouse they came "
-        + "from: not which button was pressed, not where the pointer was. Nothing you "
-        + "type is read at all. Nothing is installed, nothing is changed on this PC or "
-        + "on the mouse, no administrator prompt appears, and you can stop at any "
-        + "step.\n\n"
+        + "down.\n\n"
+        + "During each step this app counts the movement, button and scroll messages "
+        + "Windows delivers from this mouse - and from any other mouse attached, because "
+        + "Windows hands it all of them. From this mouse it keeps those counts, one total "
+        + "of how far the pointer moved, and which mouse they came from: not which button "
+        + "was pressed, not where the pointer was. It also asks the scroll driver four "
+        + "times a second whether the mouse is being touched, and keeps how much of each "
+        + "step the mouse was actually being touched - that is what the result is measured "
+        + "against. One note outlasts the test: that this app could read this mouse's "
+        + "messages correctly, kept until this app is closed so a later test need not ask "
+        + "you to click first. Nothing you type is read at all. Nothing is installed, "
+        + "nothing is changed on this PC or on the mouse, no administrator prompt appears, "
+        + "and you can stop at any step.\n\n"
         + "OK starts the test. Cancel changes nothing.";
 
     // Said when a second check is asked for while one is still measuring. No

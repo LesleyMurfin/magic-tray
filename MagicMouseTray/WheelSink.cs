@@ -428,13 +428,13 @@ internal sealed class RawInputMouseSource : IRawMouseSource
 
     // The raw-input registration below is per PROCESS, not per window: Windows
     // keeps one hwndTarget per (usagePage, usage) per process, so a second pump's
-    // RegisterRawInputDevices (:513) silently retargets WM_INPUT away from the
-    // first pump's window, and the unqualified RIDEV_REMOVE (:541) deregisters
+    // RegisterRawInputDevices (:527) silently retargets WM_INPUT away from the
+    // first pump's window, and the unqualified RIDEV_REMOVE (:555) deregisters
     // the process rather than one window - whichever pump unwinds first silences
-    // the other for the rest of its window. TrayApp's in-flight guard
-    // (TrayApp.cs:3021) keeps two PROBES from overlapping; this gate is what
-    // keeps an ORPHANED pump - one the sink stopped waiting for after
-    // PumpDrainTimeout and can no longer see - from overlapping the next one.
+    // the other for the rest of its window. ScrollProbeGate keeps two PROBES
+    // from overlapping; this gate is what keeps an ORPHANED pump - one the sink
+    // stopped waiting for after PumpDrainTimeout and can no longer see - from
+    // overlapping the next one.
     static readonly SemaphoreSlim RegistrationGate = new(1, 1);
 
     // How long a pump waits for the previous one to let the process registration

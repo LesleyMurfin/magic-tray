@@ -2961,25 +2961,18 @@ internal sealed class TrayApp : IDisposable
 
         // The consent text names the CAPTURE, not only the absence of change.
         // Starting the probe registers this process for raw mouse input with no
-        // focus requirement (WheelSink.cs:509-511), so for the ten seconds of a
+        // focus requirement (WheelSink.cs:523-527), so for the ten seconds of a
         // leg Windows delivers a record for every mouse on the PC, button
-        // presses included (WheelSink.cs:262 masks 0x03FF) - and the first
-        // prompt asks the user to click (RepairPlanner.cs:829). A disclosure
-        // that enumerates everything the probe does NOT do, while saying
-        // nothing about "this reads mouse input", reads as complete when it is
-        // not, so the capture is stated in the same breath as the reassurances.
-        // What the text may claim is bounded by what the code does: only
-        // tallies are accumulated (WheelSink.cs:260-264), every non-target
-        // device is dropped when the observation is projected
-        // (WheelSink.cs:280, :299), and no keyboard is ever registered - the
-        // single RAWINPUTDEVICE is usage page 1 / usage 2
-        // (WheelSink.cs:509-510) and a record that is not a mouse record is
-        // discarded undecoded (WheelSink.cs:595-596). Two things survive
-        // beside the message counts and must be named rather than implied:
-        // the target's device path (WheelSink.cs:316, logged at :3100 below)
-        // and the summed pointer travel abs(lLastX)+abs(lLastY)
-        // (WheelSink.cs:261, :304, carried on the observation at :316) - a
-        // single total, not positions, but still more than "counts".
+        // presses included (WheelSink.cs:262 masks 0x03FF) - and the very next
+        // prompt asks the user to click. A disclosure that enumerates
+        // everything the probe does NOT do, while saying nothing about "this
+        // reads mouse input", reads as complete when it is not. What the text
+        // may claim is bounded by what a WheelObservation carries out of a
+        // window, field by field, and that list lives with the string it
+        // bounds: RepairPlanner.ScrollProbeConsent. Keeping it here - two files
+        // away from the sentence it licenses - is how the string came to
+        // promise it kept "nothing but those counts" while three other things
+        // survived the window.
         if (System.Windows.Forms.MessageBox.Show(
                 RepairPlanner.ScrollProbeConsent, TrayMenu.ProductName,
                 System.Windows.Forms.MessageBoxButtons.OKCancel,
