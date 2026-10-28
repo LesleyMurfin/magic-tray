@@ -152,7 +152,7 @@ public class ScriptHonestyTests
             l.Contains("state.filterInStack", StringComparison.Ordinal));
 
         Assert.True(
-            Regex.IsMatch(script.Raw[summary], @"\$null|Format-\w+"),
+            Regex.IsMatch(script.Uncommented[summary], @"\$null|Format-\w+"),
             $"{CaptureState}:{summary + 1} interpolates filterInStack raw, so an unread stack prints exactly "
                 + "what a measured-absent filter prints.");
     }
@@ -225,24 +225,27 @@ internal static class RepoTree
     }
 }
 
-// Minimal structural view of a PowerShell file: literals and comments blanked
-// out so brace nesting can be counted, which is all these tests need to say
-// "this statement sits inside that branch". Not a parser, and never used to
-// assert the text of a message.
+// Minimal structural view of a PowerShell file in two layers: Code (string
+// literals and comments blanked, so brace nesting can be counted) and
+// Uncommented (comments blanked, literals kept, which is what every locator
+// and every statement-text assertion reads, so no comment can add a phantom
+// match or break one). That is all these tests need to say "this statement
+// sits inside that branch". Not a parser, and never used to assert the text of
+// a message.
 internal sealed class PsScript
 {
     static readonly Regex VisibleOutput = new(@"\bWrite-(Log|Host|Warning|Error)\b", RegexOptions.Compiled);
 
     readonly string _name;
-    readonly string[] _raw;
     readonly string[] _code;
+    readonly string[] _uncommented;
     readonly int[] _opener;
 
-    PsScript(string name, string[] raw, string[] code)
+    PsScript(string name, string[] code, string[] uncommented)
     {
         _name = name;
-        _raw = raw;
         _code = code;
+        _uncommented = uncommented;
         _opener = new int[code.Length];
 
         var stack = new Stack<int>();
@@ -259,22 +262,27 @@ internal sealed class PsScript
         }
     }
 
-    public IReadOnlyList<string> Raw => _raw;
-
     public IReadOnlyList<string> Code => _code;
+
+    // Comments blanked, string literals kept: the view for assertions that must
+    // read what a statement actually emits, where Code blanks the interpolation.
+    public IReadOnlyList<string> Uncommented => _uncommented;
 
     public static PsScript Load(string repoRelativePath)
     {
         var path = Path.Combine(RepoTree.Root, repoRelativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(path), $"missing {repoRelativePath} (looked at {path})");
         var raw = File.ReadAllLines(path);
-        return new PsScript(repoRelativePath, raw, Blank(raw));
+        return new PsScript(
+            repoRelativePath, Blank(raw, blankLiterals: true), Blank(raw, blankLiterals: false));
     }
 
     public static bool IsVisibleOutput(string text) => VisibleOutput.IsMatch(text);
 
+    // Locating a statement never sees comment text: a comment can neither add a
+    // phantom match nor break SingleLineWhere's exactly-one contract.
     public IReadOnlyList<int> LinesWhere(Func<string, bool> predicate) =>
-        Enumerable.Range(0, _raw.Length).Where(i => predicate(_raw[i])).ToList();
+        Enumerable.Range(0, _uncommented.Length).Where(i => predicate(_uncommented[i])).ToList();
 
     public int SingleLineWhere(Func<string, bool> predicate)
     {
@@ -292,7 +300,7 @@ internal sealed class PsScript
         var last = line;
         while (last < _code.Length - 1 && _code[last].TrimEnd().EndsWith("`", StringComparison.Ordinal))
             last++;
-        return string.Join(" ", _raw.Skip(first).Take(last - first + 1).Select(l => l.Trim()));
+        return string.Join(" ", _uncommented.Skip(first).Take(last - first + 1).Select(l => l.Trim()));
     }
 
     // Innermost enclosing block whose opening line is a try.
@@ -313,8 +321,8 @@ internal sealed class PsScript
     {
         var end = BlockEndLine(openerLine);
         if (end < openerLine)
-            return _raw[openerLine];
-        return string.Join("\n", _raw.Skip(openerLine).Take(end - openerLine + 1));
+            return _uncommented[openerLine];
+        return string.Join("\n", _uncommented.Skip(openerLine).Take(end - openerLine + 1));
     }
 
     // Opening line of the catch clause attached to a try block, or -1.
@@ -333,7 +341,7 @@ internal sealed class PsScript
         return -1;
     }
 
-    // Raw text of the catch clause (or clauses) attached to a try block.
+    // Text of the catch clause (or clauses) attached to a try block.
     public string CatchTextFor(int tryOpenerLine)
     {
         var line = CatchOpenerFor(tryOpenerLine);
@@ -343,8 +351,8 @@ internal sealed class PsScript
         var at = Regex.Match(_code[line], @"\bcatch\b");
         var bodyEnd = BlockEndLine(line, at.Index);
         if (bodyEnd < line)
-            return _raw[line];
-        return string.Join("\n", _raw.Skip(line).Take(bodyEnd - line + 1));
+            return _uncommented[line];
+        return string.Join("\n", _uncommented.Skip(line).Take(bodyEnd - line + 1));
     }
 
     // True when `line` sits inside the try block opened at `tryOpenerLine`, or
@@ -390,10 +398,11 @@ internal sealed class PsScript
         return -1;
     }
 
-    // Replaces comment and string-literal content with spaces, keeping line and
-    // column structure, so brace counting sees code braces only. Backticks are
-    // kept in code context because a trailing backtick is a line continuation.
-    static string[] Blank(string[] raw)
+    // Replaces comment content - and, when blankLiterals, string-literal
+    // content - with spaces, keeping line and column structure, so brace
+    // counting sees code braces only. Backticks are kept in code context
+    // because a trailing backtick is a line continuation.
+    static string[] Blank(string[] raw, bool blankLiterals)
     {
         const int Code = 0, Single = 1, Double = 2, Block = 3;
         var mode = Code;
@@ -424,12 +433,12 @@ internal sealed class PsScript
                         else if (c == '\'')
                         {
                             mode = Single;
-                            sb.Append(' ');
+                            sb.Append(blankLiterals ? ' ' : c);
                         }
                         else if (c == '"')
                         {
                             mode = Double;
-                            sb.Append(' ');
+                            sb.Append(blankLiterals ? ' ' : c);
                         }
                         else if (c == '`')
                         {
@@ -450,16 +459,16 @@ internal sealed class PsScript
                     case Single:
                         if (c == '\'')
                             mode = Code;
-                        sb.Append(' ');
+                        sb.Append(blankLiterals ? ' ' : c);
                         break;
 
                     case Double:
                         if (c == '`')
                         {
-                            sb.Append(' ');
+                            sb.Append(blankLiterals ? ' ' : c);
                             if (next != '\0')
                             {
-                                sb.Append(' ');
+                                sb.Append(blankLiterals ? ' ' : next);
                                 j++;
                             }
                         }
@@ -467,7 +476,7 @@ internal sealed class PsScript
                         {
                             if (c == '"')
                                 mode = Code;
-                            sb.Append(' ');
+                            sb.Append(blankLiterals ? ' ' : c);
                         }
 
                         break;
