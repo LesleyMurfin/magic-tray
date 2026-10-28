@@ -47,6 +47,31 @@ public class TrayMenuTests
         Assert.Equal(expected, TrayMenu.ShowFixKeyboard(kind, pct));
     }
 
+    [Theory]
+    [InlineData(DeviceKind.MagicMouseV3, 40, false)]
+    [InlineData(DeviceKind.MagicKeyboard, -2, false)]
+    [InlineData(DeviceKind.MagicKeyboard, -1, false)]
+    [InlineData(DeviceKind.MagicKeyboard, 0, true)]
+    [InlineData(DeviceKind.MagicKeyboard, 40, true)]
+    public void ShowUndoKeyboardFix_OnlyOnKeyboardWithAReadablePercent(DeviceKind kind, int pct, bool expected)
+    {
+        Assert.Equal(expected, TrayMenu.ShowUndoKeyboardFix(kind, pct));
+    }
+
+    // 0% is a reading, not an absence: a flat keyboard still carries the
+    // unlock, and the user must still be able to take it back out.
+    [Fact]
+    public void FixAndUndoKeyboard_NeverOfferedTogether()
+    {
+        for (var pct = -2; pct <= 100; pct++)
+        {
+            Assert.False(
+                TrayMenu.ShowFixKeyboard(DeviceKind.MagicKeyboard, pct)
+                && TrayMenu.ShowUndoKeyboardFix(DeviceKind.MagicKeyboard, pct),
+                $"both keyboard battery items offered at pct={pct}");
+        }
+    }
+
     [Fact]
     public void ShowBatteryReads_OnlyWhenV3Patched()
     {

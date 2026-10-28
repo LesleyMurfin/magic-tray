@@ -438,7 +438,8 @@ public class DriverPackageCatalogTests
         Assert.Contains("battery", text, StringComparison.Ordinal);
         Assert.Contains("one administrator approval", text, StringComparison.Ordinal);
         Assert.Contains("changes nothing else", text, StringComparison.Ordinal);
-        Assert.Contains("Re-pairing the keyboard can undo it", text, StringComparison.Ordinal);
+        Assert.Contains("\"Undo battery fix\" in the tray menu puts it back", text,
+            StringComparison.Ordinal);
         Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
     }
 
@@ -568,6 +569,126 @@ public class DriverPackageCatalogTests
             "SUMMARY patched=0 blocked=2");
         Assert.DoesNotContain("no readable log", withLog, StringComparison.Ordinal);
         Assert.Contains("SUMMARY patched=0 blocked=2", withLog, StringComparison.Ordinal);
+    }
+
+    // The guard that decides whether the undo runs at all, and the mirror of
+    // the patch guard: the one state with nothing to undo is the one state the
+    // patch exists for. Asserted on the predicate rather than through
+    // OfferKeyboardSdpRestore because that method reads the live registry and
+    // shows message boxes.
+    [Fact]
+    public void KeyboardSdpRestore_OnlyANotAppliedReadBackSkipsTheRun()
+    {
+        Assert.True(DriverInstaller.SkipsKeyboardSdpRestore(SdpPatchState.NotApplied));
+        Assert.False(DriverInstaller.SkipsKeyboardSdpRestore(SdpPatchState.Applied));
+        // Unknown is no evidence, so the script runs and decides with its own
+        // eyes - exactly as the patch offer does.
+        Assert.False(DriverInstaller.SkipsKeyboardSdpRestore(SdpPatchState.Unknown));
+
+        // The two guards are exact opposites wherever the read-back is
+        // evidence at all, which is what makes one menu entry the undo of the
+        // other.
+        Assert.NotEqual(
+            DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.Applied),
+            DriverInstaller.SkipsKeyboardSdpRestore(SdpPatchState.Applied));
+        Assert.NotEqual(
+            DriverInstaller.SkipsKeyboardSdpPatch(SdpPatchState.NotApplied),
+            DriverInstaller.SkipsKeyboardSdpRestore(SdpPatchState.NotApplied));
+    }
+
+    // The same exit numbers as a patch run, in the words an undo turns them
+    // into: 2 is no backup to read, 3 is nothing put back, 4 is half and half.
+    [Fact]
+    public void KeyboardSdpRestore_FailureNamesItsOwnOutcomeAndTheLog()
+    {
+        var noBackup = DriverInstaller.KeyboardSdpRestoreFailureMessage(
+            DriverInstaller.KeyboardPatchExitNoRecord, @"C:\logs\kbd-restore.log", null);
+        Assert.Contains("No backup of this keyboard's original Bluetooth record was found",
+            noBackup, StringComparison.Ordinal);
+        Assert.Contains("nothing was changed", noBackup, StringComparison.Ordinal);
+        Assert.Contains(@"Log: C:\logs\kbd-restore.log", noBackup, StringComparison.Ordinal);
+        // a missing log reads as a missing log, not as an empty gap
+        Assert.Contains("no readable log at that path", noBackup, StringComparison.Ordinal);
+
+        var nonePutBack = DriverInstaller.KeyboardSdpRestoreFailureMessage(
+            DriverInstaller.KeyboardPatchExitNotPatched, @"C:\logs\kbd-restore.log",
+            "[CachedServices\\00010000] blocked by permissions");
+        Assert.Contains("could be put back", nonePutBack, StringComparison.Ordinal);
+        Assert.Contains("nothing was changed", nonePutBack, StringComparison.Ordinal);
+        Assert.Contains("blocked by permissions", nonePutBack, StringComparison.Ordinal);
+
+        var partial = DriverInstaller.KeyboardSdpRestoreFailureMessage(
+            DriverInstaller.KeyboardPatchExitPartial, @"C:\logs\kbd-restore.log",
+            "SUMMARY restored=1 blocked=1");
+        Assert.Contains("back to its original record", partial, StringComparison.Ordinal);
+        Assert.Contains("at least one record was blocked", partial, StringComparison.Ordinal);
+        // never the "nothing was changed" of exits 2 and 3
+        Assert.DoesNotContain("nothing was changed", partial, StringComparison.Ordinal);
+        Assert.Contains("SUMMARY restored=1 blocked=1", partial, StringComparison.Ordinal);
+
+        // An exit code this app does not know is reported as itself, never
+        // dressed up as a cause it cannot prove - and never as an untouched
+        // registry either.
+        var unknownCode = DriverInstaller.KeyboardSdpRestoreFailureMessage(
+            7, @"C:\logs\x.log", null);
+        Assert.Contains("exit code 7", unknownCode, StringComparison.Ordinal);
+        Assert.Contains("before it could report", unknownCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("No backup", unknownCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("could be put back", unknownCode, StringComparison.Ordinal);
+        Assert.Contains(@"Log: C:\logs\x.log", unknownCode, StringComparison.Ordinal);
+
+        // None of the four may read as success.
+        foreach (var text in new[] { noBackup, nonePutBack, partial, unknownCode })
+            Assert.DoesNotContain("is back in place", text, StringComparison.Ordinal);
+    }
+
+    // Everything the undo costs has to be on screen before the user agrees,
+    // the loss of the battery percent most of all: that is the whole point of
+    // the fix being undone.
+    [Fact]
+    public void KeyboardSdpRestore_PromptStatesEveryCostBeforeTheUserAgrees()
+    {
+        var text = DriverInstaller.KeyboardSdpRestorePrompt("e806884b0741");
+
+        Assert.Contains("scripts/kbd-patch-cachedservices.ps1 -Mac e806884b0741 -Restore", text,
+            StringComparison.Ordinal);
+        Assert.Contains("original Bluetooth record back", text, StringComparison.Ordinal);
+        Assert.Contains("backup", text, StringComparison.Ordinal);
+        Assert.Contains("battery percent stops working", text, StringComparison.Ordinal);
+        Assert.Contains("one administrator approval", text, StringComparison.Ordinal);
+        Assert.Contains("Cancel aborts", text, StringComparison.Ordinal);
+    }
+
+    // The registry write alone changes nothing a user can see: hidbth re-reads
+    // CachedServices only when the Bluetooth radio cycles, undo included.
+    [Fact]
+    public void KeyboardSdpRestore_DoneMessageNamesTheBluetoothCycle()
+    {
+        var done = DriverInstaller.KeyboardSdpRestoreDoneMessage();
+
+        Assert.Contains("original Bluetooth record is back in place", done,
+            StringComparison.Ordinal);
+        Assert.Contains("turn Bluetooth off and on again", done, StringComparison.Ordinal);
+        Assert.Contains("battery percent then stops being reported", done,
+            StringComparison.Ordinal);
+
+        var nothing = DriverInstaller.KeyboardSdpRestoreNothingToUndoMessage();
+        Assert.Contains("nothing to undo", nothing, StringComparison.Ordinal);
+        Assert.Contains("nothing was run", nothing, StringComparison.Ordinal);
+    }
+
+    // A restore run must never be read back later as a patch run, so the two
+    // log names differ - and both live where the tray can read them.
+    [Fact]
+    public void KeyboardSdpRestore_LogPathIsItsOwnFileInTheTrayLogDir()
+    {
+        var restore = DriverInstaller.NewKeyboardRestoreLogPath();
+        var patch = DriverInstaller.NewKeyboardPatchLogPath();
+
+        Assert.NotEqual(patch, restore);
+        Assert.Equal(Logger.LogDir, Path.GetDirectoryName(restore));
+        Assert.StartsWith("kbd-restore-", Path.GetFileName(restore), StringComparison.Ordinal);
+        Assert.EndsWith(".log", restore, StringComparison.Ordinal);
     }
 
     [Fact]
