@@ -2989,7 +2989,8 @@ internal sealed class TrayApp : IDisposable
     // Measurement runs off the dispatcher - two ten-second windows plus dialogs
     // would otherwise freeze the tray - and every dialog is marshalled back,
     // with the same dispatcher-is-gone early-out the repair apply path uses
-    // (:3100-3105). A probe that resolves after the UI has gone logs and drops.
+    // (StartRepairApply, :3340-3345). A probe that resolves after the UI has
+    // gone logs and drops.
     // Exactly one probe at a time, because the tray stays clickable throughout:
     // see ScrollProbeGate.
     void StartScrollProbe(DeviceSnapshot snapshot)
