@@ -242,8 +242,14 @@ internal static class SystemConfigChecker
     //                                   documented route is Apple's signed
     //                                   binary (README.md, "Scrolling", where
     //                                   both install routes end on the same
-    //                                   Apple-countersigned file;
-    //                                   docs/drivers.html:634), so with no
+    //                                   Apple-countersigned file; the same
+    //                                   claim is on the docs page at
+    //                                   docs/drivers.html#v1v2, "Apple's own
+    //                                   signature catalogue, so Windows loads
+    //                                   it with nothing switched off" - cited
+    //                                   by its HTML id because that page is
+    //                                   hand-maintained markup with no code
+    //                                   symbol to anchor to), so with no
     //                                   evidence there is nothing to raise.
     //
     // StockKmdf hands the mouse back to HidBth, which Windows signs itself, so

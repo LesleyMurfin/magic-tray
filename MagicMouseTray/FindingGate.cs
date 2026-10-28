@@ -36,12 +36,16 @@ internal sealed class FindingGate
     // to reach the user.
     //
     // Floor - it must outlast the churn of a legitimate driver change. The
-    // repo's own repair path already states that ceiling twice: the embedded
-    // post-restart script polls for the filter to come back for up to 10 s
-    // (DeviceRepair.cs:216, :496), and diagnose-and-recover.ps1:700 sleeps 3 s
-    // after pnputil /restart-device before it re-reads the stack. So ~13 s is
-    // the longest window in which this PC is known to look broken while being
-    // repaired.
+    // repo's own repair path already states that ceiling twice: both embedded
+    // post-restart scripts - the one DeviceRepair.BuildScript emits and the one
+    // DeviceRepair.BuildRemoveStaleFiltersScript emits - end on the same
+    // `$deadline = (Get-Date).AddSeconds(10)` loop, polling sc.exe for the
+    // filter to come back for up to 10 s before they write the DEVICE_REPAIR /
+    // DEVICE_REPAIR_FILTERS `sc query` transcript line. And the `# --- Repair
+    // ---` step of diagnose-and-recover.ps1 sleeps 3 s after pnputil
+    // /restart-device before Get-BoundFilterStackState re-reads the stack. So
+    // ~13 s is the longest window in which this PC is known to look broken
+    // while being repaired.
     //
     // Ceiling - it must not delay a real fault past the user's patience. A
     // standing fault is re-observed on every menu open and every poll tick, so

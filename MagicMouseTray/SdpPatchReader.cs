@@ -231,7 +231,7 @@ internal static class SdpPatchReader
     // the repo's one parser for it - reused verbatim here rather than copied.
     // The PID matcher is DeviceSnapshotReader.BthenumKeyMatchesPid, the repo's
     // single BTHENUM convention (DeviceStackReader.ReadDeviceStack,
-    // DriverClaimReader.cs:131).
+    // DriverClaimReader.ClaimsForPid).
     //
     // Deliberately PID-targeted: DriverInstaller.TryDiscoverKeyboardMac returns
     // the FIRST keyboard MAC it finds regardless of which keyboard asked, which

@@ -17,7 +17,7 @@ namespace MagicMouseTray;
 // ---------------------------------------------------------------
 // A RepairPlanner finding is a measured fault on the device in front of the
 // user right now: the pointer child is missing, the filter is bound but
-// stopped, two filters are registered (RepairPlanner.RepairProblem). A ConfigFact is
+// stopped, two filters are registered (RepairProblem). A ConfigFact is
 // a property of the PC that at most EXPLAINS such a fault - Test Mode off does
 // not break anything by itself, it only means Windows will refuse to load a
 // self-signed driver if one is there. So the device fault is the more specific,
@@ -27,7 +27,7 @@ namespace MagicMouseTray;
 // wrong:
 //   - RepairPlanner.MenuLabel owns the first row and speaks in the bare fault
 //     voice ("Scroll driver is not installed", "2 problems found"), rendered
-//     at TrayApp.cs:834;
+//     into TrayApp._repairItem by TrayApp.BuildMenu;
 //   - every string SectionLabel can return is prefixed with "System config: ",
 //     so a config line is never readable as that headline no matter how severe
 //     the fact behind it is. Rank below orders facts only WITHIN this section.
@@ -192,7 +192,7 @@ internal static class ConfigFactView
         // read the stack before you chase filters". The Apple multitouch enable
         // FEATURE report is owned by the driver package's watcher, and a second
         // sender inside Magic Tray is an explicit NON-GOAL
-        // (RepairPlanner.RepairAction.RecommendMultitouchWatcher).
+        // (RepairAction.RecommendMultitouchWatcher).
         // So this line names the package as the owner and must never grow into
         // an instruction for the tray to send the report itself.
         SystemConfigChecker.WatcherFactId =>
