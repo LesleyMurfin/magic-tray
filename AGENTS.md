@@ -1,4 +1,11 @@
 # AGENTS.md — Magic Tray
+Read .context/ first.
+
+- Code graph (optional, fail-open): when `.aco/graph.db` and `riley-kg` are both present and the query returns, `riley-kg blast-radius --db .aco/graph.db <file>` / `riley-kg callers --db .aco/graph.db <symbol>` (from LesleyMurfin/agents@agents-sqlite-graph); otherwise use `rg`/`git`. Never block on the graph.
+- Cost: run `aicostoptimizer status` before long or expensive agent runs when it is installed; exit≠0 means quota fail-closed, so stop and report.
+- Build: `dotnet build MagicMouseTray/MagicMouseTray.csproj -c Release`
+- Test: `dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release`
+- Lint: `Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning`
 
 ## Repo identity
 
@@ -12,22 +19,22 @@
 
 | Path | Role |
 |------|------|
+| `.context/` | Agent context pack read first: current, decisions, history, map |
 | `MagicMouseTray/` | WPF tray app (C# / .NET 8) |
 | `MagicMouseTray.Tests/` | Unit tests |
 | `docs/` | Site pages + operator docs |
 | `scripts/` | Packaging, release verify, keyboard SDP patch |
-| `.aco/` | ACO maintainer kit (prompts, JEV sample; never commit `graph.db`) |
+| `.aco/` | ACO maintainer kit (prompt and cost note; never commit `graph.db`) |
 | `.ai/skills/aco-triage/` | Portable ACO triage skill + graceful-degrade verifier |
 
 <!-- BEGIN CORE-RULES -->
 ## Required charter — CORE-RULES
 
-**Every agent must follow** the revive_ai-dev agent charter: `.ai/CORE-RULES.md`
-(SSOT: `/data/projects/revive_ai-dev/.ai/CORE-RULES.md`, vendored by `governance_sync.py`).
+The charter text in this repo is the inlined block below. `.ai/CORE-RULES.md` is not in this checkout.
 
 ### RULE #13 — ADHD output (binding, always on)
 
-**One issue at a time. Action over documents. No drafts. Open ready-for-review PR, then STOP — merge is Lesley-only (RULE #23 / 2026-09-12 freeze).**
+**One issue at a time. Action over documents. No drafts. Open ready-for-review PR, then STOP. Lesley is never asked, assigned or requested to merge or review. The owning bot merges its own PR once verified ready (required CI green, red-then-green tests, agent-checked preview where one applies, mergeable/clean, repo land rules). Merges never depend on bot review stamps.**
 
 1. Lead with the action — command, path, or diff on line one. Never context first.
 2. Finish the current issue before naming a second; extra findings go in one line at the end.
@@ -77,42 +84,28 @@ Do **not** vendor or rebuild the KMDF driver here — that lives in `magic-mouse
 - Driver install paths are user-confirmed only; missing KMDF package → unavailable, never fall back to patching `applewirelessmouse.sys`.
 - Device catalog is code (`MouseBatteryDevice.KnownMice`, `KeyboardBatteryDevice.KnownKeyboards`), not README prose.
 
-## AICostOptimizer & Code Graph Triage (binding)
+## Code graph and cost (binding)
 
-1. **Prompt:** Reference `.aco/ACO-TRIAGE-PROMPT.txt` for structural and semantic analysis.
-2. **Semantic Routing (Jev/Kev):** Active when `JEV_URL` is set:
-   - Risk classification: `python3 -m aicostoptimizer jev choice --state ... --question ...`
-   - Safety invariants ($p \ge 0.95$): `python3 -m aicostoptimizer jev noul --state ... --statement ...`
-   - ADR compliance scoring: `python3 -m aicostoptimizer jev score --state ... --question ...`
-   - Fail-open if `JEV_URL` unset/unreachable → local `.aco/graph.db` + `git`/`rg`. Optional: `JEV_DISABLED=1`.
-3. **Structural Graph:** Uses local `.aco/graph.db` with native C# AST walk; fails open if Jev is unset/unreachable.
+1. **Prompt:** Reference `.aco/ACO-TRIAGE-PROMPT.txt` for structural triage.
+2. **Cost:** `aicostoptimizer status` before a long run when that command is installed. Non-zero exit is quota fail-closed: stop and report.
+3. **Graph:** When `.aco/graph.db` and `riley-kg` are both present and the query returns, `riley-kg blast-radius --db .aco/graph.db <file>` and `riley-kg callers --db .aco/graph.db <symbol>`. If the file, the CLI, or the query is missing, empty, or stalled, use `rg` and `git`. Never block on the graph.
 4. **Output Contract:** Every PR review ends with ```json aco-triage-run```.
 5. **Clean repo:** Never commit `.aco/graph.db`.
 
 ### Pre-flight
 
 ```bash
-python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py
+python3 .ai/skills/aco-triage/scripts/verify_graceful_degrade.py --offline-only
 ```
 
-Expect PASS on the offline path. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
+Expect PASS. `--offline-only` skips the optional TypeScript probe self-test, which needs Node 22.6+; drop the flag to exercise it. Non-zero → fix the verifier/script first; still do not block review on a missing graph.
 
-### Blast-radius query (conditional, fail-open)
-
-When **both** `.aco/graph.db` and the `riley_kg` CLI are present:
-
-```bash
-PYTHONPATH="${RILEY_KG_ROOT:-${ACO_RILEY_KG_ROOT:-}}" \
-  python3 -m riley_kg.cli blast-radius --db .aco/graph.db <path-or-symbol>
-```
+### Blast-radius targets
 
 Typical targets: `MagicMouseTray/` (`DriverInstaller.cs`, battery readers, device catalog).
 
-If graph DB, CLI, or query is missing / times out / empty:
-
-- Continue with `git` + `rg` (label callers `method: "rg"` / heuristic).
-- Set `graph.present=false` (or `true` with `node_count=0`) in the run footer.
-- **Never** block a PR review on graph availability.
+When the graph is unavailable, say so in the run footer rather than omitting it: `graph.present=false`
+(or `true` with `node_count=0`), `tooling.riley_kg_ok=false`, and `blast_radius[].method="rg"`.
 
 ### Zero daemons
 
@@ -141,26 +134,25 @@ Every ACO triage / PR review **MUST** end with exactly one full machine footer:
   "verification": [{ "command": "dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release", "exit_code": 0, "passed": true }],
   "diff_stats": null,
   "residual_risks": [],
-  "prompt_version": "1.4.0-quick",
-  "pr_comment_status": "skipped|posted",
+  "prompt_version": "1.5.0-quick",
+  "pr_comment_status": "skipped",
   "pr_comment_urls": []
 }
 ```
 ````
 
-Populate from the real run. Chat narrative alone is not enough for ingest. If a PR is in scope, post a `gh pr comment` checklist (P0/P1) and record URLs in the footer.
+Populate from the real run. Chat narrative alone is not enough for ingest. If a PR is in scope, put the P0/P1 checklist in the PR body. Bots do not post PR comments. Leave `pr_comment_status` as `skipped`.
 
 ### Skill pointer
 
 - `.ai/skills/aco-triage/SKILL.md`
 - `.ai/skills/aco-triage/scripts/verify_graceful_degrade.py`
-- `.aco/README.md` · optional `.aco/JEV.md` + `.aco/jev.env.sample`
-
+- `.aco/README.md` (cost, graph, and smoke commands) · `.aco/jev.env.sample` (probe variables)
 
 ## PR hygiene
 
 - Branch off `main`; open **ready-for-review** PRs only (never draft).
-- Merge is **Lesley-only**.
+- Lesley is never asked, assigned or requested to merge or review. The owning bot merges its own PR once verified ready (required CI green, red-then-green tests, agent-checked preview where one applies, mergeable/clean, repo land rules). Merges never depend on bot review stamps.
 - Prefer smallest safe diff; evidence for every caller / blast claim.
 - Do not push directly to `main`.
 - DCO: every commit must include `Signed-off-by:`.

@@ -6,7 +6,7 @@ description: >-
   semantic enrichment is fail-open and NEVER required for contributors. Use when
   triaging PRs, checking blast radius, finding callers, or routing structural vs
   semantic queries via AICostOptimizer.
-version: 0.2.0
+version: 0.2.1
 ---
 
 # /aco-triage — ACO Maintainer Kit (Zero-Daemon Baseline)
@@ -15,7 +15,7 @@ version: 0.2.0
 
 | Rule | Binding |
 |------|---------|
-| **Baseline** | Local SQLite `.aco/graph.db` via `riley_kg`. **No daemon required.** |
+| **Baseline** | Local SQLite `.aco/graph.db` via `riley_kg` when the db and the CLI are both present. **No daemon required.** |
 | **Jev/XERJ** | **OPTIONAL** and **fail-open**. Contributors MUST complete triage without it. |
 | **Opt-in** | Enrichment only when `JEV_URL` is set AND the pre-probe reports reachable. |
 | **Disable** | `JEV_DISABLED=1` (or unset URLs) forces pure local path. |
@@ -49,7 +49,7 @@ Give maintainers and agents a single triage path that:
                                          else → local-only + note
 ```
 
-- **Structural** (blast-radius, callers, symbol extract): **always** `riley_kg` + `.aco/graph.db`.
+- **Structural** (blast-radius, callers, symbol extract): `riley_kg` + `.aco/graph.db` whenever both are present and the query returns; if the file, the CLI, or the query is missing, empty, or stalled, use `rg` + `git` and label callers `method: "rg"`. Never block on the graph.
 - **Semantic** (risk class, safety invariants, ADR score): try Jev **only** when:
   - `JEV_DISABLED` is unset/false, **and**
   - `JEV_URL` or `XERJ_URL` is set (opt-in), **and**
