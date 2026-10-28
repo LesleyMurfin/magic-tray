@@ -29,8 +29,14 @@ public class RepairPlannerTests
         bool col01Present = false,
         bool col02Present = false,
         string? boundFilterName = null,
-        bool filterPackagePresent = false,
-        bool filterServiceRunning = false,
+        // Driver-package and service evidence, both tri-state for the same
+        // reason FilterInStack is: their producers can fail. false is a real
+        // reading (the package is not on this PC / the service answered and is
+        // not RUNNING), null is "the probe could not answer" and is never a
+        // finding. false stays the default so every test written before the
+        // tri-state still describes the incident it was written for.
+        bool? filterPackagePresent = false,
+        bool? filterServiceRunning = false,
         bool? configEnabled = true,
         // Every family filter named on the stack, in reader precedence order.
         // Default is "no family filter seen"; a test that cares about the
@@ -805,6 +811,313 @@ public class RepairPlannerTests
             filterServiceRunning: false));
 
         Assert.Null(finding);
+    }
+
+    // --- "Could not read" is not "broken" ---------------------------------
+    //
+    // FilterPackagePresent and FilterServiceRunning are the two inputs whose
+    // producers can fail outright: DriverHealthChecker.KernelServiceRunning is
+    // sc.exe query behind catch { return false; } with a 2 s WaitForExit that
+    // also yields false, and DeviceSnapshotReader.ServicePackagePresent ends
+    // catch { return false; }. While they are plain bool, a probe that failed
+    // reaches the planner as a measured negative and rule 1 tells a healthy
+    // mouse "the scroll driver stopped" while offering an elevated Bluetooth
+    // stack restart. They therefore carry the contract FilterInStack already
+    // documents: false is a reading, null is no evidence and never a finding.
+
+    [Fact]
+    public void PlanOne_ServiceStateUnreadable_IsSilentAndAReadStopIsStillTheRestart()
+    {
+        // Same healthy-looking 0323 twice. The only difference is whether the
+        // service query answered at all, and that difference decides between
+        // "No problems found" and an elevated restart of the mouse's stack.
+        var unreadable = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            usbPhantomCount: 7,
+            col01Present: true,
+            col02Present: true,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: null,
+            filterCandidates: [BoundKmdfVariant]));
+        var stopped = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            usbPhantomCount: 7,
+            col01Present: true,
+            col02Present: true,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: false,
+            filterCandidates: [BoundKmdfVariant]));
+
+        Assert.Null(unreadable);
+
+        // The real negative keeps its finding, wording and auto-fix offer: the
+        // USB-C charge incident this rule exists for must survive the guard.
+        Assert.NotNull(stopped);
+        Assert.Equal(RepairProblem.FilterStoppedButBound, stopped.Problem);
+        Assert.Equal(RepairAction.RestartBtHidParent, stopped.Action);
+        Assert.True(stopped.AutoFixable);
+        Assert.Contains(BoundKmdfVariant, stopped.Detail);
+        Assert.Contains("is not running", stopped.Detail);
+    }
+
+    [Fact]
+    public void PlanOne_PackageEvidenceUnreadable_IsSilentAndAReadAbsenceIsStillTheInstall()
+    {
+        // The package probe is a registry read that can throw; today it says
+        // "not installed" when it does, and the user is sent to install a
+        // driver that may well already be there.
+        var unreadable = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            col02Present: true,
+            boundFilterName: null,
+            filterPackagePresent: null,
+            filterServiceRunning: null));
+        var absent = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            col02Present: true,
+            boundFilterName: null,
+            filterPackagePresent: false,
+            filterServiceRunning: false));
+
+        Assert.Null(unreadable);
+
+        Assert.NotNull(absent);
+        Assert.Equal(RepairProblem.FilterPackageMissing, absent.Problem);
+        Assert.Equal(RepairAction.InstallDriver, absent.Action);
+        Assert.False(absent.AutoFixable);
+        Assert.Equal("Scroll driver is not installed", absent.Title);
+    }
+
+    [Fact]
+    public void PlanOne_PackageUnreadableWhileTheServiceReadsStopped_IsNotAFinding()
+    {
+        // The service really was read as stopped, but whether the driver is on
+        // this PC at all could not be read. Rule 1 ("the scroll driver
+        // stopped, restart the connection") and rule 6 ("it is not installed,
+        // install it") contradict each other here and nothing in the snapshot
+        // says which is true, so neither may speak.
+        var finding = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: null,
+            filterServiceRunning: false,
+            filterCandidates: [BoundKmdfVariant]));
+
+        Assert.Null(finding);
+    }
+
+    [Fact]
+    public void PlanOne_RivalFiltersNeedAProvenRunningService()
+    {
+        // Rule 2's whole promise is "the working one is kept, only the
+        // leftover goes". An unreadable service state cannot support that
+        // sentence: the name it would keep might be the dead one.
+        var unreadable = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: null,
+            filterCandidates: [StaleKmdfVariant, BoundKmdfVariant]));
+        var running = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [StaleKmdfVariant, BoundKmdfVariant]));
+
+        Assert.Null(unreadable);
+
+        Assert.NotNull(running);
+        Assert.Equal(RepairProblem.ConflictingFilters, running.Problem);
+        Assert.Equal(RepairAction.RemoveStaleFilter, running.Action);
+    }
+
+    [Fact]
+    public void PlanOne_UnattachedFilterNeedsBothTheServiceAndThePackageRead()
+    {
+        // Rule 2b's wording is "it is installed and Windows reports it as
+        // running, and yet the stack was built without it". Each clause is a
+        // claim about a probe that may not have answered, so an unknown on
+        // either one drops the finding even though the stack evidence itself
+        // is a hard false.
+        var serviceUnknown = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: null,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: false));
+        var packageUnknown = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: null,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: false));
+        var measured = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: false));
+
+        Assert.Null(serviceUnknown);
+        Assert.Null(packageUnknown);
+
+        Assert.NotNull(measured);
+        Assert.Equal(RepairProblem.FilterNotInStack, measured.Problem);
+        Assert.Equal(RepairAction.RestartBtHidParent, measured.Action);
+    }
+
+    [Fact]
+    public void Plan_WhenEveryDriverProbeFailed_ReportsNoProblems()
+    {
+        // The user-visible payoff of the tri-state: a PC where sc.exe and the
+        // services registry could not be read is a PC this app knows nothing
+        // about, so the repair row says so by saying nothing - instead of
+        // accusing both connected devices of a dead driver.
+        var mouse = Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: null,
+            filterServiceRunning: null,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: null);
+        var keyboard = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: null,
+            filterServiceRunning: null);
+
+        var findings = RepairPlanner.Plan([mouse, keyboard]);
+
+        Assert.Empty(findings);
+        Assert.Equal("No problems found", RepairPlanner.MenuLabel(findings));
+    }
+
+    // --- A device with no wheel is never told to install a scroll driver ---
+    //
+    // Rule 6 fires on "live BTHENUM node + no filter package" with no
+    // device-family guard, and DeviceSnapshotReader.CatalogPids sweeps
+    // MouseBatteryDevice.KnownMice (which carries all three trackpads) and
+    // KeyboardBatteryDevice.KnownKeyboards as well as the mice. So on any PC
+    // that has no Apple mouse filter package - the normal state of a PC whose
+    // owner has a Magic Keyboard and no Magic Mouse - every keyboard and every
+    // trackpad gets an orange "Scroll driver is not installed" row offering to
+    // install a driver for a wheel the device does not have. The same devices'
+    // own driver advice already reads "Scroll: n/a"
+    // (DriverAdvisor KeyboardOptions / TrackpadOptions).
+
+    [Theory]
+    [InlineData("0267")] // Magic Keyboard with Touch ID
+    [InlineData("0239")] // Apple Wireless Keyboard (2011)
+    [InlineData("029c")] // Magic Keyboard (2021)
+    [InlineData("0320")] // Magic Keyboard (2024)
+    [InlineData("030e")] // Magic Trackpad
+    [InlineData("0265")] // Magic Trackpad 2
+    [InlineData("0324")] // Magic Trackpad 2024
+    public void PlanOne_DeviceWithNoScrollWheel_IsNeverOfferedTheScrollDriverInstall(string pid)
+    {
+        var finding = RepairPlanner.PlanOne(Snap(
+            pid: pid,
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: false,
+            filterServiceRunning: false));
+
+        Assert.Null(finding);
+    }
+
+    [Theory]
+    [InlineData("0323")] // Magic Mouse 2024, rides the patched KMDF filter
+    [InlineData("030d")] // Magic Mouse v1, rides the Boot Camp filter
+    [InlineData("0310")] // Magic Mouse v2
+    [InlineData("0269")] // Magic Mouse v2 (USB PID)
+    public void PlanOne_MouseWithoutTheScrollDriverPackage_IsStillTheInstallOffer(string pid)
+    {
+        // The family guard must narrow rule 6, not delete it: a connected
+        // Apple mouse with no filter package really does have a dead wheel and
+        // really is the device this app installs a driver for.
+        var finding = RepairPlanner.PlanOne(Snap(
+            pid: pid,
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: false,
+            filterServiceRunning: false));
+
+        Assert.NotNull(finding);
+        Assert.Equal(RepairProblem.FilterPackageMissing, finding.Problem);
+        Assert.Equal(RepairAction.InstallDriver, finding.Action);
+        Assert.False(finding.AutoFixable);
+    }
+
+    [Fact]
+    public void Plan_CatalogSweepWithNoFilterPackage_OnlyReportsTheMouse()
+    {
+        // The shape the user actually meets: one Magic Keyboard and one Magic
+        // Mouse paired, no filter package on the PC, and the planner sweeping
+        // every catalog PID. Every keyboard in KeyboardBatteryDevice's own
+        // table is walked here, because that table is what CatalogPids walks.
+        var snapshots = new List<DeviceSnapshot>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in KeyboardBatteryDevice.KnownKeyboards)
+        {
+            var pid = entry.PidPattern[^4..].ToLowerInvariant();
+            if (!seen.Add(pid))
+                continue;
+            snapshots.Add(Snap(
+                pid: pid,
+                bthenumLiveCount: 1,
+                boundFilterName: null,
+                filterPackagePresent: false,
+                filterServiceRunning: false));
+        }
+        snapshots.Add(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: null,
+            filterPackagePresent: false,
+            filterServiceRunning: false));
+
+        var findings = RepairPlanner.Plan(snapshots);
+
+        var only = Assert.Single(findings);
+        Assert.Equal("0323", only.Pid);
+        Assert.Equal(RepairProblem.FilterPackageMissing, only.Problem);
+    }
+
+    [Fact]
+    public void PlanOne_KeyboardWithNoFilterPackage_StillReportsTheBlockedBatteryRead()
+    {
+        // The guard narrows one rule, it does not mute keyboards: the
+        // SDP-blocked battery read is the keyboard fault this planner
+        // diagnoses, and it has nothing to do with any scroll filter.
+        var finding = RepairPlanner.PlanOne(Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: false,
+            filterServiceRunning: false,
+            lastBatteryPct: -2));
+
+        Assert.NotNull(finding);
+        Assert.Equal(RepairProblem.BatteryReadBlocked, finding.Problem);
+        Assert.Equal(RepairAction.InstallDriver, finding.Action);
     }
 
     [Fact]
