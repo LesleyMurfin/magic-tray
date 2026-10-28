@@ -264,14 +264,38 @@ public class ConfigTests : IDisposable
     public void BatteryChannel_Cleared_IsGoneFromTheFileAndReportsWhetherItHadAnything()
     {
         var cfg = Config.Load(_path);
-        cfg.SetBatteryChannel("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
+        var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+        cfg.SetBatteryChannel("0269", learned);
 
-        Assert.True(cfg.ClearBatteryChannel("0269"));
+        Assert.True(cfg.ClearBatteryChannel("0269", learned));
         Assert.Null(cfg.GetBatteryChannel("0269"));
         Assert.Null(Config.Load(_path).GetBatteryChannel("0269"));
 
         // Nothing left to forget - the caller uses this to log one relearn, not one per poll.
-        Assert.False(cfg.ClearBatteryChannel("0269"));
+        // Still false for the same reason as before the expected= guard landed: there is no
+        // entry under this PID at all, so there is nothing to compare against.
+        Assert.False(cfg.ClearBatteryChannel("0269", learned));
+    }
+
+    // A poll read that was abandoned mid-cycle keeps running and can spend its third strike
+    // after the next cycle has already learned a NEW channel for the same mouse. Without the
+    // expected= guard that late Forget deletes the fresh answer and the device relearns from
+    // scratch every few minutes - and the file loses a channel nothing was wrong with.
+    [Fact]
+    public void BatteryChannel_ClearingWithAStaleAnswer_LeavesTheLearnedOneAlone()
+    {
+        var cfg = Config.Load(_path);
+        var stale = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+        var learned = new BatteryChannelAnswer(BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47);
+        cfg.SetBatteryChannel("0269", learned);
+
+        Assert.False(cfg.ClearBatteryChannel("0269", stale));
+        Assert.Equal(learned, cfg.GetBatteryChannel("0269"));
+        Assert.Equal(learned, Config.Load(_path).GetBatteryChannel("0269"));
+
+        // The caller that holds the answer actually in force still clears it.
+        Assert.True(cfg.ClearBatteryChannel("0269", learned));
+        Assert.Null(cfg.GetBatteryChannel("0269"));
     }
 
     // The poll loop runs every 30 seconds and calls this after every successful read.

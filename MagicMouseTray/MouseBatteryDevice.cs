@@ -307,6 +307,12 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // off Windows: a real percent needs ReadCandidate to open a HID node through kernel32, and
     // the only kernel-free way into GetBatteryPercent is the hands-free rejection, which always
     // answers -1, so nothing but a failing read could ever be driven through it.
+    //
+    // [ThreadStatic] because xunit runs test classes in parallel and this suite declares no
+    // collection fixture: a sibling class on another thread must never be served the canned read
+    // one class installed for itself, however careful that class's try/finally is. Production
+    // never assigns this field, so a per-thread slot costs nothing there.
+    [ThreadStatic]
     internal static Func<string, BatteryChannelAnswer?, int>? ReadCandidateHook;
 
     int ReadCandidate(string path, BatteryChannelAnswer? learned = null)
@@ -535,19 +541,27 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
         var buffered = new List<string>(3);
         int pct = RunAttempt(handle, CollectionToken(path), attempt, node.FeatureLen, buffered);
 
-        if (pct < MinValidPercent)
-        {
-            // A failure prints EVERY time - it is the line a reporter and MOUSE_RELEARN are both
-            // read off - and it takes the remembered set with it, so the success that follows is
-            // not suppressed as a repeat of the last success three strikes ago.
-            BatteryChannelMemory.ForgetLearnedLog(Pid);
-            Flush(buffered);
-        }
-        else if (!BatteryChannelMemory.RepeatsLastLearnedLog(Pid, buffered))
-        {
-            Flush(buffered);
-        }
+        Flush(LearnedLogLines(Pid, buffered, pct >= MinValidPercent));
         return pct;
+    }
+
+    // Which of a learned read's buffered lines actually get written. Pure and internal so a
+    // test can reach it: ReadCandidateHook intercepts one frame above ReadLearnedChannel, so
+    // nothing routed through that hook can ever reach these branches in place.
+    //
+    // A failure prints EVERY time - it is the line a reporter and MOUSE_RELEARN are both read
+    // off - and it takes the remembered set with it, so the success that follows is not
+    // suppressed as a repeat of the last success three strikes ago.
+    //
+    // A success prints only when this PID's read says something it did not say last time.
+    internal static List<string> LearnedLogLines(string pid, List<string> buffered, bool succeeded)
+    {
+        if (!succeeded)
+        {
+            BatteryChannelMemory.ForgetLearnedLog(pid);
+            return buffered;
+        }
+        return BatteryChannelMemory.RepeatsLastLearnedLog(pid, buffered) ? new List<string>() : buffered;
     }
 
     static void Flush(List<string> lines)
@@ -817,6 +831,14 @@ internal static class BatteryChannelMemory
     // every MouseBatteryDevice each poll, so an instance field would have nothing to compare
     // against by the next tick. Guarded the way MouseBatteryDevice.V3SkipLogged is, and for the
     // same reason: the poll thread is the writer.
+    //
+    // Being process-wide and keyed on product id, an entry OUTLIVES the device disappearing, the
+    // same way a failure streak does. A mouse unplugged and replugged inside one session whose
+    // learned read then produces a byte-identical line set gets no MOUSE_CHANNEL_* line for the
+    // reconnect, so the log does not mark the gap. Accepted, not overlooked: the percent itself
+    // still reaches debug.log on every cycle through TrayApp's TRAY_UPDATE line, so nothing is
+    // lost, only the restatement of a channel that did not change. Forget and ForgetLearnedLog
+    // clear the entry whenever the ANSWER changes, which is the case this comparand exists for.
     static readonly object _learnedLogGate = new();
     static readonly Dictionary<string, List<string>> _lastLearnedLog = new(StringComparer.OrdinalIgnoreCase);
 
@@ -864,7 +886,9 @@ internal static class BatteryChannelMemory
     internal static void Forget(string pid, BatteryChannelAnswer was, string reason)
     {
         Logger.Log($"MOUSE_RELEARN pid={pid} was={was.Collection}:{was.Channel} reason={reason}");
-        Volatile.Read(ref _sink)?.ClearBatteryChannel(pid);
+        // The expected answer is passed so a read abandoned by ReadBatteryGuarded cannot, on
+        // finally arriving, delete an answer that was learned after it started.
+        Volatile.Read(ref _sink)?.ClearBatteryChannel(pid, was);
         // The strikes were counted against the answer being dropped, so they go with it: a
         // structural forget must not hand inherited strikes to the answer that replaces it.
         ClearFailedReads(pid);

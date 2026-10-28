@@ -728,4 +728,92 @@ public class MouseBatteryDeviceTests
 
         Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
     }
+
+    // The three tests above pin BatteryChannelMemory's arithmetic by calling it directly. These
+    // two pin the POLICY the learned read applies to it - which buffered lines actually reach
+    // Logger - which is a separate thing: the arithmetic can be perfect while the call site
+    // consults it backwards, or skips it, or drops the comparand at the wrong moment. All four
+    // of those mutations used to leave this suite green, so a user's debug.log could have gone
+    // silent on a failing channel, or back to thirty lines per ten steady polls, with nothing
+    // failing. MouseBatteryDevice.LearnedLogLines is that policy whole, and it is pure, so it is
+    // reachable from here - ReadCandidateHook is not a way in, it intercepts one frame above
+    // ReadLearnedChannel.
+    //
+    // NOT covered, and nothing below pretends otherwise: the ForgetLearnedLog on the
+    // uninspectable node (MouseBatteryDevice.cs:532) sits in ReadLearnedChannel ABOVE this call,
+    // so no input to LearnedLogLines can reach it. Driving it needs an opened device handle and
+    // a hid.dll descriptor read, and neither exists on the host this suite runs on. Deleting
+    // that line still leaves the suite green.
+
+    // What a FAILED learned read buffers: its TRY and its FAIL, the pair a remote reporter and
+    // MOUSE_RELEARN are both read off. A fresh list every call, like LearnedLines above, because
+    // RepeatsLastLearnedLog takes ownership of the one it is handed.
+    static List<string> FailedLines(string pid, int err) =>
+    [
+        $"MOUSE_CHANNEL_TRY pid={pid} col=col02 channel=input90 rid=0x90 declared=true",
+        $"MOUSE_CHANNEL_FAIL pid={pid} col=col02 channel=input90 rid=0x90 err={err} reason=read_failed",
+    ];
+
+    // A dedup wired to "always a repeat" makes a mouse that is still being read look like one
+    // that stopped being read - the exact misreading docs/ENABLE-DISABLE.md:256 warns a reporter
+    // off. Wired to "never a repeat" it puts the flood back and evicts the probe walk and the
+    // learn, which is the history a bug report is opened about.
+    [Fact]
+    public void LearnedLogLines_PrintsTheFirstSuccess_ThenSuppressesOnlyTheWordForWordRepeat()
+    {
+        const string pid = "d4a4";
+
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // Polls 2..10 of a mouse sitting at the same percent on the same channel.
+        for (int poll = 2; poll <= 10; poll++)
+            Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // The battery moved, and the new reading becomes what the next poll is measured against.
+        Assert.Equal(
+            LearnedLines(pid, 72, "90 04 48"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 04 48"), succeeded: true));
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 04 48"), succeeded: true));
+
+        // Same percent, different report head. It prints, because MOUSE_CHANNEL_OK carries
+        // bytes=[...] and the comparison is on the text, not on the reading.
+        Assert.Equal(
+            LearnedLines(pid, 72, "90 05 48"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 05 48"), succeeded: true));
+    }
+
+    // The case the learned-channel log exists for: a channel that has started failing. If a
+    // failure can be suppressed, debug.log goes quiet on exactly the device somebody is trying to
+    // diagnose, and MOUSE_RELEARN appears three strikes later with no read under it. And if the
+    // failure does not drop the comparand, the recovery read is mistaken for a repeat of the last
+    // good read from before the outage, so the log shows a device that never came back.
+    [Fact]
+    public void LearnedLogLines_NeverSuppressesAFailure_AndAFailureClearsTheComparand()
+    {
+        const string pid = "d4a5";
+
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // Three strikes, word for word identical to each other. Every one prints in full: the
+        // dedup is never consulted on this branch, so no failure is ever a repeat of a failure.
+        for (int strike = 1; strike <= 3; strike++)
+            Assert.Equal(
+                FailedLines(pid, 31),
+                MouseBatteryDevice.LearnedLogLines(pid, FailedLines(pid, 31), succeeded: false));
+
+        // The mouse woke up at the percent it was last seen at. It prints, because the failures
+        // took the remembered set with them.
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // And the steady state resumes: the failure cleared the comparand, it did not switch the
+        // dedup off for the rest of the session.
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+    }
 }

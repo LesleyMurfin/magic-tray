@@ -111,8 +111,15 @@ internal sealed class Config
     internal const string BatteryChannelKeyPrefix = "battery_channel_";
     // Learned battery answers by PID. Unlike every other setting here this one is written
     // from the POLL thread (the battery reader learns and forgets as devices answer), while
-    // the rest of Config is written from the UI thread - so this dictionary and the file
-    // write it triggers are the one place in Config that needs a lock.
+    // the rest of Config is written from the UI thread.
+    //
+    // _gate therefore covers THREE dictionaries, not one. Persist() enumerates Thresholds
+    // and _deviceEnabled as well, and since Persist() can now run on the poll thread, every
+    // writer of any of the three has to hold _gate - otherwise the enumeration throws into
+    // the bare catch in Persist() and the whole save is dropped with no log line.
+    // Still unguarded, and pre-existing: the READS in GetThreshold / IsDeviceEnabled, which
+    // AdaptivePoller calls from the poll thread. That race predates the learned channel and
+    // is not closed here, so do not read the lock below as a clean bill of health.
     readonly object _gate = new();
     readonly Dictionary<string, BatteryChannelAnswer> _batteryChannel = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _deviceEnabled = new(StringComparer.OrdinalIgnoreCase);
@@ -185,16 +192,29 @@ internal sealed class Config
 
     internal void SetDeviceEnabled(string pid, bool value)
     {
-        _deviceEnabled[pid] = value;
-        Persist();
+        // _gate, not because two UI callers race each other, but because Persist() enumerates
+        // this dictionary and since the learned battery channel landed, Persist() also runs on
+        // the poll thread (BatteryChannelMemory -> SetBatteryChannel -> Persist, off
+        // AdaptivePoller.ReadBatteryGuarded's Task.Run). An unguarded write here throws out of
+        // that enumeration and the bare catch in Persist swallows the whole save. Monitor is
+        // reentrant, so the nested Persist() lock is free.
+        lock (_gate)
+        {
+            _deviceEnabled[pid] = value;
+            Persist();
+        }
         Logger.Log($"CONFIG enabled pid={pid} val={value.ToString().ToLower()}");
     }
 
     internal void SetThreshold(string pid, int value)
     {
         if (!IsValid(value)) return;
-        Thresholds[pid] = value;
-        Persist();
+        // Same reason as SetDeviceEnabled: Persist() enumerates Thresholds on the poll thread.
+        lock (_gate)
+        {
+            Thresholds[pid] = value;
+            Persist();
+        }
         Logger.Log($"CONFIG threshold pid={pid} val={value}");
     }
 
@@ -281,12 +301,15 @@ internal sealed class Config
     }
 
     // True only when there was something to forget, so the caller logs one relearn, not one
-    // per poll.
-    internal bool ClearBatteryChannel(string pid)
+    // per poll. The expected answer is passed in so a stale caller - an abandoned poll read
+    // that outlived its cycle and spends its third strike late - cannot delete an answer
+    // learned after it started.
+    internal bool ClearBatteryChannel(string pid, BatteryChannelAnswer expected)
     {
         lock (_gate)
         {
-            if (!_batteryChannel.Remove(pid)) return false;
+            if (!_batteryChannel.TryGetValue(pid, out var current) || current != expected) return false;
+            _batteryChannel.Remove(pid);
             Persist();
         }
         Logger.Log($"CONFIG battery_channel pid={pid} val=cleared");
@@ -298,7 +321,10 @@ internal sealed class Config
     // Locked: the battery reader persists a learned answer from the poll thread while the
     // menu persists a threshold from the UI thread, and two threads writing config.ini at
     // once would leave a half-written file behind. Monitor is reentrant, so the callers
-    // above may hold _gate already.
+    // above may hold _gate already - and they must, because the three foreach loops below
+    // enumerate Thresholds, _deviceEnabled and _batteryChannel. A write to any of them from
+    // another thread mid-enumeration throws InvalidOperationException into the catch below,
+    // which drops the entire save silently.
     void Persist()
     {
         lock (_gate)

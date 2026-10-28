@@ -189,6 +189,11 @@ internal sealed class AdaptivePoller : IDisposable
                 {
                     if (!_lastSeen.TryGetValue(name, out var meta)) continue;
                     _consecutiveFailures.Remove(name);
+                    // A device that stopped being discovered cannot "fail" a read, so its
+                    // partial learned-channel streak must not survive to be spent on its
+                    // reconnect - MouseBatteryDevice's LIMITATION note names this as the
+                    // poller's job, because only a cycle knows what discovery returned.
+                    BatteryChannelMemory.ClearFailedReads(meta.Pid);
                     if (ShouldSkipPid(_config, meta.Pid)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);
                 }
