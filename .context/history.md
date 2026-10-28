@@ -4,7 +4,7 @@
 
 - HIST-ROLLUP 2026-04-20..2026-04-24: `cb28715` Magic Mouse Battery Tray v1.0.0; `e046721` MIT LICENSE and CONTRIBUTING; PR #1 2024 scroll plus PID detection; PR #8 startup-repair; PR #9 driver priority.
 - HIST-2026-04-27: `5001ab3` KMDF function-driver design confirmed (#11); `53f00b7` InputHandler BRB-level interception.
-- HIST-ROLLUP 2026-05-06..2026-05-10: merges #27 path-a design, #30 multi-device detection, #32 v3 recycle manager, #34 keyboard battery monitor, #42 mouse protocol confirm, #43 path-a bundle, #44 pathA v5 SRE fixes.
+- HIST-ROLLUP 2026-05-06..2026-05-10: merges #27 path-a design, #30 multi-device detection, #32 DEVPKEY_Device_Stack Mode B detection, #34 keyboard battery monitor, #42 mouse protocol confirm, #43 path-a bundle, #44 pathA v5 SRE fixes.
 - HIST-2026-05-18: `936c08c` merge PR #50 `ai/remove-docs-from-tracking`.
 - HIST-2026-05-19: `f23f328` merge PR #51 `ai/magic-mouse-complete-fix`.
 - HIST-2026-05-30: `1280f11` merge PR #53 salvage m4 v3 mouse findings.
