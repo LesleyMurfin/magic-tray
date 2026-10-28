@@ -1720,9 +1720,7 @@ exit 1
     // stop it taking the -1 from col01 - so col02 has to be targeted by name.
     internal static int ReadCol02BatteryPercent()
     {
-        var path = HidNative.EnumerateHidPaths().FirstOrDefault(p =>
-            V3RecycleManager.IsV3Path(p)
-            && p.Contains("col02", StringComparison.OrdinalIgnoreCase));
+        var path = SelectBluetoothCol02(HidNative.EnumerateHidPaths());
         if (path is null)
         {
             Logger.Log($"{LogPrefix} phase=battery_read col02=none");
@@ -1732,6 +1730,32 @@ exit 1
         return new MouseBatteryDevice(path, V3DisplayName(), DeviceKind.MagicMouseV3)
             .GetBatteryPercent();
     }
+
+    // The Bluetooth v3 col02 out of an arbitrary HID path enumeration, or null.
+    //
+    // IsV3Path answers vid/pid only and is documented as "BT or USB" - its
+    // second arm exists to match the USB spelling, and eight other call sites
+    // want that meaning - so it cannot decide transport here. The flip creates
+    // a BLUETOOTH col02; if the mouse spent the cycle on the USB-C cable a live
+    // USB col02 sits in the same enumeration, also passes IsV3Path and also
+    // carries "col02". A plain first-match then takes whichever one Windows
+    // happened to enumerate first and reads a different transport's device,
+    // driving a correctly flipped mouse to BatteryUnreadable. So the transport
+    // and collection gates live here, on top of IsV3Path's vid/pid gate.
+    //
+    // Transport is recognised the way the rest of the repo spells it: a BT HID
+    // interface path carries the HID-over-Bluetooth service GUID
+    // {00001124-0000-1000-8000-00805f9b34fb} and the "_vid&" form, where USB
+    // paths use "vid_". Everything is ordinal/case-insensitive because Windows
+    // hands these paths back in whatever case the enumerator used, and the
+    // caller's own string is returned unchanged so the log and the device open
+    // use exactly what was enumerated.
+    internal static string? SelectBluetoothCol02(IEnumerable<string> paths) =>
+        paths.FirstOrDefault(p =>
+            V3RecycleManager.IsV3Path(p)
+            && p.Contains("{00001124-0000-1000-8000-00805f9b34fb}", StringComparison.OrdinalIgnoreCase)
+            && p.Contains("_vid&", StringComparison.OrdinalIgnoreCase)
+            && p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
     static string V3DisplayName()
     {

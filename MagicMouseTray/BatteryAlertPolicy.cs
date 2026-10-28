@@ -125,7 +125,7 @@ internal static class BatteryAlertPolicy
             if (!aa && !fired.Contains(EventNightBefore))
                 return Toast(title, NightBeforeBody(kind, name, hoursToEmpty), EventNightBefore);
         }
-        else if (pct > 1 && pct <= threshold && !fired.Contains(EventPercent))
+        else if (pct <= threshold && !fired.Contains(EventPercent))
         {
             return Toast(title, FallbackBody(kind, name, pct), EventPercent);
         }
