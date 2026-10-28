@@ -568,6 +568,30 @@ function Format-UsagePair {
     return ('0x{0:X4}/0x{1:X4}' -f $UsagePage, $Usage)
 }
 
+# The tray starts this script UNELEVATED: MagicMouseTray/DriverInstaller.cs and
+# the DiagnosticScripts launcher use UseShellExecute with no 'runas' verb, so a
+# non-admin token is the normal case, not the exception. That matters one
+# section down: an 'UNKNOWN shape - LowerFilters could not be read' line can
+# mean the Enum key refused us, or it can mean the hardware genuinely has no
+# filter - and only the token separates permissions from hardware. So the token
+# is reported, in the header, where a reader meets it before the verdict.
+#
+# $null, never $false, when there is no Windows token to ask (Linux/macOS pwsh,
+# where WindowsIdentity throws PlatformNotSupportedException): $false there
+# would read as 'ran unelevated' and send a reader hunting a permission problem
+# that never existed. Unknown is a third answer, not a flavour of no.
+function Test-IsAdmin {
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        if (-not $identity) { return $null }
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        return [bool]$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        Write-Verbose "Windows token unavailable: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 # --- Report -----------------------------------------------------------------
 $stamp = Get-Date
 Write-Log ''
@@ -589,6 +613,20 @@ try {
 } catch { Write-Verbose "CurrentVersion key unreadable: $($_.Exception.Message)" }
 Write-Log ("  Windows:     {0} {1} build {2}" -f $osCaption, $displayVersion, $osVersion)
 Write-Log ("  PowerShell:  {0}" -f $PSVersionTable.PSVersion)
+# Field, not prose: 'Admin=' is one grep away in a pasted report. Three answers,
+# because unknown is not no.
+$isAdmin = Test-IsAdmin
+if ($null -eq $isAdmin) {
+    $adminText = 'unknown (no Windows token on this PowerShell host)'
+    $adminColor = 'Yellow'
+} elseif ($isAdmin) {
+    $adminText = 'yes (elevated)'
+    $adminColor = ''
+} else {
+    $adminText = 'no (not elevated; an UNKNOWN shape below may be permissions, not hardware)'
+    $adminColor = 'Yellow'
+}
+Write-Log ("  Admin={0}" -f $adminText) $adminColor
 
 # Magic Tray version: the exe ships beside this script (csproj Content link), so
 # look next to the script and one level up before giving up. An unknown version
@@ -791,6 +829,16 @@ $outFile = Join-Path $outDir ("hid-report-{0}.txt" -f $stamp.ToString('yyyyMMdd-
 
 Write-Log ''
 Write-Log '=== RUN THIS ONCE PER DRIVER ===' 'Cyan'
+# Issue #124, comment 6266748000 (2026-10-19): on a PID 0269 Magic Mouse,
+# getting scroll back after a driver switch required RE-PAIRING the mouse, and
+# the re-pair "makes magicmousetray inoperable". The two-capture advice below is
+# only free if that cost is stated first, so it is stated first.
+Write-Log '  WARNING: switching drivers can cost you the pairing. On issue #124 (comment' 'Yellow'
+Write-Log '  6266748000, 2026-10-19) a PID 0269 Magic Mouse needed a full RE-PAIR to get' 'Yellow'
+Write-Log '  scroll back after a driver switch, and that re-pair left Magic Tray' 'Yellow'
+Write-Log '  inoperable. Capture the driver you are on now first, and switch only if you' 'Yellow'
+Write-Log '  are willing to re-pair the mouse.' 'Yellow'
+Write-Log ''
 Write-Log '  If you can switch this mouse between drivers (the tray menu Driver item),'
 Write-Log '  run this script once on EACH driver you can try and attach every report.'
 Write-Log '  The difference between the captures is the whole answer: the collections'
