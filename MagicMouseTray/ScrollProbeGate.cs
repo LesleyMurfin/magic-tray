@@ -27,8 +27,6 @@ internal sealed class ScrollProbeGate
 
     internal ScrollProbeGate(Action<Exception>? onFault = null) => _onFault = onFault;
 
-    internal bool Busy => Volatile.Read(ref _inFlight) != 0;
-
     // The run, or null when a probe is already in flight. start is invoked
     // synchronously on the caller's thread, so a caller that wants its setup on
     // the UI thread gets it there - and INSIDE the claim, because a throw

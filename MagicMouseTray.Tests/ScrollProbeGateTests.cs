@@ -35,7 +35,7 @@ public class ScrollProbeGateTests
         // Refused, not queued and not silently run alongside: a second
         // registration is what makes the first probe accuse a healthy mouse.
         Assert.Null(second);
-        Assert.True(gate.Busy);
+        Assert.Null(gate.TryStart(() => Task.CompletedTask));
 
         // And refusal has something to say. A menu item that visibly does
         // nothing is how the user learns to click it again.
@@ -58,7 +58,7 @@ public class ScrollProbeGateTests
         finish.SetResult();
         await first;
 
-        Assert.False(gate.Busy);
+        // Released: the next request is admitted rather than refused.
         var second = gate.TryStart(() => Task.CompletedTask);
         Assert.NotNull(second);
         await second;
@@ -79,7 +79,7 @@ public class ScrollProbeGateTests
         await first;
 
         Assert.Equal("probe failed", reported?.Message);
-        Assert.False(gate.Busy);
+        // Released, so the next click still gets a probe.
         Assert.NotNull(gate.TryStart(() => Task.CompletedTask));
     }
 
@@ -99,8 +99,8 @@ public class ScrollProbeGateTests
 
         Assert.Null(escaped);
         Assert.Equal("sink construction", reported?.Message);
-        Assert.False(gate.Busy);
 
+        // Released, so the probe is not dead for the rest of the process.
         var second = gate.TryStart(() => Task.CompletedTask);
         Assert.NotNull(second);
         await second;
