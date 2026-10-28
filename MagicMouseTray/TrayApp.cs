@@ -689,12 +689,15 @@ internal sealed class TrayApp : IDisposable
     // needs the raw reading - it has to be on the menu whenever Test Mode is
     // on, including on a PC whose devices produce no signing fact at all.
     bool? _testSigningOn;
-    // Whether this PC currently has Memory integrity configured on, cached for
-    // the same reason and read on the same trip: the undo has to be offered on
-    // a PC the fix already turned HVCI off on, and that PC may have no signing
-    // fact and no test signing to key off. Same "null is no evidence, keep what
-    // we had" rule as the reading above - a failed read never blanks it.
-    bool? _hvciOn;
+    // How Memory integrity is configured, cached for the same reason and read
+    // on the same trip: the undo has to be offered on a PC the fix already
+    // turned HVCI off on, and that PC may have no signing fact and no test
+    // signing to key off. The STATE and not a bool, because only a measured
+    // Off proves somebody turned it off - a PC that never configured HVCI at
+    // all must not be offered an undo (SystemConfigChecker.HvciState). Same
+    // "null is no evidence, keep what we had" rule as the reading above - a
+    // failed read never blanks it.
+    SystemConfigChecker.HvciState? _hvciState;
     // One signing-fix dialog at a time. Two clicks on the row - or a click
     // during the guided walk - would otherwise stack two confirmations and two
     // elevated runs, which is exactly the "exactly one confirmation" property
@@ -2454,7 +2457,7 @@ internal sealed class TrayApp : IDisposable
             IReadOnlyList<ConfigFact>? facts = null;
             IReadOnlyDictionary<string, StockFacts>? stock = null;
             bool? testSigning = null;
-            bool? hvci = null;
+            SystemConfigChecker.HvciState? hvci = null;
             try
             {
                 try
@@ -2501,7 +2504,7 @@ internal sealed class TrayApp : IDisposable
 
                 try
                 {
-                    hvci = SystemConfigChecker.ReadHvciOn();
+                    hvci = SystemConfigChecker.ReadHvciConfigured();
                 }
                 catch (Exception ex)
                 {
@@ -2642,7 +2645,7 @@ internal sealed class TrayApp : IDisposable
     // from the one trip the refresh already pays for.
     void PublishConfigFacts(
         IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock,
-        bool? testSigningOn, bool? hvciOn)
+        bool? testSigningOn, SystemConfigChecker.HvciState? hvciState)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null)
@@ -2662,8 +2665,8 @@ internal sealed class TrayApp : IDisposable
                     _stockFacts = stock;
                 if (testSigningOn is not null)
                     _testSigningOn = testSigningOn;
-                if (hvciOn is not null)
-                    _hvciOn = hvciOn;
+                if (hvciState is not null)
+                    _hvciState = hvciState;
                 try
                 {
                     RefreshConfigSection();
@@ -2832,11 +2835,12 @@ internal sealed class TrayApp : IDisposable
     // signing on, OR Memory integrity configured off. The second clause is the
     // documented partial failure - the elevated script wrote HVCI Enabled=0 and
     // then bcdedit was refused, leaving a PC with Memory integrity off, test
-    // signing still off and no route back but regedit. It is only honest to
-    // read it that way because ReadHvciOn is tri-state: false now means the
-    // value is present and 0, not that we could not find it, so an all-null
-    // initial state offers nothing.
-    bool SigningRevertHasWork => _testSigningOn == true || _hvciOn == false;
+    // signing still off and no route back but regedit. Keyed on the measured
+    // Off and not on "not on", because a PC that never configured Memory
+    // integrity at all has nothing to undo and must not be offered one - which
+    // is the whole reason this is an HvciState rather than a bool?.
+    bool SigningRevertHasWork =>
+        _testSigningOn == true || _hvciState == SystemConfigChecker.HvciState.Off;
 
     // The revert, on the menu whenever this PC is in a state the fix produces.
     // The charter requires the way back to be offered wherever the fix is
@@ -2905,7 +2909,7 @@ internal sealed class TrayApp : IDisposable
     // 153-159).
     static (bool? SecureBoot, bool? Hvci, bool? TestSigning) ReadSigningState() =>
         (SystemConfigChecker.ReadSecureBootOn(),
-            SystemConfigChecker.ReadHvciOn(),
+            SystemConfigChecker.AsPlanReading(SystemConfigChecker.ReadHvciConfigured()),
             SystemConfigChecker.ReadTestSigningOn());
 
     // No evidence is a reading of its own: BuildPlan decides what three nulls

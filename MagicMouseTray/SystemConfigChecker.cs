@@ -224,12 +224,12 @@ internal static class SystemConfigChecker
             facts.Add(TestModeFact(
                 role, readings.TestSigningOn, readings.BoundDriverSelfSigned, v3,
                 readings.SecureBootOn));
-            // The row's own rule, stated where the row is built: no evidence
-            // is "not on" here, because Enabled is policy rather than the
-            // running state and only a POSITIVE read may escalate to
-            // Blocking. The planner's rule is the opposite one, which is why
-            // the reading itself stays tri-state.
-            facts.Add(MemoryIntegrityFact(role, readings.HvciOn ?? false, readings.BoundDriverSelfSigned, v3));
+            // ReadHvciOn is already the row's own question (see HvciState):
+            // a scenario it looked for and did not find is not on, so a
+            // missing key can never escalate to Blocking, and only a probe
+            // that actually failed arrives here as null.
+            facts.Add(MemoryIntegrityFact(
+                role, readings.HvciOn, readings.BoundDriverSelfSigned, v3));
 
             // Only a PC that both has a signing story AND cannot run the fix
             // gets this row. A PC where Test Mode is already on is not told
@@ -1008,46 +1008,77 @@ internal static class SystemConfigChecker
     // scenario, which is what a user turns on and off in Windows Security ->
     // Core isolation -> Memory integrity.
     //
-    // Tri-state, and honestly so. An absent Control key, an absent scenario
-    // subkey, an absent Enabled value and a value of an unexpected type are
-    // all "we could not find out", not "off" - only a present int/uint/long
-    // answers true or false. The two consumers default that null in opposite
-    // directions, each at its own call site: the Memory integrity fact row
-    // reads it as not-on, so a missing key can never escalate to Blocking,
-    // while SigningFix.BuildPlan treats anything that is not a positive
-    // "off" as needing the Enabled=0 write, because skipping that write on a
-    // PC we could not read leaves the fix incomplete.
+    // It has THREE answers, not two, and that is why it is not a bool?. The
+    // consumers resolve the third one in opposite directions:
     //
-    // internal, next to ReadTestSigningOn and ReadSecureBootOn: the signing fix
-    // needs the configured HVCI state to decide whether its plan has to write
-    // Enabled=0 at all (SigningFix.BuildPlan), and that read must come from the
-    // same place the fact rows read it from.
-    internal static bool? ReadHvciOn()
+    //   On             Enabled is present and non-zero.
+    //   Off            Enabled is present and zero. This is the only state
+    //                  that proves somebody - this app's own fix, or the user
+    //                  in Windows Security - turned Memory integrity off, and
+    //                  it is what puts the undo on the menu (TrayApp).
+    //   NotConfigured  no Control key, no scenario subkey, or no Enabled
+    //                  value. We looked, and it is not there: for the fact row
+    //                  that is "not on", and for the planner it is a PC whose
+    //                  Enabled=0 write is a harmless no-op worth doing anyway.
+    //   Unreadable     the probe itself failed, or Enabled held a type nothing
+    //                  can read as a number. No evidence of anything, and the
+    //                  one state the fact row must not report as a measurement.
+    //
+    // Collapsing NotConfigured and Unreadable into one null is what the first
+    // version of this did, and it cost both callers something: the row claimed
+    // "Memory integrity is off" on a PC it had failed to read, and the undo row
+    // appeared on every PC that had simply never configured HVCI.
+    internal enum HvciState { On, Off, NotConfigured, Unreadable }
+
+    internal static HvciState ReadHvciConfigured()
     {
         try
         {
             using var control = Registry.LocalMachine.OpenSubKey(ControlKey, writable: false);
             if (control is null)
-                return null;
+                return HvciState.NotConfigured;
 
             using var scenario = Registry.LocalMachine.OpenSubKey(HvciScenarioKey, writable: false);
             if (scenario is null)
-                return null;
+                return HvciState.NotConfigured;
 
             return scenario.GetValue("Enabled") switch
             {
-                int i => i != 0,
-                uint u => u != 0,
-                long l => l != 0,
-                _ => null,
+                int i => i != 0 ? HvciState.On : HvciState.Off,
+                uint u => u != 0 ? HvciState.On : HvciState.Off,
+                long l => l != 0 ? HvciState.On : HvciState.Off,
+                null => HvciState.NotConfigured,
+                _ => HvciState.Unreadable,
             };
         }
         catch (Exception ex)
         {
             Logger.Log($"SYSTEM_CONFIG_HVCI_FAILED err={ex.Message}");
-            return null;
+            return HvciState.Unreadable;
         }
     }
+
+    // What SigningFix.BuildPlan is owed: "is Memory integrity going to block a
+    // self-signed driver?" Anything short of a measured Off needs the Enabled=0
+    // write, because writing 0 over 0 is a no-op and skipping it on a PC that
+    // could not be read would leave the fix incomplete (SigningFix.cs).
+    internal static bool? AsPlanReading(HvciState state) => state switch
+    {
+        HvciState.On => true,
+        HvciState.Off => false,
+        _ => null,
+    };
+
+    // What the fact row is owed: "is it on?" A state we looked for and did not
+    // find is not on, so it can never escalate to Blocking; a state we failed
+    // to read is null, and the row says so rather than claiming a measurement
+    // it never took.
+    internal static bool? ReadHvciOn() => ReadHvciConfigured() switch
+    {
+        HvciState.On => true,
+        HvciState.Off or HvciState.NotConfigured => false,
+        _ => null,
+    };
 
     // HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State : UEFISecureBootEnabled
     // is published by the loader, is a plain DWORD, and reads without elevation
