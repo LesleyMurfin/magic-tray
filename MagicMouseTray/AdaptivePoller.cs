@@ -45,11 +45,14 @@ internal sealed class AdaptivePoller : IDisposable
     internal TimeSpan LastInterval { get; private set; } = TimeSpan.FromMinutes(5);
 
     readonly Config _config;
+    // How this poller reaches the HID world and the log. See the constructor.
+    readonly Func<bool, IReadOnlyList<IBatteryDevice>> _discover;
+    readonly Action<string> _log;
     // One source for the poller's lifetime, so Dispose cannot race a reader of the field. The
     // only thing that used to replace it was RefreshNow, which now signals instead.
     readonly CancellationTokenSource _cts = new();
     Task? _pollTask;
-    readonly RefreshSignal _refresh = new();
+    readonly RefreshSignal _refresh;
     volatile bool _disposed;
     int _loopStarts;
 
@@ -97,7 +100,30 @@ internal sealed class AdaptivePoller : IDisposable
     const int EscalationFailures = 3;
 
 
-    internal AdaptivePoller(Config config) => _config = config;
+    // Discovery and logging are seams, defaulted to the production article so no call site
+    // changes meaning. They exist because Start() runs the real PollLoop, which is the thing
+    // worth pinning and also the thing that calls DeviceRegistry.Discover ->
+    // HidNative.EnumerateHidPaths: setupapi enumeration followed by HID reads against whatever
+    // Apple or Logitech device the machine happens to have attached, and a debug.log line per
+    // cycle. A test that drives the loop needs the loop, not the host's hardware.
+    //
+    // One discover delegate covers the loop: the cycle and WaitForNextCycle's 15 s device-set
+    // probe are the only callers and both pass _config.EnableThirdParty, so the bool travels
+    // with it rather than being captured.
+    //
+    // _refresh takes the same sink because RefreshNow -> Signal logs REFRESH_SIGNAL_COALESCED on
+    // the CALLER's thread, before the loop is involved, so faking discovery cannot keep a
+    // repeated refresh out of the real log.
+    internal AdaptivePoller(
+        Config config,
+        Func<bool, IReadOnlyList<IBatteryDevice>>? discover = null,
+        Action<string>? log = null)
+    {
+        _config = config;
+        _discover = discover ?? DeviceRegistry.Discover;
+        _log = log ?? Logger.Log;
+        _refresh = new RefreshSignal(_log);
+    }
 
     // Reads one device's battery with a hard timeout and exception guard so a single slow or
     // throwing device can't stall the poll loop. On timeout/throw the device is logged (so the
@@ -363,8 +389,12 @@ internal sealed class AdaptivePoller : IDisposable
 
     // Disabled PIDs stay discovered (row + checkbox) but are not HID-read,
     // drain-tracked, or BatteryChanged — including Discover-omit pct=-1.
-    internal static bool ShouldSkipPid(Config config, string pid) =>
-        !config.IsDeviceEnabled(pid);
+    // kind is optional because not every caller has one: it is read only to let a legacy
+    // vendor-wide enabled_logi=false keep suppressing a Logitech product whose PID is now its
+    // own - see Config.IsDeviceEnabled. The poll loop has the kind in hand at both of its call
+    // sites, which is the gate that decides whether the device is read at all.
+    internal static bool ShouldSkipPid(Config config, string pid, DeviceKind? kind = null) =>
+        !config.IsDeviceEnabled(pid, kind);
 
 
 
@@ -415,7 +445,7 @@ internal sealed class AdaptivePoller : IDisposable
         catch (Exception ex)
         {
             var root = ex.GetBaseException();
-            Logger.Log($"POLL_DISPOSE_WAIT_FAILED type={root.GetType().Name} err={root.Message}");
+            _log($"POLL_DISPOSE_WAIT_FAILED type={root.GetType().Name} err={root.Message}");
         }
         _cts.Dispose();
     }
@@ -445,7 +475,7 @@ internal sealed class AdaptivePoller : IDisposable
                 // ReadDevice never calls this.
                 _wedges.Tick();
 
-                var devices = DeviceRegistry.Discover(_config.EnableThirdParty);
+                var devices = _discover(_config.EnableThirdParty);
 
                 _livePaths.Clear();
                 for (int i = 0; i < devices.Count; i++)
@@ -477,7 +507,7 @@ internal sealed class AdaptivePoller : IDisposable
                         var kind = _groupBuffer[0].Kind;
                         var pid = _groupBuffer[0].Pid;
                         seenThisCycle[group.Key] = (kind, pid);
-                        if (ShouldSkipPid(_config, pid))
+                        if (ShouldSkipPid(_config, pid, kind))
                             continue;
 
                         int best = ReadDevice(
@@ -526,7 +556,7 @@ internal sealed class AdaptivePoller : IDisposable
                     if (!_lastSeen.TryGetValue(name, out var meta)) continue;
                     _consecutiveFailures.Remove(name);
                     _scanStart.Remove(name);
-                    if (ShouldSkipPid(_config, meta.Pid)) continue;
+                    if (ShouldSkipPid(_config, meta.Pid, meta.Kind)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);
                 }
                 _lastSeen.Clear();
@@ -543,12 +573,12 @@ internal sealed class AdaptivePoller : IDisposable
                     lowestDevice, lowestPct, _config.GetThreshold(lowestPid), lowestIsV3);
                 LastInterval = interval;
 
-                Logger.Log($"POLL_SCHEDULED interfaces={devices.Count} devices={seenThisCycle.Count} lowest_pct={lowestPct} next_in={interval}");
+                _log($"POLL_SCHEDULED interfaces={devices.Count} devices={seenThisCycle.Count} lowest_pct={lowestPct} next_in={interval}");
             }
             catch (Exception ex)
             {
                 var root = ex.GetBaseException();
-                Logger.Log($"POLL_CYCLE_ERROR type={root.GetType().Name} err={root.Message}");
+                _log($"POLL_CYCLE_ERROR type={root.GetType().Name} err={root.Message}");
             }
 
             await WaitForNextCycle(interval, ct);
@@ -579,20 +609,20 @@ internal sealed class AdaptivePoller : IDisposable
 
             try
             {
-                var probe = DeviceRegistry.Discover(_config.EnableThirdParty);
+                var probe = _discover(_config.EnableThirdParty);
                 var names = new string[probe.Count];
                 for (int i = 0; i < probe.Count; i++)
                     names[i] = probe[i].DeviceName;
                 if (DeviceSetChanged(_lastSeen.Keys, names))
                 {
-                    Logger.Log($"POLL_DEVICE_SET_CHANGED last_names={_lastSeen.Count} now_paths={names.Length} breaking wait");
+                    _log($"POLL_DEVICE_SET_CHANGED last_names={_lastSeen.Count} now_paths={names.Length} breaking wait");
                     return;
                 }
             }
             catch (Exception ex)
             {
                 var root = ex.GetBaseException();
-                Logger.Log($"POLL_DEVICE_SET_PROBE_ERROR type={root.GetType().Name} err={root.Message}");
+                _log($"POLL_DEVICE_SET_PROBE_ERROR type={root.GetType().Name} err={root.Message}");
             }
         }
     }

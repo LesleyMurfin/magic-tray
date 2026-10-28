@@ -431,6 +431,42 @@ public class AdaptivePollerTests : IDisposable
         }
     }
 
+    // The boundary the fully-examined fixture above cannot reach: a scan that STOPS, and stops
+    // on the last interface. Col(1) answers -2 and Col(2) is wedged, so the scan ends at the
+    // timeout with the whole group nonetheless examined - there is nothing behind the stop
+    // point. That is precisely what the "stoppedAt + 1" in AnyUnexamined encodes, and this is
+    // the only shape that can observe it: the fixture above never breaks out of the scan loop
+    // at all, so it never calls AnyUnexamined, and every other stopping test here stops with at
+    // least one interface still to come, where walking from stoppedAt and from stoppedAt + 1
+    // give the same answer. Only a stop on the last index separates them.
+    //
+    // The mutant that survives without this test is AnyUnexamined starting its walk at
+    // stoppedAt: it re-counts the interface the scan just read as unexamined, this group is
+    // then "cut short" on every tick and rotates on every tick, and the next tick starts on the
+    // wedge, ends on its timeout at -1 before Col(1)'s -2 is ever reached, and reports -1. The
+    // sentinel then survives on alternate ticks only - and with it RepairPlanner's
+    // keyboard-gated rule 2d and the elevated keyboard SDP patch offer, which is the flicker
+    // the whole rotation rule exists to refuse. Four ticks, because two would read an
+    // alternating answer as a settled one.
+    [Fact]
+    public void ReadDevice_ScanStoppedOnTheLastInterfaceAtMinusTwo_DoesNotRotateAndKeepsTheSentinelEveryTick()
+    {
+        var scanStart = new Dictionary<string, ScanState>(StringComparer.OrdinalIgnoreCase);
+
+        for (int tick = 0; tick < 4; tick++)
+        {
+            var launcher = new RecordingLauncher();
+            int best = AdaptivePoller.ReadDevice(
+                "Magic Mouse",
+                [ScriptedDevice.Answers(Col(1), -2), ScriptedDevice.TimesOut(Col(2))],
+                TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(1), scanStart, null, launcher.Launch);
+
+            Assert.Equal(-2, best);
+            Assert.Equal(new[] { Col(1), Col(2) }, launcher.Launched);
+            Assert.Equal(0, StartOf(scanStart, "Magic Mouse"));
+        }
+    }
+
     // The other half of that rule, and the hole a sentinel-only test leaves open. One DeviceName
     // group of three col02 interfaces: Col(1) fails fast at -2 (MouseBatteryDevice
     // .ClassifyReadFailure answers -2 for ANY mouse read that never completed, on both the v3
@@ -957,10 +993,14 @@ public class AdaptivePollerTests : IDisposable
     // double-count failures into a spurious -3 or rotate a device twice in one tick. One loop,
     // woken by a signal, is the only arrangement in which that state has a single writer. Five
     // refreshes is a user double-clicking Refresh Now plus the repair paths that call it.
+    //
+    // Start() runs the production PollLoop, which is the whole point of this test and also the
+    // reason it must be driven against fakes: see NewHermeticPoller. What is pinned is unchanged
+    // - one loop, after one Start and five refreshes.
     [Fact]
     public void RefreshNow_AfterStart_DoesNotStartASecondPollLoop()
     {
-        using var poller = new AdaptivePoller(Config.Load(_path));
+        using var poller = NewHermeticPoller();
         poller.Start();
 
         for (int i = 0; i < 5; i++)
@@ -973,10 +1013,12 @@ public class AdaptivePollerTests : IDisposable
     // while a queued click or a finished repair is still on its way in. RefreshNow previously
     // cancelled a CancellationTokenSource it had just disposed, which throws
     // ObjectDisposedException on whichever thread got there - a repair thread or the UI thread.
+    // Two refreshes after Dispose: neither throws, and neither starts the loop the disposed
+    // poller no longer has.
     [Fact]
     public void RefreshNow_AfterDispose_IsAHarmlessNoOp()
     {
-        var poller = new AdaptivePoller(Config.Load(_path));
+        var poller = NewHermeticPoller();
         poller.Start();
         poller.Dispose();
 
@@ -997,7 +1039,7 @@ public class AdaptivePollerTests : IDisposable
     [Fact]
     public void Start_CalledTwice_DoesNotStartASecondPollLoop()
     {
-        using var poller = new AdaptivePoller(Config.Load(_path));
+        using var poller = NewHermeticPoller();
 
         poller.Start();
         poller.Start();
@@ -1077,6 +1119,46 @@ public class AdaptivePollerTests : IDisposable
 
         Assert.False(await signal.WaitAsync(TimeSpan.FromMinutes(5), cts.Token));
     }
+
+    // A poller whose poll loop cannot reach the host. Start() runs the real PollLoop - that is
+    // what the three tests above are about, so stubbing it out would pin nothing - and the real
+    // PollLoop calls DeviceRegistry.Discover, which calls HidNative.EnumerateHidPaths, which
+    // asks setupapi for every present HID interface and then reads whichever Apple or Logitech
+    // device the machine running this suite happens to have attached. On a developer's PC with
+    // the actual mouse paired, the tests were polling it. Both seams close that:
+    //
+    //   discover: answers "no interfaces" without enumerating anything, so setupapi is never
+    //             called, DeviceRegistry never classifies a path, and ReadBatteryGuarded is
+    //             never handed a device - no HID read, no registry read, no 5 s budget spent.
+    //             It is reached from both call sites (the cycle's own Discover and the
+    //             15 s device-set probe inside WaitForNextCycle), which is why one delegate
+    //             covers the loop completely.
+    //   log:      the cycle logs POLL_SCHEDULED unconditionally and POLL_CYCLE_ERROR on any
+    //             throw, and RefreshNow's fifth signal logs REFRESH_SIGNAL_COALESCED, so
+    //             without this the three tests append to the real
+    //             %APPDATA%\MagicMouseTray\debug.log of whoever runs them.
+    //
+    // Everything else is the production article: the real _pollTask, the real Start guard, the
+    // real cancellation. Nothing the fakes see is asserted on, deliberately - the cycle body
+    // runs on a thread-pool thread, so whether it had reached discovery before the assertion is
+    // a race, and the fakes exist so that the answer cannot matter rather than so that it can be
+    // measured. That is also why these tests need no sleep and no wait: LoopStarts is
+    // incremented before PollLoop's first await, so Start() has published it by the time it
+    // returns.
+    AdaptivePoller NewHermeticPoller() =>
+        new(Config.Load(_path), DiscoverNothing, DropLogLine);
+
+    // Signature-compatible with DeviceRegistry.Discover, enableThirdParty included: PollLoop and
+    // WaitForNextCycle both pass _config.EnableThirdParty, and an empty result is a legitimate
+    // discovery outcome - a PC with no Apple HID attached - so the cycle runs its real
+    // no-devices path rather than a path that only exists for tests.
+    static IReadOnlyList<IBatteryDevice> DiscoverNothing(bool enableThirdParty) =>
+        Array.Empty<IBatteryDevice>();
+
+    // The poll loop's log sink for those tests. Dropped rather than collected because a
+    // collection nothing can assert on is just a slower way to drop it: the lines are written
+    // from the cycle's own thread, so which of them exist at any point in the test is a race.
+    static void DropLogLine(string line) { }
 
     // A device's start index before it has ever been stored is 0: the first tick reads discovery
     // order, which is what every call site assumes.

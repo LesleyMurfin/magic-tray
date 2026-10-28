@@ -42,11 +42,13 @@ public class LogitechBatteryDeviceTests
 
     // A frame off the wire. `transferred` bytes are real; the rest stay zero, which is what
     // GC.AllocateArray hands SendReceive and what a truncated transfer therefore leaves behind.
+    // devIndex is byte 1, the HID++ device index: 0xFF is the direct-connect value every
+    // request carries, and anything else is a frame addressed to another paired device.
     static byte[] Frame(byte rid, byte featureIndex, byte funcByte, byte payload,
-                        int transferred = 7, int len = 7)
+                        byte devIndex = 0xFF, int transferred = 7, int len = 7)
     {
         var b = new byte[len];
-        byte[] full = [rid, 0xFF, featureIndex, funcByte, payload, 0x00, 0x00];
+        byte[] full = [rid, devIndex, featureIndex, funcByte, payload, 0x00, 0x00];
         for (int i = 0; i < transferred && i < len && i < full.Length; i++) b[i] = full[i];
         return b;
     }
@@ -75,6 +77,31 @@ public class LogitechBatteryDeviceTests
     {
         Assert.False(LogitechBatteryDevice.IsMatchingResponse(
             Request(), Frame(rid, featureIndex, funcByte, payload: 55), 7));
+    }
+
+    // byte 1 is the HID++ device index. Our requests are direct-connect (0xFF), but a receiver
+    // or any other multiplexing interface carries frames for every paired device on one report
+    // id, and discovery only excludes receivers by a short PID substring list - any receiver
+    // model outside it arrives here. Such a frame shares our report id, our feature index and
+    // our function|swId, so byte 1 is the ONLY thing left standing between it and
+    // ClassifyLevelByte reading a DIFFERENT device's battery as this row's percentage. Every
+    // other fixture in this class carries 0xFF on both sides, so the compare was never varied:
+    // rewriting it to `response[0] == request[0] && true && response[2] == request[2] &&
+    // response[3] == request[3]` left the whole suite green. These rows are a perfect match in
+    // every other byte, so the device index is the only thing under test.
+    [Theory]
+    [InlineData(0x01)] // first device paired to a receiver
+    [InlineData(0x02)] // second device paired to the same receiver
+    [InlineData(0xFE)] // any other index the interface multiplexes
+    public void IsMatchingResponse_OtherPairedDevicesIndex_Rejected(byte devIndex)
+    {
+        Assert.False(LogitechBatteryDevice.IsMatchingResponse(
+            Request(), Frame(0x10, 0x06, 0x05, payload: 55, devIndex: devIndex), 7));
+
+        // Same frame with our own index accepted, so the row proves the compare and not some
+        // other rejection.
+        Assert.True(LogitechBatteryDevice.IsMatchingResponse(
+            Request(), Frame(0x10, 0x06, 0x05, payload: 55, devIndex: 0xFF), 7));
     }
 
     // A HID++ 2.0 error frame carries 0xFF in the feature-index byte, the failed feature in

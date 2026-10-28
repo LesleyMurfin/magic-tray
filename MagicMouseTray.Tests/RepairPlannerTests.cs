@@ -1049,8 +1049,10 @@ public class RepairPlannerTests
     }
 
     // Same discipline one step in: DeviceSnapshotReader only asks for
-    // DEVPKEY_Device_Stack when something filter-like is bound
-    // (DeviceSnapshotReader.cs:168), so on a connected Magic Keyboard - no
+    // DEVPKEY_Device_Stack when something filter-like is bound (the
+    // `filterInStack` assignment in DeviceSnapshotReader.ReadPid, which calls
+    // DeviceStackReader.ContainsFilter only when bth.InstanceCount > 0 and
+    // bound is not null), so on a connected Magic Keyboard - no
     // vendor scroll filter applies to it at all (TEST-PLAN D31) - FilterInStack
     // is null by construction and forever. That is a signal with nothing to
     // measure, not a failed measurement, and treating it as a gap would pin the
@@ -1109,10 +1111,11 @@ public class RepairPlannerTests
     // EvidenceComplete can only inspect snapshots that EXIST, but a device
     // whose read threw is not in the list at all: DeviceSnapshotReader wraps
     // every PID in its own try/catch, logs "REPAIR_SNAPSHOT_FAILED pid=...
-    // err=..." and simply does not add it (DeviceSnapshotReader.cs:53-63).
-    // Nothing else can be missing - ReadPid always returns a snapshot for the
-    // PIDs it survives, including catalog devices this PC never owned - so
-    // "fewer snapshots than devices attempted" means exactly "a read threw".
+    // err=..." and simply does not add it (the CatalogPids loop in
+    // DeviceSnapshotReader.Read). Nothing else can be missing - ReadPid always
+    // returns a snapshot for the PIDs it survives, including catalog devices
+    // this PC never owned - so "fewer snapshots than devices attempted" means
+    // exactly "a read threw".
     // A partially measured device degrades the claim; a device that could not
     // be read AT ALL is the most complete failure of the lot and must degrade
     // it too, otherwise the row speaks the unqualified all-clear for a device

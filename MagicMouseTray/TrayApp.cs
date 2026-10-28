@@ -1759,7 +1759,7 @@ internal sealed class TrayApp : IDisposable
             AddDriverChoices(item.DropDownItems, kind, pid, separator: false);
         }
 
-        item.DropDownItems.Add(BuildShowInTrayItem(pid, name));
+        item.DropDownItems.Add(BuildShowInTrayItem(pid, name, kind));
         item.DropDownItems.Add(BuildWindowsDeviceMenu(pid, name));
         item.DropDownItems.Add(new ToolStripSeparator());
         var thrMenu = new ToolStripMenuItem(TrayMenu.MenuText("Low battery alert"));
@@ -1807,11 +1807,16 @@ internal sealed class TrayApp : IDisposable
     //   - BuildWindowsDeviceMenu is the WINDOWS devnode state, which is the
     //     only part that is a real PnP change and the only part that asks for
     //     administrator approval.
-    ToolStripMenuItem BuildShowInTrayItem(string pid, string? nameForModal)
+    // kind is what lets the tick match the poller: a legacy vendor-wide
+    // enabled_logi=false still suppresses a Logitech product whose PID is now
+    // its own (Config.IsDeviceEnabled), so a row drawn for one must read
+    // unchecked rather than claim a device the poller is skipping is shown.
+    // Optional, for the unknown-mouse row, which has a PID and no kind.
+    ToolStripMenuItem BuildShowInTrayItem(string pid, string? nameForModal, DeviceKind? kind = null)
     {
         var item = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.ShowInTray))
         {
-            Checked = _config.IsDeviceEnabled(pid),
+            Checked = _config.IsDeviceEnabled(pid, kind),
             CheckOnClick = true,
         };
         item.Click += (_, _) =>

@@ -27,6 +27,15 @@ internal sealed class RefreshSignal
     // ObjectDisposedException on whichever thread got there.
     readonly SemaphoreSlim _slot = new(0, 1);
 
+    // Where the coalescing lines go. Signal runs on whatever thread asked for a refresh - a UI
+    // click, a repair thread, a test - so this is the only way a caller can keep a refresh out
+    // of the real %APPDATA%\MagicMouseTray\debug.log; faking the poller's discovery cannot,
+    // because these lines are written before the loop is ever reached. Defaulted to Logger.Log,
+    // so production and every existing construction are unchanged.
+    readonly Action<string> _log;
+
+    internal RefreshSignal(Action<string>? log = null) => _log = log ?? Logger.Log;
+
     internal bool IsSignalled => _slot.CurrentCount > 0;
 
     // Arms the next wait, or collapses into the signal already waiting to be consumed. The
@@ -45,14 +54,14 @@ internal sealed class RefreshSignal
     {
         if (_slot.CurrentCount > 0)
         {
-            Logger.Log("REFRESH_SIGNAL_COALESCED reason=already_signalled");
+            _log("REFRESH_SIGNAL_COALESCED reason=already_signalled");
             return;
         }
 
         try { _slot.Release(); }
         catch (SemaphoreFullException)
         {
-            Logger.Log("REFRESH_SIGNAL_COALESCED reason=raced_a_concurrent_signal");
+            _log("REFRESH_SIGNAL_COALESCED reason=raced_a_concurrent_signal");
         }
     }
 
