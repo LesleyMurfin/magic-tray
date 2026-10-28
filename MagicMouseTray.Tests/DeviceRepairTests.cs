@@ -41,6 +41,11 @@ public class DeviceRepairTests
     static RepairEvidence Ran(RepairProgress? progress, int? exit = null, bool timedOut = false) =>
         new(Started: true, progress, exit, timedOut);
 
+    // The evidence Apply hands the mapper: the restart-only script, which has
+    // no registry write in it at all.
+    static RepairEvidence RestartOnly(RepairProgress? progress, int? exit = null, bool timedOut = false) =>
+        new(Started: true, progress, exit, timedOut, HasWritePass: false);
+
     // --- what the outcome says about HKLM --------------------------------
 
     /// <summary>
@@ -224,18 +229,34 @@ public class DeviceRepairTests
     }
 
     /// <summary>
-    /// The restart-only repair never writes HKLM, so the shared mapper must not
-    /// be able to report a modified registry for it however it ends.
+    /// The restart-only repair runs a script with no Set-ItemProperty and no
+    /// Remove-ItemProperty in it, so "nothing was written" is a fact about that
+    /// script and holds however the attempt ended - including when no report is
+    /// readable at all, which is reachable whenever the elevated shell lands
+    /// under another profile or the ceiling kill beats the first status line.
+    /// Warning the user to go and check LowerFilters would be a warning about a
+    /// change this script has no code to make.
     /// </summary>
     [Fact]
     public void RestartOnlyRepair_CanNeverReportAWrite()
     {
         var failed = DeviceRepair.Decide(
-            Ran(Progress("failed", RepairStage.Restarted, planned: 0, written: 0, restartFailures: 2)));
+            RestartOnly(Progress("failed", RepairStage.Restarted, planned: 0, written: 0, restartFailures: 2)));
+        var silent = DeviceRepair.Decide(RestartOnly(null));
+        var killed = DeviceRepair.Decide(RestartOnly(null, timedOut: true));
+        var blocked = DeviceRepair.Decide(
+            RestartOnly(null, exit: DeviceRepair.FilterBlockedExitCode));
 
         Assert.Equal(RepairOutcome.Failed, failed.Outcome);
-        Assert.Equal(RegistryState.Untouched, failed.Registry);
         Assert.Equal("failed/untouched", DeviceRepair.LogToken(failed));
+        Assert.Equal("failed/untouched", DeviceRepair.LogToken(silent));
+        Assert.Equal("timed-out/untouched", DeviceRepair.LogToken(killed));
+        Assert.Equal("filter-blocked/untouched", DeviceRepair.LogToken(blocked));
+        foreach (var result in new[] { failed, silent, killed, blocked })
+        {
+            Assert.Equal(RegistryState.Untouched, result.Registry);
+            Assert.DoesNotContain("LowerFilters", result.Detail, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
@@ -329,23 +350,26 @@ public class DeviceRepairTests
     /// The stack restart is what makes PnP act on the filter list. Once ANY
     /// key has been rewritten the loaded stack no longer matches the registry,
     /// so the restart is required whether or not every write landed. Skipping
-    /// it on a write failure is what leaves the machine dead-wheeled.
+    /// it on a write failure is what leaves the machine dead-wheeled. That
+    /// condition lives in the generated script and nowhere else, so this reads
+    /// the script: a C# copy of the rule would keep passing while the script's
+    /// own guard changed underneath it.
     /// </summary>
     [Fact]
-    public void ShouldRestartStack_WheneverAnyWriteLanded()
+    public void FiltersScript_RestartsOnEveryLandedWrite()
     {
-        Assert.True(DeviceRepair.ShouldRestartStack(
-            Progress("failed", RepairStage.Writing, planned: 2, written: 1, writeFailures: 1)));
-        Assert.True(DeviceRepair.ShouldRestartStack(
-            Progress("running", RepairStage.Written, planned: 2, written: 2)));
-        Assert.True(DeviceRepair.ShouldRestartStack(
-            Progress("failed", RepairStage.Writing, planned: 3, written: 2, writeFailures: 1)));
+        var script = DeviceRepair.BuildRemoveStaleFiltersScript("030d", Nonce, Keep, [Stale]);
 
-        // Nothing landed: a restart would only hide the refusal.
-        Assert.False(DeviceRepair.ShouldRestartStack(
-            Progress("failed", RepairStage.Writing, planned: 2, written: 0, writeFailures: 2)));
-        Assert.False(DeviceRepair.ShouldRestartStack(
-            Progress("nothing-to-do", RepairStage.Scanned)));
+        var set = script.IndexOf("Set-ItemProperty", StringComparison.Ordinal);
+        var remove = script.IndexOf("Remove-ItemProperty", StringComparison.Ordinal);
+        var firstWrite = Math.Min(set, remove);
+        var guard = script.IndexOf("if ($written -gt 0) {", StringComparison.Ordinal);
+        var restart = script.IndexOf("/restart-device", StringComparison.Ordinal);
+
+        // The only thing standing between the write pass and the restart loop
+        // is the count of writes that landed.
+        Assert.InRange(guard, firstWrite, restart);
+        Assert.DoesNotContain("writeFailures", script[guard..restart], StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -410,6 +434,34 @@ public class DeviceRepairTests
         Assert.InRange(script.IndexOf("stage=written", StringComparison.Ordinal), firstWrite, int.MaxValue);
         Assert.Contains("written=", script, StringComparison.Ordinal);
         Assert.Contains("write-failures=", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The sidecar is read last-line-wins while the script is still appending
+    /// to it, and the header seeds written=0. If the stage marker were appended
+    /// first, a read landing between the two appends - or one that lost the
+    /// count line to a torn read - would pair 'stage=written' with that seeded
+    /// zero and the tray would tell the user nothing was changed after the
+    /// writes had landed. So each count is appended BEFORE the marker that
+    /// makes it the answer.
+    /// </summary>
+    [Fact]
+    public void FiltersScript_AppendsTheCountsBeforeTheStageMarker()
+    {
+        var script = DeviceRepair.BuildRemoveStaleFiltersScript("030d", Nonce, Keep, [Stale]);
+
+        Assert.InRange(
+            script.IndexOf("Write-Status (\"written=\" + $written)", StringComparison.Ordinal),
+            0,
+            script.IndexOf("Write-Status 'stage=written'", StringComparison.Ordinal));
+        Assert.InRange(
+            script.IndexOf("Write-Status (\"write-failures=\" + $writeFailures)", StringComparison.Ordinal),
+            0,
+            script.IndexOf("Write-Status 'stage=written'", StringComparison.Ordinal));
+        Assert.InRange(
+            script.IndexOf("Write-Status (\"restart-failures=\" + $restartFailures)", StringComparison.Ordinal),
+            0,
+            script.IndexOf("Write-Status 'stage=restarted'", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -540,6 +592,31 @@ public class DeviceRepairTests
         Assert.Contains(Nonce.ToString(), name, StringComparison.Ordinal);
         Assert.NotEqual(path, DeviceRepair.FilterBackupPath("030d", Nonce + 1));
         Assert.NotEqual(path, DeviceRepair.FilterBackupPath("0323", Nonce));
+    }
+
+    /// <summary>
+    /// The script reports key=/prev= for every scanned target before it knows
+    /// whether it will change any of them, so those lines are present on runs
+    /// that wrote nothing too. A record headed "to undo by hand" for an attempt
+    /// with nothing to undo is a false alarm sitting in the folder "Open logs"
+    /// opens, so the record is kept only when a write may have landed.
+    /// </summary>
+    [Fact]
+    public void UndoRecord_IsKeptOnlyWhenAWriteMayHaveLanded()
+    {
+        var wrote = DeviceRepair.Decide(
+            Ran(Progress("failed", RepairStage.Writing, planned: 2, written: 1, writeFailures: 1)));
+        var maybeWrote = DeviceRepair.Decide(
+            Ran(Progress("running", RepairStage.Writing, planned: 2), timedOut: true));
+        var silent = DeviceRepair.Decide(Ran(null));
+        var nothingToDo = DeviceRepair.Decide(Ran(Progress("nothing-to-do", RepairStage.Scanned)));
+        var refused = DeviceRepair.Decide(Ran(Progress("failed", RepairStage.Scanned, planned: 2)));
+
+        Assert.True(DeviceRepair.ShouldRecordFilterBackup(wrote));
+        Assert.True(DeviceRepair.ShouldRecordFilterBackup(maybeWrote));
+        Assert.True(DeviceRepair.ShouldRecordFilterBackup(silent));
+        Assert.False(DeviceRepair.ShouldRecordFilterBackup(nothingToDo));
+        Assert.False(DeviceRepair.ShouldRecordFilterBackup(refused));
     }
 
     // --- the parsed report ------------------------------------------------

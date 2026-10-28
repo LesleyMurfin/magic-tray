@@ -3109,7 +3109,7 @@ internal sealed class TrayApp : IDisposable
                     : "Device restarted on this PC.");
                 break;
             case RepairOutcome.FilterBlocked:
-                ShowFilterBlockedHelp();
+                ShowFilterBlockedHelp(result);
                 break;
             case RepairOutcome.NoInstances:
                 ShowPairingGuidance(pid);
@@ -3311,7 +3311,7 @@ internal sealed class TrayApp : IDisposable
                     + "wheel now. The battery percent can take one more poll to reappear.");
                 break;
             case RepairOutcome.FilterBlocked:
-                ShowFilterBlockedHelp();
+                ShowFilterBlockedHelp(result);
                 break;
             case RepairOutcome.NoInstances:
                 ShowPairingGuidance(pid);
@@ -3328,10 +3328,15 @@ internal sealed class TrayApp : IDisposable
     }
 
     // WIN32_EXIT 31 / blocked signature: the user has to allow the self-signed driver.
-    void ShowFilterBlockedHelp()
+    // The script reports filter-blocked AFTER its write pass and the restart loop, so
+    // this is the non-Ok outcome most likely to sit on top of a rewritten LowerFilters:
+    // the signing answer and what the repair left in HKLM are independent facts and the
+    // user gets both, the registry one first because it is the one that may need undoing.
+    void ShowFilterBlockedHelp(RepairResult result)
     {
         var body =
             "Windows refused to start the scroll driver.\n\n"
+            + DeviceRepair.RegistryDetail(result.Registry) + "\n\n"
             + "The driver is self-signed, so Windows blocks it until this PC is told to allow it. "
             + "Three steps, in this order:\n\n"
             + "1. Turn Test Mode on: in an administrator Command Prompt run "
