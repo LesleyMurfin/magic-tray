@@ -368,7 +368,7 @@ public class DriverHealthCheckerTests
     [Theory]
     [InlineData("0323")] // Magic Mouse 2024
     [InlineData("030d")] // Magic Mouse v1
-    [InlineData("0310")] // Magic Mouse v2
+    [InlineData("0310")] // Apple Wireless Mouse (MouseBatteryDevice.cs:34-44)
     [InlineData("0269")] // Magic Mouse v2
     public void IsNonScrollPid_IsFalseForEveryMouse(string pid)
     {
@@ -376,7 +376,7 @@ public class DriverHealthCheckerTests
     }
 
     [Fact]
-    public void IsNonScrollPid_CoversTheWholeKeyboardCatalogAndNoKnownMouse()
+    public void IsNonScrollPid_CoversEveryWheellessCatalogDeviceAndNoKnownMouse()
     {
         // The catalog is code, not prose: a keyboard added to KnownKeyboards
         // without being added here would start getting scroll-driver findings
@@ -385,6 +385,19 @@ public class DriverHealthCheckerTests
         {
             var pid = entry.PidPattern[^4..];
             Assert.True(DriverHealthChecker.IsNonScrollPid(pid), pid);
+        }
+
+        // The trackpads live in MouseBatteryDevice.KnownMice, which rule 6
+        // sweeps as well, so the same gap is open there: a fourth Magic
+        // Trackpad PID added without an entry here would reintroduce the
+        // "Scroll driver is not installed" nag on a device with no wheel.
+        foreach (var entry in MouseBatteryDevice.KnownMice)
+        {
+            var pid = entry.PidPattern[^4..];
+            bool wheelless = entry.Kind is DeviceKind.MagicTrackpadV1
+                or DeviceKind.MagicTrackpadV2
+                or DeviceKind.MagicTrackpadV3;
+            Assert.Equal(wheelless, DriverHealthChecker.IsNonScrollPid(pid));
         }
 
         foreach (var pid in DriverHealthChecker.KnownMousePids)

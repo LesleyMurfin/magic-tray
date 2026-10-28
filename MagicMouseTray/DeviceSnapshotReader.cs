@@ -129,13 +129,20 @@ internal static class DeviceSnapshotReader
         // the leftover's state and reported a dead wheel on a healthy mouse.
         var candidates = CollectFilterCandidates(bth, hidService, hidFilters);
 
-        // Every candidate is queried, not just the ones before the first hit:
+        // Queried lazily: a candidate that answers RUNNING wins outright
+        // (ResolveBoundFilter), so the names after it are never spawned in the
+        // healthy case. Only the all-negative path needs every answer, because
         // telling "none of them runs" from "one of them did not answer" needs
-        // the whole list, and the cache keeps it to one sc.exe per distinct
+        // the whole list; the cache keeps even that to one sc.exe per distinct
         // name for the whole sweep.
         var states = new List<(string Name, bool? Running)>(candidates.Count);
         foreach (var candidate in candidates)
-            states.Add((candidate, KernelServiceRunning(candidate, serviceCache)));
+        {
+            var running = KernelServiceRunning(candidate, serviceCache);
+            states.Add((candidate, running));
+            if (running == true)
+                break;
+        }
 
         bool? serviceRunning = ResolveBoundFilter(states, out var bound);
 
@@ -291,7 +298,9 @@ internal static class DeviceSnapshotReader
 
     // Which filter on this stack is the effective one, and is it running?
     // Pure: the live sc.exe queries are done by the caller and handed in as the
-    // tri-state each one answered, in the stack's own precedence order.
+    // tri-state each one answered, in the stack's own precedence order. The
+    // caller may stop querying at the first RUNNING answer, so the list can end
+    // there - which changes nothing below, since that answer wins outright.
     //
     // Registry order is not precedence of truth - the reference 0323 names the
     // stopped leftover "MagicMouseDriver" first and the running
@@ -313,11 +322,11 @@ internal static class DeviceSnapshotReader
     internal static bool? ResolveBoundFilter(
         IReadOnlyList<(string Name, bool? Running)> candidates, out string? bound)
     {
-        for (int i = 0; i < candidates.Count; i++)
+        foreach (var candidate in candidates)
         {
-            if (candidates[i].Running == true)
+            if (candidate.Running == true)
             {
-                bound = candidates[i].Name;
+                bound = candidate.Name;
                 return true;
             }
         }
@@ -329,9 +338,9 @@ internal static class DeviceSnapshotReader
         }
 
         bound = candidates[0].Name;
-        for (int i = 0; i < candidates.Count; i++)
+        foreach (var candidate in candidates)
         {
-            if (candidates[i].Running is null)
+            if (candidate.Running is null)
                 return null;
         }
         return false;

@@ -2933,8 +2933,8 @@ internal sealed class TrayApp : IDisposable
     // What OK actually does, appended to every guided dialog.
     static string ConsequenceText(RepairFinding finding)
     {
-        // FilterNotInStack is the one restart finding where the scroll driver service is
-        // already RUNNING: the fault is that Windows rebuilt this mouse's device stack
+        // FilterNotInStack is the one restart finding where the scroll driver service was
+        // never read as stopped: the fault is that Windows rebuilt this mouse's device stack
         // without the filter attached to it (docs/v3.html:149-157). Telling the user that OK
         // "starts the scroll driver service" would contradict the finding's own evidence and
         // leave them looking for a stopped service.
@@ -3042,9 +3042,9 @@ internal sealed class TrayApp : IDisposable
                 outcome = RepairOutcome.Failed;
             }
 
-            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
-            // RUNNING was already true before the repair: that contradiction is the whole
-            // finding. Attachment is the only honest proof, so re-read it here, still off the
+            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, which
+            // the finding never claimed was false: the fault is attachment, not the service.
+            // Attachment is the only honest proof, so re-read it here, still off the
             // UI thread (registry plus one CM property query).
             bool? inStack = null;
             if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)

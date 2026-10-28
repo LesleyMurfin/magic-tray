@@ -942,13 +942,18 @@ public class RepairPlannerTests
     }
 
     [Fact]
-    public void PlanOne_UnattachedFilterNeedsBothTheServiceAndThePackageRead()
+    public void PlanOne_UnattachedFilterSurvivesAnUnreadableServiceButNotAnUnreadablePackage()
     {
-        // Rule 2b's wording is "it is installed and Windows reports it as
-        // running, and yet the stack was built without it". Each clause is a
-        // claim about a probe that may not have answered, so an unknown on
-        // either one drops the finding even though the stack evidence itself
-        // is a hard false.
+        // FilterInStack == false is a MEASURED absence from the live stack,
+        // and it is the only evidence this fault has. An sc.exe query that did
+        // not answer may not take it away: before the tri-state, a failed query
+        // read as "stopped" and the very same machine state was offered the
+        // same RestartBtHidParent repair by rule 1, so dropping the finding
+        // here would silence a real fault on an unrelated probe failing.
+        //
+        // The package read is different: rule 6 ("it is not installed, install
+        // it") contradicts this rule, and an unknown package cannot say which
+        // of the two is true, so that one still drops the finding.
         var serviceUnknown = RepairPlanner.PlanOne(Snap(
             pid: "0323",
             bthenumLiveCount: 2,
@@ -965,6 +970,16 @@ public class RepairPlannerTests
             filterServiceRunning: true,
             filterCandidates: [BoundKmdfVariant],
             filterInStack: false));
+        // The stack evidence itself unknown, with the service unknown too:
+        // nothing was measured at all, so nothing may be claimed.
+        var stackUnknown = RepairPlanner.PlanOne(Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: null,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: null));
         var measured = RepairPlanner.PlanOne(Snap(
             pid: "0323",
             bthenumLiveCount: 2,
@@ -974,8 +989,14 @@ public class RepairPlannerTests
             filterCandidates: [BoundKmdfVariant],
             filterInStack: false));
 
-        Assert.Null(serviceUnknown);
         Assert.Null(packageUnknown);
+        Assert.Null(stackUnknown);
+
+        Assert.NotNull(serviceUnknown);
+        Assert.Equal(RepairProblem.FilterNotInStack, serviceUnknown.Problem);
+        Assert.Equal(RepairAction.RestartBtHidParent, serviceUnknown.Action);
+        // The detail text may not assert the answer the query never gave.
+        Assert.DoesNotContain("reports it as running", serviceUnknown.Detail);
 
         Assert.NotNull(measured);
         Assert.Equal(RepairProblem.FilterNotInStack, measured.Problem);
@@ -1046,8 +1067,8 @@ public class RepairPlannerTests
     [Theory]
     [InlineData("0323")] // Magic Mouse 2024, rides the patched KMDF filter
     [InlineData("030d")] // Magic Mouse v1, rides the Boot Camp filter
-    [InlineData("0310")] // Magic Mouse v2
-    [InlineData("0269")] // Magic Mouse v2 (USB PID)
+    [InlineData("0310")] // Apple Wireless Mouse (MouseBatteryDevice.cs:34-44)
+    [InlineData("0269")] // Magic Mouse v2
     public void PlanOne_MouseWithoutTheScrollDriverPackage_IsStillTheInstallOffer(string pid)
     {
         // The family guard must narrow rule 6, not delete it: a connected

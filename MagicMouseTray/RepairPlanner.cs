@@ -255,8 +255,8 @@ internal static class RepairPlanner
         }
 
         // 2b. The reboot shape. The filter is registered on this stack, its
-        // service reports RUNNING, and the filter is still not in the live
-        // device stack. Field report after a Windows restart: the tray said
+        // service was not read as stopped, and the filter is still not in the
+        // live device stack. Field report after a Windows restart: the tray said
         // the mouse was on the right driver, the wheel was dead anyway, and
         // the repair menu said "No problems found" because every other input
         // was byte-identical to a healthy mouse.
@@ -281,10 +281,18 @@ internal static class RepairPlanner
         // FilterInStack null means the property could not be read: no
         // evidence, no finding. Nagging every PC whose stack read fails is
         // worse than missing the diagnosis on it.
+        //
+        // The service clause is != false, not == true: FilterInStack == false
+        // is a MEASURED absence from the live stack, and an sc.exe query that
+        // failed or timed out must not take that diagnosis away. == false is
+        // not reachable here - with a bound name and the package present it
+        // was already answered by rule 1 above, which offers the same
+        // RestartBtHidParent repair - so this cannot double-fire, and the
+        // detail text below asserts only what was read.
         if (snapshot.BthenumLiveCount > 0
             && snapshot.BoundFilterName is not null
             && snapshot.FilterPackagePresent == true
-            && snapshot.FilterServiceRunning == true
+            && snapshot.FilterServiceRunning != false
             && snapshot.FilterInStack == false)
         {
             return new RepairFinding(
@@ -295,7 +303,7 @@ internal static class RepairPlanner
                 "Pointer movement, clicking and the battery reading all still work, but the "
                 + "scroll wheel does nothing. The scroll driver ("
                 + FilterServiceFor(snapshot)
-                + ") is installed and Windows reports it as running, and yet Windows built this "
+                + ") is installed, and yet Windows built this "
                 + "mouse's Bluetooth connection without it - which is what a restart of Windows "
                 + "can leave behind. The mouse is still paired with this PC: nothing is "
                 + "unpaired, and nothing is installed or removed. The fix restarts this mouse's "
