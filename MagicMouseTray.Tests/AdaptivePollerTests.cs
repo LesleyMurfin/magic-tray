@@ -207,6 +207,49 @@ public class AdaptivePollerTests : IDisposable
         Assert.False(third.Entered.IsSet);
     }
 
+    // The price of that exit: on the tick it fires, every interface behind the wedged one goes
+    // unread. Discover re-derives the same paths in the same order every tick and nothing in the
+    // poller is keyed by path, so without a rotating start a live interface behind a wedge is
+    // never read at all and the device reads unavailable forever - the "only an interface that
+    // never reports survives" outcome DeviceRegistry refuses to cause one layer up. Each tick
+    // below builds fresh interface objects because that is what Discover does; only scanStart
+    // survives a tick.
+    [Fact]
+    public void ReadDevice_WedgedFirst_ReachesTheLiveInterfaceAndStaysThere()
+    {
+        var scanStart = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Seconds, not milliseconds, for the reason given on
+        // BestReading_TimeoutAfterUnreadable_KeepsTheMinusTwo: this asserts an ordering property,
+        // and a budget near pool-scheduling latency would end a scan on a phantom timeout.
+        var budget = TimeSpan.FromSeconds(2);
+
+        var wedged1 = NewBlockingDevice(72);
+        var live1 = new CountingDevice(72);
+        Assert.Equal(-1, AdaptivePoller.ReadDevice(
+            "Magic Mouse", [wedged1, live1], budget, scanStart));
+        Assert.True(wedged1.Entered.Wait(TimeSpan.FromSeconds(10)));
+        Assert.Equal(0, live1.Reads);
+
+        // Next tick: the rotation puts the interface the wedge hid first, so it is read.
+        var wedged2 = NewBlockingDevice(72);
+        var live2 = new CountingDevice(72);
+        Assert.Equal(72, AdaptivePoller.ReadDevice(
+            "Magic Mouse", [wedged2, live2], budget, scanStart));
+        Assert.Equal(1, live2.Reads);
+        Assert.False(wedged2.Entered.IsSet);
+
+        // And it stays: a device that answered keeps the start it answered from, so the wedge is
+        // never read again and its leaked worker is paid once, not per tick. Were the start to
+        // return to 0 on success the device would report a level only every other tick, and
+        // leak a worker on all the others.
+        var wedged3 = NewBlockingDevice(72);
+        var live3 = new CountingDevice(72);
+        Assert.Equal(72, AdaptivePoller.ReadDevice(
+            "Magic Mouse", [wedged3, live3], budget, scanStart));
+        Assert.Equal(1, live3.Reads);
+        Assert.False(wedged3.Entered.IsSet);
+    }
+
     // A read that never answered establishes nothing about the battery report. -2 means the
     // report is not exposed, and it is the sole trigger for the elevated keyboard SDP patch offer
     // (TrayMenu.ShowFixKeyboard) and RepairPlanner rule 2d, so a wedged read reporting -2 would

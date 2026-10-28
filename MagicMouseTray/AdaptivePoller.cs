@@ -25,6 +25,8 @@ internal sealed class AdaptivePoller : IDisposable
     Task? _pollTask;
     readonly Dictionary<string, int> _consecutiveFailures = new();
     readonly Dictionary<string, (DeviceKind Kind, string Pid)> _lastSeen = new(StringComparer.OrdinalIgnoreCase);
+    // Next interface index to start a device's scan at, per DeviceName. See ReadDevice.
+    readonly Dictionary<string, int> _scanStart = new(StringComparer.OrdinalIgnoreCase);
 
 
     // Per-device read budget. A synchronous HID IOCTL (HidD_GetFeature / HidD_GetInputReport)
@@ -84,11 +86,12 @@ internal sealed class AdaptivePoller : IDisposable
     // First timeout also wins, and this is the exit the motivating failure needs. An interface
     // answering [90 00 00] forever yields -2 or -1, never >= 0, so before this exit the whole
     // group was read on every tick: measured at 3 x budget and 3 permanently parked workers per
-    // tick for one wedged 3-interface device. One timeout has already proved the device is not
-    // answering and has already cost a worker we can never get back, so continuing multiplies
-    // both by the interface count, forever. Returning best rather than -1 keeps a -2 seen
-    // earlier in the group. An exception is deliberately NOT an exit: it cost no budget and
-    // parked nothing, so a throwing collection must not hide a live one behind it.
+    // tick for one wedged 3-interface device. One timeout proves only that THIS interface is not
+    // answering, not that the device is not answering - but it has already cost a worker we can
+    // never get back, so continuing multiplies both costs by the interface count, forever.
+    // Stopping here therefore hides every interface behind a wedged one for the whole of this
+    // scan, which is only acceptable because the scan order is not the same twice: ReadDevice
+    // rotates it. This method reads exactly the order it is given. Returning best rather than -1 keeps a -2 seen
     internal static int BestReading(IEnumerable<IBatteryDevice> group, TimeSpan timeout)
     {
         int best = -1;
@@ -102,6 +105,33 @@ internal sealed class AdaptivePoller : IDisposable
             if (pct == -2) best = -2;
             if (timedOut) return best;
         }
+        return best;
+    }
+
+    // One device's interfaces, read in a rotating order. BestReading ends a scan at the first
+    // timeout, which bounds the tick but makes the scan order load-bearing: Discover re-derives
+    // the same paths in the same index order every tick and nothing here is keyed by path, so a
+    // wedged interface sitting first would hide every interface behind it on every tick,
+    // forever - the same "only an interface that never reports survives" outcome DeviceRegistry
+    // refuses to cause one layer up. So the start rotates: a device that did not answer moves on
+    // by one, which gives every interface its turn within interfaces.Count ticks at the
+    // unchanged cost of one timeout budget per device per tick. A device that answered keeps the
+    // start it answered from, because that start is exactly the one that put a live interface
+    // ahead of the wedged one - so the wedge is then never read again, and the leaked worker is
+    // paid once rather than on every tick. If that interface later stops answering the start
+    // advances again and the others, wedge included, get their turn back.
+    //
+    // scanStart holds each device's next start index, stored already reduced so it cannot grow
+    // without bound; the read reduces again because a device's interface count can change
+    // between ticks. GroupBy never yields an empty group, so interfaces is never empty.
+    internal static int ReadDevice(
+        string name, IReadOnlyList<IBatteryDevice> interfaces, TimeSpan timeout,
+        Dictionary<string, int> scanStart)
+    {
+        scanStart.TryGetValue(name, out int start);
+        start %= interfaces.Count;
+        int best = BestReading(interfaces.Skip(start).Concat(interfaces.Take(start)), timeout);
+        if (best < 0) scanStart[name] = (start + 1) % interfaces.Count;
         return best;
     }
 
@@ -181,7 +211,8 @@ internal sealed class AdaptivePoller : IDisposable
                         if (ShouldSkipPid(_config, pid))
                             continue;
 
-                        int best = BestReading(group, DeviceReadTimeout);
+                        int best = ReadDevice(
+                            group.Key, group.ToArray(), DeviceReadTimeout, _scanStart);
 
                         if (best == -1)
                         {
@@ -219,6 +250,7 @@ internal sealed class AdaptivePoller : IDisposable
                 {
                     if (!_lastSeen.TryGetValue(name, out var meta)) continue;
                     _consecutiveFailures.Remove(name);
+                    _scanStart.Remove(name);
                     if (ShouldSkipPid(_config, meta.Pid)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);
                 }
