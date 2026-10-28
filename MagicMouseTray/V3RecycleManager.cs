@@ -55,15 +55,12 @@ internal static class V3RecycleManager
             IsV3Path(p) &&
             p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
-    // The mode the present HID interface paths show, as the tri-state above.
-    // No kernel-stack property is read here, so this does not prove the Apple
-    // filter is loaded - it proves the path shape scroll depends on. The same
-    // definition is used by the elevated script's Test-ModeB, so both sides
-    // agree.
-    // mouhid.sys DN_STARTED (Mouse class device) is a false positive in Mode A:
-    // mouhid stays bound to col01 and DN_STARTED remains True even when the
-    // device is in Mode A.
-    // Empirical: real Mode B confirm latency ~563ms (confirmed 2026-05-07).
+    // The mode the present HID interface paths show. Path shape only: no
+    // kernel-stack property is read, so this is the shape scroll depends on
+    // and not proof the Apple filter is loaded. The elevated script's
+    // Test-ModeB measures the same shape.
+    // Measured: mouhid.sys stays bound to col01 with DN_STARTED true in Mode
+    // A, so it is a false positive; Mode B confirm latency ~563 ms (2026-05-07).
     internal static ModeBObservation ObserveV3Mode(IEnumerable<string> hidPaths)
     {
         ArgumentNullException.ThrowIfNull(hidPaths);
@@ -82,13 +79,6 @@ internal static class V3RecycleManager
         }
         return observed;
     }
-
-    // True only when a v3 Magic Mouse is observably in Mode B: at least one v3
-    // path and none of them split. A mouse that is not on the bus at all is not
-    // Mode B here - and it is not Mode A either, which is why every caller that
-    // has to tell those two apart asks ObserveV3Mode instead.
-    internal static bool IsV3InModeB() =>
-        ObserveV3Mode(HidNative.EnumerateHidPaths()) == ModeBObservation.InModeB;
 
     // True if the HID device path belongs to a Magic Mouse v3 (BT or USB).
     // internal: ModeFlip picks the col02 collection out of the same path set.

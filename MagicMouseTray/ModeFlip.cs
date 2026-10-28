@@ -331,12 +331,10 @@ internal static class ModeFlip
 
         if (sentinel is null)
         {
-            // Nothing recorded means nothing to put back, and what is true
-            // instead depends on what the bus shows and which driver is bound.
-            // The gate decides that; its fallback is the warning answer,
-            // because a failure to answer must never read as "all fine".
-            var answer = RestorePreflightOutcome(sentinelPresent: false, status, observed)
-                ?? ModeFlipOutcome.StrandedInModeA;
+            // Nothing recorded means nothing to put back, so there is no gate
+            // to pass - only what is true of the mouse instead, which is a
+            // measurement and always has an answer.
+            var answer = NoRecordRestoreOutcome(status, observed);
             Logger.Log($"{LogPrefix} phase=restore outcome={answer} reason=no_record");
             return answer == ModeFlipOutcome.Ok
                 ? new ModeFlipResult(answer, -1, true,
@@ -344,11 +342,13 @@ internal static class ModeFlip
                 : Refusal(answer, observed);
         }
 
-        // The recorded value only means what it meant while the driver it was
-        // recorded under is still the bound one. On any other stack this write
-        // would bind a filter that stack never carried, which is the one thing
-        // the flip promises it can never do.
-        if (RestorePreflightOutcome(sentinelPresent: true, status, observed) is ModeFlipOutcome refused)
+        // The recorded value only means what it meant while no rival family
+        // filter is bound. Writing it onto a KMDF stack would bind a filter
+        // that stack never carried, which is the one thing the flip promises
+        // it can never do. Mode A's own footprint - the Apple filter gone
+        // from LowerFilters - is not that, and must not be refused: it is the
+        // exact state this record exists to undo.
+        if (RestorePreflightOutcome(status) is ModeFlipOutcome refused)
         {
             Logger.Log($"{LogPrefix} phase=restore outcome={refused} reason=driver_changed status={Render(status)}");
             return new ModeFlipResult(refused, -1, false, DriverChangedDetail(sentinel), observed);
@@ -416,16 +416,22 @@ internal static class ModeFlip
         using (proc)
         {
             // Holds until the elevated writer has exited, so what is read
-            // below is an end state nothing can still be changing.
-            var transcript = AwaitTerminal(proc, statusPath, RestoreGraceMs, null, out _);
-            var terminal = TerminalToken(transcript);
+            // below is an end state nothing can still be changing - unless
+            // the ceiling had to end the wait with the writer still alive,
+            // which is exactly what EndStateUnproven reports.
+            var wait = AwaitTerminal(proc, statusPath, RestoreGraceMs);
+            var terminal = TerminalToken(wait.Transcript);
             // The verdict, whole: the recorded value back verbatim and in
             // order, plus a bus that does not contradict it - see
-            // RestoreVerdict for why absence is not contradiction.
+            // RestoreVerdict for why absence is not contradiction. A cycle
+            // that could not prove its end state settled has not restored
+            // anything, however well those two halves happen to read.
             var verified = CompareTargets(sentinel.Targets, ReadStack(pid)?.Targets);
             var after = WaitForModeObservation(ModeBVerifyMs);
-            var verdict = RestoreVerdict(verified, after);
-            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} filters_match={Render(verified)} observed={after} verdict={verdict}");
+            var verdict = wait.EndStateUnproven
+                ? ModeFlipOutcome.RestoreFailed
+                : RestoreVerdict(verified, after);
+            Logger.Log($"{LogPrefix} phase=restore script_terminal={(terminal.Length == 0 ? "none" : terminal)} filters_match={Render(verified)} observed={after} unproven={wait.EndStateUnproven} verdict={verdict}");
 
             if (verdict == ModeFlipOutcome.Ok)
             {
@@ -474,12 +480,19 @@ internal static class ModeFlip
         IReadOnlyList<ModeFlipTarget> targets = stack?.Targets ?? [];
         IReadOnlyList<string> ids = stack?.InstanceIds ?? [];
         bool appleRegistered = AppleFilterRegistered(targets);
+        // A stack already in Mode A has a dead wheel, and whether the tray can
+        // offer a way out of it is a fact about the sentinel, not something to
+        // assume: a cycle that ended RestoreFailed keeps a perfectly good
+        // record, and telling that user none exists sends them to re-pair a
+        // mouse one click would have fixed.
+        TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var priorRecord);
+        bool recordPresent = priorRecord is not null;
 
-        Logger.Log($"{LogPrefix} phase=preflight pid={pid} status={Render(status)} instances={ids.Count} apple_registered={appleRegistered}");
+        Logger.Log($"{LogPrefix} phase=preflight pid={pid} status={Render(status)} instances={ids.Count} apple_registered={appleRegistered} record={recordPresent}");
         foreach (var t in targets)
             Logger.Log($"{LogPrefix} phase=preflight key={t.KeyPath} present={t.PreviousPresent} prev={Render(t.Previous)}");
 
-        if (PreflightOutcome(status, ids.Count, appleRegistered) is ModeFlipOutcome refused)
+        if (PreflightOutcome(status, ids.Count, appleRegistered, recordPresent) is ModeFlipOutcome refused)
         {
             var atRefusal = ObserveMode();
             Logger.Log($"{LogPrefix} phase=preflight outcome={refused} observed={atRefusal}");
@@ -561,12 +574,13 @@ internal static class ModeFlip
         int percent = -1;
         bool ready = false;
         string terminal = "";
+        bool unproven = false;
 
         if (started && proc is not null)
         {
             using (proc)
             {
-                var transcript = AwaitTerminal(
+                var wait = AwaitTerminal(
                     proc,
                     statusPath,
                     timeoutMs + RestoreGraceMs,
@@ -576,9 +590,10 @@ internal static class ModeFlip
                         WriteDone(donePath, percent);
                     },
                     readyBudgetMs: timeoutMs,
-                    donePath: donePath,
-                    readyObserved: out ready);
-                terminal = TerminalToken(transcript);
+                    donePath: donePath);
+                terminal = TerminalToken(wait.Transcript);
+                ready = wait.ReadyObserved;
+                unproven = wait.EndStateUnproven;
             }
         }
         else
@@ -595,7 +610,10 @@ internal static class ModeFlip
         // collections contradicts everything - see RestoreVerdict.
         var verified = CompareTargets(targets, live);
         var observed = WaitForModeObservation(ModeBVerifyMs);
-        bool restored = RestoreVerdict(verified, observed) == ModeFlipOutcome.Ok;
+        // An end state the cycle could not prove settled is not a restore: the
+        // ceiling ended the wait while the writer could still be rewriting the
+        // keys below, or the writer exited without ever saying what it did.
+        bool restored = !unproven && RestoreVerdict(verified, observed) == ModeFlipOutcome.Ok;
 
         var evidence = new FlipEvidence(started, ready, terminal, percent, verified);
         var outcome = MapOutcome(evidence);
@@ -609,7 +627,7 @@ internal static class ModeFlip
         Logger.Log($"{LogPrefix} phase=verify filters_match={Render(verified)} observed={observed}");
         foreach (var t in targets)
             Logger.Log($"{LogPrefix} phase=verify key={t.KeyPath} prev={Render(t.Previous)} post={Render(LiveFor(live, t.KeyPath))}");
-        Logger.Log($"{LogPrefix} phase=done started={started} ready={ready} script_terminal={(terminal.Length == 0 ? "none" : terminal)} pct={percent} outcome={outcome}");
+        Logger.Log($"{LogPrefix} phase=done started={started} ready={ready} script_terminal={(terminal.Length == 0 ? "none" : terminal)} unproven={unproven} pct={percent} outcome={outcome}");
 
         // The record is the one-click way back, so it only goes away once the
         // end state is whole - not on the value alone.
@@ -668,43 +686,52 @@ internal static class ModeFlip
 
     // Refusals that are decided before anything is elevated. null = proceed.
     internal static ModeFlipOutcome? PreflightOutcome(
-        DriverStatus? status, int instanceCount, bool appleFilterRegistered)
+        DriverStatus? status, int instanceCount, bool appleFilterRegistered, bool recordPresent)
     {
         if (status != DriverStatus.PathAPatched)
             return ModeFlipOutcome.NotPathA;
         if (instanceCount == 0)
             return ModeFlipOutcome.NoInstances;
         // Patched-Apple with the filter already gone from LowerFilters means
-        // the stack is in Mode A right now: the wheel is dead and there is no
-        // recorded value to put back. NotPathA is worded as "nothing was
-        // changed", which would tell a user whose wheel has already stopped
-        // that nothing is wrong.
+        // the stack is in Mode A right now: the wheel is dead. Which answer
+        // that is depends on the recovery record, so it is measured rather
+        // than asserted - with a record the one-click restore still has a
+        // value to write and RestoreFailed names it, without one there is
+        // nothing to put back. NotPathA is wrong either way: it is worded as
+        // "nothing was changed", which would tell a user whose wheel has
+        // already stopped that nothing is wrong.
         if (!appleFilterRegistered)
-            return ModeFlipOutcome.StrandedInModeA;
+            return recordPresent
+                ? ModeFlipOutcome.RestoreFailed
+                : ModeFlipOutcome.StrandedInModeA;
         return null;
     }
 
-    // Refusals for the STANDALONE restore, decided before anything is
-    // elevated. null = proceed.
+    // Whether the STANDALONE restore may write the value it recorded, decided
+    // before anything is elevated. null = proceed.
     //
-    // Two halves. With a record, the only question is whether the stack it
-    // describes is still the bound one: the recorded LowerFilters value is
-    // meaningful under the patched Apple driver and nowhere else, and writing
-    // it onto a Stock or KMDF stack would bind a filter that stack never
-    // carried. An unreadable status is not evidence that the stack changed,
-    // and refusing on it would take away the one-click way out of a dead
-    // wheel. Without a record there is nothing to write at all, so the answer
-    // is whatever is true of the mouse right now - and a mouse observably
-    // split into its collections has a dead wheel this click cannot fix.
-    internal static ModeFlipOutcome? RestorePreflightOutcome(
-        bool sentinelPresent, DriverStatus? status, ModeBObservation observed)
+    // The recorded LowerFilters value is meaningful under the patched Apple
+    // driver, and writing it onto a stack that carries a rival family filter
+    // would bind a filter that stack never carried. Only a rival filter bound
+    // RIGHT NOW is evidence of that: Mode A clears the Apple filter off
+    // LowerFilters itself, so StockKmdf and NotBound are this flip's own
+    // footprint and refusing on them would take the one-click way out of a
+    // dead wheel away from the one user who needs it. An unreadable status is
+    // no evidence either, and is not refused.
+    internal static ModeFlipOutcome? RestorePreflightOutcome(DriverStatus? status) =>
+        status is DriverStatus.PatchedKmdf ? ModeFlipOutcome.DriverChanged : null;
+
+    // What is true of the mouse when nothing was recorded to put back. There
+    // is no "proceed" here - there is nothing to write - so this always
+    // answers, and the answer is a measurement of the mouse, not of intent.
+    internal static ModeFlipOutcome NoRecordRestoreOutcome(
+        DriverStatus? status, ModeBObservation observed)
     {
-        bool recordedStackStillBound = status is null or DriverStatus.PathAPatched;
-        if (sentinelPresent)
-            return recordedStackStillBound ? null : ModeFlipOutcome.DriverChanged;
+        // A mouse observably split into its collections has a dead wheel this
+        // click cannot fix, whichever driver reads as bound.
         if (observed == ModeBObservation.InModeA)
             return ModeFlipOutcome.StrandedInModeA;
-        if (!recordedStackStillBound)
+        if (status is DriverStatus.PatchedKmdf)
             return ModeFlipOutcome.NotPathA;
         // Scroll mode is live and nothing was recorded: nothing to do and
         // nothing to warn about. A mouse that is not on the bus proves neither,
@@ -729,27 +756,33 @@ internal static class ModeFlip
             ? ModeFlipOutcome.Ok
             : ModeFlipOutcome.RestoreFailed;
 
-    // Whether the cycle slot may be released and a verdict published.
+    // Whether the cycle slot may be released, and whether what the tray reads
+    // once it is released can be trusted as a settled end state.
     //
     // The cycle is one elevated writer plus one tray reading its append-only
     // transcript, and it is finished when the WRITER is finished: a verdict
     // published over a live script reports an end state the script is still
     // changing, and a slot released under a live script lets a second elevated
-    // writer start on the same keys. The ceiling is the tray's own patience
-    // for a reading, not the script's deadline, so it decides nothing here.
-    internal readonly record struct CycleRelease(
-        bool MayRelease, bool MayPublishVerdict, bool VerdictIsFailure);
+    // writer start on the same keys. The ceiling never ends the script -
+    // interrupting a restore mid-write is the one failure with real
+    // consequences - but it has to be able to end the WAIT, because the slot
+    // is process-wide and a writer that never exits (one click inside its
+    // visible console is enough) would otherwise hold it, and every later
+    // reading and restore with it, for the life of the process. An end state
+    // released that way is unproven, and so is one a writer left without ever
+    // saying what it did.
+    internal readonly record struct CycleRelease(bool MayRelease, bool VerdictIsFailure);
 
     internal static CycleRelease DecideCycleRelease(
         bool scriptExited, bool terminalObserved, bool ceilingExceeded)
     {
         if (!scriptExited)
-            return new CycleRelease(false, false, false);
+            return new CycleRelease(ceilingExceeded, ceilingExceeded);
         // The writer is gone, so the slot is free and the user is owed an
         // answer. A script that said its piece is not a failure just because
         // the tray waited longer than it budgeted for; a script that exited
         // without reporting its end state has only one honest verdict.
-        return new CycleRelease(true, true, !terminalObserved);
+        return new CycleRelease(true, !terminalObserved);
     }
 
     // Order-sensitive, case-insensitive comparison of every recorded key
@@ -1950,12 +1983,18 @@ exit 1
         return proc;
     }
 
-    static string AwaitTerminal(
-        Process proc, string statusPath, int ceilingMs, Action? onReady, out bool readyObserved) =>
-        AwaitTerminal(proc, statusPath, ceilingMs, onReady, ceilingMs, null, out readyObserved);
+    // What the wait on the elevated writer came back with: its transcript,
+    // whether Mode A was ever announced, and whether the cycle got to see the
+    // writer finish. EndStateUnproven is the one the verdict turns on - see
+    // CycleRelease.
+    readonly record struct CycleWait(string Transcript, bool ReadyObserved, bool EndStateUnproven);
+
+    static CycleWait AwaitTerminal(Process proc, string statusPath, int ceilingMs) =>
+        AwaitTerminal(proc, statusPath, ceilingMs, null, ceilingMs, null);
 
     // Polls the append-only status sidecar for the script's phases, and holds
-    // until the elevated WRITER itself is gone.
+    // until the elevated WRITER itself is gone, or until the ceiling says the
+    // tray has waited long enough to stop holding the single cycle slot.
     //
     // The sidecar is the phase channel because an exit code cannot say which
     // phase a script reached - the same reason DeviceRepair uses one - but the
@@ -1966,22 +2005,22 @@ exit 1
     //
     // The elevated process is never killed here: it may be in the middle of
     // its restore, and interrupting that is the one failure with real
-    // consequences for the user. The ceiling therefore ends the tray's
-    // patience for a READING only - it never ends the wait on the writer.
-    static string AwaitTerminal(
+    // consequences for the user. So the ceiling ends the WAIT and never the
+    // script, and a cycle that ends that way reports its end state as
+    // unproven rather than reporting a reading as if the writer were done.
+    static CycleWait AwaitTerminal(
         Process proc,
         string statusPath,
         int ceilingMs,
         Action? onReady,
         int readyBudgetMs,
-        string? donePath,
-        out bool readyObserved)
+        string? donePath)
     {
-        readyObserved = false;
+        bool readyObserved = false;
         var started = Environment.TickCount64;
         var transcript = "";
         bool readyGaveUp = false;
-        bool ceilingLogged = false;
+        CycleRelease decision;
         while (true)
         {
             transcript = ReadAllTextOrNull(statusPath) ?? "";
@@ -1992,7 +2031,6 @@ exit 1
                 onReady?.Invoke();
             }
             var elapsed = Environment.TickCount64 - started;
-            bool ceilingExceeded = elapsed > ceilingMs;
             if (!readyObserved && !readyGaveUp && elapsed > readyBudgetMs)
             {
                 // Mode A never arrived. Release the script from its wait at
@@ -2002,27 +2040,25 @@ exit 1
                 if (donePath is not null)
                     WriteDone(donePath, -1);
             }
-            var decision = DecideCycleRelease(
-                scriptExited: HasExited(proc),
+            bool exited = HasExited(proc);
+            decision = DecideCycleRelease(
+                scriptExited: exited,
                 terminalObserved: TerminalToken(transcript).Length > 0,
-                ceilingExceeded: ceilingExceeded);
+                ceilingExceeded: elapsed > ceilingMs);
             if (decision.MayRelease)
             {
-                Logger.Log($"{LogPrefix} phase=release elapsed_ms={elapsed} publish={decision.MayPublishVerdict} silent_exit={decision.VerdictIsFailure}");
+                Logger.Log($"{LogPrefix} phase=release elapsed_ms={elapsed} exited={exited} unproven={decision.VerdictIsFailure}");
                 break;
-            }
-            if (ceilingExceeded && !ceilingLogged)
-            {
-                ceilingLogged = true;
-                Logger.Log($"{LogPrefix} phase=ceiling elapsed_ms={elapsed} exited=false holding=true");
             }
             // Wait on the writer rather than on the clock: while it is alive
             // it can still change the end state this cycle is about to report.
             WaitForExit(proc, PollMs);
         }
-        // The script can append its verdict between the last poll and its
-        // exit, so the transcript is read once more now that it cannot grow.
-        return ReadAllTextOrNull(statusPath) ?? transcript;
+        // One more read of the transcript: a writer that exited can have
+        // appended its verdict between the last poll and the exit, and cannot
+        // grow it now. A ceiling release gets the latest there is instead.
+        return new CycleWait(
+            ReadAllTextOrNull(statusPath) ?? transcript, readyObserved, decision.VerdictIsFailure);
     }
 
     // At most ms on the handle Process.Start returned. A handle that cannot be
