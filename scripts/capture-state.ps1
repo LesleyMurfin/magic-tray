@@ -84,7 +84,15 @@ if ($Compare) {
 
     function Compare-Field {
         param($Name, $ValA, $ValB, [switch]$GoodIfTrue, [switch]$GoodIfEqual)
-        $changed = ($ValA -ne $ValB) -and ($null -ne $ValA) -and ($null -ne $ValB)
+        # A $null side was never measured, so it can neither agree nor disagree
+        # with the other capture: it gets its own verdict.
+        if ($null -eq $ValA -or $null -eq $ValB) {
+            Write-Host "  unknown  $Name" -ForegroundColor Magenta
+            Write-Host "           A: $(if ($null -eq $ValA) { '(not read)' } else { $ValA })"
+            Write-Host "           B: $(if ($null -eq $ValB) { '(not read)' } else { $ValB })"
+            return
+        }
+        $changed = ($ValA -ne $ValB)
         if ($changed) {
             $color = "Yellow"
             if ($GoodIfTrue  -and $ValB) { $color = "Green" }
@@ -159,7 +167,7 @@ $state = [ordered]@{
     timestamp          = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     col01Present       = $false
     col02Present       = $false
-    filterInStack      = $false
+    filterInStack      = $null   # tri-state: $null = not read, $true/$false = measured
     hidDeviceCount     = 0
     hidDevices         = @()
     bthenumInstanceId  = ""
@@ -213,12 +221,16 @@ if ($btDev) {
     # registration; DEVPKEY_Device_Stack is what says the filter is on the stack.
     try {
         $stackProp = Get-PnpDeviceProperty -InstanceId $btDev.InstanceId `
-            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction SilentlyContinue
+            -KeyName 'DEVPKEY_Device_Stack' -ErrorAction Stop
         if ($stackProp -and $stackProp.Data) {
             $stackStr = $stackProp.Data -join ' '
             $state.filterInStack = Test-StackHasFilter $stackStr $state.boundFilter
         }
-    } catch { Write-Verbose "DEVPKEY_Device_Stack unreadable: $($_.Exception.Message)" }
+    } catch {
+        # filterInStack stays $null: the stack was never read, which is not the
+        # same answer as "the filter is not attached".
+        Write-Warning "DEVPKEY_Device_Stack unreadable, stack attachment unknown: $($_.Exception.Message)"
+    }
 }
 
 # HID devices with this PID
@@ -263,7 +275,7 @@ Write-Host "=== STATE CAPTURED: $Label ===" -ForegroundColor Cyan
 Write-Host "  Timestamp:      $($state.timestamp)"
 Write-Host "  COL01 (scroll): $($state.col01Present)" -ForegroundColor $(if ($state.col01Present) {"Green"} else {"Red"})
 Write-Host "  COL02 (battery):$($state.col02Present)" -ForegroundColor $(if ($state.col02Present) {"Green"} else {"Red"})
-Write-Host "  Filter in stack:$($state.filterInStack)"
+Write-Host "  Filter in stack:$(if ($null -eq $state.filterInStack) { 'unknown (device stack not read)' } else { $state.filterInStack })"
 Write-Host "  Bound filter:   $(if ($state.boundFilter) { $state.boundFilter } else { '(none)' })"
 Write-Host "  LowerFilters(Enum):   $($state.lowerFiltersEnumKey -join ', ')"
 Write-Host "  LowerFilters(Driver): $($state.lowerFiltersDriverKey -join ', ')"

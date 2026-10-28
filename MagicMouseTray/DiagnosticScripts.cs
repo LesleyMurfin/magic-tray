@@ -12,13 +12,11 @@ internal static class DiagnosticScripts
     internal const string DiagnoseDriver = "diagnose-driver.ps1";
     internal const string DiagnoseAndRecover = "diagnose-and-recover.ps1";
     internal const string BtStackSnapshot = "mm-bt-stack-snapshot.ps1";
-    internal const string DevMgrDump = "mm-devmgr-dump.ps1";
 
     internal const string CaptureStateLabel = "Run capture-state.ps1";
     internal const string DiagnoseDriverLabel = "Run diagnose-driver.ps1";
     internal const string DiagnoseAndRecoverLabel = "Run diagnose-and-recover.ps1";
     internal const string BtStackSnapshotLabel = "Run mm-bt-stack-snapshot.ps1";
-    internal const string DevMgrDumpLabel = "Run mm-devmgr-dump.ps1";
 
     internal static readonly string[] MenuScriptNames =
     [
@@ -26,7 +24,6 @@ internal static class DiagnosticScripts
         DiagnoseDriver,
         DiagnoseAndRecover,
         BtStackSnapshot,
-        DevMgrDump,
     ];
 
     internal static string? Find(string fileName, string? startDirectory = null)
@@ -63,15 +60,12 @@ internal static class DiagnosticScripts
         return null;
     }
 
-    // One stack-dump slot: snapshot wins; devmgr only if snapshot is absent.
+    // One stack-dump slot: the snapshot this package ships, or nothing.
     internal static (string Label, string Path)? FindStackDump(string? startDirectory = null)
     {
         var snap = Find(BtStackSnapshot, startDirectory);
         if (snap is not null)
             return (BtStackSnapshotLabel, snap);
-        var dump = Find(DevMgrDump, startDirectory);
-        if (dump is not null)
-            return (DevMgrDumpLabel, dump);
         return null;
     }
 

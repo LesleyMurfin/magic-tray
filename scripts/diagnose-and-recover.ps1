@@ -771,9 +771,14 @@ if ($Repair) {
 }
 
 $txt = Join-Path $OutDir "diagnose-and-recover-$ts.txt"
-$Lines | Set-Content -LiteralPath $txt -Encoding UTF8
-Write-Log ''
-Write-Log "Saved: $txt" 'Green'
+try {
+    $Lines | Set-Content -LiteralPath $txt -Encoding UTF8 -ErrorAction Stop
+    Write-Log ''
+    Write-Log "Saved: $txt" 'Green'
+} catch {
+    Write-Log ''
+    Write-Log ("Report NOT saved to {0}: {1}" -f $txt, $_.Exception.Message) 'Red'
+}
 
 $appDir = Join-Path $env:APPDATA 'MagicMouseTray'
 if (Test-Path -LiteralPath $appDir -PathType Container) {
@@ -782,9 +787,9 @@ if (Test-Path -LiteralPath $appDir -PathType Container) {
         $srcFull = [IO.Path]::GetFullPath($txt)
         $dstFull = [IO.Path]::GetFullPath($copyTo)
         if (-not $srcFull.Equals($dstFull, [StringComparison]::OrdinalIgnoreCase)) {
-            Copy-Item -LiteralPath $txt -Destination $copyTo -Force
+            Copy-Item -LiteralPath $txt -Destination $copyTo -Force -ErrorAction Stop
         }
-    } catch { Write-Verbose "Failed to copy log file: $_" }
+    } catch { Write-Log ("Report NOT copied to {0}: {1}" -f $appDir, $_.Exception.Message) 'Yellow' }
 }
 
 if ($Repair -and $repairFailed) { exit 1 }
