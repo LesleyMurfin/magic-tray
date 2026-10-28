@@ -25,7 +25,11 @@
 
     Read-only: it never sets a feature report, never writes the registry, never
     touches a device, and writes exactly one file, into %APPDATA%\MagicMouseTray.
-    No elevation needed.
+    Everything except the driver-binding section runs unelevated. That section
+    reads LowerFilters out of HKLM\SYSTEM\CurrentControlSet\Enum, which an
+    unelevated process may be refused; when it is refused the report says the
+    driver shape is unknown instead of naming a shape it could not see, so run
+    it elevated if you need that one line to be conclusive.
 
 .EXAMPLE
     .\mm-hid-report.ps1
@@ -42,6 +46,10 @@ $ErrorActionPreference = 'Continue'
 $MousePids = @('0323', '030d', '0269', '0310', '0265', '030e', '0324')
 $KmdfPrefix = 'MagicMouseDriver'
 $ApplePrefix = 'applewirelessmouse'
+# Stands in for a filter list that could not be READ, as opposed to one that was
+# read and is empty. Without it a refused Enum key is indistinguishable from a
+# PC with no filters installed, and the report asserts the wrong driver shape.
+$UnreadableFilterSentinel = '(unreadable)'
 $AppleVendorIds = @('05ac', '0001004c', '000205ac')
 
 # 12-hex runs that are the SAME on every Windows PC, so they are not anybody's
@@ -52,7 +60,7 @@ $AppleVendorIds = @('05ac', '0001004c', '000205ac')
 # {4d1e55b2-f16f-11cf-88cb-001111000030} that ends every interface path. The
 # list is a WHITELIST of constants, never a pattern that tries to recognise an
 # address: a real address can look like anything, so the default stays redact.
-$MacSafeConstants = @('00805f9b34fb', '001111000030')
+$script:MacSafeConstants = @('00805f9b34fb', '001111000030')
 
 $script:Lines = @()
 
@@ -74,10 +82,17 @@ function Write-Log {
 # differ from BugReport. BugReport scrubs a log tail, where a mangled GUID
 # costs nothing; this report IS the device evidence, and a path whose service
 # GUID reads <mac> no longer says which SDP service the node hangs off.
+#
+# Ahead of those three, one rule BugReport does not need: the third node of a
+# USB instance id is the unit's iSerialNumber, which is not a MAC shape and so
+# matched none of the three rules. A Lightning Magic Mouse 2 enumerates over USB
+# while it charges, so the report would otherwise carry that serial under a
+# "safe to paste" banner.
 function ConvertTo-MacSafeText {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $t = [regex]::Replace($Text, '(?i)(?<![0-9a-f])([0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])', '<mac>')
+    $t = [regex]::Replace($Text, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)[^\\\s,;\)\]]+', '$1<serial>')
+    $t = [regex]::Replace($t, '(?i)(?<![0-9a-f])([0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])', '<mac>')
     $t = [regex]::Replace($t, '(?i)Dev_[0-9a-f]{12}', 'Dev_<mac>')
     return [regex]::Replace($t, '(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])', {
         param($m)
@@ -105,6 +120,7 @@ namespace MagicTrayHidReport
         public int ReportId;
         public int BitSize;
         public int ReportCount;
+        public int LinkCollection;
     }
 
     public class ChannelResult
@@ -126,11 +142,16 @@ namespace MagicTrayHidReport
         public int OpenError;
         public bool HasCaps;
         public int CapsError;
+        // CapsError holds a Win32 code on the HidD_GetPreparsedData path and an
+        // NTSTATUS on the HidP_GetCaps path. The two number spaces overlap, so a
+        // pasted report has to say which one it is printing.
+        public bool CapsErrorIsNtStatus;
         public int UsagePage;
         public int Usage;
         public int InputLen;
         public int OutputLen;
         public int FeatureLen;
+        public int LinkCollectionCount;
         public int InputValueCapCount;
         public int FeatureValueCapCount;
         public ValueCapInfo[] InputCaps;
@@ -173,7 +194,10 @@ namespace MagicTrayHidReport
         [DllImport("hid.dll", SetLastError = true)]
         static extern bool HidD_GetFeature(IntPtr HidDeviceObject, byte[] ReportBuffer, int ReportBufferLength);
 
-        [DllImport("hid.dll")]
+        // SetLastError, or GetLastWin32Error below reports whatever the last
+        // SetLastError-enabled call left behind - in practice the SUCCESSFUL
+        // CreateFile, i.e. 0.
+        [DllImport("hid.dll", SetLastError = true)]
         static extern bool HidD_GetPreparsedData(IntPtr HidDeviceObject, out IntPtr PreparsedData);
 
         [DllImport("hid.dll")]
@@ -337,6 +361,7 @@ namespace MagicTrayHidReport
                 c.ReportId = raw[i].ReportID;
                 c.BitSize = raw[i].BitSize;
                 c.ReportCount = raw[i].ReportCount;
+                c.LinkCollection = raw[i].LinkCollection;
                 outCaps.Add(c);
             }
             return outCaps.ToArray();
@@ -452,6 +477,7 @@ namespace MagicTrayHidReport
                     if (status != HIDP_STATUS_SUCCESS)
                     {
                         n.CapsError = status;
+                        n.CapsErrorIsNtStatus = true;
                         return n;
                     }
                     n.HasCaps = true;
@@ -460,6 +486,7 @@ namespace MagicTrayHidReport
                     n.InputLen = caps.InputReportByteLength;
                     n.OutputLen = caps.OutputReportByteLength;
                     n.FeatureLen = caps.FeatureReportByteLength;
+                    n.LinkCollectionCount = caps.NumberLinkCollectionNodes;
                     n.InputValueCapCount = caps.NumberInputValueCaps;
                     n.FeatureValueCapCount = caps.NumberFeatureValueCaps;
                     n.InputCaps = ReadCaps(preparsed, HIDP_INPUT, caps.NumberInputValueCaps);
@@ -604,25 +631,29 @@ foreach ($path in $applePaths) {
         continue
     }
     if (-not $node.HasCaps) {
-        Write-Log ("      CAPS UNAVAILABLE err={0}" -f $node.CapsError) 'Red'
+        if ($node.CapsErrorIsNtStatus) {
+            Write-Log ("      CAPS UNAVAILABLE ntstatus=0x{0:X8}" -f $node.CapsError) 'Red'
+        } else {
+            Write-Log ("      CAPS UNAVAILABLE err={0}" -f $node.CapsError) 'Red'
+        }
         continue
     }
 
     Write-Log ("      top-level usage: {0}" -f (Format-UsagePair $node.UsagePage $node.Usage))
     Write-Log ("      report lengths:  input={0} output={1} feature={2}" -f $node.InputLen, $node.OutputLen, $node.FeatureLen)
-    Write-Log ("      value caps:      input={0} feature={1}" -f $node.InputValueCapCount, $node.FeatureValueCapCount)
+    Write-Log ("      value caps:      input={0} feature={1} linkcollections={2}" -f $node.InputValueCapCount, $node.FeatureValueCapCount, $node.LinkCollectionCount)
 
     Write-Log '      input value caps:'
     if (@($node.InputCaps).Count -eq 0) { Write-Log '        (none)' }
     foreach ($c in $node.InputCaps) {
-        Write-Log ("        {0} rid 0x{1:X2} bits={2} count={3}" -f (Format-UsagePair $c.UsagePage $c.Usage), $c.ReportId, $c.BitSize, $c.ReportCount)
+        Write-Log ("        {0} rid 0x{1:X2} col={2} bits={3} count={4}" -f (Format-UsagePair $c.UsagePage $c.Usage), $c.ReportId, $c.LinkCollection, $c.BitSize, $c.ReportCount)
     }
     Write-Log '      feature value caps:'
     if (@($node.FeatureCaps).Count -eq 0) { Write-Log '        (none)' }
     foreach ($c in $node.FeatureCaps) {
         $tag = ''
         if ($c.UsagePage -eq 0x0006 -and $c.Usage -eq 0x0020) { $tag = '   <- Generic Device battery strength' }
-        Write-Log ("        {0} rid 0x{1:X2} bits={2} count={3}{4}" -f (Format-UsagePair $c.UsagePage $c.Usage), $c.ReportId, $c.BitSize, $c.ReportCount, $tag)
+        Write-Log ("        {0} rid 0x{1:X2} col={2} bits={3} count={4}{5}" -f (Format-UsagePair $c.UsagePage $c.Usage), $c.ReportId, $c.LinkCollection, $c.BitSize, $c.ReportCount, $tag)
     }
 
     foreach ($r in $node.Channels) {
@@ -663,9 +694,12 @@ function Get-LowerFilterName {
     param([string]$InstanceId)
     $lf = @()
     $enumPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$InstanceId"
-    if (-not (Test-Path -LiteralPath $enumPath)) { return $lf }
     try {
-        $k = Get-Item -LiteralPath $enumPath
+        # No Test-Path guard: it answers $false for a key this process may not
+        # read exactly as it does for a key that is not there, and those two
+        # facts mean opposite things here. Get-Item -ErrorAction Stop tells them
+        # apart by the exception type.
+        $k = Get-Item -LiteralPath $enumPath -ErrorAction Stop
         $v = $k.GetValue('LowerFilters')
         if ($v -is [string[]]) { $lf += $v } elseif ($v) { $lf += [string]$v }
         $dp = Join-Path $enumPath 'Device Parameters'
@@ -686,7 +720,16 @@ function Get-LowerFilterName {
                 if ($cv -is [string[]]) { $lf += $cv } elseif ($cv) { $lf += [string]$cv }
             }
         }
-    } catch { Write-Verbose "LowerFilters read failed for ${InstanceId}: $($_.Exception.Message)" }
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        # Confirmed absent: the device has no Enum key, so it has no filters.
+        Write-Verbose "No Enum key for ${InstanceId}: $($_.Exception.Message)"
+        return @()
+    } catch {
+        # Anything else - access denied, no HKLM: drive, a broken hive - left the
+        # list unknown. A typed catch above means this one still sees those.
+        Write-Verbose "LowerFilters read failed for ${InstanceId}: $($_.Exception.Message)"
+        return @($UnreadableFilterSentinel)
+    }
     return @($lf | Select-Object -Unique)
 }
 
@@ -700,6 +743,12 @@ function Get-DriverShapeName {
     }
     foreach ($f in $Filters) {
         if ($f -and $f.StartsWith($KmdfPrefix, [StringComparison]::OrdinalIgnoreCase)) { return 'KMDF filter shape' }
+    }
+    # Last but one on purpose: the caller concatenates the filter lists of every
+    # node behind one PID, so one unreadable node must not hide a filter another
+    # node did report. A node that answered outranks a node that did not.
+    foreach ($f in $Filters) {
+        if ($f -ceq $UnreadableFilterSentinel) { return 'UNKNOWN shape - LowerFilters could not be read; re-run elevated to decide this line' }
     }
     return 'STOCK WINDOWS shape'
 }
@@ -748,8 +797,8 @@ Write-Log '  The difference between the captures is the whole answer: the collec
 Write-Log '  Windows exposes, and the battery channel that answers, both change with'
 Write-Log '  the driver. One capture shows a state; two show the cause.'
 Write-Log ''
-Write-Log 'Safe to paste into a GitHub issue: the Bluetooth address has been removed from' 'Green'
-Write-Log 'every line above and replaced with <mac>.' 'Green'
+Write-Log 'Safe to paste into a GitHub issue: every line above has had the Bluetooth' 'Green'
+Write-Log 'address replaced with <mac> and the USB serial number replaced with <serial>.' 'Green'
 
 $script:Lines | Set-Content -LiteralPath $outFile -Encoding UTF8 -ErrorAction Stop
 Write-Host ''
