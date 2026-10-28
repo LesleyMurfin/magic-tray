@@ -78,27 +78,37 @@ function Write-Log {
 
 # The redaction rules of BugReport.Redact, in its order: the punctuated pair
 # forms, the Dev_ form, then the bare 12-hex belt - with the constant GUID
-# tails above carved out of the belt, which is the one place this script has to
-# differ from BugReport. BugReport scrubs a log tail, where a mangled GUID
-# costs nothing; this report IS the device evidence, and a path whose service
-# GUID reads <mac> no longer says which SDP service the node hangs off.
+# tails above carved out of the belt. Then one rule BugReport does not need:
+# the third node of a USB instance id is the unit's iSerialNumber, which is
+# not a MAC shape and so matched none of the three rules. A Lightning Magic
+# Mouse 2 enumerates over USB while it charges, so the report would otherwise
+# carry that serial under a "safe to paste" banner.
 #
-# Ahead of those three, one rule BugReport does not need: the third node of a
-# USB instance id is the unit's iSerialNumber, which is not a MAC shape and so
-# matched none of the three rules. A Lightning Magic Mouse 2 enumerates over USB
-# while it charges, so the report would otherwise carry that serial under a
-# "safe to paste" banner.
+# The delta from BugReport is exactly three things. (1) The GUID carve-out:
+# BugReport scrubs a log tail, where a mangled GUID costs nothing; this report
+# IS the device evidence, and a path whose service GUID reads <mac> no longer
+# says which SDP service the node hangs off. (2) The added serial rule above.
+# It runs LAST, and its tail class excludes '<', so an iSerialNumber that is
+# the unit's Bluetooth address with the separators stripped is already <mac>
+# from the belt and stays <mac>: one spelling of a redacted address is what
+# lets a device correlate between debug.log and a public issue. (3) Two
+# BugReport passes are absent - Logger.RedactProfilePaths and the <user> /
+# <host> LocalIdentifiers pass - because no Write-Log argument in this script
+# carries a profile path, an account name or a host name; the one string that
+# does (the saved file path) goes to Write-Host, outside $script:Lines.
+# Standing rule: any new Write-Log that could carry a path or an account name
+# must bring those two passes with it.
 function ConvertTo-MacSafeText {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $t = [regex]::Replace($Text, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)[^\\\s,;\)\]]+', '$1<serial>')
-    $t = [regex]::Replace($t, '(?i)(?<![0-9a-f])([0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])', '<mac>')
+    $t = [regex]::Replace($Text, '(?i)(?<![0-9a-f])([0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])', '<mac>')
     $t = [regex]::Replace($t, '(?i)Dev_[0-9a-f]{12}', 'Dev_<mac>')
-    return [regex]::Replace($t, '(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])', {
+    $t = [regex]::Replace($t, '(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])', {
         param($m)
         if ($script:MacSafeConstants -contains $m.Value.ToLowerInvariant()) { return $m.Value }
         return '<mac>'
     })
+    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)[^<\\\s,;\)\]]+', '$1<serial>')
 }
 
 # --- HID interop ------------------------------------------------------------
