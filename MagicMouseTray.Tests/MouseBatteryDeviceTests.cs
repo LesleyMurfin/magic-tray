@@ -207,4 +207,63 @@ public class MouseBatteryDeviceTests
         Assert.Equal(DeviceKind.MagicMouseV3, found[0].Kind);
         Assert.Equal(Phantom0323Col02, Assert.IsType<MouseBatteryDevice>(found[0]).DevicePath);
     }
+
+    // F3. IBatteryDevice's rule is "-2 only where it can show the battery report never
+    // arrived; -1 whenever the report did arrive and its content is not a level". The v3
+    // Input 0x90 arm reached with a well-formed 0x90 report whose percent byte is 101..255
+    // HAS a report in hand - only the content is unusable - so it must answer -1, like the
+    // three analogous arms (KB_BATTERY_BAD, LOGI_BATTERY_BAD, the mouse split path). It also
+    // may not reuse MOUSE_RID90_BAD, whose "rid=0x90" blames a report id that is correct.
+    // The one -2 that survives on this path is [90 xx 00]: a v3 zero IS the report not
+    // arriving (idle mouse or charge-cable phantom), which that path can prove.
+    [Theory]
+    [InlineData((byte)0x90, (byte)0, -2, "MOUSE_BATTERY_ZERO")]
+    [InlineData((byte)0x90, (byte)1, 1, "MOUSE_BATTERY_OK")]
+    [InlineData((byte)0x90, (byte)100, 100, "MOUSE_BATTERY_OK")]
+    [InlineData((byte)0x90, (byte)101, -1, "MOUSE_RID90_BAD_CONTENT")]
+    [InlineData((byte)0x90, (byte)255, -1, "MOUSE_RID90_BAD_CONTENT")]
+    public void ClassifyRid90Report_OnlyTheZeroArmIsMinusTwo(
+        byte rid, byte level, int expectedPct, string expectedMarker)
+    {
+        Assert.Equal((expectedPct, expectedMarker),
+            MouseBatteryDevice.ClassifyRid90Report([rid, 0x04, level]));
+    }
+
+    // F3, second sub-case. A report with a DIFFERENT report id still arrived; the read path
+    // cannot show the battery report never came, only that what came is not a level. The
+    // contract therefore makes this -1, not -2 - including when its byte 2 happens to be 0,
+    // because the "a zero is the report not arriving" proof is specific to the v3 0x90 report
+    // and does not transfer to some other report that merely contains a zero.
+    [Theory]
+    [InlineData((byte)0x47, (byte)60)]
+    [InlineData((byte)0x12, (byte)47)]
+    [InlineData((byte)0x00, (byte)0)]
+    [InlineData((byte)0x47, (byte)0)]
+    public void ClassifyRid90Report_WrongReportId_IsMinusOne(byte rid, byte level)
+    {
+        Assert.Equal((-1, "MOUSE_RID90_WRONG_ID"),
+            MouseBatteryDevice.ClassifyRid90Report([rid, 0x04, level]));
+    }
+
+    // A truncated buffer carries no percent byte at all, so nothing can be proven about the
+    // battery report's content either - it is still "not a level", not "never arrived".
+    [Fact]
+    public void ClassifyRid90Report_ShortBuffer_IsMinusOne()
+    {
+        Assert.Equal(-1, MouseBatteryDevice.ClassifyRid90Report([0x90, 0x00]).Pct);
+        Assert.Equal(-1, MouseBatteryDevice.ClassifyRid90Report([]).Pct);
+    }
+
+    // F4. Three failed HidD_GetInputReport attempts are the same hardware symptom on both
+    // mouse read paths, and the contract files "the HID read itself failed" under -2. Today
+    // the v3 path answers -2 and the split path answers -1, so the same wedged interface
+    // ranks differently in AdaptivePoller.BestReading depending on which path read it. Both
+    // must be -2, while keeping their distinct log markers.
+    [Theory]
+    [InlineData(true, "MOUSE_RID90_FAILED")]
+    [InlineData(false, "MOUSE_READ_FAILED")]
+    public void ClassifyReadFailure_IsMinusTwo_OnBothMousePaths(bool v3Rid90Path, string expectedMarker)
+    {
+        Assert.Equal((-2, expectedMarker), MouseBatteryDevice.ClassifyReadFailure(v3Rid90Path));
+    }
 }

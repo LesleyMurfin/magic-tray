@@ -155,25 +155,29 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
             buf[0] = BatteryReportId;
             if (HidNative.HidD_GetInputReport(handle, buf, buf.Length))
             {
-                var pct = ParseRid90Percent(buf);
-                if (pct is >= 0)
+                var (pct, marker) = ClassifyRid90Report(buf);
+                // Same dialect as KB_BATTERY_OK / LOGI_BATTERY_OK: docs/TEST-PLAN.md rows are read
+                // off debug.log by eye and `pct=` is the token for a healthy read. Each rejection
+                // keeps its own sentence because the three mean different things to whoever reads
+                // the log - and because the retired MOUSE_RID90_BAD line printed `rid=0x90` as if
+                // the report id were at fault, when a 0x90 carrying a 101..255 percent byte has a
+                // perfectly correct id and only unusable content.
+                string detail = marker switch
                 {
-                    Logger.Log($"MOUSE_BATTERY_OK device={DeviceName} pct={pct}% (Input 0x90 COL02)");
-                    return pct.Value;
-                }
-                if (IsBogusZeroReport(buf))
-                {
-                    Logger.Log($"MOUSE_BATTERY_ZERO device={DeviceName} rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)");
-                    return -2;
-                }
-                Logger.Log($"MOUSE_RID90_BAD device={DeviceName} rid=0x{buf[0]:X2}");
-                return -2;
+                    "MOUSE_BATTERY_OK" => $"pct={pct}% (Input 0x90 COL02)",
+                    "MOUSE_BATTERY_ZERO" => $"rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (no battery report sent yet - idle mouse or a charge-cable phantom; not a real level)",
+                    "MOUSE_RID90_BAD_CONTENT" => $"rid=0x{buf[0]:X2} value={buf[2]} bytes=[{FormatReportHead(buf, 3)}] (report id is correct, the percent byte is outside 1-100)",
+                    _ => $"rid=0x{buf[0]:X2} bytes=[{FormatReportHead(buf, 3)}] (not the 0x90 battery report)",
+                };
+                Logger.Log($"{marker} device={DeviceName} {detail}");
+                return pct;
             }
             if (attempt < 2) Thread.Sleep(50);
         }
 
-        Logger.Log($"MOUSE_RID90_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
-        return -2;
+        var (failPct, failMarker) = ClassifyReadFailure(v3Rid90Path: true);
+        Logger.Log($"{failMarker} device={DeviceName} err={Marshal.GetLastWin32Error()} (not Feature 0x47)");
+        return failPct;
     }
 
     internal static int? ParseRid90Percent(byte[] buf)
@@ -192,6 +196,51 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
     // A well-formed 0x90 report whose percent byte is 0 - rejected, logged distinctly.
     internal static bool IsBogusZeroReport(byte[] buf) =>
         buf is not null && buf.Length >= 3 && buf[0] == BatteryReportId && buf[2] == 0;
+
+    // The sentinel decision for a v3 Input 0x90 report that DID arrive, split out of the read so
+    // it is provable without the hardware (the shape is KeyboardBatteryDevice.ClassifyFeatureByte
+    // and LogitechBatteryDevice.ClassifyLevelByte, marker included). Pure and allocation-free: the
+    // markers are literals and the tuple never leaves the stack. It layers on ParseRid90Percent
+    // and IsBogusZeroReport instead of re-deriving the level rule; the single byte test it repeats
+    // is the report id, because both of those predicates answer "no" for a wrong id AND for a 0x90
+    // carrying junk, while only this seam has to tell those two apart in the log.
+    //
+    // Only the [90 xx 00] arm is -2. IBatteryDevice's rule is that -2 is reserved for what a read
+    // path can PROVE never arrived, and a v3 zero is exactly that: an idle mouse or a charge-cable
+    // phantom leaves the report shell with no level in it. A 0x90 whose percent byte is 101..255
+    // has the report in hand and only its content is unusable, so it is -1 - the same answer the
+    // three analogous arms give (KeyboardBatteryDevice.ClassifyFeatureByte,
+    // LogitechBatteryDevice.ClassifyLevelByte, and the unified-Feature arm in ReadV1V2Feature
+    // below). That arm used to answer -2 under the now-retired MOUSE_RID90_BAD marker, which cost
+    // more than tidiness: -2 outranks -1 in AdaptivePoller.BestReading (AdaptivePoller.cs:105), so
+    // a single junk-answering interface won the whole group over a live interface's -1, and
+    // DeviceCapability.BatteryRow then rendered "Battery unavailable (Windows sends no report)"
+    // (DeviceCapability.cs:253) for a device that was answering.
+    //
+    // A report with some OTHER id is -1 as well, including when its byte 2 happens to be 0: a
+    // non-0x90 report arriving proves its content is not a level, it does not prove the battery
+    // report never arrived. The [90 xx 00] zero inference is specific to the v3 report and must
+    // not generalise to any report that merely contains a zero. A buffer shorter than 3 bytes (or
+    // null) carries no percent byte at all, so it is the same "not a level" answer.
+    internal static (int Pct, string Marker) ClassifyRid90Report(byte[] buf)
+    {
+        var pct = ParseRid90Percent(buf);
+        if (pct is not null) return (pct.Value, "MOUSE_BATTERY_OK");
+        if (IsBogusZeroReport(buf)) return (-2, "MOUSE_BATTERY_ZERO");
+        return buf is { Length: >= 3 } && buf[0] == BatteryReportId
+            ? (-1, "MOUSE_RID90_BAD_CONTENT")
+            : (-1, "MOUSE_RID90_WRONG_ID");
+    }
+
+    // The sentinel for a read that never completed - three failed HidD_GetInputReport attempts -
+    // on either mouse path. Both are -2: IBatteryDevice files "the HID read itself failed" under
+    // -2, and the two paths are looking at the same hardware symptom, so the split path's old -1
+    // made one wedged interface rank differently in AdaptivePoller.BestReading depending only on
+    // which path happened to read it. The markers stay distinct because the log still has to name
+    // the path that gave up: the v3 Input 0x90 read (which must never fall back to Feature 0x47)
+    // or the split vendor-collection read.
+    internal static (int Pct, string Marker) ClassifyReadFailure(bool v3Rid90Path) =>
+        (-2, v3Rid90Path ? "MOUSE_RID90_FAILED" : "MOUSE_READ_FAILED");
 
     static string FormatReportHead(byte[] buf, int count)
     {
@@ -269,8 +318,15 @@ internal sealed class MouseBatteryDevice : IBatteryDevice
                 }
                 if (attempt < 2) Thread.Sleep(50);
             }
-            Logger.Log($"MOUSE_READ_FAILED device={DeviceName} err={Marshal.GetLastWin32Error()}");
-            return -1;
+            // -2, not -1: a read that never completed is the same answer on both mouse paths
+            // (ClassifyReadFailure). Nothing mouse-side gates on this sentinel - RepairPlanner
+            // rule 2d is gated on DriverHealthChecker.IsKeyboardPid and TrayMenu.ShowFixKeyboard
+            // on DeviceKind.MagicKeyboard, and DeviceCapability's SDP row is inside its
+            // MagicKeyboard branch - so the only visible change is the mouse row wording, which
+            // now says "Windows sends no report" for an interface that is in fact not reporting.
+            var (failPct, failMarker) = ClassifyReadFailure(v3Rid90Path: false);
+            Logger.Log($"{failMarker} device={DeviceName} err={Marshal.GetLastWin32Error()}");
+            return failPct;
         }
 
         if (unifiedApple && featureLen > 0)
