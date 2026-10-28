@@ -1,0 +1,22 @@
+# driver-pin.lock - the v3 driver package pin, written down a second time.
+#
+# The app reads the pin from MagicMouseTray/DriverPackageCatalog.cs
+# (V3RepoCommit and V3ZipSha256). This file exists so that neither of those two
+# constants can move on its own: DriverPackageCatalogTests compares the
+# catalogue against this file, and that test runs in `Build and test`, which is
+# a required check. A pull request that bumps the commit and leaves the digest
+# behind - which would refuse the genuine package on every installed copy, on
+# all three v3 flows - therefore goes red on the merge gate.
+#
+# What this file does NOT prove is that the digest describes the bytes GitHub
+# serves today. Only a download proves that, and that is the `Driver pin` job
+# (.github/workflows/driver-pin.yml), which is advisory and runs every Monday.
+#
+# Changing the pin means changing both lines here and both constants there.
+# Get the digest from the archive rather than by hand:
+#   pwsh -File scripts/check-driver-pin.ps1   # prints the digest it actually got
+#
+# Format: one `<key> <value>` pair per line; `#` starts a comment.
+
+commit 321164d1a4e15945d2dca52f096db41b763bd944
+sha256 4f0ff979f5a213b9bcb268e95c52ae4e455a855ca95281bc97771c573284ebe7

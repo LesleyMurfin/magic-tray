@@ -34,7 +34,8 @@ internal static class DriverPackageCatalog
     // archive URL serves. The zip is extracted and handed to an elevated
     // cmd.exe, so both are checked before anything is written or run.
     // scripts/check-driver-pin.ps1 re-downloads the archive in CI and fails
-    // if these two stop agreeing.
+    // if these two stop agreeing; driver-pin.lock repeats the pair so neither
+    // can move alone without reddening the required Build and test.
     internal const string V3RepoCommit = "321164d1a4e15945d2dca52f096db41b763bd944";
     internal const string V3ZipSha256 =
         "4f0ff979f5a213b9bcb268e95c52ae4e455a855ca95281bc97771c573284ebe7";

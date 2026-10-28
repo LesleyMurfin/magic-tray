@@ -577,4 +577,51 @@ public class DriverPackageCatalogTests
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             DriverPackageCatalog.V3ZipSha256);
     }
+
+    // The commit and the digest have to move together or the genuine package
+    // is refused on every installed copy. The job that downloads the archive
+    // and compares it (`Driver pin`) is advisory - it filters by path, so it
+    // cannot be a required check - which leaves nothing on the merge gate to
+    // notice a bumped commit with a stale digest. driver-pin.lock is that
+    // second record, and this test is what makes it binding: it runs in
+    // `Build and test`, which is required.
+    [Fact]
+    public void V3Package_Pin_MatchesTheCommittedLock()
+    {
+        var lockFile = ReadPinLock();
+
+        Assert.Equal(DriverPackageCatalog.V3RepoCommit, lockFile["commit"]);
+        Assert.Equal(DriverPackageCatalog.V3ZipSha256, lockFile["sha256"]);
+    }
+
+    // driver-pin.lock is embedded in this assembly rather than read off disk:
+    // the test runs from bin/, the lock lives at the repository root, and
+    // walking up for it would make the test depend on the layout of the
+    // output directory.
+    private static Dictionary<string, string> ReadPinLock()
+    {
+        using var stream = typeof(DriverPackageCatalogTests).Assembly
+            .GetManifestResourceStream("driver-pin.lock");
+        Assert.NotNull(stream);
+
+        using var reader = new StreamReader(stream!);
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            var text = line.Trim();
+            if (text.Length == 0 || text.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var parts = text.Split(' ', 2, StringSplitOptions.TrimEntries);
+            Assert.Equal(2, parts.Length);
+            pairs[parts[0]] = parts[1];
+        }
+
+        // A lock that lost a line must fail loudly, not pass vacuously.
+        Assert.Equal(new[] { "commit", "sha256" }, pairs.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        return pairs;
+    }
 }

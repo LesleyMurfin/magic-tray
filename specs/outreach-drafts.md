@@ -497,9 +497,9 @@ in feature report 0x47. Apple's applewirelessmouse.sys claims the LowerFilter sl
 Notes on the parts people usually conflate:
 
 - Battery percent on 0323 needs no driver at all, on Windows 10 and 11.
-- Scrolling on 0323 has no published fix. Our KMDF driver is not released — the installer is not
-  on the branch — so there is nothing to download, and I would rather say that than imply
-  otherwise.
+- Scrolling on 0323 has no published fix. Our KMDF driver is not released — the package carries
+  the installer but no signed driver binary, so the installer stops — and I would rather say that
+  than imply otherwise.
 - 030D, 0269 and 0310 take Apple's own signed INF, so no signature-enforcement changes are needed
   for those three. That trips people up in both directions.
 
@@ -557,7 +557,7 @@ the drafts.
 | Nothing about Windows changes and no desktop warning appears on that route | `docs/drivers.html` body |
 | 2024 USB-C mouse is PID `0323`, model A3204; Apple's package never listed `0323` | `docs/llms.txt` device names; `docs/v3.html` FAQ |
 | Battery percent on `0323` works with no driver at all | `docs/v3.html` FAQ and page body |
-| The community KMDF driver for `0323` is not published; nothing to download | `docs/v3.html`; `README.md` driver table; `docs/drivers.html` FAQ |
+| No signed build of the community KMDF driver for `0323`; the package carries the installer, which stops without one | `docs/v3.html`; `README.md` driver table; `docs/drivers.html` FAQ |
 | Two HID collections, `COL01` movement/finger, `COL02` battery | `docs/v3.html` technical details |
 | Battery is byte 2 of input report `0x90` on `COL02`, not feature `0x47` | `docs/v3.html`; `docs/llms.txt` |
 | `applewirelessmouse.sys` uses the LowerFilter slot for `030D`/`0269`; the community driver claims it for `0323` | `docs/v3.html` technical details |

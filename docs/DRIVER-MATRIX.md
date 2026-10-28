@@ -307,10 +307,11 @@ because "we could not read a date" must not render as "something newer is sittin
 One related consequence, stated as a possibility rather than a certainty: installing Apple's INF
 route on a PC whose `0323` is on KMDF **can** displace KMDF, because a WHQL-signed package outranks
 a test-signed one. If it happens you lose what KMDF gives - the tunable scroll speed and the direct
-battery read - and there is no way back through the tray: it cannot install KMDF (see
-[the short version](#short-version-which-driver-do-i-pick-and-what-do-i-get)), and the KMDF package
-has never been published, so KMDF can only be put back from wherever that PC got it in the first
-place, by hand.
+battery read - and there is no way back through the tray today: the pinned package carries the KMDF
+installer but no signed driver binary (see
+[the short version](#short-version-which-driver-do-i-pick-and-what-do-i-get)), so picking KMDF takes
+one administrator approval, runs that installer and reports the failure it stops with. KMDF can only
+be put back from wherever that PC got a signed build in the first place, by hand.
 
 ---
 

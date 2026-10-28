@@ -389,8 +389,9 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
-        // Only reached when this pull verified: the directory holds the bytes
-        // that matched the pin and nothing else.
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
         var extractDir = V3PackageDir;
         var script = FindKmdfOneClick(extractDir, DriverPackageCatalog.KmdfInstallCmdRelativePath);
         if (script is null)
@@ -477,8 +478,9 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
-        // Only reached when this pull verified: the directory holds the bytes
-        // that matched the pin and nothing else.
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
         var extractDir = V3PackageDir;
         var script = FindPathAInstaller(extractDir, DriverPackageCatalog.PathAInstallScriptRelativePath);
         if (script is null)
@@ -576,8 +578,9 @@ foreach ($id in $restart) {
             return InstallOutcome.Failed;
         }
 
-        // Only reached when this pull verified: the directory holds the bytes
-        // that matched the pin and nothing else.
+        // Only reached when this pull verified: extraction wrote the bytes
+        // that matched the pin and nothing else. True as of extraction - the
+        // cache is user-writable, so it is not a claim about later writes.
         var extractDir = V3PackageDir;
         var kmdfUninstall = FindKmdfUninstaller(extractDir);
         var pathAUninstall = FindPathAUninstaller(extractDir);

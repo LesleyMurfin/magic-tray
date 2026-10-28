@@ -10,11 +10,18 @@
 # short of a download proves the pin still describes the bytes that arrive.
 # This job is that download.
 #
-# Deliberately not a required check: it is the only job here that depends on a
-# third-party host being reachable, and scripts/check-driver-pin.ps1 treats a
-# failed download as "not checked" (::warning, exit 0) rather than as a failed
-# pin. A red run means bytes arrived and disagreed with the catalogue.
-# The weekly schedule is the point of it: an archive regenerated upstream
+# Deliberately not a required check: it filters its `pull_request` trigger by
+# path, and a required check may never do that - a check a path filter skips
+# reports no conclusion at all, and a required check that never reports blocks
+# the pull request forever (.github/workflows/README.md). Host downtime is not
+# the reason: scripts/check-driver-pin.ps1 treats a failed download as "not
+# checked" (::warning, exit 0), so an unreachable host is already a green run.
+# What being advisory costs is that a red run here - bytes arrived and
+# disagreed - does not itself block a merge, and the drift a pull request can
+# introduce is caught offline instead: driver-pin.lock records the same commit
+# and digest, and the required `Build and test` fails if either catalogue
+# constant moves without it.
+# The weekly schedule is the point of the rest: an archive regenerated upstream
 # breaks every installed copy, and waiting for the next pull request to notice
 # is too late.
 name: Driver pin
@@ -27,6 +34,7 @@ on:
       - main
     paths:
       - 'MagicMouseTray/DriverPackageCatalog.cs'
+      - 'driver-pin.lock'
       - 'scripts/check-driver-pin.ps1'
       - '.github/workflows/driver-pin.yml'
   push:
@@ -34,6 +42,7 @@ on:
       - main
     paths:
       - 'MagicMouseTray/DriverPackageCatalog.cs'
+      - 'driver-pin.lock'
       - 'scripts/check-driver-pin.ps1'
       - '.github/workflows/driver-pin.yml'
   schedule:
