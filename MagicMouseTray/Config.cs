@@ -202,6 +202,10 @@ internal sealed class Config
         // AdaptivePoller.ReadBatteryGuarded's Task.Run). An unguarded write here throws out of
         // that enumeration and the bare catch in Persist swallows the whole save. Monitor is
         // reentrant, so the nested Persist() lock is free.
+        //
+        // Pinned: ConfigTests.SetDeviceEnabled_FromAnotherThread_CannotSwallowAConcurrentSave
+        // fails if this lock is deleted. Without it the save is dropped in silence - config.ini
+        // keeps its previous contents, nothing logs it and nothing retries it.
         lock (_gate)
         {
             _deviceEnabled[pid] = value;
@@ -213,7 +217,12 @@ internal sealed class Config
     internal void SetThreshold(string pid, int value)
     {
         if (!IsValid(value)) return;
-        // Same reason as SetDeviceEnabled: Persist() enumerates _thresholds on the poll thread.
+        // Same reason as SetDeviceEnabled: Persist() enumerates _thresholds on the poll thread,
+        // and an unguarded write here throws InvalidOperationException out of that enumeration
+        // into the bare catch at the end of Persist(), which drops the entire save.
+        //
+        // Pinned: ConfigTests.SetThreshold_FromAnotherThread_CannotSwallowAConcurrentSave fails
+        // if this lock is deleted.
         lock (_gate)
         {
             _thresholds[pid] = value;

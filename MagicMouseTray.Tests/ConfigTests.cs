@@ -338,4 +338,112 @@ public class ConfigTests : IDisposable
         Assert.Equal(5, cfg.GlobalThreshold);
         Assert.True(cfg.StarClicked);
     }
+
+    // Pins the `lock (_gate)` in Config.SetThreshold. Delete that lock and the real failure
+    // is not a lost threshold: the unguarded insert lands inside Persist()'s `foreach (var kv
+    // in _thresholds)`, MoveNext throws InvalidOperationException, the bare `catch { }` at the
+    // end of Persist swallows it, and the WHOLE save is dropped. config.ini keeps its previous
+    // contents, nothing logs it and nothing retries it - so the battery channel the poll
+    // thread just learned is gone at the next restart and the mouse is probe-walked again.
+    [Fact]
+    public void SetThreshold_FromAnotherThread_CannotSwallowAConcurrentSave() =>
+        AssertAConcurrentWriterCannotSwallowASave("0fa1", (cfg, key) => cfg.SetThreshold(key, 10));
+
+    // Pins the `lock (_gate)` in Config.SetDeviceEnabled, which fails exactly the same way:
+    // Persist() enumerates _deviceEnabled too, and since the learned battery channel landed
+    // Persist() also runs on the poll thread. An unguarded toggle from the UI thread throws
+    // out of that enumeration into the same bare catch and drops the entire save silently.
+    [Fact]
+    public void SetDeviceEnabled_FromAnotherThread_CannotSwallowAConcurrentSave() =>
+        AssertAConcurrentWriterCannotSwallowASave("0fa2", (cfg, key) => cfg.SetDeviceEnabled(key, false));
+
+    // Seeded entries in the dictionary the background thread mutates. A wide dictionary is a
+    // wide enumeration window inside Persist(), which is where the unguarded write has to land.
+    const int GateSeedKeys = 500;
+    const int GateObservations = 25;
+    const int GateRounds = 2;
+
+    // Drives the documented CONSEQUENCE of the missing lock rather than the race itself: a
+    // thread that persists must always be able to read its own save back off disk.
+    //
+    // The only timing-dependent event on the pass path is catching a half-written file, and
+    // that is handled by skipping, never by failing. Persist() writes the single
+    // battery_channel line LAST, so a snapshot whose final line is a terminated
+    // battery_channel_<pid>= line is necessarily a whole file; anything else is a torn read
+    // and is not counted as an observation at all. A complete snapshot carrying the PREVIOUS
+    // report id is a dropped save, and nothing on the pass path depends on interleaving, core
+    // count or scheduling.
+    static void AssertAConcurrentWriterCannotSwallowASave(string pid, Action<Config, string> write)
+    {
+        var expectedKey = Config.BatteryChannelKeyPrefix + pid + "=";
+        int complete = 0, dropped = 0, firstDrop = -1;
+
+        for (int round = 0; round < GateRounds; round++)
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "mm-tray-gate-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "config.ini");
+            int stop = 0;
+            Thread? hammer = null;
+            try
+            {
+                var cfg = Config.Load(path);
+                for (int i = 0; i < GateSeedKeys; i++) write(cfg, $"seed{round}x{i}");
+
+                hammer = new Thread(() =>
+                {
+                    for (int i = 0; Volatile.Read(ref stop) == 0; i++) write(cfg, $"hammer{round}x{i}");
+                })
+                { IsBackground = true };
+                hammer.Start();
+
+                for (int i = 0; i < GateObservations; i++)
+                {
+                    var answer = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, (byte)(0x10 + i));
+                    Assert.True(cfg.SetBatteryChannel(pid, answer));
+
+                    var text = ReadWhileAnotherThreadMayBeWriting(path);
+                    if (text.Length == 0 || text[^1] != '\n') continue;
+                    var lastLine = text.TrimEnd('\n', '\r');
+                    lastLine = lastLine[(lastLine.LastIndexOf('\n') + 1)..].TrimEnd('\r');
+                    if (!lastLine.StartsWith(expectedKey, StringComparison.Ordinal)) continue;
+
+                    complete++;
+                    if (lastLine != expectedKey + answer.Value)
+                    {
+                        dropped++;
+                        if (firstDrop < 0) firstDrop = complete;
+                    }
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref stop, 1);
+                hammer?.Join();
+                try { Directory.Delete(dir, recursive: true); }
+                catch { }
+            }
+        }
+
+        Assert.True(complete > 0, "no complete snapshot was ever read back - this test observed nothing");
+        Assert.True(dropped == 0,
+            $"{dropped} of {complete} saves were silently dropped (first at complete observation {firstDrop}): " +
+            "a write to another Config dictionary invalidated Persist()'s enumeration and the bare catch ate the save.");
+    }
+
+    // FileShare.ReadWrite so the reader never blocks the writer - the point is to sample the
+    // file WHILE it is being rewritten, and a torn sample is discarded by the caller.
+    static string ReadWhileAnotherThreadMayBeWriting(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
+        catch (IOException)
+        {
+            return string.Empty;
+        }
+    }
 }

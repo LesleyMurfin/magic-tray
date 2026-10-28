@@ -197,8 +197,8 @@ internal sealed class AdaptivePoller : IDisposable
                     // NOT covered, and no seam is invented to pretend otherwise: reaching it
                     // needs DeviceRegistry.Discover to return a live HID node on one cycle and
                     // not the next, and neither exists on the host this suite runs on. Deleting
-                    // this line still leaves the suite green - the same declaration
-                    // MouseBatteryDeviceTests.cs:742-746 makes for the uninspectable node.
+                    // it leaves the suite green and costs a reconnecting device its clean slate:
+                    // inherited strikes plus one fresh failure drop a channel that still works.
                     BatteryChannelMemory.ClearFailedReads(meta.Pid);
                     if (ShouldSkipPid(_config, meta.Pid)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);
