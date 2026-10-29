@@ -987,8 +987,8 @@ function Test-FaqParity {
     <#
     .SYNOPSIS
         Check 5: every FAQPage Question is on the page as a question with the
-        same text -- a dl.faq <dt>/<dd> pair or an accordion <summary> and its
-        div.a-body -- and every visible question is in the graph. An entry that
+        same text -- an accordion <summary> and its div.a-body -- and every
+        visible question is in the graph. An entry that
         cannot be read at all is reported too, so this check cannot pass by
         simply failing to see something.
     #>
@@ -1036,19 +1036,19 @@ function Test-FaqParity {
 
                 if (-not $byTerm.ContainsKey($name)) {
                     New-Finding -Severity 'error' -Path $page.Relative -Line $questionLine `
-                        -Message ("Question ""{0}"" has no visible <dt> with that text: an answer engine would quote an answer that is not on the page" -f $name)
+                        -Message ("Question ""{0}"" has no visible question with that text: an answer engine would quote an answer that is not on the page" -f $name)
                     continue
                 }
 
                 $pair = $byTerm[$name]
                 if (-not $pair.HasDefinition) {
                     New-Finding -Severity 'error' -Path $page.Relative -Line $pair.TermLine `
-                        -Message ("the <dt> for ""{0}"" is not followed by a <dd>, so the visible answer is missing" -f $name)
+                        -Message ("the question ""{0}"" has no answer definition, so the visible answer is missing" -f $name)
                     continue
                 }
                 if ($null -ne $answerText -and $answerText -ne '' -and $pair.Definition -cne $answerText) {
                     New-Finding -Severity 'error' -Path $page.Relative -Line $pair.DefinitionLine `
-                        -Message ("Question ""{0}"": acceptedAnswer.text does not match the visible <dd>. Schema says ""{1}"". Page says ""{2}""" -f
+                        -Message ("Question ""{0}"": acceptedAnswer.text does not match the visible answer in div.a-body. Schema says ""{1}"". Page says ""{2}""" -f
                             $name, $answerText, $pair.Definition)
                 }
             }

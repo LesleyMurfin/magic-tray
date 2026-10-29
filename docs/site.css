@@ -140,13 +140,13 @@
   /* The sticky header's real height, and the only place it is written down.
      `scroll-padding-top` and the rail's sticky offset both read it, so a
      fragment target cannot drift out from under the header again. Three tiers,
-     because the nav wraps: two rows of links under the brand below 520px, one
+     because the nav wraps: two rows of links under the brand below 480px, one
      row under it up to the shell breakpoint, inline with it above. Measured
      152px, 107.5px and 52.6px; each is rounded up a few px so a target lands
      just clear of the edge rather than flush against it. The five links stop
      needing a second row between 475px and 479px depending on the page's
-     scrollbar, so the tier switches at 520px -- re-measure across all ten
-     pages if a link is added or renamed. */
+     scrollbar, so the tier switches at 480px -- re-measure across all ten
+     pages with header nav if a link is added or renamed. */
   --header-h: 9.75rem;
   /* The colour of whatever box the content is sitting on, so a sticky table
      cell or a scroll fade can mask what slides behind it without hardcoding
@@ -1312,8 +1312,8 @@ details code { font-family: var(--mono); font-size: 0.85rem; }
 
 /* A link to a question or an aside lands on a <details> that is closed, so the
    visitor arrives at a summary and an answer they cannot see. The usual fix is
-   a hashchange listener that sets the `open` attribute, but the site is served
-   under `script-src 'none'` and has no JavaScript at all, so that is not
+   a hashchange listener that sets the `open` attribute, but the site avoids
+   client scripts for page content navigation by design, so that is not
    available.
 
    ::details-content is the element's own slot, and making it visible reveals
@@ -1358,7 +1358,8 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
 /* ---------------------------------------------------------------------------
    Agent install callout.
    A plain link, not a copy button: a clipboard write needs JavaScript, and
-   keeping script-src 'none' is worth more than saving the reader one action.
+   keeping install instructions self-contained and script-free is worth more
+   than saving the reader one action.
    --------------------------------------------------------------------------- */
 .agent-install {
   margin: 1.6rem 0;
@@ -1460,8 +1461,8 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
 .picker-panel { display: none; }
 .picker-panel > .ident-card { margin: 0; }
 .picker-panel:first-child { display: block; }
-.picker-panel:target { display: block; }
-.picker-panels:has(:target) > .picker-panel:first-child:not(:target) {
+.picker-panel:target, .picker-panel:has(:target) { display: block; }
+.picker-panels:has(:target) > .picker-panel:first-child:not(:target):not(:has(:target)) {
   display: none;
 }
 .picker-tabs a {
@@ -1500,7 +1501,7 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
 .picker:has(#pp-awm:target) .picker-tabs a[href="#pp-awm"],
 .picker:has(#pp-kbd:target) .picker-tabs a[href="#pp-kbd"],
 .picker:has(#pp-kb11:target) .picker-tabs a[href="#pp-kb11"],
-.picker:has(#pp-tp:target) .picker-tabs a[href="#pp-tp"],
+.picker:has(#pp-tp:target, #kbtrackpad:target) .picker-tabs a[href="#pp-tp"],
 .picker:has(#pp-k1:target) .picker-tabs a[href="#pp-k1"],
 .picker:has(#pp-k2:target) .picker-tabs a[href="#pp-k2"],
 .picker:has(#pp-k3:target) .picker-tabs a[href="#pp-k3"],
@@ -1561,8 +1562,9 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
     color: var(--faint);
   }
   .table-stack td:empty { display: none; }
-  /* The wrapper has nothing left to scroll, so it must stop being a focus
-     stop: a keyboard user should not land on an element that cannot move. */
+  /* The wrapper has nothing left to scroll horizontally at stacked widths,
+     so overflow is set to visible. Note: tabindex="0" on the container is kept
+     in markup so focus order stays predictable across viewport resizes. */
   .table-stack.table-scroll {
     overflow: visible;
   }
@@ -1577,9 +1579,9 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
    third party on every page load. Inline SVG is same-document, so it renders
    under the strictest policy and costs no request.
 
-   Star COUNTS are deliberately absent. They need a runtime API call, and
-   script-src 'none' means there is no honest way to show a live number. A
-   hardcoded count would be wrong within a day.
+   Star COUNTS are progressively enhanced by star.js when JavaScript runs.
+   In static markup without script, live counts are absent because there is no
+   honest way to show a live number; a hardcoded count would be wrong within a day.
    --------------------------------------------------------------------------- */
 .star-links {
   display: flex;
@@ -1636,4 +1638,77 @@ details:is(:target, :has(:target)) > summary::before { transform: rotate(45deg);
   font-size: 0.82rem;
   font-weight: 500;
   color: var(--muted);
+}
+/* GitHub star buttons. Nothing here applies until star.js has added
+   `.is-enhanced`, so a visitor without JavaScript keeps the plain footer or
+   CTA link, styled by the rules above, rather than an empty box. The count
+   chip is only ever in the DOM once a real number arrived -- there is no
+   placeholder to leave hanging when api.github.com rate-limits the page. */
+.gh-star.is-enhanced {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--fg);
+}
+.gh-star-face,
+.gh-star-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  /* Same 3:1 boundary the ghost button settles on; `--line` is too quiet to
+     read as a control's edge. */
+  border: 1px solid #66667d;
+  border-radius: var(--radius);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.gh-star-face {
+  background: var(--bg-3);
+  color: var(--accent-2);
+}
+.gh-star-text { color: var(--fg); }
+.gh-star-count {
+  background: var(--bg-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The two halves meet as one pill, with the shared edge drawn once. */
+.gh-star.has-count .gh-star-face {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.gh-star.has-count .gh-star-count {
+  border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.gh-star.is-enhanced:hover .gh-star-face { background: var(--line); }
+.gh-star.is-enhanced:hover .gh-star-count { background: var(--bg-3); }
+
+/* The pill brings its own box, so the padding and borders a `.cta` or a footer
+   row would otherwise put on an anchor have to come back off. */
+.cta a.gh-star.is-enhanced {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  align-self: flex-start;
+}
+.rail-card .cta a.gh-star.is-enhanced { width: auto; }
+.site-footer a.gh-star.is-enhanced {
+  padding: 0;
+  color: var(--fg);
+}
+.site-footer a.gh-star.is-enhanced:hover { color: var(--fg); }
+
+
+/* star.js replaces the anchor's contents with its own pill, so the static
+   fallback's box has to come back off once the enhancement has run. */
+.star-link.is-enhanced,
+.site-footer .star-link.is-enhanced {
+  padding: 0;
+  border: 0;
+  background: none;
 }

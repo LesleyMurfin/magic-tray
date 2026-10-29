@@ -860,6 +860,54 @@ public class TrayMenuTests
             TrayMenu.ClipTooltip(new string('x', 400)).Length);
     }
 
+    // The tray never asks GitHub whether a star exists (Config.StarClicked
+    // only records that the user was handed the repo page), so the only thing
+    // the two labels may differ on is which one is being shown - and they
+    // must actually differ, or the click looks like it did nothing.
+    [Fact]
+    public void StarLabel_AsksBeforeTheTripAndThanksAfterIt()
+    {
+        var ask = TrayMenu.StarLabel(false);
+        var thanks = TrayMenu.StarLabel(true);
+
+        Assert.NotEqual(ask, thanks);
+        Assert.Contains("Star", ask, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Thanks", ask, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Thanks", thanks, StringComparison.OrdinalIgnoreCase);
+
+        // Neither may claim GitHub confirmed anything - nothing was contacted.
+        foreach (var label in new[] { ask, thanks })
+        {
+            Assert.DoesNotContain("starred", label, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("verified", label, StringComparison.OrdinalIgnoreCase);
+            // Both land in a ToolStripItem.Text, so both must survive the clamp.
+            Assert.Equal(label, TrayMenu.MenuText(label));
+        }
+    }
+
+    // The site is served from one origin (docs/CNAME, and the rel=canonical in
+    // docs/index.html). A host or path that drifts from it still loads, via a
+    // redirect, which is exactly why drift goes unnoticed.
+    [Fact]
+    public void SiteUrl_IsTheCanonicalOriginItself()
+    {
+        var site = new Uri(TrayMenu.SiteUrl);
+
+        Assert.Equal(Uri.UriSchemeHttps, site.Scheme);
+        Assert.Equal("magictray.app", site.Host);
+        Assert.Equal("/", site.AbsolutePath);
+        Assert.True(site.IsDefaultPort);
+        Assert.Equal(string.Empty, site.Query);
+        Assert.Equal(string.Empty, site.Fragment);
+        // The origin and nothing past it: no "www.", no deep link.
+        Assert.Equal(TrayMenu.SiteUrl, site.GetLeftPart(UriPartial.Authority) + "/");
+
+        // The site item and the star item are two different destinations; the
+        // star ask is the one that must go to GitHub.
+        Assert.NotEqual(TrayMenu.RepoUrl, TrayMenu.SiteUrl);
+        Assert.DoesNotContain("github", TrayMenu.SiteUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
     static void AssertNoForbiddenV1V2Copy(string text)
     {
         Assert.DoesNotContain("PATH-A", text, StringComparison.OrdinalIgnoreCase);

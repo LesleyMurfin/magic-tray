@@ -176,7 +176,7 @@
             <a href="#pp-v2">Magic Mouse v2</a>
             <a href="#pp-v3">Magic Mouse 2024</a>
             <a href="#pp-awm">Wireless Mouse</a>
-            <a href="#pp-kbd" id="kbtrackpad">Magic Keyboard</a>
+            <a href="#pp-kbd">Magic Keyboard</a>
             <a href="#pp-kb11">Wireless Keyboard 2011</a>
             <a href="#pp-tp">Magic Trackpad</a>
           </nav>
@@ -288,6 +288,7 @@
               </article>
             </section>
             <section class="picker-panel" id="pp-tp">
+              <span id="kbtrackpad"></span>
               <article class="ident-card">
                 <div class="ident-visual">
                   <figure class="photo pos-bottom">
@@ -335,25 +336,25 @@
       <h2 id="faq">Common questions</h2>
       <div class="accordion two-col">
         <details id="model">
-          <summary>Which Apple Magic Mouse do I have? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <summary>Which Apple Magic Mouse do I have? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
             <p>Turn it over. A door over two AA batteries is the v1, <code>A1296</code>. A Lightning slot is the v2, <code>A1657</code>. A USB-C hole is the 2024 mouse, <code>A3204</code>.</p>
           </div>
         </details>
         <details>
-          <summary>How do I tell which Magic Mouse I have? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <summary>How do I tell which Magic Mouse I have? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
             <p>Turn it over. A battery door means 2009. A narrow Lightning port means 2015. A small oval USB-C port means 2024.</p>
           </div>
         </details>
         <details>
-          <summary>Why does the 2024 mouse need a different driver? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <summary>Why does the 2024 mouse need a different driver? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
             <p>Apple's Windows driver has no entry for the code 0323, and no community driver is published yet.</p>
           </div>
         </details>
         <details>
-          <summary>Do keyboards and trackpads scroll too? <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <summary>Do keyboards and trackpads scroll too? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="a-body">
             <p>No. Only mice scroll. Magic Tray shows battery percent for keyboards and trackpads.</p>
           </div>
@@ -399,13 +400,13 @@
       <p>Copyright 2026 Lesley Murfin · <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/LICENSE">MIT</a> · not Magic Utilities</p>
       <ul class="star-links">
         <li>
-          <a class="star-link" href="https://github.com/LesleyMurfin/magic-tray">
+          <a class="star-link gh-star" data-repo="LesleyMurfin/magic-tray" href="https://github.com/LesleyMurfin/magic-tray">
             <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
             Star Magic Tray
           </a>
         </li>
         <li>
-          <a class="star-link" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
+          <a class="star-link gh-star" data-repo="LesleyMurfin/magic-mouse-v3-windows-fix" href="https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix">
             <svg class="octicon-star" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
             Star the 2024 mouse driver
           </a>
@@ -419,5 +420,6 @@
       <p class="updated">Last updated <time datetime="2026-09-21">21 September 2026</time></p>
     </div>
   </footer>
+  <script src="star.js" defer></script>
 </body>
 </html>

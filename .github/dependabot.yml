@@ -19,6 +19,14 @@ updates:
     commit-message:
       prefix: chore(ci)
     open-pull-requests-limit: 5
+    # codeql-action's init and analyze steps read each other's config and abort on a
+    # version mismatch ("Loaded a configuration file for version X, but running Y"),
+    # so a split bump leaves the CodeQL check red on whichever half lands first -
+    # which is exactly what PRs #165 / #166 did. One PR moves both steps together.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # NuGet. There is no solution file, so `directory: /` would leave Dependabot with no
   # manifest to read at the repo root. `directories` names the two project directories

@@ -304,15 +304,15 @@ cancelled by a later one) then runs, in order:
 | `Setup .NET` (8.0.x) → `Restore` → `Build` | It compiles at the tagged commit. |
 | `Test` | The xunit suite runs; the TRX is uploaded as the `test-results` artifact with `if: always()`. |
 | `Publish (single-file, self-contained win-x64)` | `publish/MagicMouseTray.exe`. |
-| `Stage keyboard patch and diagnostic scripts` | `scripts/stage-publish.ps1` copies the five helper scripts next to the exe and asserts every one is present. The ZIP's `scripts/` folder is load-bearing: the keyboard unlock and the whole Diagnostics menu resolve `<exe folder>/scripts/<name>`. |
+| `Stage keyboard patch and diagnostic scripts` | `scripts/stage-publish.ps1` copies the six helper scripts next to the exe and asserts every one is present. The ZIP's `scripts/` folder is load-bearing: the keyboard unlock and the whole Diagnostics menu resolve `<exe folder>/scripts/<name>`. |
 | `Sign (optional)` | Authenticode, **only** when `SIGN_PFX_BASE64` exists. Skipped today. |
 | `Package portable ZIP` | `scripts/package-release.ps1` emits `dist/MagicTray-v1.1.1-win-x64.zip`, its `.sha256` sidecar, and a `SHA256SUMS` covering every uploaded asset, and exports `zip`, `zip_name`, `zip_sha256`, `zip_bytes`, `exe_sha256`, `exe_bytes`, `sums` as step outputs. It runs *after* signing, so the exe inside the archive is the signed one when signing happens. |
 | `Verify release artifacts` | `scripts/verify-release.ps1` gates the **local** artifacts: required files, exe size 50–300 MiB, `ProductName`/`FileVersion` against the tag and csproj, PE machine AMD64, the `Install-KeyboardBattery.cmd` guards, the exact ZIP entry list, non-empty payloads, the in-archive `SHA256SUMS` against real entry bytes, the exe inside the archive byte-identical to the one in `publish/` (so a signed exe is the packaged one), the sidecar, and the `SHA256SUMS` that will be uploaded. It never touches the network and never creates a release. |
 | `Write release notes` | The notes file: "Recommended download" line, why the ZIP rather than the bare exe, and a table of bytes + SHA-256 for both `MagicMouseTray.exe` and the ZIP. |
-| `Create GitHub release` | `gh release create` with the notes file plus GitHub's generated PR list, uploading **nine** assets, ZIP first. |
+| `Create GitHub release` | `gh release create` with the notes file plus GitHub's generated PR list, uploading **ten** assets, ZIP first. |
 | `Verify the published release` | `scripts/verify-published-release.ps1` re-reads the release that now exists on GitHub. [§5](#5-post-release-verification). |
 
-The nine assets, in upload order:
+The ten assets, in upload order:
 
 1. `MagicTray-v1.1.1-win-x64.zip` ← the primary download
 2. `MagicTray-v1.1.1-win-x64.zip.sha256`
@@ -321,9 +321,9 @@ The nine assets, in upload order:
 5. `Install-KeyboardBattery.cmd`
 6. `capture-state.ps1`
 7. `diagnose-driver.ps1`
-8. `mm-bt-stack-snapshot.ps1`
-9. `SHA256SUMS`
-
+8. `diagnose-and-recover.ps1`
+9. `mm-bt-stack-snapshot.ps1`
+10. `SHA256SUMS`
 The loose exe and scripts stay attached because links already in the wild point
 at them; the ZIP is first because it is the one that works.
 
@@ -385,12 +385,14 @@ every problem:
 4. `SHA256SUMS` parses as `<64 hex>  <filename>` lines with bare filenames and
    no duplicates, every name listed is actually attached to the release, and
    the ZIP's line matches the bytes it downloaded.
-5. The release body contains the ZIP's **computed** digest — computed from the
+5. The SHA-256 computed over the downloaded `MagicMouseTray.exe` equals the
+   digest `SHA256SUMS` gives for it. `docs/install.txt` tells an AI agent to hash
+   this exe and stop if it disagrees, so an exe mismatch breaks every agent run.
+6. The release body contains the ZIP's **computed** digest — computed from the
    downloaded bytes, not copied from the sidecar. So "the notes already have a
    SHA-256 table" is not sufficient: notes quoting a stale but internally
    consistent digest fail here too. **This is the v1.1.0 catch**, where the
    body was a bare pull-request list with no digest at all.
-
 Exit codes are only 0 and 1. 1 means a failed check, a malformed `-Tag`/`-Repo`,
 `gh` missing, unobtainable release metadata, or an unexpected exception. On
 failure it emits `::error::` annotations, and when `GITHUB_STEP_SUMMARY` is set
@@ -431,16 +433,15 @@ decision — the summary is only the mechanism:
   covered it, so you would be repairing one check and leaving two broken. That
   half-fix is what left v1.1.0 with a winget manifest pointing at an asset
   nobody can download.
-- **A sidecar or `SHA256SUMS` mismatch on a complete asset set (checks 3 and
-  4): re-cut.** The published bytes and the published digests disagree. That is
+- **A sidecar, `SHA256SUMS` or exe-digest mismatch on a complete asset set (checks 3, 4
+  and 5): re-cut.** The published bytes and the published digests disagree. That is
   never a notes problem and it cannot be edited away; find out how packaging
   and upload came apart before you tag again.
-- **Check 5 is the sole failure, every required asset present: repair it in
+- **Check 6 is the sole failure, every required asset present: repair it in
   place.** Rewrite the body with the real digest table —
   `gh release edit <tag> --notes-file <file>` — taking the digests from the
   sidecar and confirming them against the bytes you downloaded. This is the
   only case where hand-repair is the right answer.
-
 In every case, re-run `scripts/verify-published-release.ps1` afterwards. A
 release is repaired when the script says so, not when the step summary is out
 of sight.
@@ -593,7 +594,7 @@ PHASE B — the tag
 [ ] git tag -a v1.1.1 -m "Magic Tray v1.1.1" && git push origin v1.1.1
 [ ] Watch the `release` run: build, test, publish, stage, package, verify artifacts,
     notes, create release, verify published release — all green
-[ ] Nine assets attached, ZIP first; notes carry the two-row digest table
+[ ] Ten assets attached, ZIP first; notes carry the two-row digest table
 
 PHASE B.1 — verify what is actually published
 [ ] pwsh -File scripts/verify-published-release.ps1 -Tag v1.1.1   -> exit 0

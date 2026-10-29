@@ -326,9 +326,10 @@ New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 $script:HttpClient = [Net.Http.HttpClient]::new()
 
 try {
-    # A 190 MB download over a runner's network wants a real ceiling; the
-    # default 100 s applies to the whole response, body included.
-    $script:HttpClient.Timeout = [TimeSpan]::FromMinutes(15)
+    # A 190 MB download over a runner's network wants a realistic ceiling;
+    # 5 minutes allows ample headroom while bounding 4 retries within the
+    # job's 30-minute timeout.
+    $script:HttpClient.Timeout = [TimeSpan]::FromMinutes(5)
     $script:HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd('magic-tray-verify-published-release')
 
     # 1. The release exists and is not a draft. A draft is invisible to everyone
@@ -475,6 +476,11 @@ try {
             foreach ($named in @($declaredSums.Keys)) {
                 if (-not $byName.ContainsKey($named)) {
                     $sumsReasons += "'$named' is listed but is not attached to $Tag"
+                }
+            }
+            foreach ($req in $requiredNames) {
+                if ($req -ne $sumsName -and -not $declaredSums.Contains($req)) {
+                    $sumsReasons += "$sumsName is missing a line for required asset '$req'"
                 }
             }
             # The ZIP's bytes are already on disk and hashed, so the one line

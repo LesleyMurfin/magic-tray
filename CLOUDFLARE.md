@@ -15,7 +15,11 @@ sits on this same Cloudflare zone, so zone-level rules below cover both hosts.
 
 Set via **Rules → Transform Rules → Modify Response Header**, applied to all requests on the zone.
 
-### Required value
+### Status: Applied and verified 2026-09-16
+
+Applied to production. The analytics beacon now returns 200 instead of being CSP-blocked.
+
+### Deployed value
 
 ```
 default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; upgrade-insecure-requests

@@ -97,8 +97,9 @@ That is all it is. It carries no `<link rel="canonical">` — `scripts/check-aeo
 a `noindex` page, because canonical says "index that URL instead" while robots says "index
 nothing", and the crawler resolves the contradiction however it likes, sometimes by carrying the
 `noindex` across to the target. It runs no `location.replace` either: these pages ship no
-JavaScript, the production CSP is `script-src 'none'`, and the only `<script>` elements under
-`docs/` are `application/ld+json`.
+JavaScript for content navigation by design, the production CSP allows only self and Cloudflare Web
+Analytics (see `CLOUDFLARE.md`), and the only `<script>` elements under `docs/` are
+`application/ld+json` and deferred progressive enhancement (`star.js`).
 
 So the `#fragment` is dropped. An old `v3.html#community` link lands at the top of
 `magic-mouse-2024.html`, and in-repo links that used to rely on a fragment now point at the real

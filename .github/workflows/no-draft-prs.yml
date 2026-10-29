@@ -1,0 +1,31 @@
+name: no-draft-prs
+
+# Fail while the pull request is a draft, including after converted_to_draft.
+# A ready-for-review pull request passes. This job does not check out the repo.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: no-draft-prs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-draft-prs:
+    name: no-draft-prs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject draft pull requests
+        env:
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+          if [ "${PR_DRAFT}" = "true" ]; then
+            echo "::error::This pull request is a draft. Always open PRs as ready for review; never draft."
+            exit 1
+          fi
+          echo "Pull request is ready for review."
