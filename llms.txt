@@ -67,8 +67,8 @@
 ## Magic Mouse v3 (2024, USB-C, PID 0323)
 
 - [magic-mouse-v3-windows-fix](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix): KMDF installer and patched Apple path (research + drivers)
-- [Magic Mouse 2024 (v3) Windows driver](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/): What the driver is, which device it targets, PID 0323 check
-- [How to install the Magic Mouse v3 Windows driver](https://lesleymurfin.github.io/magic-mouse-v3-windows-fix/install.html): KMDF install steps, Test Mode / signature enforcement
+- [Magic Mouse 2024 (v3) Windows driver](https://drivers.magictray.app/): What the driver is, which device it targets, PID 0323 check
+- [How to install the Magic Mouse v3 Windows driver](https://drivers.magictray.app/install.html): KMDF install steps, Test Mode / signature enforcement
 - [HID research](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/hid-research.md): RID 0x90, collections, DSM
 - [Bug analysis](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/bug-analysis.md): Mode A/B
 - [Mode A/B diagram](https://github.com/LesleyMurfin/magic-mouse-v3-windows-fix/blob/main/v1-binary-patch/docs/diagrams/diagram-mode-ab.md)
