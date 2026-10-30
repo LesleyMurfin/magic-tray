@@ -44,7 +44,7 @@ riley-kg callers --db .aco/graph.db _is_doc
 aicostoptimizer status
 ```
 
-The graph covers `.py` / `.ts` / `.js` only — the `.cs` tray app is not indexed, so use
+The graph covers `.py` / `.ts` / `.js` / `.rs` only — the `.cs` tray app is not indexed, so use
 `rg` + `git` for C#. `aicostoptimizer status` is that tool's **only** subcommand; there is
 no `jev` command group.
 

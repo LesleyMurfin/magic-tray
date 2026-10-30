@@ -20,8 +20,12 @@ per-layer raw logs (`TEST-RESULTS-{A,B,C,D}.md`) were never shipped with the por
 so they are not linked here. Layer B and Layer C figures (TypeScript paths such as
 `src/main/ipc/app.ts`, 32,585 files, a 214 MB `graph.db`) describe that tree. magic-tray is
 C#, ships no `.aco/graph.db`, and has no `aco-index-publish.yml`, so B, C and D are **SKIP**
-here — see the conditional notes in `TEST-MATRIX.md`. Only Layer A is reproducible in this
-repo. No magic-tray results are recorded in this file.
+here — see the conditional notes in `TEST-MATRIX.md`. Layer A is the only layer that
+re-runs here, and it does **not** reproduce these counts: this kit's verifier reports
+`passed=24` for A2/A3 (not 25/23), and A4 is **SKIP** below Node 22.6 (`node v20` exits 9
+on `--experimental-strip-types`, which makes the flagless verifier report `failed=2`).
+Treat `TEST-MATRIX.md` as the local pass criteria. No magic-tray results are recorded in
+this file.
 
 ## Executive scorecard
 

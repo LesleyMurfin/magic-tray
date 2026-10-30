@@ -102,7 +102,7 @@ Expect PASS. `--offline-only` skips the optional TypeScript probe self-test, whi
 
 ### Blast-radius targets
 
-The graph only indexes `.py`/`.ts`/`.js`, so graph targets are the tooling
+The graph indexes `.py`/`.ts`/`.js`/`.rs` only (no `.rs` here), so graph targets are the tooling
 (`scripts/pr_diagram.py`, `.ai/validators/*.py`, `docs/star.js`). `MagicMouseTray/**` C#
 (`DriverInstaller.cs`, battery readers, device catalog) is **not** indexed — triage it with
 `rg` + `git` and record `blast_radius[].method="rg"`.
