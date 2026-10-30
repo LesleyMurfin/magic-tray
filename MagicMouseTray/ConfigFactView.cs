@@ -17,7 +17,7 @@ namespace MagicMouseTray;
 // ---------------------------------------------------------------
 // A RepairPlanner finding is a measured fault on the device in front of the
 // user right now: the pointer child is missing, the filter is bound but
-// stopped, two filters are registered (RepairPlanner.cs:5-17). A ConfigFact is
+// stopped, two filters are registered (RepairPlanner.cs:5-20). A ConfigFact is
 // a property of the PC that at most EXPLAINS such a fault - Test Mode off does
 // not break anything by itself, it only means Windows will refuse to load a
 // self-signed driver if one is there. So the device fault is the more specific,
@@ -27,7 +27,7 @@ namespace MagicMouseTray;
 // wrong:
 //   - RepairPlanner.MenuLabel owns the first row and speaks in the bare fault
 //     voice ("Scroll driver is not installed", "2 problems found",
-//     RepairPlanner.cs:453-458, rendered at TrayApp.cs:408-412);
+//     RepairPlanner.cs:506-511, rendered at TrayApp.cs:408-412);
 //   - every string SectionLabel can return is prefixed with "System config: ",
 //     so a config line is never readable as that headline no matter how severe
 //     the fact behind it is. Rank below orders facts only WITHIN this section.
@@ -101,7 +101,7 @@ internal static class ConfigFactView
         if (blocking > 0)
         {
             // Only the two signing-policy facts can reach Blocking today
-            // (SystemConfigChecker.cs:255, 300), so "settings" is accurate; the
+            // (SystemConfigChecker.cs:394, 438), so "settings" is accurate; the
             // singular branch prints the title and needs no such assumption.
             return blocking == 1
                 ? $"{SectionPrefix}: {Ordered(facts)[0].Title}"
@@ -121,7 +121,7 @@ internal static class ConfigFactView
     // One display line per fact, most severe first. Severity is spelled as a
     // word: the console and the tray's own menu font mangle glyphs, and the
     // capability rows next to these already carry their state in words
-    // ("Scroll: not working - ...", DeviceCapability.cs:113-156).
+    // ("Scroll: not working - ...", DeviceCapability.cs:163-223).
     internal static IReadOnlyList<string> Rows(IReadOnlyList<ConfigFact> facts)
     {
         var ordered = Ordered(facts);
@@ -189,7 +189,7 @@ internal static class ConfigFactView
 
         // Fault B in docs/ENABLE-DISABLE.md:93-99. The Apple multitouch enable
         // FEATURE report is owned by the driver package's watcher, and a second
-        // sender inside Magic Tray is an explicit NON-GOAL (RepairPlanner.cs:28-34).
+        // sender inside Magic Tray is an explicit NON-GOAL (RepairPlanner.cs:31-37).
         // So this line names the package as the owner and must never grow into
         // an instruction for the tray to send the report itself.
         SystemConfigChecker.WatcherFactId =>

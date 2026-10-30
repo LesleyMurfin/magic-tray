@@ -167,7 +167,7 @@ internal static class Logger
     // DRIVER_SDP (DriverInstaller.cs:694), DRIVER_KMDF_ONECLICK (:403),
     // DRIVER_PATHA_ONECLICK (:482), DRIVER_STOCK_UNBIND (:575, :587) - and
     // every elevated script and status sidecar is created under
-    // Path.GetTempPath() (DeviceEnable.ScriptPath:155, DeviceRepair.cs:644,
+    // Path.GetTempPath() (DeviceEnable.ScriptPath:163, DeviceRepair.cs:670,
     // ModeFlip.ScriptPath:234), which on Windows is itself
     // C:\Users\<name>\AppData\Local\Temp. BugReport.Redact removed the name
     // on the way to a public issue, but nothing removed it from the file, and
