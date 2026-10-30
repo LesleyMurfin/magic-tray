@@ -260,5 +260,562 @@ public class MouseBatteryDeviceTests
         Assert.Equal(!bluetooth && path.Length > 0, DeviceRegistry.IsUsbTransportPath(path));
     }
 
+    // Live BT stack shape for a Magic Mouse v2: a pointer collection and a vendor collection
+    // on the same PID. Nothing in either PATH says which of them answers a battery read.
+    const string Bt0269Col01 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col01#a&1f2e3d4c&0&0000";
+    const string Bt0269Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col02#a&1f2e3d4c&0&0001";
+    const string Usb0269Col02 = @"\\?\hid#vid_05ac&pid_0269&mi_01&col02#a&16288706&0&0001";
 
+    // Regression for issues #124 and #164: two testers with a Magic Mouse v2 reported,
+    // independently and on the same shipped build, that Magic Tray
+    // finds no battery while Apple's driver is bound. Discovery used to keep the first
+    // interface per PID and discard the rest, so if Windows enumerated the pointer
+    // collection first the other collection was thrown away and no read could ever reach
+    // it. The tray still lists ONE mouse, so one device leaves discovery - but it now
+    // carries every collection of that mouse as an ordered read candidate.
+    [Fact]
+    public void Discover_V2_KeepsAllCollectionsOfOneMouseAsCandidates()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV2, mouse.Kind);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Bt0269Col01, mouse.DevicePath);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // Candidates are the live device's own collections, never resurrected charge-cable
+    // phantoms: USB still loses to Bluetooth for the same PID, and the dropped USB path
+    // does not come back as a candidate.
+    [Fact]
+    public void Discover_V2_UsbPhantom_IsNotKeptAsCandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02, Bt0269Col01, Bt0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(new[] { Bt0269Col01, Bt0269Col02 }, mouse.CandidatePaths);
+    }
+
+    // A genuinely cabled mouse has no Bluetooth interface and must still be discovered.
+    [Fact]
+    public void Discover_V2_UsbOnly_IsStillOneDevice()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Usb0269Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal("0269", mouse.Pid);
+        Assert.Equal(Usb0269Col02, mouse.DevicePath);
+    }
+
+    // The v3 gate is untouched by the candidate rule: COL01 is the pointer collection and is
+    // rejected at classify time, so it can never become a read candidate.
+    [Fact]
+    public void Discover_0323_Col01_IsNeverACandidate()
+    {
+        var found = DeviceRegistry.DiscoverFromPaths([Bt0323Col01, Bt0323Col02]);
+        Assert.Single(found);
+        var mouse = Assert.IsType<MouseBatteryDevice>(found[0]);
+        Assert.Equal(DeviceKind.MagicMouseV3, mouse.Kind);
+        Assert.Equal(new[] { Bt0323Col02 }, mouse.CandidatePaths);
+    }
+
+    // Keyboards keep the old rule - col02 only, one device per PID. The candidate list is a
+    // mouse-only answer to #124; a keyboard's battery channel is already known to be col02.
+    [Fact]
+    public void Discover_Keyboard_IsUnchanged_OneDevicePerPid()
+    {
+        const string kbdCol01 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col01#a&2b3c4d5e&0&0000";
+        const string kbdCol02 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col02#a&2b3c4d5e&0&0001";
+        const string kbdCol03 =
+            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col03#a&2b3c4d5e&0&0002";
+
+        var found = DeviceRegistry.DiscoverFromPaths([kbdCol01, kbdCol02, kbdCol03]);
+        Assert.Single(found);
+        Assert.Equal(DeviceKind.MagicKeyboard, found[0].Kind);
+        Assert.Equal("0239", found[0].Pid);
+    }
+
+    // The descriptor orders the attempts, it does not veto one. A node that declares the
+    // unified Generic Device battery-strength Feature is read there first because that is the
+    // cheapest likely hit (030D), and Input 0x90 is STILL attempted afterwards.
+    [Fact]
+    public void AttemptOrder_DeclaredFeatureLeads_InputIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(0x47, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Feature47, BatteryChannelAnswer.Input90 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.Equal(0x47, (int)order[0].ReportId);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[1].ReportId);
+    }
+
+    // The 0269 / 0323 shape: a vendor top level (0xFF00/0x0014) and no Feature battery cap at
+    // all. Input 0x90 leads, and the Feature channel is still tried afterwards at the fallback
+    // id, flagged as the guess it is.
+    [Fact]
+    public void AttemptOrder_DeclaredVendorInputLeads_FeatureIsStillTried()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: true);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.True(order[0].Declared);
+        Assert.False(order[1].Declared);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // Issue #124: the node that declares NEITHER channel is exactly the one the old build gave
+    // up on with MOUSE_NO_BATTERY_CAP. Both channels must still be attempted - an Apple device
+    // answering a report it never declared is the case this whole probe exists for.
+    [Fact]
+    public void AttemptOrder_NothingDeclared_StillTriesBothChannels()
+    {
+        var order = MouseBatteryDevice.AttemptOrder(null, declaredVendorInput: false);
+
+        Assert.Equal(
+            new[] { BatteryChannelAnswer.Input90, BatteryChannelAnswer.Feature47 },
+            order.Select(a => a.Channel));
+        Assert.All(order, a => Assert.False(a.Declared));
+        Assert.Equal(MouseBatteryDevice.BatteryReportId, order[0].ReportId);
+        Assert.Equal(MouseBatteryDevice.FallbackFeatureReportId, order[1].ReportId);
+    }
+
+    // The learned answer is keyed on this token, so it has to come off a real interface path -
+    // including the 030D shape, which has no collection fragment at all.
+    [Theory]
+    [InlineData(Bt0269Col02, "col02")]
+    [InlineData(@"\\?\HID#VID_05AC&PID_0269&MI_01&COL02#a&16288706&0&0001", "col02")]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&030d#9&bt", "none")]
+    [InlineData(@"\\?\hid#vid_05ac&pid_030d&col#7&odd", "none")]
+    [InlineData("", "none")]
+    public void CollectionToken_IsTheStablePartOfThePath(string path, string expected)
+    {
+        Assert.Equal(expected, MouseBatteryDevice.CollectionToken(path));
+    }
+
+    // A remembered answer that stops working must not keep failing: it is forgotten, so the
+    // next read probes both channels again and can learn the new one. This is what makes a
+    // Boot Camp to Stock driver switch heal itself with no user action.
+    [Fact]
+    public void LearnedAnswer_IsForgottenWhenItStopsWorking()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-chan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0269", learned);
+            Assert.Equal(learned, BatteryChannelMemory.Get("0269"));
+            Assert.Equal(learned, Config.Load(file).GetBatteryChannel("0269"));
+
+            BatteryChannelMemory.Forget("0269", learned, "read_failed");
+            Assert.Null(BatteryChannelMemory.Get("0269"));
+            Assert.Null(Config.Load(file).GetBatteryChannel("0269"));
+
+            // And the new shape is remembered in its place.
+            var relearned = new BatteryChannelAnswer(
+                BatteryChannelAnswer.NoCollection, BatteryChannelAnswer.Feature47, 0x47);
+            BatteryChannelMemory.Learn("0269", relearned);
+            Assert.Equal(relearned, Config.Load(file).GetBatteryChannel("0269"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // Nothing attached (any read that happens without a poller) must degrade to "no memory,
+    // just probe" rather than throw.
+    [Fact]
+    public void LearnedAnswer_WithoutASink_IsSilentlyAbsent()
+    {
+        BatteryChannelMemory.Attach(null);
+        BatteryChannelMemory.Learn("0269", new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90));
+        Assert.Null(BatteryChannelMemory.Get("0269"));
+    }
+
+    // Issue #124 / #164 follow-up, nit N3. A Bluetooth mouse that has just gone idle fails a
+    // single read as a matter of course - that is why TryInput90 already retries three times
+    // 50 ms apart - so forgetting the learned channel on the first failure makes an idle mouse
+    // thrash learn -> forget -> relearn: two config.ini rewrites and four log lines per poll,
+    // and MOUSE_RELEARN stops meaning "the driver changed". Three consecutive failures is the
+    // threshold AdaptivePoller already uses before it collapses a device to -3.
+    //
+    // The streak store is process-wide and keyed on PID (a MouseBatteryDevice is rebuilt by
+    // DeviceRegistry.Discover on every poll, so nothing counted in an instance field survives
+    // to the next read), so each test here uses a PID of its own.
+    [Fact]
+    public void FailedRead_KeepsTheLearnedChannelTwice_AndForgetsOnTheThird()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa01"));
+
+        // The count resets as it reports the limit, so the NEXT learned answer gets its own
+        // three strikes rather than being dropped on its first bad read.
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa01"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa01"));
+    }
+
+    // Consecutive, not cumulative: a mouse that misses a read every few hours over months must
+    // never accumulate its way to a relearn while the channel is still answering.
+    [Fact]
+    public void SuccessfulRead_ResetsTheFailureStreak()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+
+        BatteryChannelMemory.ClearFailedReads("fa02");
+
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa02"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa02"));
+    }
+
+    // One streak per device: a user with a Magic Mouse and a Magic Trackpad, one of them idle,
+    // must not have the idle one's failures spend the other's strikes. PID case follows
+    // Config's OrdinalIgnoreCase channel store - DeviceRegistry.ExtractPid takes the PID off
+    // whichever path discovery ordered first, and USB and Bluetooth paths do not agree on case.
+    [Fact]
+    public void FailureStreaks_AreCountedPerDevice_CaseInsensitively()
+    {
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fb03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("FA03"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fb03"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa03"));
+
+        // The other device is still on two of three.
+        Assert.True(BatteryChannelMemory.CountFailedRead("FB03"));
+    }
+
+    // collection_absent is structural, not transient: the remembered collection is not among
+    // this mouse's interfaces any more (the 0323 loses &col02 when Apple's filter is bound), so
+    // that path forgets on the spot. Any half-counted streak has to go with the answer it was
+    // counted against, or the relearned channel inherits strikes it never earned.
+    [Fact]
+    public void Forget_ClearsTheFailureStreak()
+    {
+        var answer = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+
+        BatteryChannelMemory.Forget("fa04", answer, "collection_absent");
+
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.False(BatteryChannelMemory.CountFailedRead("fa04"));
+        Assert.True(BatteryChannelMemory.CountFailedRead("fa04"));
+    }
+
+    // The four tests above pin BatteryChannelMemory's arithmetic. These two pin the CALL SITE
+    // in GetBatteryPercent, which is the change: without the guard that stands between a failed
+    // read and Forget, the counter can be perfect and the first failed read still drops the
+    // answer, and the helper tests above would not notice.
+    //
+    // Driving GetBatteryPercent needs a read that fails without kernel32, and ReadCandidate has
+    // exactly one: a path DeviceRegistry.IsHandsFreeOrIphonePath matches returns -1 before it
+    // opens anything. The &col02 fragment is read off the path by CollectionToken, so one
+    // candidate can be both hands-free-shaped and the collection the learned answer names -
+    // that is a test fixture, not a device anyone owns, and it is the only seam this suite has
+    // into the failure branch.
+    //
+    // PIDs 0cf1 / 0cf2 belong to these two tests alone: the streak store is process-wide and
+    // keyed on PID, so sharing one with another test would spend its strikes.
+    const string HandsFreeCol02_0cf1 =
+        @"\\?\hid#bthhfenum&vid_05ac&pid_0cf1&col02#8&1b7cce4&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+    const string HandsFreeCol02_0cf2 =
+        @"\\?\hid#bthhfenum&vid_05ac&pid_0cf2&col02#8&1b7cce4&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+
+    // A fresh instance per read, because that is what production does: DeviceRegistry.Discover
+    // rebuilds every device object on every poll, so a test that reused one would also pass if
+    // the streak were moved back into the instance field this store exists to replace.
+    static int Poll(string path) =>
+        new MouseBatteryDevice(path, "Magic Mouse v2", DeviceKind.MagicMouseV2).GetBatteryPercent();
+
+    [Fact]
+    public void GetBatteryPercent_KeepsTheLearnedAnswerForTwoFailedReads_AndDropsItOnTheThird()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-strike-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0cf1", learned);
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 1: an idle Bluetooth mouse, not a driver change. The answer stays.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 2: still one strike short.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf1"));
+
+            // Read 3: forgotten, in memory and in config.ini, so the next poll probes again.
+            Assert.Equal(-1, Poll(HandsFreeCol02_0cf1));
+            Assert.Null(cfg.GetBatteryChannel("0cf1"));
+            Assert.Null(Config.Load(file).GetBatteryChannel("0cf1"));
+        }
+        finally
+        {
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // A mouse whose learned channel answers at this path. No kernel call is made for it: the
+    // read is served by MouseBatteryDevice.ReadCandidateHook, which is the only way to drive a
+    // SUCCEEDING learned read off Windows.
+    const string Bt0cf3Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0cf3&col02#a&5e6f7a8b&0&0001";
+
+    // The other half of "consecutive, not cumulative": a read that answers spends the streak,
+    // so two failures either side of it never add up to three. Without the ClearFailedReads on
+    // the success branch this passes four failures in a row and forgets on the fifth poll.
+    [Fact]
+    public void GetBatteryPercent_StreakIsConsecutive_AGoodReadPutsTheAnswerBackOnThreeStrikes()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mm-tray-strike-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "config.ini");
+        try
+        {
+            var cfg = Config.Load(file);
+            BatteryChannelMemory.Attach(cfg);
+
+            var learned = new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90);
+            BatteryChannelMemory.Learn("0cf3", learned);
+
+            int answer = -1;
+            MouseBatteryDevice.ReadCandidateHook = (_, _) => answer;
+
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+
+            // The read that answers. It must spend the two strikes, not merely return a percent.
+            answer = 73;
+            Assert.Equal(73, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+
+            // Two more failures must not reach the limit, or the mouse that misses one read a
+            // day accumulates its way to a relearn while its channel still works.
+            answer = -1;
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Equal(learned, cfg.GetBatteryChannel("0cf3"));
+
+            // And the third consecutive one still forgets, so the reset delays a relearn rather
+            // than blocking it.
+            Assert.Equal(-1, Poll(Bt0cf3Col02));
+            Assert.Null(cfg.GetBatteryChannel("0cf3"));
+        }
+        finally
+        {
+            MouseBatteryDevice.ReadCandidateHook = null;
+            BatteryChannelMemory.Attach(null);
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    // Review nit N4. The learned-channel read costs exactly ONE HID call and wrote THREE lines
+    // for it - MOUSE_CHANNEL_TRY, MOUSE_CHANNEL_OK, MOUSE_BATTERY_OK - on every poll of a mouse
+    // whose answer was identical to the last few thousand. Logger.cs rotates at 1 MB keeping one
+    // generation and has no level or dedup facility of its own, so a steady device evicted the
+    // probe walk, the learn and the driver change: exactly the history a bug report is opened
+    // about. Measured against the real Logger: 10 steady polls wrote 30 lines before, 3 after.
+    //
+    // The comparand is the ordered line SET, word for word, kept per PID because
+    // DeviceRegistry.Discover rebuilds every device object each poll and an instance field would
+    // have nothing left to compare against. That store is process-wide, so each test below owns
+    // its own PID.
+    //
+    // A fresh list every call: RepeatsLastLearnedLog takes ownership of the one it is handed.
+    static List<string> LearnedLines(string pid, int pct, string bytes) =>
+    [
+        $"MOUSE_CHANNEL_TRY pid={pid} col=col02 channel=input90 rid=0x90 declared=true",
+        $"MOUSE_CHANNEL_OK pid={pid} col=col02 channel=input90 rid=0x90 pct={pct} bytes=[{bytes}]",
+        $"MOUSE_BATTERY_OK device=Magic Mouse v2 pct={pct}% (split)",
+    ];
+
+    [Fact]
+    public void LearnedLog_PrintsOnce_ThenGoesQuiet_AndPrintsAgainWhenTheReadChanges()
+    {
+        const string pid = "d4a1";
+
+        // Poll 1 of 10: a line set this PID has not written before, so it is written.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // Polls 2..10: same device, same channel, same percent, same report head. Three lines
+        // for the ten polls, where this path used to write thirty.
+        for (int poll = 2; poll <= 10; poll++)
+            Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // The battery moved: the trio is written again, and the new reading becomes the thing
+        // the next poll is compared against.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 04 48")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 04 48")));
+
+        // Word-for-word, not "same percent": MOUSE_CHANNEL_OK carries bytes=[...], so a report
+        // head that moves while the percent holds still prints. That is the whole reason the
+        // comparison is on the text and not on the reading.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 72, "90 05 48")));
+    }
+
+    // A failed learned read is never deduplicated: ReadLearnedChannel flushes it whatever it
+    // says, because MOUSE_CHANNEL_FAIL is the line a relearn is read off and three of them in a
+    // row is the whole N3 policy. Reachable here only as far as this host allows - a read that
+    // reaches RunAttempt needs kernel32 - so the failure is stood in for by the call the failure
+    // path makes, the BatteryChannelMemory.ForgetLearnedLog in MouseBatteryDevice.ReadLearnedChannel's
+    // uninspectable-node branch, and what is asserted is the part that could
+    // silently rot: the success AFTER the failures must not be taken for a repeat of the success
+    // BEFORE them, three polls and one relearn earlier.
+    [Fact]
+    public void LearnedLog_AFailedReadClearsTheMemory_SoTheSuccessAfterItPrints()
+    {
+        const string pid = "d4a2";
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        // Three failed polls. Each one printed its MOUSE_CHANNEL_FAIL unconditionally and each
+        // one dropped the remembered set, so no failure can ever be swallowed by a repeat of an
+        // earlier failure either.
+        for (int strike = 1; strike <= 3; strike++)
+        {
+            BatteryChannelMemory.ForgetLearnedLog(pid);
+            Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+            BatteryChannelMemory.ForgetLearnedLog(pid);
+        }
+
+        // The mouse woke up and answered what it answered before the idle spell. It prints.
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+    }
+
+    // Forget drops the learned answer, the failure streak AND the log memory. The last one
+    // matters even when the relearned channel is the same channel at the same percent: that read
+    // is the FIRST read of a replacement answer, and a MOUSE_RELEARN with no read under it is
+    // the log of a device nobody can diagnose.
+    [Fact]
+    public void Forget_MakesTheNextLearnedReadPrintAgain()
+    {
+        const string pid = "d4a3";
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+        Assert.True(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+
+        BatteryChannelMemory.Forget(
+            pid, new BatteryChannelAnswer("col02", BatteryChannelAnswer.Input90, 0x90), "read_failed");
+
+        Assert.False(BatteryChannelMemory.RepeatsLastLearnedLog(pid, LearnedLines(pid, 73, "90 04 49")));
+    }
+
+    // The three tests above pin BatteryChannelMemory's arithmetic by calling it directly. These
+    // two pin the POLICY the learned read applies to it - which buffered lines actually reach
+    // Logger - which is a separate thing: the arithmetic can be perfect while the call site
+    // consults it backwards, or skips it, or drops the comparand at the wrong moment. All four
+    // of those mutations used to leave this suite green, so a user's debug.log could have gone
+    // silent on a failing channel, or back to thirty lines per ten steady polls, with nothing
+    // failing. MouseBatteryDevice.LearnedLogLines is that policy whole, and it is pure, so it is
+    // reachable from here - ReadCandidateHook is not a way in, it intercepts one frame above
+    // ReadLearnedChannel.
+    //
+    // NOT covered, and nothing below pretends otherwise: the ForgetLearnedLog on the
+    // uninspectable node - the branch MouseBatteryDevice.ReadLearnedChannel takes when TryInspect
+    // returns false - sits in ReadLearnedChannel ABOVE this call,
+    // so no input to LearnedLogLines can reach it. Driving it needs an opened device handle and
+    // a hid.dll descriptor read, and neither exists on the host this suite runs on. Deleting
+    // that line still leaves the suite green.
+
+    // What a FAILED learned read buffers: its TRY and its FAIL, the pair a remote reporter and
+    // MOUSE_RELEARN are both read off. A fresh list every call, like LearnedLines above, because
+    // RepeatsLastLearnedLog takes ownership of the one it is handed.
+    static List<string> FailedLines(string pid, int err) =>
+    [
+        $"MOUSE_CHANNEL_TRY pid={pid} col=col02 channel=input90 rid=0x90 declared=true",
+        $"MOUSE_CHANNEL_FAIL pid={pid} col=col02 channel=input90 rid=0x90 err={err} reason=read_failed",
+    ];
+
+    // A dedup wired to "always a repeat" makes a mouse that is still being read look like one
+    // that stopped being read - the exact misreading docs/ENABLE-DISABLE.md:256 warns a reporter
+    // off. Wired to "never a repeat" it puts the flood back and evicts the probe walk and the
+    // learn, which is the history a bug report is opened about.
+    [Fact]
+    public void LearnedLogLines_PrintsTheFirstSuccess_ThenSuppressesOnlyTheWordForWordRepeat()
+    {
+        const string pid = "d4a4";
+
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // Polls 2..10 of a mouse sitting at the same percent on the same channel.
+        for (int poll = 2; poll <= 10; poll++)
+            Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // The battery moved, and the new reading becomes what the next poll is measured against.
+        Assert.Equal(
+            LearnedLines(pid, 72, "90 04 48"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 04 48"), succeeded: true));
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 04 48"), succeeded: true));
+
+        // Same percent, different report head. It prints, because MOUSE_CHANNEL_OK carries
+        // bytes=[...] and the comparison is on the text, not on the reading.
+        Assert.Equal(
+            LearnedLines(pid, 72, "90 05 48"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 72, "90 05 48"), succeeded: true));
+    }
+
+    // The case the learned-channel log exists for: a channel that has started failing. If a
+    // failure can be suppressed, debug.log goes quiet on exactly the device somebody is trying to
+    // diagnose, and MOUSE_RELEARN appears three strikes later with no read under it. And if the
+    // failure does not drop the comparand, the recovery read is mistaken for a repeat of the last
+    // good read from before the outage, so the log shows a device that never came back.
+    [Fact]
+    public void LearnedLogLines_NeverSuppressesAFailure_AndAFailureClearsTheComparand()
+    {
+        const string pid = "d4a5";
+
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // Three strikes, word for word identical to each other. Every one prints in full: the
+        // dedup is never consulted on this branch, so no failure is ever a repeat of a failure.
+        for (int strike = 1; strike <= 3; strike++)
+            Assert.Equal(
+                FailedLines(pid, 31),
+                MouseBatteryDevice.LearnedLogLines(pid, FailedLines(pid, 31), succeeded: false));
+
+        // The mouse woke up at the percent it was last seen at. It prints, because the failures
+        // took the remembered set with them.
+        Assert.Equal(
+            LearnedLines(pid, 73, "90 04 49"),
+            MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+
+        // And the steady state resumes: the failure cleared the comparand, it did not switch the
+        // dedup off for the rest of the session.
+        Assert.Empty(MouseBatteryDevice.LearnedLogLines(pid, LearnedLines(pid, 73, "90 04 49"), succeeded: true));
+    }
 }

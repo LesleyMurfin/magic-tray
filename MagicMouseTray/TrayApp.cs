@@ -980,6 +980,8 @@ internal sealed class TrayApp : IDisposable
         var stack = DiagnosticScripts.FindStackDump();
         if (stack is not null)
             AddDiagnosticScript(diagnostics, stack.Value.Label, stack.Value.Path);
+        AddDiagnosticScript(diagnostics, DiagnosticScripts.HidReportLabel,
+            DiagnosticScripts.Find(DiagnosticScripts.HidReport));
 
         menu.Items.Add(diagnostics);
 
