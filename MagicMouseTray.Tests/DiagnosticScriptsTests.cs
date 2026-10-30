@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 using MagicMouseTray;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace MagicMouseTray.Tests;
@@ -38,7 +40,7 @@ public class DiagnosticScriptsTests
     }
 
     [Fact]
-    public void FindStackDump_PrefersSnapshotOverDevMgr()
+    public void FindStackDump_IsTheSnapshotSlot_NothingElseFillsIt()
     {
         using var tree = FakeTree.Create();
         var snap = tree.WriteScripts("mm-bt-stack-snapshot.ps1");
@@ -48,21 +50,19 @@ public class DiagnosticScriptsTests
         Assert.NotNull(found);
         Assert.Equal(DiagnosticScripts.BtStackSnapshotLabel, found.Value.Label);
         Assert.Equal(snap, found.Value.Path);
-        Assert.NotEqual(
-            DiagnosticScripts.Find(DiagnosticScripts.DevMgrDump, tree.Start),
-            found.Value.Path);
     }
 
+    // mm-devmgr-dump.ps1 is in no commit of this repo and in no published
+    // package, so a file of that name next to the exe is not something Magic
+    // Tray shipped and the menu must not offer to run it. The stack-dump slot
+    // is the snapshot or it is empty.
     [Fact]
-    public void FindStackDump_UsesDevMgrWhenSnapshotMissing()
+    public void FindStackDump_WithoutTheSnapshot_OffersNothing()
     {
         using var tree = FakeTree.Create();
-        var dump = tree.WriteScripts("mm-devmgr-dump.ps1");
+        tree.WriteScripts("mm-devmgr-dump.ps1");
 
-        var found = DiagnosticScripts.FindStackDump(tree.Start);
-        Assert.NotNull(found);
-        Assert.Equal(DiagnosticScripts.DevMgrDumpLabel, found.Value.Label);
-        Assert.Equal(dump, found.Value.Path);
+        Assert.Null(DiagnosticScripts.FindStackDump(tree.Start));
     }
 
     [Fact]
@@ -84,7 +84,6 @@ public class DiagnosticScriptsTests
                 "diagnose-driver.ps1",
                 "diagnose-and-recover.ps1",
                 "mm-bt-stack-snapshot.ps1",
-                "mm-devmgr-dump.ps1",
             },
             DiagnosticScripts.MenuScriptNames);
 
@@ -96,6 +95,47 @@ public class DiagnosticScriptsTests
             Assert.DoesNotContain("etw", name, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("driver-state", name, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("PATH-A", name, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // MenuScriptNames is the pinned registry of allowlisted script names, not
+    // what the menu consults: TrayApp.BuildMenu resolves each constant by name
+    // and nothing in production reads this array. It is still the list this
+    // package declares it can run, and a name on it that the package does not
+    // contain is a declaration with nothing behind it: the design doc and this
+    // suite keep describing it, and a reporter is told to use a script nobody
+    // can find.
+    [Fact]
+    public void Allowlist_ListsOnlyScriptsThisRepoShips()
+    {
+        foreach (var name in DiagnosticScripts.MenuScriptNames)
+        {
+            Assert.True(
+                RepoTree.ScriptExists(name),
+                $"DiagnosticScripts.MenuScriptNames lists {name}, which is in neither scripts/ nor the repo root.");
+        }
+    }
+
+    // Same rule for the constants behind the menu: a name or a label that spells
+    // out a .ps1 the package does not carry is dead registration, not a feature.
+    [Fact]
+    public void Registry_DeclaresNoScriptTheRepoDoesNotShip()
+    {
+        var declared = typeof(DiagnosticScripts)
+            .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (Field: f.Name, Value: (string)f.GetRawConstantValue()!))
+            .ToList();
+        Assert.NotEmpty(declared);
+
+        foreach (var (field, value) in declared)
+        {
+            var script = Regex.Match(value, @"[A-Za-z0-9._-]+\.ps1");
+            if (!script.Success)
+                continue;
+            Assert.True(
+                RepoTree.ScriptExists(script.Value),
+                $"DiagnosticScripts.{field} = \"{value}\", but {script.Value} is not in this repo.");
         }
     }
 
@@ -123,13 +163,11 @@ public class DiagnosticScriptsTests
         Assert.Equal("Run diagnose-driver.ps1", DiagnosticScripts.DiagnoseDriverLabel);
         Assert.Equal("Run diagnose-and-recover.ps1", DiagnosticScripts.DiagnoseAndRecoverLabel);
         Assert.Equal("Run mm-bt-stack-snapshot.ps1", DiagnosticScripts.BtStackSnapshotLabel);
-        Assert.Equal("Run mm-devmgr-dump.ps1", DiagnosticScripts.DevMgrDumpLabel);
 
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseDriverLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseAndRecoverLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.BtStackSnapshotLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("PATH-A", DiagnosticScripts.DevMgrDumpLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Show driver state", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);
     }
 
