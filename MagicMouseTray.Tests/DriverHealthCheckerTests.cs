@@ -341,4 +341,134 @@ public class DriverHealthCheckerTests
         Assert.Equal(DriverStatus.PatchedKmdf, row.Status);
         Assert.Equal("MagicMouseDriver", row.BoundDriverName);
     }
+
+    // --- Which devices a scroll filter can apply to at all -----------------
+    //
+    // NonScrollApplePids is already the table that keeps keyboards and
+    // trackpads out of mouse driver status (TryParseAppleHidKey's
+    // skipNonScroll gate). RepairPlanner needs the same fact from a bare PID,
+    // because its rule 6 ("Scroll driver is not installed") is swept over
+    // every catalog PID and has no DeviceKind to ask DeviceCapability with.
+
+    [Theory]
+    [InlineData("0267")] // Magic Keyboard with Touch ID
+    [InlineData("0239")] // Apple Wireless Keyboard (2011)
+    [InlineData("0250")] // Magic Keyboard ISO
+    [InlineData("029f")] // Magic Keyboard with Numeric Keypad (2021)
+    [InlineData("0322")] // Magic Keyboard with Numeric Keypad (2024)
+    [InlineData("030e")] // Magic Trackpad
+    [InlineData("0265")] // Magic Trackpad 2
+    [InlineData("0324")] // Magic Trackpad 2024
+    [InlineData("029A")] // Magic Keyboard with Touch ID (2021), registry casing
+    public void IsNonScrollPid_IsTrueForEveryDeviceWithNoWheel(string pid)
+    {
+        Assert.True(DriverHealthChecker.IsNonScrollPid(pid));
+    }
+
+    [Theory]
+    [InlineData("0323")] // Magic Mouse 2024
+    [InlineData("030d")] // Magic Mouse v1
+    [InlineData("0310")] // Apple Wireless Mouse (MouseBatteryDevice.cs:34-44)
+    [InlineData("0269")] // Magic Mouse v2
+    public void IsNonScrollPid_IsFalseForEveryMouse(string pid)
+    {
+        Assert.False(DriverHealthChecker.IsNonScrollPid(pid));
+    }
+
+    [Fact]
+    public void IsNonScrollPid_CoversEveryWheellessCatalogDeviceAndNoKnownMouse()
+    {
+        // The catalog is code, not prose: a keyboard added to KnownKeyboards
+        // without being added here would start getting scroll-driver findings
+        // the day it is paired.
+        foreach (var entry in KeyboardBatteryDevice.KnownKeyboards)
+        {
+            var pid = entry.PidPattern[^4..];
+            Assert.True(DriverHealthChecker.IsNonScrollPid(pid), pid);
+        }
+
+        // The trackpads live in MouseBatteryDevice.KnownMice, which rule 6
+        // sweeps as well, so the same gap is open there: a fourth Magic
+        // Trackpad PID added without an entry here would reintroduce the
+        // "Scroll driver is not installed" nag on a device with no wheel.
+        foreach (var entry in MouseBatteryDevice.KnownMice)
+        {
+            var pid = entry.PidPattern[^4..];
+            bool wheelless = entry.Kind is DeviceKind.MagicTrackpadV1
+                or DeviceKind.MagicTrackpadV2
+                or DeviceKind.MagicTrackpadV3;
+            Assert.Equal(wheelless, DriverHealthChecker.IsNonScrollPid(pid));
+        }
+
+        foreach (var pid in DriverHealthChecker.KnownMousePids)
+            Assert.False(DriverHealthChecker.IsNonScrollPid(pid), pid);
+    }
+
+    // --- A service query that did not answer is not a stopped service ------
+    //
+    // KernelServiceRunning is sc.exe query wrapped in catch { return false; },
+    // and its WaitForExit(2000) timeout path returns false too. The planner
+    // treats false as "the scroll driver stopped" and offers an elevated
+    // Bluetooth stack restart, so the parse is pulled out as a pure seam and
+    // every unanswered query has to come back as null.
+
+    const string ScRunning =
+        "SERVICE_NAME: MagicMouseDriver204Scroll\r\n"
+        + "        TYPE               : 1  KERNEL_DRIVER\r\n"
+        + "        STATE              : 4  RUNNING\r\n"
+        + "                                (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)\r\n";
+
+    const string ScStopped =
+        "SERVICE_NAME: MagicMouseDriver\r\n"
+        + "        TYPE               : 1  KERNEL_DRIVER\r\n"
+        + "        STATE              : 1  STOPPED\r\n";
+
+    const string ScNoSuchService =
+        "[SC] EnumQueryServicesStatus:OpenService FAILED 1060:\r\n\r\n"
+        + "The specified service does not exist as an installed service.\r\n";
+
+    [Fact]
+    public void InterpretServiceQuery_RunningIsTrueAndStoppedIsFalse()
+    {
+        Assert.True(DriverHealthChecker.InterpretServiceQuery(completed: true, ScRunning));
+        Assert.False(DriverHealthChecker.InterpretServiceQuery(completed: true, ScStopped));
+    }
+
+    [Fact]
+    public void InterpretServiceQuery_AServiceThatDoesNotExistIsAMeasuredFalse()
+    {
+        // The SCM answered: there is no such service on this PC, so it is not
+        // running. That is evidence, not a failed read, and the stopped-filter
+        // finding it feeds must keep firing.
+        Assert.False(DriverHealthChecker.InterpretServiceQuery(completed: true, ScNoSuchService));
+    }
+
+    [Fact]
+    public void InterpretServiceQuery_AQueryThatNeverFinishedIsUnknown()
+    {
+        // The WaitForExit(2000) timeout and the killed-process path: whatever
+        // partial text was captured, nothing was concluded.
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: false, ScRunning));
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: false, ScStopped));
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: false, null));
+    }
+
+    [Fact]
+    public void InterpretServiceQuery_NoOutputAtAllIsUnknown()
+    {
+        // Process.Start returned null, or the pipe gave nothing back: there is
+        // no answer to read, and "stopped" would be an invention.
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: true, null));
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: true, ""));
+        Assert.Null(DriverHealthChecker.InterpretServiceQuery(completed: true, "   \r\n"));
+    }
+
+    [Fact]
+    public void KernelServiceRunning_WithNoServiceNameAsksNothingAndKnowsNothing()
+    {
+        // No name means no query was ever made. Reporting false here is what
+        // let an unbound stack look like a stopped driver.
+        Assert.Null(DriverHealthChecker.KernelServiceRunning(""));
+        Assert.Null(DriverHealthChecker.KernelServiceRunning(null!));
+    }
 }

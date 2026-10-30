@@ -9,7 +9,7 @@ namespace MagicMouseTray;
 //
 // Every other signal we collect is registration, not attachment:
 //   - LowerFilters under Enum\BTHENUM says PnP was TOLD to load the filter.
-//   - sc query <service> reporting RUNNING (DriverHealthChecker.cs:324-345) says
+//   - sc query <service> reporting RUNNING (DriverHealthChecker.cs:340-345) says
 //     the driver IMAGE is loaded somewhere in the kernel.
 // After a reboot PnP can rebuild the BTHENUM stack without the filter while both
 // of those still read healthy, which is exactly the dead-wheel case the repair
