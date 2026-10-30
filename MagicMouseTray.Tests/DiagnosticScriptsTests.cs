@@ -28,6 +28,16 @@ public class DiagnosticScriptsTests
     }
 
     [Fact]
+    public void Find_HidReport_FromNestedBin_WalksUpToScripts()
+    {
+        using var tree = FakeTree.Create();
+        var hid = tree.WriteScripts("mm-hid-report.ps1");
+
+        Assert.Equal(hid, DiagnosticScripts.Find(DiagnosticScripts.HidReport, tree.Start));
+        Assert.Equal(hid, DiagnosticScripts.Find("mm-hid-report.ps1", tree.Start));
+    }
+
+    [Fact]
     public void Find_CaptureState_NextToStart_WithoutScriptsFolder()
     {
         using var tree = FakeTree.Create(createScripts: false);
@@ -85,6 +95,7 @@ public class DiagnosticScriptsTests
                 "diagnose-and-recover.ps1",
                 "mm-bt-stack-snapshot.ps1",
                 "mm-devmgr-dump.ps1",
+                "mm-hid-report.ps1",
             },
             DiagnosticScripts.MenuScriptNames);
 
@@ -124,12 +135,14 @@ public class DiagnosticScriptsTests
         Assert.Equal("Run diagnose-and-recover.ps1", DiagnosticScripts.DiagnoseAndRecoverLabel);
         Assert.Equal("Run mm-bt-stack-snapshot.ps1", DiagnosticScripts.BtStackSnapshotLabel);
         Assert.Equal("Run mm-devmgr-dump.ps1", DiagnosticScripts.DevMgrDumpLabel);
+        Assert.Equal("Run mm-hid-report.ps1", DiagnosticScripts.HidReportLabel);
 
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseDriverLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DiagnoseAndRecoverLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.BtStackSnapshotLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PATH-A", DiagnosticScripts.DevMgrDumpLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PATH-A", DiagnosticScripts.HidReportLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Show driver state", DiagnosticScripts.CaptureStateLabel, StringComparison.OrdinalIgnoreCase);
     }
 

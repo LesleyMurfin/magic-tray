@@ -1,10 +1,13 @@
 name: PowerShell Lint
 
-# Static analysis only: the PowerShell language parser and PSScriptAnalyzer are both
-# cross-platform, and neither loads the Windows-only cmdlets these scripts call at
-# runtime (Get-PnpDevice, sc.exe, registry providers). Nothing here executes the
-# scripts, so a windows-latest runner would buy nothing and cost ~2x the minutes.
-# pwsh 7 is preinstalled on the ubuntu-latest image.
+# Static analysis, plus one corpus check. The PowerShell language parser and
+# PSScriptAnalyzer are both cross-platform, and neither loads the Windows-only
+# cmdlets these scripts call at runtime (Get-PnpDevice, sc.exe, registry
+# providers). No script is executed as a whole - check-redaction.ps1 slices one
+# pure string function out of mm-hid-report.ps1 with the parser, so that
+# script's Add-Type P/Invoke block never compiles here. A windows-latest runner
+# would therefore buy nothing and cost ~2x the minutes. pwsh 7 is preinstalled
+# on the ubuntu-latest image.
 
 on:
   push:
@@ -106,6 +109,27 @@ jobs:
           "${RUNNER_TEMP}/yamlenv/bin/python" -m pip install \
             --disable-pip-version-check --quiet 'PyYAML==6.0.3'
           "${RUNNER_TEMP}/yamlenv/bin/python" scripts/check-workflow-pwsh.py
+
+      # The two parse steps above prove mm-hid-report.ps1 still compiles; they say
+      # nothing about whether ConvertTo-MacSafeText still redacts. That function is
+      # the only control between a reporter's hardware identifiers and a public
+      # issue, and the report it writes carries a banner telling the reporter the
+      # file is safe to paste - so a silent regression there publishes a stranger's
+      # Bluetooth address under this repository's promise that it would not. Until
+      # now it was covered only by a harness outside the repository, so nothing in
+      # CI protected it.
+      #
+      # Here rather than in ci.yml because this workflow already owns the .ps1
+      # files and, like Site checks, carries no pull_request paths filter: the
+      # corpus then runs on every pull request instead of being skipped by exactly
+      # the diffs that do not look like they touch redaction. Before the module
+      # install, because a broken redaction sink should not wait on a PSGallery
+      # download to go red.
+      # No `shell: pwsh` here, unlike the inline steps around it: the other
+      # check-*.ps1 validators are invoked this way from site.yml and ci.yml, and
+      # declaring pwsh would only start a second pwsh to launch the first.
+      - name: Check redaction corpus
+        run: pwsh -File scripts/check-redaction.ps1
 
       # Pinned so an upstream PSScriptAnalyzer release cannot turn a green repo red
       # with no repo change. 1.25.0 is the version this repo was verified clean

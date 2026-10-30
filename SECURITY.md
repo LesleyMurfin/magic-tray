@@ -47,6 +47,9 @@ No bounty is offered. Please give a fix a reasonable window before disclosing pu
 - **The elevated diagnostic scripts** `scripts/capture-state.ps1`,
   `scripts/mm-bt-stack-snapshot.ps1` and `diagnose-driver.ps1` — including anything they leak
   into a snapshot that was supposed to be redacted.
+- **The unelevated HID report script** `scripts/mm-hid-report.ps1`, which the app launches
+  without `runas` and which reads HID descriptors as the signed-in user — same concern about
+  what lands in a snapshot, without the admin token.
 - **Release artifacts** — `MagicTray-<tag>-win-x64.zip`, the `SHA256SUMS` file inside it, the
   `.zip.sha256` sidecar, the winget manifests under `packaging/winget/`, and the workflows that
   produce them.

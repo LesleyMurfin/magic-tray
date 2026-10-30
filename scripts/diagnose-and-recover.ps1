@@ -21,6 +21,14 @@
     Keep catalog PIDs in sync with MouseBatteryDevice.KnownMice and
     KeyboardBatteryDevice.KnownKeyboards.
 
+    Every logged line goes through a redaction sink: Bluetooth addresses are
+    replaced with <mac>, a USB iSerialNumber with <serial>, and the words of a
+    FriendlyName that are not device model words with <name>. That is not the
+    same as safe to paste - the sink covers those three things only, and the
+    file still names the config.ini, debug.log and output paths it read, which
+    on a default install sit under the account's profile. Read it before you
+    attach it.
+
 .EXAMPLE
     .\diagnose-and-recover.ps1
     .\diagnose-and-recover.ps1 -Repair
@@ -107,11 +115,130 @@ function Test-IsBthenumPath {
     return $InstanceId.StartsWith('BTHENUM\', [StringComparison]::OrdinalIgnoreCase)
 }
 
+# --- Redaction ---------------------------------------------------------------
+# This script logs a line per PnP node, and a BTHENUM InstanceId carries the
+# device's Bluetooth address while a paired FriendlyName routinely carries the
+# owner's given name. The file is saved beside the working directory AND copied
+# into %APPDATA%\MagicMouseTray, which is where a bug reporter is told to look
+# for things to attach, so the scrub belongs at the sink rather than at each of
+# the forty-odd call sites.
+#
+# DUPLICATED on purpose, not dot-sourced. ConvertTo-MacSafeText below is the
+# same function as the one in mm-hid-report.ps1 and mm-bt-stack-snapshot.ps1. A
+# shared helper file cannot be reached from every layout this script ships in:
+# stage-publish.ps1 copies it FLAT beside MagicMouseTray.exe,
+# .github/workflows/release.yml uploads that flat copy as a standalone release
+# asset, and package-release.ps1 puts it under scripts/ inside the ZIP. Someone
+# who downloads the single .ps1 asset has no sibling helper at all, so a
+# dot-source would either abort a script that works today or run on with no
+# sink - a worse outcome than the leak it replaced, because the sink would be
+# claimed and absent. The cost of duplicating is drift, so the rule is: the
+# three address rules are shared with MagicMouseTray/Logger.cs (RedactMacs) and
+# MagicMouseTray/BugReport.cs. They are not to be reordered, reworded or
+# widened here. Change them there first.
+
+# 12-hex runs that are the SAME on every Windows PC, so they are not anybody's
+# address and redacting them only destroys the field a maintainer reads first.
+# 00805f9b34fb is the Bluetooth SIG base UUID tail, carried by every BTHENUM
+# service GUID this script logs ({00001124-...} HID, {00001200-...} PnP
+# information); 001111000030 is the tail of the HID device interface class GUID
+# {4d1e55b2-f16f-11cf-88cb-001111000030}. The list is a WHITELIST of named
+# constants, never a pattern that tries to recognise an address: a real address
+# can look like anything, so the default stays redact.
+$script:MacSafeConstants = @('00805f9b34fb', '001111000030')
+
+# The rules of Logger.RedactMacs, in Logger.RedactMacs' order - the punctuated
+# pair forms, the Dev_ form, then the bare 12-hex belt with the constants above
+# carved out - followed by the fourth rule mm-hid-report.ps1 adds: the third
+# node of a USB instance id is the unit's iSerialNumber, which is not a MAC
+# shape and so matched none of the three. That rule earns its place here,
+# because a Lightning Magic Mouse 2 enumerates over USB while it charges and
+# this script logs every USB and phantom node it matched. It runs LAST and
+# consumes an already-redacted <mac> token only when that token is the WHOLE
+# node, so a serial that is the unit's address with the separators stripped
+# keeps the <mac> spelling and still correlates with debug.log.
+function ConvertTo-MacSafeText {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $t = [regex]::Replace($Text, '(?i)(?<![0-9a-f])([0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])', '<mac>')
+    $t = [regex]::Replace($t, '(?i)Dev_[0-9a-f]{12}', 'Dev_<mac>')
+    $t = [regex]::Replace($t, '(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])', {
+        param($m)
+        if ($script:MacSafeConstants -contains $m.Value.ToLowerInvariant()) { return $m.Value }
+        return '<mac>'
+    })
+    return [regex]::Replace($t, '(?i)(USB\\VID_[0-9a-f]{4}&PID_[0-9a-f]{4}(&MI_[0-9a-f]{2})?\\)(<mac>)?(?:(?!#\{)[^<\\\s,;\)\]])+', '$1<serial>')
+}
+
+# Words Windows and Apple put in a device FriendlyName. Same policy as
+# $MacSafeConstants and for the same reason: a whitelist of constants, default
+# redact, never a pattern that tries to recognise a person's name.
+$script:FriendlyNameWords = @(
+    'apple', 'magic', 'mouse', 'mice', 'trackpad', 'keyboard', 'keypad',
+    'numeric', 'with', 'wireless', 'bluetooth', 'low', 'energy', 'le', 'hid',
+    'hid-compliant', 'compliant', 'device', 'input', 'pointing', 'usb',
+    'generic', 'standard', 'port'
+)
+
+# The fifth rule, and the one the four address rules cannot do: a given name is
+# neither a MAC shape nor a serial shape. Windows takes the name the peripheral
+# advertises, and an Apple peripheral paired from a Mac or an iPhone advertises
+# one built from the account holder's name - "Lesley's Magic Mouse".
+#
+# Redacting the whole value would be safe and useless. FriendlyName is the one
+# field on the node line that says which of four Apple children a reader is
+# looking at, and a child still named "Bluetooth Low Energy HID Device" IS the
+# finding: Windows never bound the vendor name. So the model words survive and
+# everything else becomes <name>, token by token, with adjacent <name> tokens
+# collapsed so "Jane Q Doe's Mouse" does not spell out how many words the name
+# had. One- and two-digit tokens survive as generation numbers ("Magic Mouse
+# 2"); longer digit runs do not, because a 12-digit run is an address.
+#
+# What it costs, stated plainly: a device the owner renamed loses its model word
+# along with the new name, and a model Apple ships after this list was written
+# reads <name> until the word is added here. Both failures are towards
+# redaction, which is the side a sink that cannot see its own corpus has to fail
+# on.
+function ConvertTo-SafeFriendlyName {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $Name }
+    $out = @()
+    foreach ($token in ($Name -split '\s+')) {
+        if ($token.Length -eq 0) { continue }
+        $core = ($token -replace '^[^0-9A-Za-z]+', '') -replace '[^0-9A-Za-z]+$', ''
+        $keep = $false
+        if ($core.Length -eq 0) {
+            # Pure punctuation carries nothing to redact.
+            $keep = $true
+        } elseif ($script:FriendlyNameWords -contains $core.ToLowerInvariant()) {
+            $keep = $true
+        } elseif ($core -match '^[0-9]{1,2}$') {
+            $keep = $true
+        }
+        if ($keep) { $out += $token }
+        elseif ($out.Count -eq 0 -or $out[-1] -ne '<name>') { $out += '<name>' }
+    }
+    return ($out -join ' ')
+}
+
+# Every logged line goes through the address rules here, so the console text and
+# the saved text are the same text and neither can carry an address - the
+# argument Logger.RedactMacs makes for a sink: a policy at the sink is one the
+# next line to be written cannot forget. FriendlyName needs the token rule
+# instead, and gets it where the row is built, because a whitelist of model
+# words cannot be let loose on a whole log line.
+#
+# What this sink does NOT do, so nobody reads it as a safe-to-paste banner:
+# Logger.RedactProfilePaths and BugReport's <user>/<host> pass are absent, and
+# this script does log paths that can name an account - the -ConfigPath and
+# -LogPath defaults under %APPDATA%, and the "Saved:" line. Bringing those two
+# passes across is the next piece of work, not something this change claims.
 function Write-Log {
     param([string]$Text, [string]$Color = '')
-    $script:Lines += $Text
-    if ($Color) { Write-Host $Text -ForegroundColor $Color }
-    else { Write-Host $Text }
+    $safe = ConvertTo-MacSafeText $Text
+    $script:Lines += $safe
+    if ($Color) { Write-Host $safe -ForegroundColor $Color }
+    else { Write-Host $safe }
 }
 
 function Test-IsFilterFamilyName {
@@ -476,11 +603,16 @@ foreach ($hex in $pids) {
             } catch { Write-Verbose "Enumerate BTHENUM registry failed: $_" }
         }
         $rows += [pscustomobject]@{
+            # InstanceId stays as Windows spells it: pnputil /restart-device is
+            # handed this value, and a redacted one addresses nothing. Write-Log
+            # is what scrubs it on the way out.
             InstanceId = $id
             Status = [string]$d.Status
             Problem = $problem
             Class = [string]$d.Class
-            FriendlyName = [string]$d.FriendlyName
+            # FriendlyName is only ever logged, so it is scrubbed once here
+            # rather than at each line that prints it.
+            FriendlyName = (ConvertTo-SafeFriendlyName ([string]$d.FriendlyName))
             Service = [string]$d.Service
             ServiceReg = $svcReg
             Kind = $kind
