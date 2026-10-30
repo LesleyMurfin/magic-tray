@@ -3031,15 +3031,17 @@ internal sealed class TrayApp : IDisposable
         Logger.Log($"REPAIR_APPLY_START pid={pid} problem={problem} service={service}");
         _ = Task.Run(() =>
         {
-            RepairOutcome outcome;
+            RepairResult result;
             try
             {
-                outcome = DeviceRepair.Apply(pid, service);
+                result = DeviceRepair.Apply(pid, service);
             }
             catch (Exception ex)
             {
+                // Thrown before anything elevated ran: an invalid request or a
+                // temp script that could not be written.
                 Logger.Log($"REPAIR_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
+                result = DeviceRepair.NotLaunched();
             }
 
             // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
@@ -3047,7 +3049,7 @@ internal sealed class TrayApp : IDisposable
             // finding. Attachment is the only honest proof, so re-read it here, still off the
             // UI thread (registry plus one CM property query).
             bool? inStack = null;
-            if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)
+            if (result.Succeeded && problem == RepairProblem.FilterNotInStack)
             {
                 try
                 {
@@ -3062,17 +3064,17 @@ internal sealed class TrayApp : IDisposable
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
             if (dispatcher is null)
             {
-                Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={outcome} ui=gone");
+                Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={DeviceRepair.LogToken(result)} ui=gone");
                 return;
             }
-            dispatcher.Invoke(() => OnRepairApplied(pid, outcome, problem, inStack));
+            dispatcher.Invoke(() => OnRepairApplied(pid, result, problem, inStack));
         });
     }
 
-    void OnRepairApplied(string pid, RepairOutcome outcome, RepairProblem problem, bool? inStack)
+    void OnRepairApplied(string pid, RepairResult result, RepairProblem problem, bool? inStack)
     {
-        Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={outcome}");
-        switch (outcome)
+        Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={DeviceRepair.LogToken(result)}");
+        switch (result.Outcome)
         {
             case RepairOutcome.Ok when problem == RepairProblem.FilterNotInStack:
                 Logger.Log($"REPAIR_VERIFY pid={pid} problem=FilterNotInStack "
@@ -3107,14 +3109,16 @@ internal sealed class TrayApp : IDisposable
                     : "Device restarted on this PC.");
                 break;
             case RepairOutcome.FilterBlocked:
-                ShowFilterBlockedHelp();
+                ShowFilterBlockedHelp(result);
                 break;
             case RepairOutcome.NoInstances:
                 ShowPairingGuidance(pid);
                 break;
             default:
+                // Says what the repair left behind, because a stopped or killed
+                // pass can have changed LowerFilters already.
                 ToastNotifier.ShowError(TrayMenu.ProductName,
-                    "The repair did not finish. Open Diagnostics -> Open logs to see why.");
+                    result.Detail + " Open Diagnostics -> Open logs to see why.");
                 break;
         }
 
@@ -3274,31 +3278,32 @@ internal sealed class TrayApp : IDisposable
         // Elevated registry edit plus restart-device and the sidecar poll can take minutes.
         _ = Task.Run(() =>
         {
-            RepairOutcome outcome;
+            RepairResult result;
             try
             {
-                outcome = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
+                result = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
             }
             catch (Exception ex)
             {
+                // Thrown before anything elevated ran, so no key was touched.
                 Logger.Log($"REPAIR_STALE_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
+                result = DeviceRepair.NotLaunched();
             }
 
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
             if (dispatcher is null)
             {
-                Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={outcome} ui=gone");
+                Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={DeviceRepair.LogToken(result)} ui=gone");
                 return;
             }
-            dispatcher.Invoke(() => OnStaleFilterRemoved(pid, outcome));
+            dispatcher.Invoke(() => OnStaleFilterRemoved(pid, result));
         });
     }
 
-    void OnStaleFilterRemoved(string pid, RepairOutcome outcome)
+    void OnStaleFilterRemoved(string pid, RepairResult result)
     {
-        Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={outcome}");
-        switch (outcome)
+        Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={DeviceRepair.LogToken(result)}");
+        switch (result.Outcome)
         {
             case RepairOutcome.Ok:
                 ToastNotifier.Show(TrayMenu.ProductName,
@@ -3306,14 +3311,16 @@ internal sealed class TrayApp : IDisposable
                     + "wheel now. The battery percent can take one more poll to reappear.");
                 break;
             case RepairOutcome.FilterBlocked:
-                ShowFilterBlockedHelp();
+                ShowFilterBlockedHelp(result);
                 break;
             case RepairOutcome.NoInstances:
                 ShowPairingGuidance(pid);
                 break;
             default:
+                // This repair writes LowerFilters, so a stopped or killed pass
+                // can have left HKLM edited: say which, and say it first.
                 ToastNotifier.ShowError(TrayMenu.ProductName,
-                    "The repair did not finish. Open Diagnostics -> Open logs to see why.");
+                    result.Detail + " Open Diagnostics -> Open logs to see why.");
                 break;
         }
 
@@ -3321,10 +3328,15 @@ internal sealed class TrayApp : IDisposable
     }
 
     // WIN32_EXIT 31 / blocked signature: the user has to allow the self-signed driver.
-    void ShowFilterBlockedHelp()
+    // The script reports filter-blocked AFTER its write pass and the restart loop, so
+    // this is the non-Ok outcome most likely to sit on top of a rewritten LowerFilters:
+    // the signing answer and what the repair left in HKLM are independent facts and the
+    // user gets both, the registry one first because it is the one that may need undoing.
+    void ShowFilterBlockedHelp(RepairResult result)
     {
         var body =
             "Windows refused to start the scroll driver.\n\n"
+            + DeviceRepair.RegistryDetail(result.Registry) + "\n\n"
             + "The driver is self-signed, so Windows blocks it until this PC is told to allow it. "
             + "Three steps, in this order:\n\n"
             + "1. Turn Test Mode on: in an administrator Command Prompt run "

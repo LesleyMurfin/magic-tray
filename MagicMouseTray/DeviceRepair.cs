@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 
 namespace MagicMouseTray;
@@ -16,8 +17,10 @@ namespace MagicMouseTray;
 //    name left on the device key next to the running one on the instance key).
 //    A restart alone cannot fix that, because the stale name stays registered:
 //    the stale name is removed from the LowerFilters value that carries it -
-//    previous value logged verbatim first - and only then is the stack
-//    restarted. It refuses outright if the working filter would not survive.
+//    every touched key and its previous values are reported through the status
+//    sidecar BEFORE the first write, and the tray copies them out of the
+//    sidecar into FilterBackupPath - and only then is the stack restarted. It
+//    refuses outright if the working filter would not survive.
 //
 // There is deliberately no "sc start <filter>" here. A PnP device lower filter
 // is loaded by PnP when the device stack is built, never by the SCM, so
@@ -33,13 +36,96 @@ namespace MagicMouseTray;
 // Same elevation shape as DeviceEnable: generated .ps1 in %TEMP%, ShellExecute
 // with Verb=runas, and a status sidecar file because ExitCode is unavailable
 // once UseShellExecute is true.
+
+// The window this file is judged on: between the first LowerFilters write and
+// a completed stack restart the registry names a different filter set than the
+// loaded stack, which is worse than the state the repair was called for. So
+// the script marks a STAGE and the write counts into the sidecar as it goes,
+// the tray maps that report onto an outcome carrying an explicit registry
+// dimension, and the script never exits between a write and the restart loop.
 internal enum RepairOutcome
 {
     Ok,
     NoInstances,
     FilterBlocked,
     Failed,
+    // At least one LowerFilters value was - or may have been - rewritten and
+    // the pass then stopped, so the registry and the loaded stack can
+    // disagree. Never the same answer as a repair that changed nothing.
+    StoppedAfterWrite,
+    // The poller hit ElevatedCeiling and killed the elevated tree: the script
+    // was cut off mid-pass, which is not a script that ran to the end and
+    // reported a failure.
+    TimedOut,
 }
+
+// What the attempt is known to have done to HKLM. Unknown is its own answer
+// and is never rounded down to Untouched: "nothing was written" is a promise
+// only a never-started script, or one that stopped before its write pass, can
+// make.
+internal enum RegistryState
+{
+    Untouched,
+    Modified,
+    Unknown,
+}
+
+// Stage markers the generated scripts write around their passes, in the order
+// they are reached. Writing and Written straddle the write pass, so a report
+// that stops mid-pass still says which side of the first write it stopped on.
+internal enum RepairStage
+{
+    Running,
+    Scanned,
+    Writing,
+    Written,
+    Restarted,
+    Verified,
+}
+
+// One parsed status report. A null RepairProgress means the script never wrote
+// a readable stage - which is NOT evidence that it wrote nothing.
+internal readonly record struct RepairProgress(
+    string Result,
+    RepairStage Stage,
+    int KeysPlanned,
+    int KeysWritten,
+    int WriteFailures,
+    int RestartFailures);
+
+// Everything the tray knows about one elevated attempt. Started=false means
+// ShellExecute handed back no process at all; TimedOut means the poller killed
+// the tree at ElevatedCeiling rather than reading a final report.
+//
+// HasWritePass is a fact about the SCRIPT that ran, not about its report: the
+// restart-only script (BuildScript) contains no Set-ItemProperty and no
+// Remove-ItemProperty at all, so for that attempt "nothing was written" is
+// provable whatever the report says - or does not say. Both production call
+// sites read it off the script text with ScriptHasWritePass rather than
+// restating it, so a script that grows a write cannot keep the promise. It
+// defaults to true because the conservative answer for a script that might
+// write is Unknown, never a promise that HKLM is clean.
+internal readonly record struct RepairEvidence(
+    bool Started,
+    RepairProgress? Progress,
+    int? Exit,
+    bool TimedOut,
+    bool HasWritePass = true);
+
+// The outcome plus the registry dimension, which is independent of it: a
+// blocked filter or a ceiling kill can sit on top of a rewritten LowerFilters.
+internal readonly record struct RepairResult(
+    RepairOutcome Outcome,
+    RegistryState Registry,
+    string Detail)
+{
+    internal bool Succeeded => Outcome == RepairOutcome.Ok;
+}
+
+// One key the repair touched and the exact LowerFilters list it held before.
+// The values are whatever the registry carried, not names this code vetted, so
+// they are recorded and read back verbatim.
+internal sealed record FilterBackupEntry(string KeyPath, IReadOnlyList<string> PreviousValues);
 
 internal static class DeviceRepair
 {
@@ -177,7 +263,21 @@ $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $ids = New-Object System.Collections.Generic.List[string]
 $statusFile = Join-Path $env:TEMP ('mm-repair-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')
-'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+
+# The status sidecar is the ONLY channel that outlives this console window:
+# UseShellExecute is on, so the tray cannot redirect stdout and every Write-Host
+# line below dies with the window. Each progress line is appended, so the stage
+# and the counts at the end of the file are the ones this run reached. This
+# repair restarts the stack and nothing else, so its write counts stay at zero.
+Set-Content -LiteralPath $statusFile -Encoding UTF8 -Value 'stage=running'
+function Write-Status([string]$line) {
+    Add-Content -LiteralPath $statusFile -Encoding UTF8 -Value $line
+}
+Write-Status 'result=running'
+Write-Status 'planned=0'
+Write-Status 'written=0'
+Write-Status 'write-failures=0'
+Write-Status 'restart-failures=0'
 
 function Test-Vid([string]$n) {
     $low = $n.ToLowerInvariant()
@@ -212,9 +312,10 @@ if ($root) {
     $root.Dispose()
 }
 
+Write-Status 'stage=scanned'
 if ($ids.Count -eq 0) {
     Write-Host "DEVICE_REPAIR no BTHENUM instances pid=$targetPid"
-    'no-instances' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=no-instances'
     exit 2
 }
 
@@ -227,9 +328,14 @@ foreach ($id in $ids) {
     & pnputil.exe /restart-device "$id"
     if ($LASTEXITCODE -ne 0) { $failed++ }
 }
+# Counts first, marker last: the tray reads this file last-line-wins while the
+# script is still appending to it, so a read that lands between the two lines
+# must not see the new marker beside the header's seeded zero.
+Write-Status ("restart-failures=" + $failed)
+Write-Status 'stage=restarted'
 if ($failed -ne 0) {
     Write-Host "DEVICE_REPAIR restart failures=$failed"
-    'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=failed'
     exit 1
 }
 
@@ -246,7 +352,8 @@ while ($true) {
 Write-Host "DEVICE_REPAIR sc query svc=$svc running=$running"
 Write-Host $queryOut
 if ($running) {
-    'ok' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'stage=verified'
+    Write-Status 'result=ok'
     exit 0
 }
 
@@ -273,11 +380,11 @@ Write-Host "DEVICE_REPAIR startoptions=$startOptions"
 Write-Host "DEVICE_REPAIR testsigning=$testSigning hvci=$hvci hvcion=$hvciOn"
 if ((-not $testSigning) -or $hvciOn) {
     Write-Host "DEVICE_REPAIR filter blocked svc=$svc"
-    'filter-blocked' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=filter-blocked'
     exit 3
 }
 Write-Host "DEVICE_REPAIR filter not running svc=$svc with testsigning on and hvci off"
-'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+Write-Status 'result=failed'
 exit 1
 """;
         var script = template
@@ -308,9 +415,12 @@ exit 1
     // Enum\BTHENUM for this PID, drops only the names passed in (never mouhid,
     // never HidBth, never an unlisted vendor filter), refuses when keepService
     // would not survive anywhere on the stack, never writes an empty
-    // MultiString, and prints every previous value verbatim before writing so
-    // the edit is reversible by hand from the transcript. No unpair, no radio,
-    // no FLIP, no /enable-device or /disable-device, no service key, no .sys.
+    // MultiString, and reports every key and its previous values through the
+    // status sidecar before the first write - the tray copies those lines into
+    // FilterBackupPath, which is where the edit is undone by hand from, since
+    // the Write-Host transcript dies with the elevated console window. No
+    // unpair, no radio, no FLIP, no /enable-device or /disable-device, no
+    // service key, no .sys.
     internal static string BuildRemoveStaleFiltersScript(
         string pid, long nonce, string keepService, string[] removeServices)
     {
@@ -336,7 +446,21 @@ $pidB = 'PID&' + $targetPid
 $vidNeedles = @(__VIDS__)
 $enumPath = 'SYSTEM\CurrentControlSet\Enum\BTHENUM'
 $statusFile = Join-Path $env:TEMP ('mm-repair-filters-' + $targetPid + '-' + $procId + '-' + $nonce + '.status')
-'running' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+
+# The status sidecar is the ONLY channel that outlives this console window:
+# UseShellExecute is on, so the tray cannot redirect stdout and every Write-Host
+# line below dies with the window. The stage markers, the write counts and the
+# previous LowerFilters values all go here, appended as the pass advances, so
+# the last stage and counts in the file are the ones this run reached.
+Set-Content -LiteralPath $statusFile -Encoding UTF8 -Value 'stage=running'
+function Write-Status([string]$line) {
+    Add-Content -LiteralPath $statusFile -Encoding UTF8 -Value $line
+}
+Write-Status 'result=running'
+Write-Status 'planned=0'
+Write-Status 'written=0'
+Write-Status 'write-failures=0'
+Write-Status 'restart-failures=0'
 
 function Test-Vid([string]$n) {
     $low = $n.ToLowerInvariant()
@@ -417,18 +541,32 @@ if ($root) {
     $root.Dispose()
 }
 
+Write-Status 'stage=scanned'
 if ($ids.Count -eq 0) {
     Write-Host "DEVICE_REPAIR_FILTERS no BTHENUM instances pid=$targetPid"
-    'no-instances' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=no-instances'
     exit 2
 }
 
-# Every previous value is printed verbatim BEFORE any write, so this edit can
-# be undone by hand from the transcript alone.
+# Every key and every previous value crosses the elevation boundary through the
+# sidecar BEFORE the first write. Write-Host cannot be read back once this
+# window closes, so the tray copies these lines into its own backup file and
+# that file - not the transcript - is what a hand restore is pasted from.
 $changes = 0
+$index = 0
 foreach ($t in $targets) {
     Write-Host ("DEVICE_REPAIR_FILTERS key=" + $t.Path + " kind=" + $t.Kind)
     Write-Host ("DEVICE_REPAIR_FILTERS previous LowerFilters=[" + (@($t.Previous) -join '|') + "]")
+    Write-Status ("key=" + $index + "|" + $t.Path)
+    foreach ($n in @($t.Previous)) {
+        Write-Status ("prev=" + $index + "|" + [string]$n)
+    }
+    # Values first, their count last. The tray drops a block whose prev-count
+    # line is missing or disagrees with the values that reached it, so a record
+    # cut short - by a tear in the read, or by the ceiling kill landing in this
+    # burst - is never handed to a user as a complete list to paste back.
+    Write-Status ("prev-count=" + $index + "|" + @($t.Previous).Count)
+    $index++
     $kept = New-Object System.Collections.Generic.List[string]
     foreach ($n in @($t.Previous)) {
         if (Test-Removable $n) {
@@ -442,45 +580,54 @@ foreach ($t in $targets) {
     if ($t.Changed) { $changes++ }
     Write-Host ("DEVICE_REPAIR_FILTERS filtered LowerFilters=[" + ($t.Filtered -join '|') + "] changed=" + $t.Changed)
 }
+Write-Status ("planned=" + $changes)
 
 if ($changes -eq 0) {
     Write-Host "DEVICE_REPAIR_FILTERS nothing to remove pid=$targetPid keep=$keep"
-    'nothing-to-do' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=nothing-to-do'
     exit 0
 }
 
-# Refuse before writing anything rather than leave the stack with no working
-# vendor filter.
+# BOTH refusals are decided here, before the write pass, and both are decided
+# from the scan alone. Refusing from inside the write loop would mean stopping
+# with earlier keys already rewritten and the stack never rebuilt.
 $keepAnywhere = $false
 foreach ($t in $targets) {
     if (Test-HasKeep $t.Filtered) { $keepAnywhere = $true }
 }
 if (-not $keepAnywhere) {
     Write-Host "DEVICE_REPAIR_FILTERS refuse: keep=$keep would not survive on this stack"
-    'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=failed'
     exit 1
 }
+foreach ($t in $targets) {
+    if (-not $t.Changed) { continue }
+    if ($t.Filtered.Count -ne 0) { continue }
+    # An empty MultiString is not a valid LowerFilters value, so the value
+    # itself goes - but only while the keep filter still lives on the other
+    # key of this stack (device vs instance).
+    $keepElsewhere = $false
+    foreach ($o in $targets) {
+        if ($o.Path -eq $t.Path) { continue }
+        if (Test-HasKeep $o.Filtered) { $keepElsewhere = $true }
+    }
+    if (-not $keepElsewhere) {
+        Write-Host ("DEVICE_REPAIR_FILTERS refuse: emptying " + $t.Path + " would drop keep=" + $keep)
+        Write-Status 'result=failed'
+        exit 1
+    }
+}
 
+Write-Status 'stage=writing'
+$written = 0
 $writeFailures = 0
 foreach ($t in $targets) {
     if (-not $t.Changed) { continue }
     if ($t.Filtered.Count -eq 0) {
-        # An empty MultiString is not a valid LowerFilters value, so the value
-        # itself goes - but only while the keep filter still lives on the other
-        # key of this stack (device vs instance).
-        $keepElsewhere = $false
-        foreach ($o in $targets) {
-            if ($o.Path -eq $t.Path) { continue }
-            if (Test-HasKeep $o.Filtered) { $keepElsewhere = $true }
-        }
-        if (-not $keepElsewhere) {
-            Write-Host ("DEVICE_REPAIR_FILTERS refuse: emptying " + $t.Path + " would drop keep=" + $keep)
-            'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
-            exit 1
-        }
         Write-Host ("DEVICE_REPAIR_FILTERS delete value LowerFilters key=" + $t.Path)
         try {
             Remove-ItemProperty -LiteralPath $t.Path -Name 'LowerFilters' -Force -ErrorAction Stop
+            $written++
         } catch {
             Write-Host ("DEVICE_REPAIR_FILTERS write error key=" + $t.Path + " err=" + $_.Exception.Message)
             $writeFailures++
@@ -490,28 +637,42 @@ foreach ($t in $targets) {
     Write-Host ("DEVICE_REPAIR_FILTERS write LowerFilters=[" + ($t.Filtered -join '|') + "] key=" + $t.Path)
     try {
         Set-ItemProperty -LiteralPath $t.Path -Name 'LowerFilters' -Value ([string[]]$t.Filtered) -Type MultiString -ErrorAction Stop
+        $written++
     } catch {
         Write-Host ("DEVICE_REPAIR_FILTERS write error key=" + $t.Path + " err=" + $_.Exception.Message)
         $writeFailures++
     }
 }
-if ($writeFailures -ne 0) {
-    Write-Host "DEVICE_REPAIR_FILTERS registry write failures=$writeFailures"
-    'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
-    exit 1
-}
+# Counts first, marker last: the tray reads this file last-line-wins while the
+# script is still appending to it, so a read that lands between these appends
+# must not see the new marker beside the header's seeded zero. The other half
+# of that guarantee is on the tray side - LaunchElevated reads the sidecar
+# with FileShare.ReadWrite, so its read can never deny this Add-Content and
+# cost the run a status line.
+Write-Status ("written=" + $written)
+Write-Status ("write-failures=" + $writeFailures)
+Write-Status 'stage=written'
 
-# The registry now names exactly one vendor filter, so rebuild the stack to
-# make PnP act on it. Restart only - never enable/disable, never unpair.
+# Once ANY write has landed, the loaded stack no longer matches the registry,
+# so the stack is rebuilt even when a later write failed. Stopping between a
+# landed write and this loop is what left mutated filters behind a stale cached
+# stack - the dead-wheel state this repair exists to clear. Restart only -
+# never enable/disable, never unpair.
 $restartFailures = 0
-foreach ($id in $ids) {
-    Write-Host "DEVICE_REPAIR_FILTERS restart $id"
-    & pnputil.exe /restart-device "$id"
-    if ($LASTEXITCODE -ne 0) { $restartFailures++ }
+if ($written -gt 0) {
+    foreach ($id in $ids) {
+        Write-Host "DEVICE_REPAIR_FILTERS restart $id"
+        & pnputil.exe /restart-device "$id"
+        if ($LASTEXITCODE -ne 0) { $restartFailures++ }
+    }
+    Write-Status ("restart-failures=" + $restartFailures)
+    Write-Status 'stage=restarted'
+} else {
+    Write-Host "DEVICE_REPAIR_FILTERS no write landed, so the stack is left as it was"
 }
-if ($restartFailures -ne 0) {
-    Write-Host "DEVICE_REPAIR_FILTERS restart failures=$restartFailures - registry edits above are already applied"
-    'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+if ($writeFailures -ne 0 -or $restartFailures -ne 0) {
+    Write-Host "DEVICE_REPAIR_FILTERS write failures=$writeFailures restart failures=$restartFailures - any registry edit above is already applied"
+    Write-Status 'result=failed'
     exit 1
 }
 
@@ -528,7 +689,8 @@ while ($true) {
 Write-Host "DEVICE_REPAIR_FILTERS sc query svc=$keep running=$running"
 Write-Host $queryOut
 if ($running) {
-    'ok' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'stage=verified'
+    Write-Status 'result=ok'
     exit 0
 }
 
@@ -555,11 +717,11 @@ Write-Host "DEVICE_REPAIR_FILTERS startoptions=$startOptions"
 Write-Host "DEVICE_REPAIR_FILTERS testsigning=$testSigning hvci=$hvci hvcion=$hvciOn"
 if ((-not $testSigning) -or $hvciOn) {
     Write-Host "DEVICE_REPAIR_FILTERS filter blocked svc=$keep"
-    'filter-blocked' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+    Write-Status 'result=filter-blocked'
     exit 3
 }
 Write-Host "DEVICE_REPAIR_FILTERS filter not running svc=$keep with testsigning on and hvci off"
-'failed' | Set-Content -LiteralPath $statusFile -Encoding ASCII
+Write-Status 'result=failed'
 exit 1
 """;
         var script = template
@@ -577,11 +739,444 @@ exit 1
         return script;
     }
 
+    // --- the parsed report ------------------------------------------------
+
+    // The window the poller gives an elevated attempt before it kills the
+    // tree. Named, not a literal in the poll loop, because the outcome of that
+    // kill is explained to the user in the same terms the loop waits in.
+    internal static readonly TimeSpan ElevatedCeiling = TimeSpan.FromMinutes(2);
+
+    static RepairStage? StageFor(string token) => token switch
+    {
+        "running" => RepairStage.Running,
+        "scanned" => RepairStage.Scanned,
+        "writing" => RepairStage.Writing,
+        "written" => RepairStage.Written,
+        "restarted" => RepairStage.Restarted,
+        "verified" => RepairStage.Verified,
+        _ => null,
+    };
+
+    // Last line wins: the sidecar is appended to as the script advances, so
+    // the stage and the counts at the end of the file are the ones reached.
+    // A missing or unknown stage, or a negative count, is not a state -
+    // guessing one would let the tray claim the registry is clean on the
+    // strength of a truncated file.
+    internal static RepairProgress? ParseProgress(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+        RepairStage? stage = null;
+        var result = "";
+        int planned = 0, written = 0, writeFailures = 0, restartFailures = 0;
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            var eq = line.IndexOf('=');
+            if (eq <= 0)
+                continue;
+            var key = line[..eq];
+            var val = line[(eq + 1)..];
+            switch (key)
+            {
+                case "stage":
+                    stage = StageFor(val);
+                    if (stage is null)
+                        return null;
+                    break;
+                case "result":
+                    result = val;
+                    break;
+                case "planned":
+                    if (!TryCount(val, out planned))
+                        return null;
+                    break;
+                case "written":
+                    if (!TryCount(val, out written))
+                        return null;
+                    break;
+                case "write-failures":
+                    if (!TryCount(val, out writeFailures))
+                        return null;
+                    break;
+                case "restart-failures":
+                    if (!TryCount(val, out restartFailures))
+                        return null;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return stage is { } reached
+            ? new RepairProgress(result, reached, planned, written, writeFailures, restartFailures)
+            : null;
+    }
+
+    static bool TryCount(string value, out int count) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out count) && count >= 0;
+
+    // --- what the outcome says about HKLM ----------------------------------
+
+    // The registry dimension. hasWritePass=false means the script that ran has
+    // no registry write in it at all, so Untouched is a fact about the script
+    // and holds however the attempt ended - including with no report to read.
+    // With a write pass, no report at all is Unknown, never Untouched.
+    static RegistryState RegistryFor(RepairProgress? progress, bool hasWritePass)
+    {
+        if (!hasWritePass)
+            return RegistryState.Untouched;
+        if (progress is not { } p)
+            return RegistryState.Unknown;
+        if (p.KeysWritten > 0)
+            return RegistryState.Modified;
+        // Stopped inside the write pass, or with a write that reported an
+        // error: no key is known to have landed and none is known to be intact.
+        if (p.Stage == RepairStage.Writing || p.WriteFailures > 0)
+            return RegistryState.Unknown;
+        return RegistryState.Untouched;
+    }
+
+    // Whether the script that ran can write LowerFilters at all, read off the
+    // script itself rather than restated at the call site: the restart-only
+    // script has neither write cmdlet in it, and a script that grew one must
+    // not keep promising an untouched registry.
+    internal static bool ScriptHasWritePass(string script) =>
+        script.Contains("Set-ItemProperty", StringComparison.Ordinal)
+        || script.Contains("Remove-ItemProperty", StringComparison.Ordinal);
+
+    // Total: every end state the two scripts can reach is a value here, and
+    // each carries its own sentence because the recovery step differs in every
+    // one. Order matters - Started is checked first because UAC is the one
+    // thing that can be true before anything ran. Only two things may promise
+    // that nothing was written: that branch, and a script with no write pass.
+    internal static RepairResult Decide(RepairEvidence evidence)
+    {
+        if (!evidence.Started)
+            return new RepairResult(
+                RepairOutcome.Failed,
+                RegistryState.Untouched,
+                "Windows did not start the elevated repair: the UAC prompt was declined or "
+                + "blocked. " + RegistryDetail(RegistryState.Untouched));
+
+        var progress = evidence.Progress;
+        var registry = RegistryFor(progress, evidence.HasWritePass);
+        switch (progress?.Result)
+        {
+            case "ok":
+            case "nothing-to-do":
+                return Report(RepairOutcome.Ok, registry, progress);
+            // Both scripts report no-instances - and exit with
+            // NoInstancesExitCode - from the scan, before any write pass.
+            case "no-instances":
+                return Report(RepairOutcome.NoInstances, RegistryState.Untouched, progress);
+            case "filter-blocked":
+                return Report(RepairOutcome.FilterBlocked, registry, progress);
+            case "failed":
+                return Report(FailureFor(progress, registry), registry, progress);
+            default:
+                break;
+        }
+
+        // No terminal report. The ceiling kill is its own end state: the
+        // script was cut off mid-pass and never reported anything final.
+        if (evidence.TimedOut)
+            return Report(RepairOutcome.TimedOut, registry, progress);
+        if (evidence.Exit == NoInstancesExitCode)
+            return Report(RepairOutcome.NoInstances, RegistryState.Untouched, progress);
+        if (evidence.Exit == FilterBlockedExitCode)
+            return Report(RepairOutcome.FilterBlocked, registry, progress);
+        return Report(FailureFor(progress, registry), registry, progress);
+    }
+
+    // A failure that reached the write pass is not the same event as one that
+    // refused before it: only a report that got far enough to touch - or to
+    // possibly touch - a key maps onto StoppedAfterWrite.
+    static RepairOutcome FailureFor(RepairProgress? progress, RegistryState registry) =>
+        progress is not null && registry != RegistryState.Untouched
+            ? RepairOutcome.StoppedAfterWrite
+            : RepairOutcome.Failed;
+
+    static RepairResult Report(RepairOutcome outcome, RegistryState registry, RepairProgress? progress) =>
+        new(outcome, registry, OutcomeDetail(outcome, progress) + " " + RegistryDetail(registry));
+
+    static string OutcomeDetail(RepairOutcome outcome, RepairProgress? progress)
+    {
+        if (outcome == RepairOutcome.TimedOut)
+            return $"The elevated repair was still running after "
+                + $"{ElevatedCeiling.TotalMinutes.ToString(CultureInfo.InvariantCulture)} minutes, "
+                + "so the tray stopped it mid-pass.";
+        if (progress is not { } p)
+            return "The elevated repair ended without reporting how far it got.";
+        return outcome switch
+        {
+            RepairOutcome.Ok when p.Result.Equals("nothing-to-do", StringComparison.Ordinal) =>
+                "Nothing needed changing: this stack already named only the working filter.",
+            RepairOutcome.Ok when p.KeysWritten > 0 =>
+                "The leftover filter name was removed and the device stack was restarted.",
+            RepairOutcome.Ok =>
+                "The device stack was restarted and the scroll driver came back up.",
+            RepairOutcome.NoInstances =>
+                "No live Bluetooth instance for this device was found, so the repair had "
+                + "nothing to work on.",
+            RepairOutcome.FilterBlocked =>
+                "Windows is refusing to load the scroll driver: it is self-signed, so test "
+                + "signing has to be on and memory integrity off.",
+            RepairOutcome.StoppedAfterWrite when p.RestartFailures > 0 =>
+                "The filter list was rewritten, but the device stack would not restart, so "
+                + "the loaded stack still uses the old list.",
+            RepairOutcome.StoppedAfterWrite when p.KeysWritten > 0 =>
+                $"The repair rewrote {p.KeysWritten.ToString(CultureInfo.InvariantCulture)} of "
+                + $"{p.KeysPlanned.ToString(CultureInfo.InvariantCulture)} keys and then stopped.",
+            RepairOutcome.StoppedAfterWrite =>
+                "The repair stopped with a registry write in flight.",
+            _ when p.RestartFailures > 0 =>
+                "The device stack would not restart.",
+            _ =>
+                "The repair stopped before it changed anything.",
+        };
+    }
+
+    // The second half of every sentence, and the half the user acts on: it
+    // says whether LowerFilters on this PC is now something other than what it
+    // was when the repair started. Internal because the outcomes that get a
+    // help dialog instead of a toast - FilterBlocked above all, which is
+    // reported AFTER the write pass - compose their own body and still have to
+    // carry this sentence.
+    internal static string RegistryDetail(RegistryState registry) => registry switch
+    {
+        RegistryState.Modified =>
+            "LowerFilters has already been changed in the registry on this PC.",
+        RegistryState.Unknown =>
+            "Whether LowerFilters was changed is not known - check it before running the "
+            + "repair again.",
+        // Scoped to LowerFilters like its two siblings: the restart-only
+        // repair runs pnputil /restart-device, which does cause registry
+        // activity of its own, and this sentence also sits above the test
+        // signing steps in the filter-blocked dialog.
+        _ => "LowerFilters was not changed in the registry on this PC.",
+    };
+
+    // What a support log shows, so one line carries BOTH dimensions: an
+    // outcome of "failed" alone never says whether HKLM was left edited.
+    internal static string LogToken(RepairResult result) =>
+        OutcomeToken(result.Outcome) + "/" + RegistryToken(result.Registry);
+
+    static string OutcomeToken(RepairOutcome outcome) => outcome switch
+    {
+        RepairOutcome.Ok => "ok",
+        RepairOutcome.NoInstances => "no-instances",
+        RepairOutcome.FilterBlocked => "filter-blocked",
+        RepairOutcome.StoppedAfterWrite => "stopped-after-write",
+        RepairOutcome.TimedOut => "timed-out",
+        _ => "failed",
+    };
+
+    static string RegistryToken(RegistryState registry) => registry switch
+    {
+        RegistryState.Modified => "modified",
+        RegistryState.Unknown => "unknown",
+        _ => "untouched",
+    };
+
+    // The attempt never reached ShellExecute - an invalid request or a temp
+    // script that could not be written - so no elevated code ran.
+    internal static RepairResult NotLaunched() =>
+        new(RepairOutcome.Failed,
+            RegistryState.Untouched,
+            "The repair could not be started on this PC. " + RegistryDetail(RegistryState.Untouched));
+
+    // --- the previous values, kept past the console window ------------------
+
+    const string BackupKeyPrefix = "key=";
+    const string BackupValuePrefix = "prev=";
+    const string BackupCountPrefix = "prev-count=";
+
+    // Next to debug.log, never as debug.log: that file rotates at 1 MB and is
+    // redacted for sharing, and this is the only copy of what LowerFilters
+    // held. Named per attempt - pid, this process, this nonce - so two
+    // overlapping repairs for one PID cannot overwrite each other's record.
+    internal static string FilterBackupPath(string pid, long nonce) =>
+        Path.Combine(
+            Logger.LogDir,
+            $"mm-filters-backup-{ValidatePid(pid)}-{ProcIdSegment()}-{ValidateNonce(nonce)}.txt");
+
+    // The recorded form: one key= line per key, then one prev= line per value
+    // it held, in order, then the prev-count= line that closes the block. All
+    // three line kinds carry the record index first, so the rest of the line
+    // is the raw path or value - including any '|' or '=' the registry
+    // happened to hold.
+    internal static IReadOnlyList<string> FormatFilterBackup(
+        string pid, long nonce, IReadOnlyList<FilterBackupEntry> entries)
+    {
+        var recorded = entries.Where(e => e.PreviousValues.Count > 0).ToList();
+        if (recorded.Count == 0)
+            return [];
+        var lines = new List<string>((recorded.Count * 3) + 3)
+        {
+            $"mm-filters-backup pid={ValidatePid(pid)} nonce={ValidateNonce(nonce)} "
+                + $"utc={DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}",
+            "to undo by hand: for each block below set LowerFilters (REG_MULTI_SZ) on that "
+                + "path back to the listed values, in the listed order.",
+            "this file names this PC's Bluetooth device address: keep it local, do not "
+                + "attach it to a public issue.",
+        };
+        for (var i = 0; i < recorded.Count; i++)
+        {
+            var index = i.ToString(CultureInfo.InvariantCulture);
+            lines.Add(BackupKeyPrefix + index + "|" + recorded[i].KeyPath);
+            foreach (var value in recorded[i].PreviousValues)
+                lines.Add(BackupValuePrefix + index + "|" + value);
+            // Values first, their count last, the same ordering the script
+            // uses: the count can only be written once every value above it
+            // is, so a block that ends early loses its count line with it.
+            lines.Add(BackupCountPrefix + index + "|"
+                + recorded[i].PreviousValues.Count.ToString(CultureInfo.InvariantCulture));
+        }
+        return lines;
+    }
+
+    // Reads the same form back, out of the backup file or straight out of the
+    // script's status sidecar. A key with no recorded value, a value with no
+    // key, and a block whose prev-count line is missing or disagrees with the
+    // values that arrived are all dropped. A half record is not something a
+    // hand restore may act on: a block that silently listed four of five
+    // values would have the user drop a surviving filter.
+    internal static IReadOnlyList<FilterBackupEntry> ParseFilterBackup(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return [];
+        var order = new List<(string Index, string KeyPath, List<string> Values)>();
+        var byIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var raw in text.Split('\n'))
+        {
+            // Only the line separator is stripped: a recorded value keeps its
+            // own leading and trailing spaces.
+            var line = raw.TrimEnd('\r');
+            if (line.StartsWith(BackupKeyPrefix, StringComparison.Ordinal))
+            {
+                if (!SplitRecord(line[BackupKeyPrefix.Length..], out var index, out var keyPath))
+                    continue;
+                if (keyPath.Length == 0 || byIndex.ContainsKey(index))
+                    continue;
+                byIndex[index] = order.Count;
+                order.Add((index, keyPath, []));
+            }
+            else if (line.StartsWith(BackupCountPrefix, StringComparison.Ordinal))
+            {
+                if (!SplitRecord(line[BackupCountPrefix.Length..], out var index, out var count))
+                    continue;
+                if (!counts.ContainsKey(index) && TryCount(count, out var expected))
+                    counts[index] = expected;
+            }
+            else if (line.StartsWith(BackupValuePrefix, StringComparison.Ordinal))
+            {
+                if (!SplitRecord(line[BackupValuePrefix.Length..], out var index, out var value))
+                    continue;
+                if (byIndex.TryGetValue(index, out var at))
+                    order[at].Values.Add(value);
+            }
+        }
+        return order
+            .Where(e => e.Values.Count > 0
+                && counts.TryGetValue(e.Index, out var expected)
+                && expected == e.Values.Count)
+            .Select(e => new FilterBackupEntry(e.KeyPath, e.Values.ToArray()))
+            .ToList();
+    }
+
+    // Index up to the FIRST '|', remainder verbatim - a LowerFilters value or
+    // a key path is free to contain the separator.
+    static bool SplitRecord(string rest, out string index, out string value)
+    {
+        index = "";
+        value = "";
+        var bar = rest.IndexOf('|');
+        if (bar <= 0)
+            return false;
+        index = rest[..bar];
+        value = rest[(bar + 1)..];
+        return true;
+    }
+
+    // An undo record is only an undo record when there is something to undo.
+    // The script reports key=/prev= for every scanned target BEFORE it knows
+    // whether it will change any of them, so a nothing-to-do run - or one that
+    // refused before the write pass - carries the same lines as a run that
+    // rewrote the stack. Keyed off the registry dimension, which is exactly
+    // "a write may have landed": Untouched is the one answer that means the
+    // recorded values are still what the keys hold.
+    internal static bool ShouldRecordFilterBackup(RepairResult result) =>
+        result.Registry != RegistryState.Untouched;
+
+    // The production copy. The elevated console is gone the moment the script
+    // ends and nothing can be redirected out of it under UseShellExecute, so
+    // the previous values are kept here, from the sidecar lines the script
+    // wrote before its first write. Returns the file it wrote, or null when
+    // there was nothing to record.
+    static string? WriteFilterBackup(string pid, long nonce, IReadOnlyList<FilterBackupEntry> entries)
+    {
+        var lines = FormatFilterBackup(pid, nonce, entries);
+        if (lines.Count == 0)
+            return null;
+        var path = FilterBackupPath(pid, nonce);
+        try
+        {
+            Directory.CreateDirectory(Logger.LogDir);
+            File.WriteAllLines(path, lines);
+            PruneFilterBackups();
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"DEVICE_REPAIR_FILTERS backup_failed pid={pid} nonce={nonce} err={ex.Message}");
+            return null;
+        }
+    }
+
+    // How many attempts' records are kept. These files sit in the folder "Open
+    // logs" opens, hold unredacted BTHENUM key paths, and nothing else ever
+    // deletes them - debug.log rotates and ModeFlip clears its sentinel, so an
+    // unbounded pile here is the odd one out. The newest few are the ones that
+    // can still describe a stack the user has not fixed yet.
+    const int KeptFilterBackups = 5;
+
+    // Best effort: a record that cannot be deleted is left alone, because
+    // failing to tidy is never a reason to fail the repair that just ran.
+    static void PruneFilterBackups()
+    {
+        try
+        {
+            var records = new DirectoryInfo(Logger.LogDir)
+                .GetFiles("mm-filters-backup-*.txt")
+                .Select(f => (Path: f.FullName, LastWriteUtc: f.LastWriteTimeUtc));
+            foreach (var path in FilterBackupsToPrune(records))
+            {
+                try { File.Delete(path); } catch { /* in use or gone */ }
+            }
+        }
+        catch { /* the folder is unreadable; the record itself is already written */ }
+    }
+
+    // Which records the prune deletes, as a pure seam: the bound docs promise
+    // ("the newest five records are kept") is a number a user acts on, and the
+    // enumeration half can only be exercised against the real %APPDATA%.
+    internal static IReadOnlyList<string> FilterBackupsToPrune(
+        IEnumerable<(string Path, DateTime LastWriteUtc)> records) =>
+        records
+            .OrderByDescending(r => r.LastWriteUtc)
+            .Skip(KeptFilterBackups)
+            .Select(r => r.Path)
+            .ToList();
+
     // Shared elevation shape for both repairs: write the script, ShellExecute
     // it with Verb=runas, and poll the status sidecar because ExitCode is
     // unavailable once UseShellExecute is true. Started=false means
     // ShellExecute handed back no process at all - UAC refused outright.
-    static (bool Started, string Sidecar, int? Exit) LaunchElevated(
+    // TimedOut=true means the poll loop reached ElevatedCeiling and killed the
+    // tree: the script was cut off wherever it had got to, which is reported
+    // as its own outcome and never as a script that failed on its own.
+    static (bool Started, string Sidecar, int? Exit, bool TimedOut) LaunchElevated(
         string scriptPath,
         string script,
         string statusPath)
@@ -599,23 +1194,29 @@ exit 1
         };
         Process? p;
         try { p = Process.Start(psi); }
-        catch (System.ComponentModel.Win32Exception) { return (false, "", null); }
+        catch (System.ComponentModel.Win32Exception) { return (false, "", null, false); }
         if (p is null)
-            return (false, "", null);
+            return (false, "", null, false);
         string sidecar = "";
         int? exit = null;
+        var settled = false;
         using (p)
         {
             var started = DateTime.UtcNow;
-            var until = started + TimeSpan.FromMinutes(2);
+            var until = started + ElevatedCeiling;
             while (DateTime.UtcNow < until)
             {
                 if (File.Exists(statusPath))
                 {
-                    try { sidecar = File.ReadAllText(statusPath).Trim(); }
-                    catch { sidecar = ""; }
-                    if (sidecar is "ok" or "failed" or "no-instances" or "filter-blocked" or "nothing-to-do")
+                    // A read that loses to the script's own append keeps the
+                    // last good text: it carries the recorded previous values.
+                    try { sidecar = ReadSidecar(statusPath); }
+                    catch { /* locked mid-append */ }
+                    if (IsTerminalResult(ParseProgress(sidecar)?.Result))
+                    {
+                        settled = true;
                         break;
+                    }
                 }
                 try
                 {
@@ -623,7 +1224,10 @@ exit 1
                     if (p.HasExited
                         && sidecar.Length == 0
                         && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
+                    {
+                        settled = true;
                         break;
+                    }
                 }
                 catch { /* UseShellExecute */ }
                 Thread.Sleep(150);
@@ -634,27 +1238,40 @@ exit 1
             }
             try { if (p.HasExited) exit = p.ExitCode; } catch { /* UseShellExecute */ }
         }
-        return (true, sidecar, exit);
+        // Only a loop that ran out of time killed a script that was still
+        // working - the kill after a final report is just cleanup. The elevated
+        // tree can be stopped anywhere, including between the device-key write
+        // and the instance-key writes, so the last report it managed to write
+        // is what the registry dimension is read from.
+        return (true, sidecar, exit, !settled);
     }
 
-    static RepairOutcome MapOutcome(string sidecar, int? exit) => sidecar switch
+    // The five results either script writes as its last word. "running" is not
+    // one of them: it means the pass was still in flight when this was read.
+    static bool IsTerminalResult(string? result) =>
+        result is "ok" or "failed" or "no-instances" or "filter-blocked" or "nothing-to-do";
+
+    // FileShare.ReadWrite | FileShare.Delete, for the reason BugReport's log
+    // tail uses it (BugReport.cs:151): the elevated script is appending to
+    // this file while the loop above reads it. A default-share read denies
+    // that Add-Content for the length of the read, and under the script's
+    // $ErrorActionPreference = 'Continue' the failure is non-terminating, so
+    // the status line is lost for good - a dropped "written=N" would pair the
+    // header's seeded zero with stage=written and report a clean registry over
+    // a rewritten LowerFilters. A lost line is unrecoverable; a torn read is
+    // not, because ParseProgress refuses to parse one.
+    static string ReadSidecar(string path)
     {
-        // "nothing-to-do": the stale names were already gone, so the stack is
-        // in the state the repair wanted. Same answer as a completed repair.
-        "ok" or "nothing-to-do" => RepairOutcome.Ok,
-        "no-instances" => RepairOutcome.NoInstances,
-        "filter-blocked" => RepairOutcome.FilterBlocked,
-        _ when exit == NoInstancesExitCode => RepairOutcome.NoInstances,
-        _ when exit == FilterBlockedExitCode => RepairOutcome.FilterBlocked,
-        // "failed", an unrecognised sidecar, and an empty sidecar (UAC
-        // cancelled or the script never ran) are all the same to the caller.
-        _ => RepairOutcome.Failed,
-    };
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
 
     // Never throws for NoInstances / FilterBlocked - those are returned so the
     // caller can explain them. Throws only when the request itself is invalid
     // (bad PID, unknown service) or the temp script cannot be written.
-    internal static RepairOutcome Apply(string pid, string filterServiceName)
+    internal static RepairResult Apply(string pid, string filterServiceName)
     {
         pid = ValidatePid(pid);
         var svc = ValidateFilterServiceName(filterServiceName);
@@ -672,20 +1289,29 @@ exit 1
             $"mm-repair-{pid}-{ProcIdSegment()}-{ValidateNonce(nonce)}.ps1");
         Logger.Log($"DEVICE_REPAIR pid={pid} nonce={nonce} svc={svc}");
         var run = LaunchElevated(temp, script, StatusSidecarPath(pid, nonce));
-        if (!run.Started)
-        {
-            Logger.Log($"DEVICE_REPAIR pid={pid} outcome=failed reason=no-process");
-            return RepairOutcome.Failed;
-        }
-        var outcome = MapOutcome(run.Sidecar, run.Exit);
-        Logger.Log($"DEVICE_REPAIR pid={pid} svc={svc} exit={run.Exit?.ToString() ?? "n/a"} sidecar={run.Sidecar} outcome={outcome}");
-        return outcome;
+        var progress = ParseProgress(run.Sidecar);
+        // HasWritePass is read off the script that actually ran, never
+        // restated here: BuildScript restarts devices and reads
+        // SystemStartOptions, and contains no registry write at all, so this
+        // attempt cannot have changed LowerFilters even when its report never
+        // reaches the tray (an over-the-shoulder elevation writes the sidecar
+        // under the admin's profile, a ceiling kill can land before the first
+        // status line). Telling the user to go check LowerFilters would be a
+        // warning about a change this script has no code to make.
+        var result = Decide(
+            new RepairEvidence(
+                run.Started, progress, run.Exit, run.TimedOut, ScriptHasWritePass(script)));
+        Logger.Log($"DEVICE_REPAIR pid={pid} svc={svc} nonce={nonce} "
+            + $"exit={run.Exit?.ToString(CultureInfo.InvariantCulture) ?? "n/a"} "
+            + $"stage={progress?.Stage.ToString() ?? "none"} timed_out={run.TimedOut} "
+            + $"outcome={LogToken(result)}");
+        return result;
     }
 
     // Same never-throws-for-NoInstances/FilterBlocked contract as Apply.
     // Throws only when the request itself is invalid (bad PID, unknown or
     // contradictory service names) or the temp script cannot be written.
-    internal static RepairOutcome ApplyRemoveStaleFilters(string pid, string keepService, string[] removeServices)
+    internal static RepairResult ApplyRemoveStaleFilters(string pid, string keepService, string[] removeServices)
     {
         pid = ValidatePid(pid);
         var keep = ValidateFilterServiceName(keepService);
@@ -700,13 +1326,24 @@ exit 1
         var removed = string.Join(",", remove);
         Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} nonce={nonce} keep={keep} remove={removed}");
         var run = LaunchElevated(temp, script, FiltersStatusSidecarPath(pid, nonce));
-        if (!run.Started)
-        {
-            Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} keep={keep} remove={removed} outcome=failed reason=no-process");
-            return RepairOutcome.Failed;
-        }
-        var outcome = MapOutcome(run.Sidecar, run.Exit);
-        Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} keep={keep} remove={removed} exit={run.Exit?.ToString() ?? "n/a"} sidecar={run.Sidecar} outcome={outcome}");
-        return outcome;
+        var progress = ParseProgress(run.Sidecar);
+        var result = Decide(
+            new RepairEvidence(
+                run.Started, progress, run.Exit, run.TimedOut, ScriptHasWritePass(script)));
+        // After the outcome, because the outcome is what says whether there is
+        // anything to undo, but from the same sidecar text: this is the only
+        // copy of what the keys held - the sidecar lives in %TEMP% and the
+        // elevated console that printed them is already gone. Written whenever
+        // a write may have landed, including after a ceiling kill.
+        var backup = ShouldRecordFilterBackup(result)
+            ? WriteFilterBackup(pid, nonce, ParseFilterBackup(run.Sidecar))
+            : null;
+        Logger.Log($"DEVICE_REPAIR_FILTERS pid={pid} keep={keep} remove={removed} nonce={nonce} "
+            + $"exit={run.Exit?.ToString(CultureInfo.InvariantCulture) ?? "n/a"} "
+            + $"stage={progress?.Stage.ToString() ?? "none"} "
+            + $"written={progress?.KeysWritten.ToString(CultureInfo.InvariantCulture) ?? "n/a"} "
+            + $"timed_out={run.TimedOut} backup={(backup is null ? "none" : Path.GetFileName(backup))} "
+            + $"outcome={LogToken(result)}");
+        return result;
     }
 }
