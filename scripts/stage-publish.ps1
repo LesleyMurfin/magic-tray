@@ -42,7 +42,7 @@ $staged = [ordered]@{
     'scripts/kbd-patch-cachedservices.ps1' = 'kbd-patch-cachedservices.ps1'
     'scripts/Install-KeyboardBattery.cmd'  = 'Install-KeyboardBattery.cmd'
     'scripts/capture-state.ps1'            = 'capture-state.ps1'
-    'diagnose-driver.ps1'                  = 'diagnose-driver.ps1'
+    'scripts/diagnose-driver.ps1'          = 'diagnose-driver.ps1'
     'scripts/diagnose-and-recover.ps1'     = 'diagnose-and-recover.ps1'
     'scripts/mm-bt-stack-snapshot.ps1'     = 'mm-bt-stack-snapshot.ps1'
 }

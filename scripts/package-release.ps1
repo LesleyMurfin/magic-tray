@@ -35,14 +35,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
 # Relative path inside the ZIP -> source path relative to the repo root.
-# diagnose-driver.ps1 lives in the repo root but ships under scripts/ with the
-# rest, and both resolvers find it there: scripts/ is
-# FindKeyboardPatchScript's first probe and DiagnosticScripts.Find's second.
+# Every shipped script lives under scripts/ in the repo and in the ZIP, and
+# both resolvers find it there: scripts/ is FindKeyboardPatchScript's first
+# probe and DiagnosticScripts.Find's second.
 $ScriptPayload = [ordered]@{
   'scripts/kbd-patch-cachedservices.ps1' = 'scripts/kbd-patch-cachedservices.ps1'
   'scripts/Install-KeyboardBattery.cmd'  = 'scripts/Install-KeyboardBattery.cmd'
   'scripts/capture-state.ps1'            = 'scripts/capture-state.ps1'
-  'scripts/diagnose-driver.ps1'          = 'diagnose-driver.ps1'
+  'scripts/diagnose-driver.ps1'          = 'scripts/diagnose-driver.ps1'
   'scripts/diagnose-and-recover.ps1'     = 'scripts/diagnose-and-recover.ps1'
   'scripts/mm-bt-stack-snapshot.ps1'     = 'scripts/mm-bt-stack-snapshot.ps1'
 }

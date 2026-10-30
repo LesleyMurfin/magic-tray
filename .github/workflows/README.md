@@ -81,7 +81,7 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
   public asset URLs. Only the second one can notice that the wrong asset set
   was published, which is how the v1.1.0 run went green while shipping no ZIP
   and no checksum. It is a hard gate — no `continue-on-error`. The whole
-  release procedure is in [`RELEASING.md`](../../RELEASING.md).
+  release procedure is in [`docs/RELEASING.md`](../../docs/RELEASING.md).
 - **Permissions**: `contents: write` (needed by `gh release create`).
   **Timeout**: 30 min. **No concurrency group** — a tag build must never be
   cancelled by a later one.

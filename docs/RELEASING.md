@@ -9,7 +9,7 @@ duplicating them is how they rot:
 - [`CLOUDFLARE.md`](CLOUDFLARE.md) — the Cloudflare edge configuration for
   `magictray.app`. **None of it is in git.** You need it only if the site does
   not show what you just merged.
-- [`packaging/winget/README.md`](packaging/winget/README.md) — the winget
+- [`packaging/winget/README.md`](../packaging/winget/README.md) — the winget
   submission in detail: folder layout, schema version, the manual fork-and-PR
   flow, and what a moderator will ask.
 
@@ -516,7 +516,7 @@ than the newest, why it installs as a ZIP with
 `ArchiveBinariesDependOnPath: true`, the manual fork-and-PR flow, the
 one-package-one-version-per-PR rules, and what a moderator tends to ask about
 an unsigned portable app — is in
-[`packaging/winget/README.md`](packaging/winget/README.md). Read it there
+[`packaging/winget/README.md`](../packaging/winget/README.md). Read it there
 rather than trusting a summary.
 
 ---

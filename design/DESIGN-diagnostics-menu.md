@@ -27,7 +27,7 @@ Run mm-devmgr-dump.ps1             ← if snapshot missing and this exists
 | Open logs | — | Keep. `%APPDATA%\MagicMouseTray\debug.log`. |
 | Open diagnostics folder | — | Keep. Same directory. |
 | Run capture-state.ps1 | `scripts/capture-state.ps1` (or next to exe) | Current v3 device/driver state (COL01/COL02, LowerFilters, service). 0323-only compare schema. |
-| Run diagnose-driver.ps1 | `diagnose-driver.ps1` at **repo root** (or next to exe / `scripts\`) | applewirelessmouse .sys, sc, pnputil, LowerFilters. |
+| Run diagnose-driver.ps1 | `scripts/diagnose-driver.ps1` (or next to exe) | applewirelessmouse .sys, sc, pnputil, LowerFilters. |
 | Run diagnose-and-recover.ps1 | `scripts/diagnose-and-recover.ps1` | All catalog PIDs, both filter services, USB phantom vs BTHENUM, config.ini, debug.log tail. Tray does **not** pass `-Repair`. |
 | Run mm-bt-stack-snapshot.ps1 | `scripts/mm-bt-stack-snapshot.ps1` | BT HID stack + filter chain. Preferred over devmgr. |
 | Run mm-devmgr-dump.ps1 | `scripts/mm-devmgr-dump.ps1` | Fallback when snapshot is absent. |
@@ -46,7 +46,7 @@ Same walk as `DriverInstaller.FindKeyboardPatchScript`:
 
 `start` defaults to `AppContext.BaseDirectory`. Tests pass a fake tree.
 
-`diagnose-driver.ps1` lives at the repo root, not under `scripts\`, which is why the walk checks `{dir}\<name>` as well as `{dir}\scripts\<name>`.
+Every allowlisted script lives under `scripts\`, but a user can also drop one next to the exe, which is why the walk checks `{dir}\<name>` as well as `{dir}\scripts\<name>`.
 
 Launch: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<path>"`, `UseShellExecute = true`, working directory = the script’s folder. No extra args, no C# formatter, no invented dump file.
 
@@ -63,14 +63,14 @@ Launch: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<path>"`, `Use
 | `design/DESIGN-diagnostics-menu.md` | This design. |
 | `MagicMouseTray/DiagnosticScripts.cs` | Names, labels, `Find`, snapshot-or-devmgr, `powershell -File` start info. No WinForms. No dump text. |
 | `MagicMouseTray/TrayApp.cs` (`BuildMenu` Diagnostics) | Keep Test notification, Open logs, Open diagnostics folder. Add allowlisted items when `Find` returns a path. |
-| `MagicMouseTray.Tests/DiagnosticScriptsTests.cs` | Fake tree: finds `capture-state.ps1`; root `diagnose-driver.ps1`; snapshot preferred; does not invent a dump format. |
+| `MagicMouseTray.Tests/DiagnosticScriptsTests.cs` | Fake tree: finds `capture-state.ps1`; loose `diagnose-driver.ps1`; snapshot preferred; does not invent a dump format. |
 
 ## Tests
 
 WindowsDesktop, resolver only. No live HID. No `Process.Start`.
 
 - Fake tree with `scripts/capture-state.ps1` and a nested `bin\...` start dir → `Find("capture-state.ps1")` returns that file.
-- `diagnose-driver.ps1` at fake repo root is found from the nested start dir.
+- `diagnose-driver.ps1` dropped loose in a fake tree root is found from the nested start dir.
 - Next-to-start `capture-state.ps1` is found without a `scripts\` folder.
 - Both snapshot and devmgr present → stack-dump path is the snapshot, not devmgr.
 - Snapshot missing, devmgr present → stack-dump path is devmgr.

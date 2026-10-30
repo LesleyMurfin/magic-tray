@@ -284,7 +284,7 @@ The in-app path above covers all three field faults. Reach for the scripts when 
 |---|---|
 | `scripts/diagnose-and-recover.ps1` | After an incident. All catalog PIDs, the filter service each device actually binds (KMDF-family names such as `MagicMouseDriver` or `MagicMouseDriver204Scroll`, or Boot Camp `applewirelessmouse`), USB phantom vs BTHENUM, `config.ini`, last 50 `debug.log` lines. Optional `-Repair`. |
 | `scripts/capture-state.ps1` | Pre/post-reboot **v3 (0323) only** compare. Not a v1 tool. |
-| `diagnose-driver.ps1` | Deep dive on `applewirelessmouse.sys` (v1/v2 Boot Camp). |
+| `scripts/diagnose-driver.ps1` | Deep dive on `applewirelessmouse.sys` (v1/v2 Boot Camp). |
 | `scripts/mm-bt-stack-snapshot.ps1` | Live BT HID stack dump. No repair. |
 
 Tray Diagnostics launches those **without** `-Repair`. Script repair is CLI-only, elevated:
