@@ -687,11 +687,20 @@ internal sealed class TrayApp : IDisposable
     IReadOnlyList<RepairFinding> _findings = Array.Empty<RepairFinding>();
     // Raw findings the gate is still holding. Never shown as a fault and never
     // toasted, but an explicit user-initiated check reports them rather than
-    // answering "No problems found" while a real fault is mid-confirmation.
+    // answering with the all-clear row while a real fault is mid-confirmation.
     IReadOnlyList<RepairFinding> _pendingFindings = Array.Empty<RepairFinding>();
     // The snapshots the current _findings were planned from, so the device rows
     // can state per-capability health without a second read.
     IReadOnlyList<DeviceSnapshot> _snapshots = Array.Empty<DeviceSnapshot>();
+    // How many devices the sweep that produced _snapshots attempted. Travels
+    // with the list so the repair row can tell "every device was read and is
+    // clean" from "a device's read threw and is missing from the list" - a
+    // read that throws logs REPAIR_SNAPSHOT_FAILED and adds nothing
+    // (RepairPlanner.MenuLabel). 0 until the first sweep publishes, which is
+    // exactly the "the list is the whole sweep" default, so the menu built
+    // before any refresh keeps its original label; the menu's Opening handler
+    // refreshes before it is ever shown.
+    int _attemptedDeviceCount;
     readonly HashSet<string> _toastedFindings = new(StringComparer.OrdinalIgnoreCase);
     // One gate for the process: a fault has to persist across refreshes before it
     // is believed, so a driver install's stack churn cannot toast or offer a
@@ -751,7 +760,7 @@ internal sealed class TrayApp : IDisposable
     // Written by the mouse driver package's multitouch watcher. Magic Tray only
     // ever names this path in guidance: parsing it belongs to DeviceDiagReader,
     // and re-implementing the watcher is an explicit non-goal
-    // (docs/ENABLE-DISABLE.md:93-97).
+    // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
     const string MultitouchWatcherLogPath = @"C:\ProgramData\MagicMouseDriver\auto-f1-watcher.log";
 
     internal TrayApp(Config config)
@@ -838,7 +847,8 @@ internal sealed class TrayApp : IDisposable
             UpdateBatteryReadsVisibility();
         };
 
-        _repairItem = new ToolStripMenuItem(TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings)));
+        _repairItem = new ToolStripMenuItem(
+            TrayMenu.MenuText(RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount)));
         if (_findings.Count > 0)
             _repairItem.ForeColor = Color.OrangeRed;
         _repairItem.Click += (_, _) => ShowRepairFlow();
@@ -1761,7 +1771,7 @@ internal sealed class TrayApp : IDisposable
             AddDriverChoices(item.DropDownItems, kind, pid, separator: false);
         }
 
-        item.DropDownItems.Add(BuildShowInTrayItem(pid, name));
+        item.DropDownItems.Add(BuildShowInTrayItem(pid, name, kind));
         item.DropDownItems.Add(BuildWindowsDeviceMenu(pid, name));
         item.DropDownItems.Add(new ToolStripSeparator());
         var thrMenu = new ToolStripMenuItem(TrayMenu.MenuText("Low battery alert"));
@@ -1809,11 +1819,16 @@ internal sealed class TrayApp : IDisposable
     //   - BuildWindowsDeviceMenu is the WINDOWS devnode state, which is the
     //     only part that is a real PnP change and the only part that asks for
     //     administrator approval.
-    ToolStripMenuItem BuildShowInTrayItem(string pid, string? nameForModal)
+    // kind is what lets the tick match the poller: a legacy vendor-wide
+    // enabled_logi=false still suppresses a Logitech product whose PID is now
+    // its own (Config.IsDeviceEnabled), so a row drawn for one must read
+    // unchecked rather than claim a device the poller is skipping is shown.
+    // Optional, for the unknown-mouse row, which has a PID and no kind.
+    ToolStripMenuItem BuildShowInTrayItem(string pid, string? nameForModal, DeviceKind? kind = null)
     {
         var item = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.ShowInTray))
         {
-            Checked = _config.IsDeviceEnabled(pid),
+            Checked = _config.IsDeviceEnabled(pid, kind),
             CheckOnClick = true,
         };
         item.Click += (_, _) =>
@@ -2296,12 +2311,17 @@ internal sealed class TrayApp : IDisposable
     {
         IReadOnlyList<RepairFinding> raw;
         IReadOnlyList<DeviceSnapshot> snapshots;
+        int attempted;
         try
         {
             // The reader cannot read a battery itself - the percent arrives as a
             // pushed HID input report the poller owns - so the tray hands it the
             // sentinels it already has.
             snapshots = DeviceSnapshotReader.Read(_config, _lastBatteryByPid);
+            // Read here, beside the sweep it describes: a PID whose read threw
+            // is logged as REPAIR_SNAPSHOT_FAILED and leaves no snapshot, so
+            // only this pair can tell a clean sweep from an incomplete one.
+            attempted = DeviceSnapshotReader.AttemptedDeviceCount;
             raw = RepairPlanner.Plan(snapshots);
         }
         catch (Exception ex)
@@ -2327,6 +2347,7 @@ internal sealed class TrayApp : IDisposable
         _findings = gated.Confirmed;
         _pendingFindings = gated.Pending;
         _snapshots = snapshots;
+        _attemptedDeviceCount = attempted;
 
         // Started here, exactly where the synchronous read stood, so the
         // refresh cadence is unchanged - but the reading itself runs on the
@@ -2340,7 +2361,8 @@ internal sealed class TrayApp : IDisposable
         {
             if (_repairItem != null)
             {
-                _repairItem.Text = RepairPlanner.MenuLabel(_findings);
+                _repairItem.Text =
+                    RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount);
                 _repairItem.ForeColor = _findings.Count > 0
                     ? Color.OrangeRed
                     : SystemColors.ControlText;
@@ -2369,8 +2391,11 @@ internal sealed class TrayApp : IDisposable
     /// Check is the one reader on this refresh that can start a process: it
     /// may reach a single <c>bcdedit /enum {current}</c> READ when the
     /// registry cannot answer the signing question, and its own header says
-    /// so and says it belongs on a background read and never on a UI thread
-    /// (SystemConfigChecker.cs:21-23, 145-151). The device targets are
+    /// so (the READ-ONLY AND SECURITY-NEUTRAL BY CONSTRUCTION block at the top
+    /// of SystemConfigChecker) while the thread-placement note inside
+    /// <see cref="SystemConfigChecker.Check"/> says it belongs on the same
+    /// background snapshot read the other readers use, never on a UI thread.
+    /// The device targets are
     /// UI-owned state, so they are sampled on the calling thread and only the
     /// finished facts cross back.
     /// </remarks>
@@ -2830,8 +2855,8 @@ internal sealed class TrayApp : IDisposable
     /// language before anything is changed; Cancel stops the walk.
     ///
     /// This is the answer to a direct user question - the top-of-menu row and
-    /// "Check for problems now" both land here - so it must never say "No problems
-    /// found" while the gate is still holding one. It must not bypass the gate
+    /// "Check for problems now" both land here - so it must never report an
+    /// all-clear while the gate is still holding one. It must not bypass the gate
     /// either: an unconfirmed fault is offered a repair that elevates and runs
     /// pnputil /restart-device, and during a driver install that fights the
     /// install. Asking does not make a 900 ms fault real. So the honest answer is
@@ -2858,7 +2883,12 @@ internal sealed class TrayApp : IDisposable
                     + "reported if it is still there.");
                 return;
             }
-            ToastNotifier.Show(TrayMenu.ProductName, "No problems found.");
+            // The same words as the top-of-menu row, taken from the row's own
+            // label, so the answer to "Check for problems now" cannot claim a
+            // wider all-clear than the row directly above it.
+            ToastNotifier.Show(
+                TrayMenu.ProductName,
+                $"{RepairPlanner.MenuLabel(_findings, _snapshots, _attemptedDeviceCount)}.");
             return;
         }
 
@@ -2883,7 +2913,8 @@ internal sealed class TrayApp : IDisposable
         // Guidance only. Nothing here is elevated, nothing is written to the mouse, and
         // the multitouch enable Feature report is never sent: the mouse driver package
         // owns that, and a second implementation in Magic Tray is an explicit non-goal
-        // (docs/ENABLE-DISABLE.md:93-97). PlanOne does not raise this action today - the
+        // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not start").
+        // PlanOne does not raise this action today - the
         // symptom is user-asserted from the device row - but a finding carrying it must
         // still reach real help instead of falling through the switch below.
         if (finding.Action == RepairAction.RecommendMultitouchWatcher)
@@ -3164,7 +3195,8 @@ internal sealed class TrayApp : IDisposable
     // it receives the Apple multitouch enable Feature report, which it forgets on power
     // cycle and reconnect (docs/DESIGN-trackpad-tap.md:54). Only the mouse driver package
     // sends it. Magic Tray must not send it and must not re-implement the package's
-    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md:93-97) - so this
+    // watcher - that is an explicit non-goal (docs/ENABLE-DISABLE.md, "Magic Tray
+    // does not send F1, and must not start") - so this
     // offers the power cycle, names the watcher, and stops there. Nothing here is elevated.
     void ShowScrollGuidance(string pid)
     {

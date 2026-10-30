@@ -235,4 +235,120 @@ public class ConfigTests : IDisposable
         Assert.Equal(1, cfg.GetThreshold("0323"));
         Assert.Equal(5, cfg.GetThreshold("030d"));
     }
+
+    // --- Legacy "logi" enable key, after the per-product Logitech PID split -----------------
+    //
+    // Before this change every Logitech interface reported Pid "logi", so a user who turned
+    // EnableThirdParty on and then unchecked their Logitech row holds enabled_logi=false in
+    // config.ini. Pid is now DeviceRegistry.ExtractPid(path) - one identity per product - and
+    // IsDeviceEnabled reads an absent key as enabled, so that key now matches nothing:
+    // AdaptivePoller.ShouldSkipPid answers false for the new per-product PID and the device the
+    // user switched off is polled and shown again, with the stale line left in the file.
+    // EnableThirdParty shipping off protects the user who never turned it on; it is exactly the
+    // user who DID turn it on who holds the key, and a silently reversed preference is not an
+    // acceptable upgrade.
+    //
+    // Decided semantics: enabled_logi=false was the user saying "do not poll my Logitech
+    // hardware" - the only thing it COULD say, since one key covered the whole vendor - so it
+    // keeps suppressing every Logitech product until the user says otherwise per product.
+    //   legacy false, no per-product key  -> suppressed, for any Logitech product
+    //   legacy true or absent             -> enabled; the legacy key can only ever suppress
+    //   explicit enabled_<pid>            -> always wins, in both directions
+    //   non-Logitech kind, or a caller that does not know the kind -> never affected
+    //   on save the legacy line is RETAINED, never rewritten into per-product lines: which
+    //   Logitech products this user owns is not knowable from the config file, so expanding it
+    //   is guesswork and dropping it re-enables the rest of them at the next Persist.
+    //
+    // IsDeviceEnabled orders the lookup: explicit per-product key, then the legacy "logi" key
+    // when kind is DeviceKind.LogitechMouse, then the existing default of enabled. kind is
+    // optional, so the call sites that only hold a PID compile unchanged.
+    static bool Enabled(Config cfg, string pid, DeviceKind? kind) => cfg.IsDeviceEnabled(pid, kind);
+
+    // b034 and 4069 are two different Logitech products: under the old identity both were
+    // "logi", under the new one they are two rows and two checkboxes.
+    [Fact]
+    public void LegacyLogiKeyFalse_StillSuppressesEveryLogitechProduct()
+    {
+        File.WriteAllText(_path, "enable_third_party=true\nenabled_logi=false\n");
+        var cfg = Config.Load(_path);
+        Assert.True(cfg.EnableThirdParty);
+
+        Assert.False(Enabled(cfg, "b034", DeviceKind.LogitechMouse));
+        Assert.False(Enabled(cfg, "4069", DeviceKind.LogitechMouse));
+        // ExtractPid's documented fallback for an interface with no pid token is "0000", and
+        // that row is a Logitech row like any other.
+        Assert.False(Enabled(cfg, "0000", DeviceKind.LogitechMouse));
+
+        // A caller that does not know the vendor keeps today's answer: the legacy key is a
+        // statement about Logitech hardware, so it needs the kind. The poller is the gate that
+        // matters and it has the kind in scope.
+        Assert.True(Enabled(cfg, "b034", null));
+        Assert.True(cfg.IsDeviceEnabled("b034"));
+
+        // The vendor-wide key is not an explicit line for this product. HasDeviceEnabledEntry
+        // means "the user toggled THIS pid here", which the repair planner reads as "this PC
+        // owns the device"; a key written for a different identity cannot claim that.
+        Assert.False(cfg.HasDeviceEnabledEntry("b034"));
+    }
+
+    [Theory]
+    [InlineData("enable_third_party=true\nenabled_logi=true\n")]  // explicitly left on
+    [InlineData("enable_third_party=true\n")]                     // never toggled at all
+    public void LegacyLogiKeyTrueOrAbsent_LeavesLogitechProductsEnabled(string ini)
+    {
+        File.WriteAllText(_path, ini);
+        var cfg = Config.Load(_path);
+
+        Assert.True(Enabled(cfg, "b034", DeviceKind.LogitechMouse));
+        Assert.True(Enabled(cfg, "4069", DeviceKind.LogitechMouse));
+    }
+
+    [Fact]
+    public void ExplicitPerProductKey_WinsOverTheLegacyLogiKey()
+    {
+        // The user has since re-enabled one product under its own identity.
+        File.WriteAllText(_path, "enable_third_party=true\nenabled_logi=false\nenabled_b034=true\n");
+        var cfg = Config.Load(_path);
+        Assert.True(Enabled(cfg, "b034", DeviceKind.LogitechMouse));
+        Assert.False(Enabled(cfg, "4069", DeviceKind.LogitechMouse));
+
+        // And the other direction: a per-product false is not undone by a legacy true.
+        File.WriteAllText(_path, "enable_third_party=true\nenabled_logi=true\nenabled_b034=false\n");
+        var later = Config.Load(_path);
+        Assert.False(Enabled(later, "b034", DeviceKind.LogitechMouse));
+        Assert.True(Enabled(later, "4069", DeviceKind.LogitechMouse));
+    }
+
+    [Theory]
+    [InlineData(DeviceKind.MagicMouseV3)]
+    [InlineData(DeviceKind.MagicKeyboard)]
+    [InlineData(DeviceKind.MagicTrackpadV2)]
+    public void LegacyLogiKey_NeverReachesANonLogitechDevice(DeviceKind kind)
+    {
+        File.WriteAllText(_path, "enabled_logi=false\n");
+        var cfg = Config.Load(_path);
+
+        Assert.True(Enabled(cfg, "030d", kind));
+        Assert.True(Enabled(cfg, "0323", kind));
+        // Including the unparseable-path fallback, which an Apple interface can also land on.
+        Assert.True(Enabled(cfg, "0000", kind));
+    }
+
+    [Fact]
+    public void Persist_RetainsTheLegacyLogiKey_WhenAPerProductRowIsToggled()
+    {
+        File.WriteAllText(_path, "enable_third_party=true\nenabled_logi=false\n");
+        var cfg = Config.Load(_path);
+        cfg.SetDeviceEnabled("b034", true);
+
+        // Rewriting the file must not drop the line: it is still the only record that the
+        // user's other Logitech products are switched off.
+        var ini = File.ReadAllText(_path);
+        Assert.Contains("enabled_logi=false", ini);
+        Assert.Contains("enabled_b034=true", ini);
+
+        var reloaded = Config.Load(_path);
+        Assert.True(Enabled(reloaded, "b034", DeviceKind.LogitechMouse));
+        Assert.False(Enabled(reloaded, "4069", DeviceKind.LogitechMouse));
+    }
 }

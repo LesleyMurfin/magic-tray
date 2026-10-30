@@ -100,8 +100,8 @@ internal static class SystemConfigChecker
     const string NestedSignatureOid = "1.3.6.1.4.1.311.2.4.1";
 
     // The watcher writes one "heartbeat alive" line every 5 minutes
-    // (DeviceDiagReader.cs:40-43). Four missed heartbeats is the threshold: a
-    // single missed line is scheduler jitter, not a finding.
+    // (DeviceDiagReader.WatcherState). Four missed heartbeats is the threshold:
+    // a single missed line is scheduler jitter, not a finding.
     internal static readonly TimeSpan WatcherStaleAfter = TimeSpan.FromMinutes(20);
 
     // What role a self-signed driver plays on this device right now. Test Mode
@@ -240,8 +240,16 @@ internal static class SystemConfigChecker
     //                                   could not read it (capped at Advisory
     //                                   by SigningSeverity). For a v1/v2 the
     //                                   documented route is Apple's signed
-    //                                   binary (README.md:389,
-    //                                   docs/drivers.html:634), so with no
+    //                                   binary (README.md, "Scrolling", where
+    //                                   both install routes end on the same
+    //                                   Apple-countersigned file; the same
+    //                                   claim is on the docs page at
+    //                                   docs/drivers.html#v1v2, "Apple's own
+    //                                   signature catalogue, so Windows loads
+    //                                   it with nothing switched off" - cited
+    //                                   by its HTML id because that page is
+    //                                   hand-maintained markup with no code
+    //                                   symbol to anchor to), so with no
     //                                   evidence there is nothing to raise.
     //
     // StockKmdf hands the mouse back to HidBth, which Windows signs itself, so
@@ -506,7 +514,8 @@ internal static class SystemConfigChecker
             url);
     }
 
-    // Fault B in docs/ENABLE-DISABLE.md:93-99: the mouse only emits its
+    // Fault B in docs/ENABLE-DISABLE.md, "Which dead-wheel fault is this - read
+    // the stack before you chase filters": the mouse only emits its
     // multitouch stream once the Apple enable feature report {0xF1, 0x02, 0x01}
     // has been sent, and the ONLY thing allowed to send it is the driver
     // package's own watcher. A second sender in the tray is an explicit
@@ -847,9 +856,20 @@ internal static class SystemConfigChecker
             var stderr = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(3000))
             {
-                try { p.Kill(entireProcessTree: true); } catch { }
-                try { p.WaitForExit(1000); } catch { }
-                Logger.Log("SYSTEM_CONFIG_BCDEDIT_TIMEOUT");
+                // Both of these stay best-effort: bcdedit has already blown its budget and the
+                // answer is null whatever happens next, so a kill that cannot land must not turn
+                // a diagnostic read into a thrown exception. What they must not do is vanish -
+                // a Kill that throws InvalidOperationException ("process has already exited") and
+                // one that throws Win32Exception (access denied, nothing reaped) leave very
+                // different machines behind, and the second means this process is still running
+                // after the tray has moved on. The reason rides on the timeout line rather than
+                // taking one of its own, so the marker stays one line per timeout.
+                string killNote = string.Empty;
+                try { p.Kill(entireProcessTree: true); }
+                catch (Exception ex) { killNote = $" kill_failed={ex.GetType().Name}:{ex.Message}"; }
+                try { p.WaitForExit(1000); }
+                catch (Exception ex) { killNote += $" reap_failed={ex.GetType().Name}:{ex.Message}"; }
+                Logger.Log($"SYSTEM_CONFIG_BCDEDIT_TIMEOUT{killNote}");
                 return null;
             }
 
@@ -1035,7 +1055,7 @@ internal static class SystemConfigChecker
     // Every installed service in the family, read from its own ImagePath,
     // because that is the file Windows loads and because Check is not told
     // which variant is bound: the KMDF package ships MagicMouseDriver204Scroll
-    // beside MagicMouseDriver (RepairPlanner.cs:495-501). One self-signed file
+    // beside MagicMouseDriver (RepairPlanner.IsKmdfFamily). One self-signed file
     // is enough for signing policy to matter; it takes every file on this PC
     // reading as trusted to say that it does not.
     static List<string> DriverImages(SigningSubject subject)

@@ -23,13 +23,14 @@ internal static class DeviceDiagReader
 
     // Bluetooth HID-profile transport GUID. A live BT HID child key is
     //   {00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323&Col01
-    // (docs/ENABLE-DISABLE.md:46 shows the same device-key form under BTHENUM;
+    // (docs/ENABLE-DISABLE.md, "Two scroll drivers registered on one mouse",
+    // shows the same device-key form under BTHENUM in its worked example;
     // the Enum\HID children append a collection suffix only when the device
     // splits its collections - see ClassifyPointerKey for the v1 shape, which
     // has exactly one collection and therefore no suffix).
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
 
-    // NORMAL = present devices only, same reason as DeviceStackReader.cs:37-40:
+    // NORMAL = present devices only, same reason as DeviceStackReader's CM_LOCATE_DEVNODE_NORMAL:
     // a charge-cable phantom must never be allowed to answer a question about
     // the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
@@ -211,12 +212,14 @@ internal static class DeviceDiagReader
     //         keys are AMBIGUOUS (see SelectPointerKeys), or the walk failed.
     //         Never a finding.
     //
-    // USB / HID\VID_05AC...&MI_..&COL01 charge-cable phantoms are EXCLUDED. A
-    // phantom COL01 exists on the reference PC after any USB-C charge
-    // (DeviceRegistry.cs:27-31), which is exactly why the older substring flags
-    // Col01Present/Col02Present read true even when the Bluetooth pointer child
-    // is gone (DeviceSnapshotReader.ReadHidLayer matches COL01 across ALL
-    // Enum\HID subkeys for the PID). Presence is therefore resolved through
+    // USB / HID\VID_05AC...&MI_..&COL01 charge-cable phantoms are EXCLUDED.
+    // After a USB-C charge Windows leaves phantom
+    // HID\VID_05AC&PID_xxxx&MI_yy&COLzz interfaces behind, all CM_PROB_PHANTOM,
+    // so a phantom COL01 exists on the reference PC after any charge. That is
+    // exactly why the older substring flags Col01Present/Col02Present read true
+    // even when the Bluetooth pointer child is gone
+    // (DeviceSnapshotReader.ReadHidLayer matches COL01 across ALL Enum\HID
+    // subkeys for the PID). Presence is therefore resolved through
     // CM_Locate_DevNodeW, never through key existence alone.
     internal static bool? PointerChildLive(string pid)
     {
@@ -282,8 +285,9 @@ internal static class DeviceDiagReader
 
     // What the driver package's multitouch watcher looks like from outside.
     // The tray never sends F1 and never reimplements the watcher
-    // (docs/ENABLE-DISABLE.md:93-97 makes a second sender an explicit
-    // non-goal); it may only READ this state and recommend.
+    // (docs/ENABLE-DISABLE.md, "Magic Tray does not send F1, and must not
+    // start", makes a second sender an explicit non-goal); it may only READ
+    // this state and recommend.
     //
     // Installed       - mm-auto-f1-watcher.ps1 present in C:\ProgramData\
     //                   MagicMouseDriver\, where mm-auto-f1-watcher-install.ps1
@@ -533,8 +537,8 @@ internal static class DeviceDiagReader
 
     // Two gates before a caller-supplied string is ever concatenated into a key
     // path: it must be one of the driver families the planner knows
-    // (RepairPlanner.cs:358-366), and it must look like a service name -
-    // no separators, no dots, nothing that could climb out of Services\.
+    // (RepairPlanner.IsKmdfFamily / IsAppleFamily), and it must look like a
+    // service name - no separators, no dots, nothing that could climb out of Services\.
     static bool IsSafeFamilyServiceName(string? service)
     {
         if (string.IsNullOrEmpty(service))
@@ -615,7 +619,7 @@ internal static class DeviceDiagReader
             return PointerKeyKind.None;
 
         // Apple VID plus this exact PID, through the one BTHENUM matcher the
-        // repo already has (DeviceSnapshotReader.cs:403-415, which covers both
+        // repo already has (DeviceSnapshotReader.BthenumKeyMatchesPid, which covers both
         // _VID&000205ac_ and _VID&0001004c_ via DriverHealthChecker's
         // AppleVidSegments). No second copy of the VID table lives here.
         if (!DeviceSnapshotReader.BthenumKeyMatchesPid(deviceKeyName, pid))
@@ -700,7 +704,7 @@ internal static class DeviceDiagReader
     static string Describe(bool? value) =>
         value is null ? "unknown" : value.Value ? "true" : "false";
 
-    // Duplicate of the declaration in DeviceStackReader.cs:211-212, which is
+    // Duplicate of the CM_Get_DevNode_PropertyW declaration in DeviceStackReader, which is
     // private to that class. Keeping it private here avoids editing that file;
     // if the two are ever merged, the shared home is a P/Invoke holder, not
     // either reader.

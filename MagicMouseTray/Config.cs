@@ -88,13 +88,45 @@ internal sealed class Config
 
     internal int GetThreshold(string pid) => Thresholds.TryGetValue(pid, out var t) ? t : GlobalThreshold;
 
-    internal bool IsDeviceEnabled(string pid) =>
-        !_deviceEnabled.TryGetValue(pid, out var enabled) || enabled;
+    // The PID every Logitech interface reported before DeviceRegistry.ExtractPid gave each
+    // product its own identity. It is not a PID any device can have now, so it is only ever read
+    // out of a config.ini written by an older build.
+    const string LegacyLogitechPid = "logi";
+
+    // Whether the tray polls and shows this device. An absent key means enabled: a PID is only
+    // written here when the user toggles it, so "never toggled" cannot mean "switched off".
+    //
+    // kind exists for one upgrade. Every Logitech interface used to report Pid "logi", so a user
+    // who turned EnableThirdParty on and then unchecked their Logitech row holds enabled_logi=false
+    // and nothing else; after the per-product split that key matches no PID, and the device they
+    // switched off would be polled and shown again. One vendor-wide key could only ever have said
+    // "do not poll my Logitech hardware", so it keeps suppressing every Logitech product until the
+    // user says otherwise per product. It can only ever suppress - a legacy true, like an absent
+    // key, is the ordinary default - and an explicit enabled_<pid> line wins in both directions,
+    // being the newer and the more specific statement. A non-Logitech kind is never affected, and
+    // neither is a caller that does not know the kind, which is why kind is optional: the gate that
+    // matters (AdaptivePoller.ShouldSkipPid) has it in scope, and the rest compile unchanged.
+    //
+    // Persist keeps the legacy line as it keeps any other entry, which is the wanted behaviour:
+    // which Logitech products this user owns is not knowable from the file, so expanding the key
+    // into per-product lines is guesswork and dropping it re-enables the rest of them.
+    internal bool IsDeviceEnabled(string pid, DeviceKind? kind = null)
+    {
+        if (_deviceEnabled.TryGetValue(pid, out var enabled)) return enabled;
+        if (kind == DeviceKind.LogitechMouse
+            && _deviceEnabled.TryGetValue(LegacyLogitechPid, out var vendorWide))
+            return vendorWide;
+        return true;
+    }
 
     // "Is there an explicit enabled_<pid> line for this PID?" - not what it says.
     // Absent means the device was never toggled here, which the repair planner
     // reads as "this PC does not own it" and stays quiet about. Same dictionary,
     // same case-insensitive keying as IsDeviceEnabled / SetDeviceEnabled.
+    // The legacy vendor-wide "logi" key deliberately does NOT answer for a
+    // Logitech product here, even though IsDeviceEnabled consults it: a key
+    // written against a different identity is not the user toggling THIS pid,
+    // so it cannot claim this PC owns this device.
     internal bool HasDeviceEnabledEntry(string pid) => _deviceEnabled.ContainsKey(pid);
 
     internal void SetDeviceEnabled(string pid, bool value)
@@ -195,7 +227,14 @@ internal sealed class Config
                 lines.Add($"enabled_{kv.Key}={kv.Value.ToString().ToLower()}");
             File.WriteAllLines(_configPath, lines);
         }
-        catch { }
+        // Best effort by design - a config write that fails must never take the tray down,
+        // and the in-memory value stays authoritative for this session. It is recorded
+        // because the symptom otherwise is a setting that silently forgets itself across
+        // restarts, with nothing in the log to say the write was the thing that failed.
+        catch (Exception ex)
+        {
+            Logger.Log($"CONFIG_SAVE_FAILED path=\"{_configPath}\" err=\"{ex.Message}\"");
+        }
     }
 
     static void ApplyStartup(bool enable)
@@ -209,6 +248,12 @@ internal sealed class Config
             else
                 key.DeleteValue(AppName, throwOnMissingValue: false);
         }
-        catch { }
+        // Best effort by design - Run-key access is routinely denied by policy on managed
+        // machines and that must not block startup. Recorded because the symptom is a
+        // start-with-Windows checkbox that reads as set and does nothing.
+        catch (Exception ex)
+        {
+            Logger.Log($"CONFIG_STARTUP_FAILED enable={enable.ToString().ToLower()} err=\"{ex.Message}\"");
+        }
     }
 }

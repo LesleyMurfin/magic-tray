@@ -323,6 +323,57 @@ public class BatteryAlertPolicyTests
         Assert.DoesNotContain("USB-C", d.Body);
     }
 
+    // 2 is the first pct the percent rung can ever see: every pct <= 1 returns
+    // from the death rung above it, and a negative pct returns before that. The
+    // rung's lower edge is therefore a property of the rungs' ORDER, not of the
+    // rung's own lower bound, and this pins it at that edge.
+    [Fact]
+    public void Percent_At2_FirstValueAboveDeathRung_ToastsPercent()
+    {
+        var d = Eval(DeviceKind.MagicMouseV3, pct: 2, hours: -1, rateKnown: false,
+            threshold: 10, name: "Magic Mouse 2024");
+        Assert.Equal(BatteryAlertAction.Toast, d.Action);
+        Assert.Equal(BatteryAlertPolicy.EventPercent, d.EventId);
+        Assert.Contains("2%", d.Body);
+    }
+
+    // The fired half of the same three edges. Unfired, 2 and 10 toast and 11 is
+    // silent (Percent_At2..., RateUnknown_At10_ToastsPercent,
+    // RateUnknown_AboveThreshold_None); fired, the whole band must go quiet -
+    // the rung never repeats itself and rearming is RearmFired's job alone.
+    [Theory]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void Percent_AlreadyFired_NeverRepeats(int pct)
+    {
+        var d = Eval(DeviceKind.MagicMouseV3, pct: pct, hours: -1, rateKnown: false,
+            threshold: 10, name: "Magic Mouse 2024",
+            alreadyFired: new[] { BatteryAlertPolicy.EventPercent });
+        Assert.Equal(BatteryAlertAction.None, d.Action);
+        Assert.Null(d.EventId);
+    }
+
+    // pct == 1 belongs to the death rung whatever the fired set holds: with
+    // death already fired it goes SILENT rather than falling through to a
+    // percent toast, and with the percent event fired it still opens the modal.
+    // That is the invariant that keeps 1 out of the percent rung entirely.
+    [Fact]
+    public void Death_At1_OwnsThePct_RegardlessOfFiredSet()
+    {
+        var deathFired = Eval(DeviceKind.MagicMouseV3, pct: 1, hours: -1, rateKnown: false,
+            threshold: 10, name: "Magic Mouse 2024",
+            alreadyFired: new[] { BatteryAlertPolicy.EventDeath });
+        Assert.Equal(BatteryAlertAction.None, deathFired.Action);
+        Assert.Null(deathFired.EventId);
+
+        var percentFired = Eval(DeviceKind.MagicMouseV3, pct: 1, hours: -1, rateKnown: false,
+            threshold: 10, name: "Magic Mouse 2024",
+            alreadyFired: new[] { BatteryAlertPolicy.EventPercent });
+        Assert.Equal(BatteryAlertAction.Modal, percentFired.Action);
+        Assert.Equal(BatteryAlertPolicy.EventDeath, percentFired.EventId);
+    }
+
     [Fact]
     public void Rearm_TimeEvents_WhenHoursLeaveWindow()
     {

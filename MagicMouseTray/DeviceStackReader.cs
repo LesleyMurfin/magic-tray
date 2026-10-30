@@ -9,17 +9,22 @@ namespace MagicMouseTray;
 //
 // Every other signal we collect is registration, not attachment:
 //   - LowerFilters under Enum\BTHENUM says PnP was TOLD to load the filter.
-//   - sc query <service> reporting RUNNING (DriverHealthChecker.cs:324-345) says
-//     the driver IMAGE is loaded somewhere in the kernel.
+//   - sc query <service> reporting RUNNING
+//     (DriverHealthChecker.KernelServiceRunning) says the driver IMAGE is
+//     loaded somewhere in the kernel.
 // After a reboot PnP can rebuild the BTHENUM stack without the filter while both
 // of those still read healthy, which is exactly the dead-wheel case the repair
-// menu used to call "No problems found" (docs/TEST-PLAN.md:21).
+// menu used to call "No problems found" (the A5/A6 pass rule in
+// docs/TEST-PLAN.md).
 //
 // DEVPKEY_Device_Stack is the repo's existing ground truth for attachment:
-// scripts/capture-state.ps1:152-157 reads that property and matches the filter
-// name in it, and V3RecycleManager.cs:320-322 already names it the authoritative
-// discriminator. This file is the C# port of that measurement - read-only, no
-// process spawn, one CM query per live instance.
+// scripts/capture-state.ps1:212-221 reads that property on the live BTHENUM
+// instance and says there in its own words that LowerFilters and sc query only
+// prove registration, Test-StackHasFilter (scripts/capture-state.ps1)
+// is the name match against the returned string list, and
+// scripts/diagnose-and-recover.ps1:266-268 is what calls it the discriminator
+// for this exact post-reboot case. This file is the C# port of that measurement
+// - read-only, no process spawn, one CM query per live instance.
 internal static class DeviceStackReader
 {
     // devpkey.h line 156 (Windows SDK):
@@ -103,7 +108,10 @@ internal static class DeviceStackReader
     // "\Driver\MagicMouseDriver204Scroll" - while boundFilterName is the verbatim
     // registry service name ("MagicMouseDriver204Scroll"). So the name can only be
     // a SUBSTRING of an entry, which is exactly how the PowerShell measurement
-    // matches it (capture-state.ps1:156, `$stackStr -imatch 'applewirelessmouse'`).
+    // matches it: Test-StackHasFilter (scripts/capture-state.ps1) runs
+    // $StackText.IndexOf($BoundFilter, OrdinalIgnoreCase) against the joined
+    // stack string, then the same case-insensitive IndexOf against the KMDF and
+    // Apple family prefixes.
     //
     // A family filter under ANY name counts as attached, not just the bound one.
     // The planner treats "not attached" as a dead wheel and offers an elevated
