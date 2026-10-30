@@ -796,7 +796,18 @@ internal sealed class TrayApp : IDisposable
         // would re-ask it. OfferStaleModeARestore queues the modal instead of
         // showing it, so the tray icon appears whether or not anyone is at the
         // keyboard to answer.
-        if (ModeFlip.StaleModeAOnStartup())
+        //
+        // Only when the one-click restore can actually run. A record the
+        // restore would refuse - the user has moved to another driver since, or
+        // the driver the record describes is no longer installed - is not a
+        // reason to open every launch with "scrolling may be dead": the click
+        // cannot help, and the record is deliberately kept in case the user
+        // moves back, so the modal would otherwise return for the life of the
+        // file. The record stays on disk and the gate is re-read at every
+        // start, so the offer returns by itself the moment the user is back on
+        // the driver it was taken under - which is also the only state where
+        // ShowPathAModeSwitch puts "Restore scroll mode" on the menu at all.
+        if (ModeFlip.StaleModeAOnStartup() && ModeFlip.StartupRestoreIsOfferable())
             OfferStaleModeARestore();
 
         if (_config.UpdateCheck)
