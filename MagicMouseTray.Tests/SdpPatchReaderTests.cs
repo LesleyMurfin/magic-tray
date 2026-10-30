@@ -16,6 +16,10 @@ namespace MagicMouseTray.Tests;
 // of that half which is machine-independent: garbage or absent input is Unknown
 // and never an exception, because a caller drawing a menu row must never be
 // handed a throw for a device it merely cannot identify.
+//
+// The hive enumeration itself stays out: what it feeds is a census of the
+// cache, and both the per-record verdicts it counts and the rule that reads
+// the census back are pinned below.
 public class SdpPatchReaderTests
 {
     // HKLM\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices
@@ -58,8 +62,8 @@ public class SdpPatchReaderTests
 
     static byte[] Patched() => Bytes(PatchedHex);
 
-    // The stock blob, derived by running the script's surgery
-    // (scripts/kbd-patch-cachedservices.ps1:110-122) BACKWARDS on the measured
+    // The stock blob, derived by running the script's surgery (Edit-Blob in
+    // scripts/kbd-patch-cachedservices.ps1) BACKWARDS on the measured
     // patched bytes: delete the four inserted bytes and give the four SDP length
     // fields their four bytes back. No unpatched Apple keyboard is paired to this
     // PC, so this is the only honest way to get a stock fixture - it is the exact
@@ -128,7 +132,7 @@ public class SdpPatchReaderTests
     [Fact]
     public void AppliedReportsTheMeasuredMarkerOffset()
     {
-        var state = SdpPatchReader.Classify(Patched(), out var at);
+        var state = SdpPatchReader.Classify(Patched(), out var at, out _);
         Assert.Equal(SdpPatchState.Applied, state);
         Assert.Equal(MarkerOffset, at);
     }
@@ -152,7 +156,7 @@ public class SdpPatchReaderTests
     [Fact]
     public void StockRecordReportsNoMarkerOffset()
     {
-        SdpPatchReader.Classify(Stock(), out var at);
+        SdpPatchReader.Classify(Stock(), out var at, out _);
         Assert.Equal(-1, at);
     }
 
@@ -165,19 +169,30 @@ public class SdpPatchReaderTests
         var blob = Bytes(NonCandidateHex);
         Assert.Equal(84, blob.Length);
         Assert.Equal(-1, IndexOf(blob, [0x85, 0x47]));
-        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(blob));
+
+        var state = SdpPatchReader.Classify(blob, out _, out var candidate);
+        Assert.Equal(SdpPatchState.Unknown, state);
+        // and it is not a candidate, so it never reaches either count
+        Assert.False(candidate);
     }
 
     // Has the RID but neither fingerprint: a descriptor shape this reader does
-    // not recognise. No evidence in either direction.
+    // not recognise. No evidence in either direction - but it IS a candidate.
+    // The script counts the same record (candidates++ on RID 0x47 alone),
+    // blocks on it, dumps its bytes and exits 4, so a reader that let it vote
+    // for nothing would let the gate call such a cache finished.
     [Fact]
-    public void ReportId47WithNeitherFingerprintIsUnknown()
+    public void ReportId47WithNeitherFingerprintIsAnUndecidedCandidate()
     {
         var blob = new byte[64];
         Array.Fill(blob, (byte)0x75);
         blob[10] = 0x85;
         blob[11] = 0x47;
-        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(blob));
+
+        var state = SdpPatchReader.Classify(blob, out var at, out var candidate);
+        Assert.Equal(SdpPatchState.Unknown, state);
+        Assert.True(candidate);
+        Assert.Equal(-1, at);
     }
 
     [Theory]
@@ -229,14 +244,15 @@ public class SdpPatchReaderTests
         Assert.Equal(MarkerOffset, IndexOf(blob, [0x09, 0x20, 0xB1, 0x02]));
         Assert.Equal(290, IndexOf(blob, [0x81, 0x02, 0xC0, 0xC0]));
 
-        var state = SdpPatchReader.Classify(blob, out var at);
+        var state = SdpPatchReader.Classify(blob, out var at, out _);
         Assert.Equal(SdpPatchState.Applied, state);
         Assert.Equal(MarkerOffset, at);
     }
 
     // The window is what ties a fingerprint to the BATTERY collection. The
-    // script only ever searches 64 bytes past the RID and inserts at close+2, so
-    // a marker far away was written by something else and proves nothing.
+    // script searches for the close within 96 bytes of the RID and inserts at
+    // close+2, so a marker far away was written by something else and proves
+    // nothing.
     [Fact]
     public void PatchMarkerFarFromReportId47IsUnknown()
     {
@@ -265,6 +281,95 @@ public class SdpPatchReaderTests
         Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(blob));
     }
 
+    // THE BOUNDARY. Everything above tests a fingerprint 200 bytes out, which
+    // is nowhere near the edge the script actually writes to - which is exactly
+    // why a reader that cut the window 6 bytes short of the script shipped.
+    // These two fixtures sit ON the edge.
+    //
+    // The script accepts a close whose first byte is anywhere in
+    // [rid+2, rid+2+96] (its Find-ByteSequence -End is the last candidate START
+    // index), and inserts the marker at close+2. With the measured RID at 258
+    // that makes 258+2+96 = 356 the last close the script will act on and
+    // 358 the furthest marker it can leave behind. 357 and 359 are one byte
+    // past what the script can produce, so they are some other collection's
+    // bytes and must stay Unknown: the reader must agree with the script at the
+    // edge in BOTH directions, not merely cover it.
+
+    // The measured patched record with its marker moved to `offset`. The blob
+    // carries no `81 02 c0 c0` at all (LiveFixtureHasTheMeasuredShape), so the
+    // marker is the only thing that can decide it.
+    static byte[] PatchedWithMarkerAt(int offset)
+    {
+        var blob = Patched();
+        for (int i = 0; i < 4; i++)
+            blob[MarkerOffset + i] = 0x75;
+        blob[offset] = 0x09;
+        blob[offset + 1] = 0x20;
+        blob[offset + 2] = 0xB1;
+        blob[offset + 3] = 0x02;
+        return blob;
+    }
+
+    // Where the stock pre-image's COL02 close sits, derived rather than
+    // measured a second time: the script inserts the marker between the
+    // `81 02` and the `C0 C0` of the close it found, at close + 2, so taking
+    // the marker back out leaves the close two bytes ahead of where the marker
+    // was. Writing 279 here instead would re-state that relationship as a
+    // number, which is the one thing these fixtures exist to pin.
+    const int CloseOffset = MarkerOffset - 2;
+
+    // The stock pre-image with its COL02 close moved to `offset`. It carries no
+    // marker, so the close is the only thing that can decide it.
+    static byte[] StockWithCloseAt(int offset)
+    {
+        var blob = Stock();
+        for (int i = 0; i < 4; i++)
+            blob[CloseOffset + i] = 0x75;
+        blob[offset] = 0x81;
+        blob[offset + 1] = 0x02;
+        blob[offset + 2] = 0xC0;
+        blob[offset + 3] = 0xC0;
+        return blob;
+    }
+
+    [Fact]
+    public void MarkerAtTheFurthestOffsetTheScriptCanWriteIsApplied()
+    {
+        const int last = RidOffset + 2 + 96 + 2;   // 358
+
+        var onTheEdge = PatchedWithMarkerAt(last);
+        Assert.Equal(1, Count(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+        Assert.Equal(last, IndexOf(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+        Assert.Equal(0, Count(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+
+        var state = SdpPatchReader.Classify(onTheEdge, out var at, out _);
+        Assert.Equal(SdpPatchState.Applied, state);
+        Assert.Equal(last, at);
+
+        // One byte further than the script can insert: not this collection's
+        // marker, so no claim either way.
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(PatchedWithMarkerAt(last + 1)));
+    }
+
+    [Fact]
+    public void StockCloseAtTheFurthestOffsetTheScriptCanPatchIsNotApplied()
+    {
+        const int last = RidOffset + 2 + 96;       // 356
+
+        var onTheEdge = StockWithCloseAt(last);
+        Assert.Equal(1, Count(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+        Assert.Equal(last, IndexOf(onTheEdge, [0x81, 0x02, 0xC0, 0xC0]));
+        Assert.Equal(-1, IndexOf(onTheEdge, [0x09, 0x20, 0xB1, 0x02]));
+
+        // The script would patch this record, so the reader owes the user the
+        // offer: NotApplied, never Unknown.
+        Assert.Equal(SdpPatchState.NotApplied, SdpPatchReader.Classify(onTheEdge));
+
+        // One byte further than the script will search: it would not touch this
+        // record, so neither does the reader.
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.Classify(StockWithCloseAt(last + 1)));
+    }
+
     // A record whose FIRST `85 47` site is unpatched while a later one carries
     // the marker still reads Applied: one patched battery collection is enough.
     [Fact]
@@ -285,15 +390,15 @@ public class SdpPatchReaderTests
         blob[212] = 0xB1;
         blob[213] = 0x02;
 
-        var state = SdpPatchReader.Classify(blob, out var at);
+        var state = SdpPatchReader.Classify(blob, out var at, out _);
         Assert.Equal(SdpPatchState.Applied, state);
         Assert.Equal(210, at);
     }
 
-    // The key this reads must be the key the script would write
-    // (kbd-patch-cachedservices.ps1:23-26): 12 hex digits, lowercase,
-    // separators tolerated. Anything else addresses no device, so it is Unknown
-    // rather than a lookup under a bogus path.
+    // The key this reads must be the key the script would write: the -Mac
+    // normalization in kbd-patch-cachedservices.ps1 keeps 12 hex digits,
+    // lowercase, separators tolerated. Anything else addresses no device, so it
+    // is Unknown rather than a lookup under a bogus path.
     [Theory]
     [InlineData("e806884b0741", "e806884b0741")]
     [InlineData("E8:06:88:4B:07:41", "e806884b0741")]
@@ -326,6 +431,39 @@ public class SdpPatchReaderTests
     public void AbsentPidIsUnknown(string? pid)
     {
         Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.ForPid(pid));
+    }
+
+    // DECISION: the report the status consumers read is marker-first, the same
+    // precedence Classify uses inside one blob.
+    //
+    // This verdict reaches DriverAdvisor's keyboard sentence and
+    // DeviceCapability's battery row, and `09 20 b1 02` beside RID 0x47 is
+    // positive evidence with exactly one writer. Where only some records carry
+    // it, hidbth may be parsing one that does and showing a percent, so a
+    // sentence calling the unlock absent would contradict the number beside
+    // it. A stock record wins only when nothing is patched.
+    //
+    // "Is there still work for the script" is a different question with a
+    // different answer: the gate asks the census itself, in
+    // DriverPackageCatalogTests.KeyboardSdpPatch_OnlyAFullyPatchedCacheSkipsTheRun.
+    [Fact]
+    public void APatchedRecordAnywhereInTheCacheOutranksAStockOne()
+    {
+        Assert.Equal(SdpPatchState.Applied, SdpPatchReader.CacheVerdict(
+            new SdpCacheCensus(Candidates: 2, Patched: 2, Stock: 0)));
+        // half-patched - a re-pair rewrote one subkey
+        Assert.Equal(SdpPatchState.Applied, SdpPatchReader.CacheVerdict(
+            new SdpCacheCensus(Candidates: 2, Patched: 1, Stock: 1)));
+        // one patched record and one candidate neither fingerprint decides
+        Assert.Equal(SdpPatchState.Applied, SdpPatchReader.CacheVerdict(
+            new SdpCacheCensus(Candidates: 2, Patched: 1, Stock: 0)));
+        Assert.Equal(SdpPatchState.NotApplied, SdpPatchReader.CacheVerdict(
+            new SdpCacheCensus(Candidates: 2, Patched: 0, Stock: 2)));
+        // a candidate nobody can decide is not a claim in either direction
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.CacheVerdict(
+            new SdpCacheCensus(Candidates: 1, Patched: 0, Stock: 0)));
+        // nothing readable at all
+        Assert.Equal(SdpPatchState.Unknown, SdpPatchReader.CacheVerdict(default));
     }
 
     // No BTHENUM parent can match this, on any machine, so the answer is

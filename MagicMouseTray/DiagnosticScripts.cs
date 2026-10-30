@@ -4,8 +4,9 @@ using System.IO;
 
 namespace MagicMouseTray;
 
-// Resolve allowlisted diagnostic scripts next to the exe or by walking up
-// to scripts/ and the repo root (same depth as FindKeyboardPatchScript).
+// Resolve allowlisted diagnostic scripts next to the exe, or in the checkout
+// this exe was built in (same depth and the same guard as
+// DriverInstaller.FindKeyboardPatchScript).
 internal static class DiagnosticScripts
 {
     internal const string CaptureState = "capture-state.ps1";
@@ -49,9 +50,14 @@ internal static class DiagnosticScripts
                 return p;
         }
 
+        // Only a checkout ancestor counts: these scripts are run elevated too,
+        // and an install directory's ancestors are writable without it
+        // (DriverPackageCatalog.IsSourceCheckout).
         var dir = new DirectoryInfo(start);
         for (var i = 0; i < 6 && dir is not null; i++, dir = dir.Parent)
         {
+            if (!DriverPackageCatalog.IsSourceCheckout(dir.FullName))
+                continue;
             var atRoot = Path.Combine(dir.FullName, fileName);
             if (File.Exists(atRoot))
                 return atRoot;

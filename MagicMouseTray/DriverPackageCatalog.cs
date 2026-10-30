@@ -49,6 +49,19 @@ internal static class DriverPackageCatalog
     internal const string KeyboardPatchScriptPath = "scripts/kbd-patch-cachedservices.ps1";
     internal const string KeyboardPatchScriptName = "kbd-patch-cachedservices.ps1";
 
+    // Both script resolvers walk up to six ancestor directories when a script
+    // is not beside the exe, because `dotnet run` puts the exe six levels down
+    // inside the checkout. Ancestors of an INSTALL directory are a different
+    // matter: a user who copied only MagicMouseTray.exe out of the ZIP leaves
+    // that walk crossing Downloads, the profile and C:\, each of which a
+    // same-user process can write without elevation - and what the walk
+    // returns is then run elevated with ExecutionPolicy Bypass. So an ancestor
+    // only counts when it is this repo's own checkout, which is the only place
+    // the walk was ever for.
+    internal static bool IsSourceCheckout(string directory) =>
+        System.IO.File.Exists(
+            System.IO.Path.Combine(directory, "MagicMouseTray", "MagicMouseTray.csproj"));
+
     internal static string V3ZipUrl =>
         $"https://github.com/{V3RepoOwner}/{V3RepoName}/archive/refs/heads/{V3RepoRef}.zip";
 }

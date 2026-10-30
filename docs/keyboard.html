@@ -199,6 +199,22 @@
               "@type": "Answer",
               "text": "No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked."
             }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it safe to run the unlock twice?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. A keyboard that already carries the unlock is reported as already done and nothing is written, so a repeat run can't damage anything. If you've run it and the percent still hasn't appeared, turn Bluetooth off and on again rather than running it a third time."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "The unlock won't apply. What do I send you?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A run that starts writes a log to %APPDATA%\\MagicMouseTray\\kbd-patch-<stamp>.log, or %TEMP%\\MagicMouseTray\\ on a PC where %APPDATA% is not set; if that file cannot be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. Before a record is changed, its original bytes are saved in the same folder as the log, as backup-<subkey>-<value>-<stamp>.bin. Attach the newest log to your report: it records what the script found and why it stopped."
+            }
           }
         ]
       }
@@ -251,11 +267,15 @@
         </ol>
       </div>
 
+      <p>That last step isn't optional: with the unlock already in the registry, the percent stays blocked until Bluetooth has been turned off and on once.</p>
+
+      <p>Ran it twice? No harm done. If the unlock is already in place, Magic Tray says so and changes nothing.</p>
+
       <p>The percent shows in the menu: <a href="battery.html#read">where to look</a> and <a href="battery.html#alerts">low battery warnings</a>.</p>
 
       <h3>If you'd rather run the script yourself</h3>
 
-      <p>Grab <code>Install-KeyboardBattery.cmd</code> from the <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">release page</a>. Right-click it and pick Run as administrator.</p>
+      <p>The <a href="https://github.com/LesleyMurfin/magic-tray/releases/latest">release page</a> attaches <code>Install-KeyboardBattery.cmd</code> and <code>kbd-patch-cachedservices.ps1</code> separately, and the first one looks for the second next to itself: download both into the same folder, or take the ZIP, whose <code>scripts</code> folder already holds the pair. It needs your keyboard's Bluetooth address, so right-clicking it and picking Run as administrator only prints its usage and stops. Open an administrator Command Prompt in that folder and run <code>Install-KeyboardBattery.cmd -Mac aabbccddeeff</code>, with your keyboard's own address in place of <code>aabbccddeeff</code>. Device Manager &rarr; Bluetooth &rarr; your keyboard &rarr; Details &rarr; Bluetooth device address (12 hex digits; colons are optional).</p>
 
       <h2 id="test">Can you help test a Magic Keyboard?</h2>
 
@@ -310,6 +330,10 @@
         <dd>No. A Magic Keyboard needs no change to the way Windows starts. That startup setting is only for the <a href="magic-mouse-2024.html">2024 USB-C Magic Mouse</a>, whose driver Microsoft hasn't checked. Your keyboard keeps the standard Windows Bluetooth driver, and the one-time unlock runs on Windows exactly as it came.</dd>
         <dt>Does the unlock survive re-pairing the keyboard?</dt>
         <dd>No. Re-pairing wipes it. Remove the keyboard in Windows Bluetooth settings and add it again, and the unlock is gone. Run Fix battery reads from the Magic Tray menu once more to put it back. Until you do, Magic Tray lists your keyboard but shows the battery as blocked.</dd>
+        <dt>Is it safe to run the unlock twice?</dt>
+        <dd>Yes. A keyboard that already carries the unlock is reported as already done and nothing is written, so a repeat run can't damage anything. If you've run it and the percent still hasn't appeared, turn Bluetooth off and on again rather than running it a third time.</dd>
+        <dt>The unlock won't apply. What do I send you?</dt>
+        <dd>A run that starts writes a log to <code>%APPDATA%\MagicMouseTray\kbd-patch-&lt;stamp&gt;.log</code>, or <code>%TEMP%\MagicMouseTray\</code> on a PC where <code>%APPDATA%</code> is not set; if that file cannot be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. Before a record is changed, its original bytes are saved in the same folder as the log, as <code>backup-&lt;subkey&gt;-&lt;value&gt;-&lt;stamp&gt;.bin</code>. Attach the newest log to your <a href="https://github.com/LesleyMurfin/magic-tray/issues/new?template=test-report.md">report</a>: it records what the script found and why it stopped.</dd>
       </dl>
 
       <details>

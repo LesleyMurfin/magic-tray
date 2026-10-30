@@ -204,19 +204,22 @@ Reports so far: [docs/TESTED.md](docs/TESTED.md). Which trackpad is yours: [Whic
 Your keyboard keeps the standard Windows Bluetooth driver. There's no Apple software to install, and no Windows startup setting to change. One unlock turns the percent on.
 
 - In the tray, open your keyboard and click **Fix battery reads**. Magic Tray finds the keyboard's Bluetooth address on its own, asks your permission, then runs the unlock.
-- Prefer to run it yourself? Every release ships `Install-KeyboardBattery.cmd`. Right-click it and pick **Run as administrator**.
-- Turn Bluetooth off and on again, and the percent appears.
+- Prefer to run it yourself? Every release attaches `Install-KeyboardBattery.cmd` and `kbd-patch-cachedservices.ps1` as separate files, and the wrapper looks for the script next to itself - download **both** into the same folder, or take the `MagicTray-<tag>-win-x64.zip`, whose `scripts\` folder already holds the pair. The wrapper needs the keyboard's address, so right-clicking it and picking **Run as administrator** only prints its usage and stops: open an **administrator** Command Prompt in that folder and run `Install-KeyboardBattery.cmd -Mac aabbccddeeff`.
+- **Turn Bluetooth off and on again.** This step is required: `hidbth` re-reads the keyboard's cached record only when the radio cycles, so until then the percent stays blocked even though the unlock is in the registry.
+- Running **Fix battery reads** again is safe. A keyboard that already carries the unlock is reported as already done and nothing is written, so a second run can't break anything.
 - Re-pairing the keyboard erases the unlock. Run **Fix battery reads** once more. Until you do, the tray lists the keyboard and shows the battery as blocked.
+- A run that starts writes a log to `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log` (`%TEMP%\MagicMouseTray\` instead, on the rare PC where `%APPDATA%` isn't set); if that file can't be written, the reason is printed in the Command Prompt window when you run the script by hand, and a run started from the tray reports that it left no readable log at that path. If the unlock won't apply, attach the log to your bug report - it holds the reason.
+- Before a record is changed, its original bytes are saved in the same directory as the log, as `backup-<subkey>-<value>-<stamp>.bin`. Nothing outside that directory and the keyboard's own cached record is touched.
 
 Full page, including what the unlock changes: [Keyboard battery](https://magictray.app/keyboard.html#unlock).
 
-Running the script from a clone rather than a release needs the keyboard's Bluetooth address:
+Running the script from a clone rather than a release:
 
 ```powershell
 .\scripts\kbd-patch-cachedservices.ps1 -Mac aabbccddeeff
 ```
 
-`-Mac` is required and has no default. Device Manager → Bluetooth → your keyboard → Details → **Bluetooth device address**.
+`-Mac` is required and has no default, for the script and for the wrapper alike. Device Manager → Bluetooth → your keyboard → Details → **Bluetooth device address** (12 hex digits; colons are optional). Add `-DryRun` to compute the patched bytes, save them beside the backups and write nothing to the registry.
 
 ---
 

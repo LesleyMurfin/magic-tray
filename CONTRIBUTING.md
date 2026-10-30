@@ -32,6 +32,11 @@ python3 scripts/check-winget-manifest.py                                  # Wing
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 
+`scripts/kbd-patch-cachedservices.ps1` is none of those checks and has its own
+harness: `pwsh -File scripts/check-kbd-patch-cachedservices.ps1` drives the
+real script against a stubbed registry, so it needs no elevation, no keyboard
+and no Windows, and it must stay at zero failed assertions.
+
 `DCO sign-off` fails if any commit you wrote lacks a `Signed-off-by` trailer
 (merge commits and bot commits — `dependabot[bot]`, `github-actions[bot]` — are
 skipped). Fix it with

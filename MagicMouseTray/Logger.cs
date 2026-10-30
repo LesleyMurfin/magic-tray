@@ -163,12 +163,12 @@ internal static class Logger
     // are BugReport's verbatim, so a path redacted in debug.log and a path
     // redacted for a PUBLIC issue still correlate.
     //
-    // CWE-532. Driver and device work logs absolute script paths -
-    // DRIVER_SDP (DriverInstaller.cs:694), DRIVER_KMDF_ONECLICK (:403),
-    // DRIVER_PATHA_ONECLICK (:482), DRIVER_STOCK_UNBIND (:575, :587) - and
-    // every elevated script and status sidecar is created under
-    // Path.GetTempPath() (DeviceEnable.ScriptPath:155, DeviceRepair.cs:644,
-    // ModeFlip.ScriptPath:234), which on Windows is itself
+    // CWE-532. Driver and device work logs absolute script paths - the
+    // DRIVER_SDP, DRIVER_KMDF_ONECLICK, DRIVER_PATHA_ONECLICK and
+    // DRIVER_STOCK_UNBIND lines in DriverInstaller - and every elevated script
+    // and status sidecar is created under Path.GetTempPath()
+    // (DeviceEnable.ScriptPath, DeviceRepair.StatusSidecarPath,
+    // ModeFlip.ScriptPath), which on Windows is itself
     // C:\Users\<name>\AppData\Local\Temp. BugReport.Redact removed the name
     // on the way to a public issue, but nothing removed it from the file, and
     // debug.log is shared as a file.

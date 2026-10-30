@@ -270,11 +270,15 @@ internal static class TrayMenu
     // what an unpatched SDP record produces - and it is the ONLY value that
     // opens this offer.
     //
-    // That single term is also why no SdpPatchState is needed here: a keyboard
-    // whose patch reads Applied and whose percent reads 0..100 cannot be -2,
-    // so a working device can never be offered a fix for a problem it does not
-    // have. Adding "and the patch is not applied" would be an unreachable
-    // clause pretending to be a guard.
+    // -2 is NOT the same statement as "the patch is not applied", and issue
+    // #162 is the proof: the patch went into the registry, hidbth had not yet
+    // re-read CachedServices (it only does that when the radio cycles), so the
+    // percent stayed -2 on a keyboard whose record already carried the insert.
+    // The item therefore stays offered in that state - the user's question is
+    // "why is there still no percent?" and the answer has to be reachable -
+    // and the read-back guard lives one layer down, in
+    // DriverInstaller.OfferKeyboardSdpPatch, where an Applied record turns the
+    // click into "already applied, cycle Bluetooth" instead of a second run.
     internal static bool ShowFixKeyboard(DeviceKind kind, int pct) =>
         kind == DeviceKind.MagicKeyboard && pct == -2;
 

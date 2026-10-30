@@ -34,7 +34,8 @@ hex digits after `PID_`). Then:
   [the two install routes](#the-two-install-routes-for-the-apple-filter).
 - **Magic Keyboard / Apple Wireless Keyboard.** There is nothing to scroll and no driver to
   install. Battery percent needs one **registry patch** you run once:
-  [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1).
+  [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1). It is
+  idempotent, and the percent only appears after a Bluetooth off/on cycle.
 - **Magic Trackpad.** Pointer and battery work on Windows' own driver. This project ships **no**
   trackpad scroll or gesture driver, and there is no radio to pick.
 
@@ -157,8 +158,46 @@ rewriting the pairing record's Bluetooth SDP cache under
 which declares `0x47` as a **Feature** report. Afterwards `FeatureReportByteLength` reads 2 and
 `HidD_GetFeature(0x47)` returns `[0x47, pct]` - **MEASURED live: `[47 0E]`**.
 
-Two operational facts: the script **requires `-Mac`** (there is no default), and **re-pairing the
-keyboard erases the patch**. Details: [README, Keyboard battery](../README.md#keyboard-battery).
+Operational facts:
+
+- The script **requires `-Mac`**, 12 hex digits (there is no default).
+- It is **idempotent**: a record already carrying `09 20 B1 02` in the 96-byte window that
+  follows an `85 47` site is reported as already patched and left untouched, so re-running the
+  unlock is safe and is not an error. Each cache subkey is handled on its own - a record that
+  cannot be unlocked is reported and skipped, and the records after it are still processed.
+- **Exit codes:** `0` every candidate record carries the unlock (inserted by this run or already
+  there) and nothing was blocked; `1` the run stopped before it could report - either `-Mac` was
+  not 12 hex digits, in which case nothing was read or written, or a failure outside the
+  per-record isolation, in which case records before it may already have been rewritten; `2`
+  nothing was blocked and no cached record for that MAC carries Report ID `0x47` (wrong `-Mac`,
+  or the keyboard was never paired on this PC); `3` at least one candidate record was examined
+  and every one of them was blocked, so nothing could be unlocked; `4` partial: at least one
+  record carries the unlock **and** at least one other was blocked, so the cache is partly
+  unlocked and the blocked records are left exactly as they were; `5` no record could be
+  examined at all because every cache subkey present would not open - a registry permissions
+  problem on that PC, not a descriptor the script failed to understand.
+- A blocked record has many causes - a descriptor shape the script does not recognise, a record
+  it could not read, back up or write, a subkey it could not open at all - and the log names the
+  cause for each one. The bytes around the RID are dumped for the records that got far enough to
+  have any: a subkey that would not open yields no dump.
+- A `-DryRun` that reaches `0` or `4` **wrote nothing to the registry** and says so; `4` there
+  means some other candidate record would have been blocked.
+- A run that gets as far as the script appends to a log (`-LogPath`, default
+  `%APPDATA%\MagicMouseTray\kbd-patch-<stamp>.log`, or `%TEMP%\MagicMouseTray\` when `%APPDATA%`
+  is unset); when that file cannot be written, every message naming it says so and gives the
+  reason instead of a path. A command line PowerShell rejects at parameter binding (`-Mac` with
+  no value) never reaches the script, so it leaves no log at all. The log is what to attach when
+  the unlock cannot be applied; the tray quotes its tail when a run exits non-zero, and says the
+  run left no readable log when there is none.
+- Before a record is written, its original bytes are saved in the same directory as the log, as
+  `backup-<subkey>-<value>-<stamp>.bin`; `-DryRun` writes the bytes it would have stored beside
+  them as `patched-<subkey>-<value>-<stamp>.bin` for byte comparison. Nothing outside that
+  directory and the device's own BTHPORT cache values is touched.
+- `hidbth` only re-reads `CachedServices` when the Bluetooth radio cycles, so **the percent
+  appears only after Bluetooth is turned off and on again**.
+- **Re-pairing the keyboard erases the patch.**
+
+Details: [README, Keyboard battery](../README.md#keyboard-battery).
 
 ### Magic Trackpad
 
