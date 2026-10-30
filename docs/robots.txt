@@ -31,5 +31,6 @@ Disallow: /TESTED.md
 Disallow: /ALERTS.md
 Disallow: /RELEASING.md
 Disallow: /CLOUDFLARE.md
+Disallow: /OBSERVABILITY.md
 
 Sitemap: https://magictray.app/sitemap.xml

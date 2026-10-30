@@ -6,9 +6,9 @@ Status: Implemented.
 
 - Product name in the UI is **Magic Tray**. Battery + driver-fix actions only (no gestures, trackpad custom clicks, or media-key remaps).
 - Driver actions are user-initiated via `DriverInstaller` (never silent rebind). Auto-remediation from the original proposal is confirm-first / user-initiated.
-- v1/v2 `[Fix scroll]` when `NotInstalled`/`NotBound`.
+- v1/v2 driver **radios** on the row (`Boot Camp` / `Stock`); the orange `[Fix scroll]` item they replaced is gone — `TrayMenu.ShowFixScroll` is false for every kind and status.
 - Keyboard `[Fix battery reads]` on sentinel `-2`.
-- v3 (0323) badge `Patched` / `Stock` / `Unknown` from `DriverHealthChecker.GetPerDeviceStatus()`. LowerFilters `NotBound` is **not** a v3 scroll warning. `PatchedKmdf` = bound `MagicMouseDriver`.
+- v3 (0323) badge `KMDF` / `Patched Apple` / `Stock` / `Error` / `Not bound` (`TrayMenu.V3Badge`) from `DriverHealthChecker.GetPerDeviceStatus()`. LowerFilters `NotBound` is **not** a v3 scroll warning. `PatchedKmdf` = bound `MagicMouseDriver`.
 - `Battery reads` is visible iff a v3 mouse is connected **and** status is `PatchedKmdf`. It is not a recycle toggle. `V3RecycleManager` is gone.
 - `UnknownAppleMouse` is scoped to that row. No unscoped global driver warning.
 - Layout: devices / separator / settings / separator / Refresh Now, Diagnostics, Quit.
