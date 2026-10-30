@@ -18,7 +18,7 @@ Path index of this repo. Device catalog is code, not this table (`AGENTS.md`, `l
 | `packaging/winget/` | Winget manifests for portable `MagicTray` 1.1.0 |
 | `.github/workflows/` | Required PR checks plus release and winget-submit (`README.md` in that folder names the current set) |
 | `.github/ISSUE_TEMPLATE/` | Bug, feature, missing-device, test-report |
-| `diagnose-driver.ps1` | Repo-root diagnostic script |
+| `scripts/diagnose-driver.ps1` | Driver diagnostic script |
 | `PSScriptAnalyzerSettings.psd1` | PowerShell lint rules |
 | `templates/` | Issue and report body templates |
 | `.context/` | This context pack: `current.md`, `decisions.md`, `history.md`, `map.md` |
