@@ -1,10 +1,11 @@
 # Workflows
 
 Every check that runs on this repository, what it protects, and how to run it
-yourself before pushing. Nine workflow files; the first nine rows below are the
+yourself before pushing. Ten workflow files; the first nine rows below are the
 checks that gate a pull request, and every one of them runs on every pull
-request. All of them run on GitHub-hosted runners; none needs a self-hosted
-runner, and only the two release-side workflows need a secret.
+request. `no-draft-prs` also runs on pull requests and is not in the ruleset.
+All of them run on GitHub-hosted runners; none needs a self-hosted runner,
+and only the two release-side workflows need a secret.
 
 `main` is protected by a ruleset: no direct pushes, no force pushes, and all
 nine checks below must pass on a pull request before it can merge. There are no
@@ -24,9 +25,10 @@ nothing.
 | `Workflow lint` | `actionlint.yml` | every PR; push `main` on `.github/workflows/**`; dispatch | ubuntu-latest | yes |
 | `CodeQL (csharp)` | `codeql.yml` | every PR, push `main`, Mondays 07:23 UTC, dispatch | ubuntu-latest | yes |
 | `Site checks` | `site.yml` | every PR; push `main` on `docs/**`; dispatch | ubuntu-latest | yes |
-| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`; dispatch | ubuntu-latest | yes |
+| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`, `docs/install.txt`; dispatch | ubuntu-latest | yes |
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
 | `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
+| `no-draft-prs` | `no-draft-prs.yml` | PR opened/reopened/ready_for_review/converted_to_draft/synchronize | ubuntu-latest | no |
 | `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |
 | `Submit to winget-pkgs` | `winget-submit.yml` | manual dispatch only | windows-latest | n/a (manual) |
 
@@ -70,7 +72,16 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 - **Purpose**: on a `v*` tag: test, publish single-file self-contained win-x64,
   optionally Authenticode-sign, package the portable ZIP, verify it, write the
-  release notes, and create the GitHub release with the ZIP first.
+  release notes, create the GitHub release with the ZIP first, then re-verify
+  that release as published.
+- **Two verification steps, and they are not redundant**:
+  `scripts/verify-release.ps1` gates the artefacts on the runner's disk before
+  anything is uploaded; `scripts/verify-published-release.ps1` runs after
+  `gh release create` and re-reads the release through the GitHub API and the
+  public asset URLs. Only the second one can notice that the wrong asset set
+  was published, which is how the v1.1.0 run went green while shipping no ZIP
+  and no checksum. It is a hard gate — no `continue-on-error`. The whole
+  release procedure is in [`RELEASING.md`](../../RELEASING.md).
 - **Permissions**: `contents: write` (needed by `gh release create`).
   **Timeout**: 30 min. **No concurrency group** — a tag build must never be
   cancelled by a later one.
@@ -126,12 +137,14 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 ## packaging.yml — `Version sync`, `Winget manifest`
 
-- **Purpose**: the version appears in four independent places. `Version sync`
+- **Purpose**: the version appears in five independent places. `Version sync`
   (`scripts/check-version-sync.ps1`) enforces the real rule — published metadata
-  (the three winget manifests, the three version strings in `docs/index.html`)
-  tracks the **latest release**, while the csproj may run ahead of it as the next
-  version in development. It also derives the expected ZIP asset name from
-  `scripts/package-release.ps1` rather than hardcoding it. `Winget manifest`
+  (the three winget manifests, the three version strings in `docs/index.html`,
+  and the illustrative release tag in the agent install guide
+  `docs/install.txt`) tracks the **latest release**, while the csproj may run
+  ahead of it as the next version in development. It also derives the expected
+  ZIP asset name from `scripts/package-release.ps1` rather than hardcoding it.
+  `Winget manifest`
   (`scripts/check-winget-manifest.py`) parses the manifest set offline and
   asserts the keys winget-pkgs will require of every `Installers` entry,
   accepting the deliberate 64-zero installer digest.
@@ -151,6 +164,20 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 - **Fix a red run**: `git commit -s` for new commits, or
   `git rebase --signoff origin/main && git push --force-with-lease`.
 - **Permissions**: `contents: read`, `pull-requests: read`. **Timeout**: 5 min.
+
+## no-draft-prs.yml — `no-draft-prs`
+
+- **Purpose**: exit 1 while `github.event.pull_request.draft` is true, including
+  after `converted_to_draft`. A ready-for-review pull request passes. The job
+  does not check out the repository.
+- **Runner**: ubuntu-latest, the same GitHub-hosted runner as the other checks
+  that are not the Windows tray app. `windows-latest` is only used where the
+  .NET TFM or winget tooling requires Windows. No workflow in this repo uses a
+  self-hosted runner.
+- **Permissions**: `{}`. **Timeout**: 5 min. **Concurrency**:
+  `no-draft-prs-<ref>`, cancel-in-progress.
+- **Not a ruleset check**: branch protection was not changed, so a red run does
+  not block merge until this check is added to the `main` ruleset.
 
 ## winget-submit.yml — `Submit to winget-pkgs`
 
