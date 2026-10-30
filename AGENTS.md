@@ -134,14 +134,14 @@ Every ACO triage / PR review **MUST** end with exactly one full machine footer:
   "verification": [{ "command": "dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release", "exit_code": 0, "passed": true }],
   "diff_stats": null,
   "residual_risks": [],
-  "prompt_version": "1.5.0-quick",
-  "pr_comment_status": "skipped",
-  "pr_comment_urls": []
+  "prompt_version": "1.6.0-quick",
+  "pr_comment_status": "posted",
+  "pr_comment_urls": ["https://github.com/LesleyMurfin/magic-tray/pull/N#issuecomment-..."]
 }
 ```
 ````
 
-Populate from the real run. Chat narrative alone is not enough for ingest. If a PR is in scope, put the P0/P1 checklist in the PR body. Bots do not post PR comments. Leave `pr_comment_status` as `skipped`.
+Populate from the real run. Chat narrative alone is not enough for ingest. The rule branches on repo ownership. **Repos we own (this one, `LesleyMurfin/*`):** post the summary and the P0/P1 requested-change checklist with `gh pr comment`, set `pr_comment_status` to `posted`, and record every comment URL in `pr_comment_urls`; a PR-body checklist is optional once the comment exists. **Repos we do not own (upstream, third-party, forks):** do not comment — put the P0/P1 checklist in the PR body or prepare it and ask, and leave `pr_comment_status` as `skipped` with `pr_comment_urls` empty.
 
 ### Skill pointer
 
