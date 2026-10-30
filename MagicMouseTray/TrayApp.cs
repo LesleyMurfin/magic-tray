@@ -47,12 +47,19 @@ internal static class TrayMenu
     internal const string RepositoryLabel = "Repository";
     internal const string ReportBugLabel = "Report a bug";
     internal const string RequestFeatureLabel = "Request a feature";
-    // Root-level, not inside Help: a star ask nobody finds is a star ask nobody acts on.
+    // Grouped under one "Show your support" submenu next to Help/Documentation:
+    // the two zero-cost asks live together where someone looking for them
+    // looks, instead of one bare row competing with the device actions.
     // GitHub has no URL that stars a repo, and Magic Tray holds no GitHub
     // credentials, so the click opens the repo and the user presses Star there.
     // The flip records that they took the trip, not that GitHub recorded a star.
+    internal const string SupportMenuLabel = "Show your support";
     internal const string StarOnGitHubLabel = "★ Star on GitHub";
     internal const string StarThanksLabel = "★ Thanks for the support!";
+    internal const string WebsiteLabel = "Website";
+    // The canonical origin the site declares for itself (docs/CNAME and the
+    // rel=canonical in docs/index.html). Any other spelling of it redirects.
+    internal const string SiteUrl = "https://magictray.app/";
     internal const string ReportBugConfirm =
         "Magic Tray will collect version, driver badges, battery readings, and the last log lines (Bluetooth MAC redacted), copy them, and open a GitHub issue draft. You submit it while logged in.\n\nContinue?";
     internal const string RequestFeatureConfirm =
@@ -993,16 +1000,21 @@ internal sealed class TrayApp : IDisposable
         help.DropDownItems.Add(featItem);
         menu.Items.Add(help);
 
-        var starItem = new ToolStripMenuItem(TrayMenu.StarLabel(_config.StarClicked));
+        var support = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.SupportMenuLabel));
+        var starItem = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.StarLabel(_config.StarClicked)));
         starItem.Click += (_, _) =>
         {
             // Only flip once the browser actually launched — a failed handoff
             // must leave the ask in place.
             if (!OpenHelpUrl(TrayMenu.RepoUrl)) return;
             _config.SetStarClicked(true);
-            starItem.Text = TrayMenu.StarLabel(true);
+            starItem.Text = TrayMenu.MenuText(TrayMenu.StarLabel(true));
         };
-        menu.Items.Add(starItem);
+        support.DropDownItems.Add(starItem);
+        var siteItem = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.WebsiteLabel));
+        siteItem.Click += (_, _) => OpenHelpUrl(TrayMenu.SiteUrl);
+        support.DropDownItems.Add(siteItem);
+        menu.Items.Add(support);
 
         menu.Items.Add(new ToolStripSeparator());
 

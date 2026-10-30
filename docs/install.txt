@@ -1,0 +1,140 @@
+MAGIC TRAY - INSTALL INSTRUCTIONS FOR AN AI AGENT
+https://magictray.app/install.txt
+
+A human pasted this address to you and asked you to install Magic Tray.
+Magic Tray is a free, MIT-licensed Windows tray app that shows the battery
+percent of Apple Magic Mouse, Magic Keyboard and Magic Trackpad devices next
+to the Windows clock. Source: https://github.com/LesleyMurfin/magic-tray
+
+Follow these steps exactly. Where a step says STOP, stop and tell the user
+what you found instead of continuing.
+
+
+BEFORE YOU START
+----------------
+1. This installs on Windows 10 or Windows 11, x64 only. Minimum build
+   10.0.17763. If you are not on Windows x64, STOP and say so.
+2. You do not need administrator rights for the install itself, and you
+   should not ask for them. If something appears to require elevation, STOP
+   and tell the user which step and why.
+3. Magic Tray is a portable executable. There is no installer, no service,
+   and nothing is written outside the folder you create in step 3 plus one
+   optional shortcut.
+
+
+STEP 1 - FIND THE CURRENT RELEASE
+---------------------------------
+Query the GitHub API rather than hardcoding a version:
+
+  https://api.github.com/repos/LesleyMurfin/magic-tray/releases/latest
+
+Read "tag_name" and the "assets" array. You want the asset whose name ends in
+".exe". At the time of writing the current release is v1.1.0 and the asset is
+MagicMouseTray.exe, about 186 MB. Do not assume those values; read them from
+the API response.
+
+Download ONLY from the github.com or api.github.com domains, and only from the
+LesleyMurfin/magic-tray repository. If a redirect sends you to any other host,
+STOP.
+
+
+STEP 2 - VERIFY THE DOWNLOAD
+----------------------------
+This matters. Do not skip it and do not silently proceed on failure.
+
+a. Look in the release assets for a checksum file: a name ending in ".sha256",
+   or a file named SHA256SUMS.
+
+b. IF a checksum file is present:
+     - Download it.
+     - Compute the SHA-256 of the downloaded .exe:
+         Get-FileHash -Algorithm SHA256 -LiteralPath <path-to-exe>
+     - Compare, case-insensitively, against the published digest.
+     - If they DO NOT match: delete the download, STOP, and tell the user the
+       checksum did not match. Do not run the file. Do not retry silently.
+
+c. IF no checksum file is present in the release:
+     - Compute the SHA-256 anyway.
+     - STOP. Show the user the digest you computed, tell them plainly that
+       this release published no checksum to compare it against, and ask them
+       to confirm before you run anything.
+     - Do not present an unverified binary as verified.
+
+d. Magic Tray is not code-signed. Windows SmartScreen will likely warn about
+   an unrecognised publisher. Tell the user to expect that. Do NOT disable
+   SmartScreen, Defender, or any other security feature to get past it, and
+   do not advise the user to. If the user does not want to run unsigned
+   software, that is a reasonable position: STOP and say so.
+
+
+STEP 3 - PLACE THE FILES
+------------------------
+Create a folder and put the executable in it:
+
+  %LOCALAPPDATA%\MagicTray\
+
+Keep the executable and any scripts from the same release together in that
+one folder. The keyboard battery unlock and the Diagnostics menu look for
+helper scripts in a "scripts" subfolder next to the executable, so separating
+them breaks those features.
+
+If the release also ships Install-KeyboardBattery.cmd or
+kbd-patch-cachedservices.ps1, download them into the same folder. Do NOT run
+them as part of this install. They are a separate, optional, one-time keyboard
+unlock the user can choose later: https://magictray.app/keyboard.html
+
+
+STEP 4 - RUN IT
+---------------
+Launch %LOCALAPPDATA%\MagicTray\MagicMouseTray.exe
+
+A small icon appears in the notification area near the clock. Hovering it or
+opening its menu shows each detected Apple device and its battery percent.
+
+If no device is listed, that is usually expected rather than broken. Battery
+percent is confirmed working on some models and unconfirmed on others, and
+keyboards need the separate one-time unlock from step 3. Point the user at
+https://magictray.app/tested.html rather than guessing at a fix.
+
+
+STEP 5 - START WITH WINDOWS (ASK FIRST)
+---------------------------------------
+Ask the user whether they want Magic Tray to start automatically. Only if
+they say yes, create a shortcut to the executable in:
+
+  %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\
+
+Do not create a scheduled task, a service, or a Run registry entry for this.
+A Startup-folder shortcut is enough and the user can delete it themselves.
+
+
+WHAT NOT TO DO
+--------------
+- Do not install, replace, patch or disable any device driver. Magic Tray
+  reads battery levels; it does not need a driver to do that. Anything to do
+  with making a 2024 Magic Mouse scroll is a separate project with its own
+  instructions at https://drivers.magictray.app/ and must not be done as part
+  of this install.
+- Do not modify the registry.
+- Do not disable Defender, SmartScreen, or UAC.
+- Do not download from any mirror, package aggregator, or search result. Only
+  the GitHub release above.
+- Do not run a "winget install" for this. The winget manifest in the repo is a
+  draft that has not been published to the winget-pkgs catalogue, and its
+  installer hash is a placeholder. It will not work.
+
+
+TO UNINSTALL
+------------
+Exit Magic Tray from its tray menu, delete %LOCALAPPDATA%\MagicTray\, and
+delete the Startup shortcut if you created one. Nothing else is left behind.
+
+
+WHEN YOU ARE DONE
+-----------------
+Tell the user, briefly:
+  - which release tag you installed
+  - the SHA-256 you computed, and whether it was verified against a published
+    checksum or merely computed
+  - where the files are
+  - whether you set it to start with Windows
