@@ -36,13 +36,17 @@ python3 .ai/skills/aco-triage/tests/test_graceful_degrade_smoke.py
 ```
 
 Only when the tool is installed — and `riley-kg` also needs `.aco/graph.db`, which this
-repo does not ship:
+repo does not ship. Pass `--db` every time; it has no default:
 
 ```bash
-riley-kg blast-radius --db .aco/graph.db MagicMouseTray/DriverInstaller.cs
-riley-kg callers --db .aco/graph.db DriverInstaller
+riley-kg blast-radius --db .aco/graph.db scripts/pr_diagram.py
+riley-kg callers --db .aco/graph.db _is_doc
 aicostoptimizer status
 ```
+
+The graph covers `.py` / `.ts` / `.js` / `.rs` only — the `.cs` tray app is not indexed, so use
+`rg` + `git` for C#. `aicostoptimizer status` is that tool's **only** subcommand; there is
+no `jev` command group.
 
 Related skill: `.ai/skills/aco-triage/`. Binding prompt: `.aco/ACO-TRIAGE-PROMPT.txt`.
 The optional URL probe `.ai/hooks/pre/jev-probe.ts` is fail-open, and is neither the cost
