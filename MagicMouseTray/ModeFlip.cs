@@ -160,7 +160,9 @@ internal static class ModeFlip
 
     // Headroom the tray allows the script AFTER its own ready budget expires,
     // so a restore in progress is never interrupted by the tray giving up.
-    const int RestoreGraceMs = 90_000;
+    // The flip's wall is timeoutMs + this, and the restore's wall is this on
+    // its own; TrayMenu.BlockingCommands publishes both from here.
+    internal const int RestoreGraceMs = 90_000;
 
     const int PollMs = 150;
     const int BatteryReadTries = 5;
@@ -263,6 +265,19 @@ internal static class ModeFlip
         return new ModeFlipResult(ModeFlipOutcome.Cancelled, -1, ObserveModeB(),
             "A battery-mode cycle is already running. Nothing was changed.");
     }
+
+    // Is there a recorded setting for a restore to put back? The restore keys
+    // on exactly this pair of reads: with no parsable sentinel, or one naming
+    // no Apple-family filter, RestoreModeBCore observes the mouse and returns
+    // without elevating, writing or restarting anything (see the two refusals
+    // below). The consent dialog states the cost before any of that runs, so
+    // it reads this first: a user may not be charged an approval, a registry
+    // write and a device restart the click is not going to spend. Both reads
+    // are side-effect free.
+    internal static bool HasRecordedRestore() =>
+        TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var sentinel)
+        && sentinel is not null
+        && RestoreSequence(sentinel) is not null;
 
     // One elevated restore, verified.
     //

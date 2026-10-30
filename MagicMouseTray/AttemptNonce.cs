@@ -8,10 +8,11 @@ namespace MagicMouseTray;
 //
 // The nonce names this attempt's generated .ps1 and its status sidecar on both
 // sides of the elevation boundary (DeviceEnable.StatusSidecarPath,
-// DeviceRepair.StatusSidecarPath, ModeFlip.StatusSidecarPath), and nothing
-// serializes the callers: TrayApp's StartRepairApply and StartStaleFilterRemoval
-// each go straight to Task.Run and RunDriverActionAsync does not queue driver
-// actions. Every site used to mint with DateTimeOffset.UtcNow
+// DeviceRepair.StatusSidecarPath, ModeFlip.StatusSidecarPath), and the only
+// thing that serializes the callers is TrayMenu's in-flight gate, which
+// covers one tray process and is released when that tray stops waiting, not
+// when the elevated script it started exits. Every site used to mint with
+// DateTimeOffset.UtcNow
 // .ToUnixTimeMilliseconds() (DeviceEnable.cs:533, DeviceRepair.cs:642 and 667,
 // ModeFlip.cs:322 and 449 before 2026-09-16), so two attempts that started
 // inside the same millisecond got the SAME value and shared both file names:

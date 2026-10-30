@@ -72,6 +72,26 @@ internal readonly record struct DeviceEnableEvidence(
     DeviceEnableReading? Reading,
     int? Exit);
 
+// Why the wait on the elevated step ended, or that it has not. Three
+// different facts that decide three different things, so the poll loop
+// reports which one it saw instead of leaving the caller to re-derive it from
+// a boolean and a clock:
+//   KeepWaiting     nothing has been decided yet.
+//   SidecarReady    the script wrote a complete report - a state somebody
+//                   measured, and the only verdict that outranks the others.
+//   ProcessGone     the elevated process is gone and nothing was ever
+//                   written. There is nothing left to wait for, so waiting on
+//                   is time spent on a verdict we already have.
+//   CeilingExpired  the wall. A script that never reports and never exits is
+//                   given up on, and said to be given up on.
+internal enum ElevatedWaitVerdict
+{
+    KeepWaiting,
+    SidecarReady,
+    ProcessGone,
+    CeilingExpired,
+}
+
 internal static class DeviceEnable
 {
     internal static readonly string[] ForbiddenNames =
@@ -137,9 +157,11 @@ internal static class DeviceEnable
         + "was changed.";
 
     // Named after the ATTEMPT and the PROCESS, not just the device. Two
-    // elevated attempts can be in flight for the same PID at once: TrayApp's
-    // StartRepairApply and StartStaleFilterRemoval each launch straight into
-    // Task.Run, and RunDriverActionAsync does not serialize driver actions.
+    // elevated attempts can be in flight for the same PID at once:
+    // TrayMenu's in-flight gate refuses a second elevated command inside one
+    // tray, and it is the only thing that does - it does not span two trays,
+    // and it is released when the tray stops waiting, not when the elevated
+    // script it started finally exits.
     // Under a PID-only name the poller in LaunchElevated cannot tell whose
     // report it parsed - it accepts the first COMPLETE report at that path -
     // so it would hand back an end state some other elevated process
@@ -483,6 +505,53 @@ exit 1
         };
     }
 
+    // The wall on the wait below, and the number TrayMenu.BlockingCommands
+    // publishes for both Windows device commands: there is one ceiling, not a
+    // loop constant and a table entry that can drift apart.
+    internal static readonly TimeSpan ElevatedWaitCeiling = TimeSpan.FromMinutes(2);
+
+    // The one concession to a file write that lags its own process: a script
+    // that writes its report and exits can be observed exited a few
+    // milliseconds before the report is readable, so "gone" is only believed
+    // once the process has been gone for this long. Seconds, deliberately -
+    // it is the lag on one Set-Content, not a second ceiling.
+    internal static readonly TimeSpan ElevatedWaitSettle = TimeSpan.FromSeconds(5);
+
+    // How often the loop below asks. One file probe and one HasExited read,
+    // so the cost of asking is what sets this, not the answer's urgency.
+    const int PollStepMs = 150;
+
+    // What the poll loop does next, decided on the evidence it has rather
+    // than on the clock alone. Precedence is the part that is easy to get
+    // wrong, so it is stated here once: a complete report wins over
+    // everything, including a process that has already exited and a ceiling
+    // that has already expired, because a report is a state somebody measured
+    // and a timeout is only a state nobody waited for.
+    //
+    // Two clocks, because they measure two different things. sinceExit is
+    // null until the process is first seen gone and is the age of THAT
+    // observation afterwards, so the settle window is grace for one lagging
+    // Set-Content however long the elevated step itself took; elapsed is the
+    // age of the whole wait, and only the ceiling reads it. Measuring the
+    // settle from the start of the wait would spend it during the UAC prompt
+    // and give a script that reports and exits at the 40-second mark no
+    // grace at all.
+    internal static ElevatedWaitVerdict NextWaitStep(
+        bool sidecarComplete, TimeSpan? sinceExit, TimeSpan elapsed)
+    {
+        if (sidecarComplete)
+            return ElevatedWaitVerdict.SidecarReady;
+        // Elevation was granted and the step is gone without a word: a
+        // declined consent prompt inside the script, or a shell that died.
+        // Nothing will write the report now, so the remaining ceiling is time
+        // spent on a verdict we already have.
+        if (sinceExit is { } gone && gone >= ElevatedWaitSettle)
+            return ElevatedWaitVerdict.ProcessGone;
+        if (elapsed >= ElevatedWaitCeiling)
+            return ElevatedWaitVerdict.CeilingExpired;
+        return ElevatedWaitVerdict.KeepWaiting;
+    }
+
     // --- elevation -------------------------------------------------------
 
     // Started=false means ShellExecute handed back no process at all: UAC
@@ -507,26 +576,38 @@ exit 1
         using (p)
         {
             var started = DateTime.UtcNow;
-            var until = started + TimeSpan.FromMinutes(2);
             var sidecar = "";
-            while (DateTime.UtcNow < until)
+            // When the process was FIRST seen gone, not whether it is gone
+            // now: the settle window is grace for the report file to catch up
+            // with that observation, so it has to be measured from it.
+            DateTime? exitedAt = null;
+            // Every way out of this loop is a verdict NextWaitStep reached on
+            // the evidence of that one pass: the report, the process, and the
+            // clock, in that order of precedence.
+            while (true)
             {
                 if (File.Exists(statusPath))
                 {
                     try { sidecar = File.ReadAllText(statusPath).Trim(); }
                     catch { sidecar = ""; }
-                    if (ParseSidecar(sidecar) is not null)
-                        break;
                 }
-                try
-                {
-                    if (p.HasExited
-                        && ParseSidecar(sidecar) is null
-                        && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
-                        break;
-                }
+                var exited = false;
+                try { exited = p.HasExited; }
                 catch { /* UseShellExecute */ }
-                Thread.Sleep(150);
+                if (exited && exitedAt is null)
+                    exitedAt = DateTime.UtcNow;
+
+                var now = DateTime.UtcNow;
+                var step = NextWaitStep(
+                    ParseSidecar(sidecar) is not null,
+                    exitedAt is { } gone ? now - gone : null,
+                    now - started);
+                if (step != ElevatedWaitVerdict.KeepWaiting)
+                {
+                    Logger.Log($"DEVICE_ENABLE wait={step}");
+                    break;
+                }
+                Thread.Sleep(PollStepMs);
             }
             if (!p.HasExited)
             {

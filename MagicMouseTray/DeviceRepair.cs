@@ -46,12 +46,41 @@ internal static class DeviceRepair
     internal const int NoInstancesExitCode = 2;
     internal const int FilterBlockedExitCode = 3;
 
+    // The wall on the sidecar poll below - an elevated restart-device plus
+    // the verification the script does afterwards. Both repair clicks block
+    // for it, so TrayMenu.BlockingCommands publishes this constant rather
+    // than a copy of the number.
+    internal static readonly TimeSpan SidecarWaitCeiling = TimeSpan.FromMinutes(2);
+
+    // The grace one lagging Set-Content gets after the launcher is first seen
+    // gone, and the same number and the same reason as
+    // DeviceEnable.ElevatedWaitSettle: a script that writes its report and
+    // exits can be observed exited a few milliseconds before the file is
+    // readable.
+    internal static readonly TimeSpan SidecarSettle = TimeSpan.FromSeconds(5);
+
+    // "Nothing is going to write the report now" - a declined consent prompt
+    // inside the script, or a shell that died. The sibling decision function
+    // is DeviceEnable.NextWaitStep, which this deliberately mirrors rather
+    // than calls: that one also owns DeviceEnable's own ceiling, and this
+    // loop waits to SidecarWaitCeiling.
+    //
+    // sinceExit is null while the launcher is still running and the age of
+    // the FIRST observed exit afterwards. Measured from that observation and
+    // not from the start of the wait, because the wait also contains the UAC
+    // prompt: from the start of the wait, a script that reports and exits at
+    // the forty-second mark gets no grace at all.
+    internal static bool GoneWithoutAReport(bool reportSeen, TimeSpan? sinceExit) =>
+        !reportSeen && sinceExit is { } gone && gone >= SidecarSettle;
+
     // Named after the ATTEMPT and the PROCESS, not just the device. Both
-    // repairs can be in flight for the same PID at once: TrayApp's
-    // StartRepairApply and StartStaleFilterRemoval each launch straight into
-    // Task.Run, and RunDriverActionAsync does not serialize driver actions -
-    // so a second Apply (or a second ApplyRemoveStaleFilters) can overlap the
-    // first. Under a PID-only name the poller in LaunchElevated cannot tell
+    // repairs can be in flight for the same PID at once: TrayMenu's
+    // in-flight gate refuses a second elevated command inside one tray, and
+    // it is the only thing that does - it does not span two trays, and it is
+    // released when the tray stops waiting rather than when the elevated
+    // script it started finally exits, so a second Apply (or a second
+    // ApplyRemoveStaleFilters) can still overlap the first.
+    // Under a PID-only name the poller in LaunchElevated cannot tell
     // whose report it read - it accepts the first recognised token at that
     // path - so it would map another elevated process's result onto this
     // attempt, and the File.Delete in LaunchElevated cannot close that hole
@@ -607,7 +636,11 @@ exit 1
         using (p)
         {
             var started = DateTime.UtcNow;
-            var until = started + TimeSpan.FromMinutes(2);
+            var until = started + SidecarWaitCeiling;
+            // When the launcher was FIRST seen gone, not whether it is gone
+            // now: the settle window is grace for the report file to catch up
+            // with that observation, so it is measured from it.
+            DateTime? exitedAt = null;
             while (DateTime.UtcNow < until)
             {
                 if (File.Exists(statusPath))
@@ -619,13 +652,17 @@ exit 1
                 }
                 try
                 {
-                    // Cancelled UAC prompt: the launcher is gone and nothing was written.
-                    if (p.HasExited
-                        && sidecar.Length == 0
-                        && DateTime.UtcNow - started > TimeSpan.FromSeconds(5))
-                        break;
+                    if (p.HasExited && exitedAt is null)
+                        exitedAt = DateTime.UtcNow;
                 }
                 catch { /* UseShellExecute */ }
+                // Cancelled UAC prompt: the launcher is gone and nothing was
+                // written, and it has been gone long enough that a lagging
+                // write would have landed.
+                if (GoneWithoutAReport(
+                        sidecar.Length != 0,
+                        exitedAt is { } gone ? DateTime.UtcNow - gone : null))
+                    break;
                 Thread.Sleep(150);
             }
             if (!p.HasExited)

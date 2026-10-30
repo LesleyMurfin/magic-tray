@@ -30,7 +30,20 @@ internal static class DriverInstaller
     const string BtHidEnumBase = @"SYSTEM\CurrentControlSet\Enum\BTHENUM";
     const string HidUuidPrefix = "{00001124-0000-1000-8000-00805f9b34fb}";
 
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
+    // The three waits this class performs, named once so TrayMenu's
+    // blocking-work table can publish the ceiling each click really has
+    // rather than a number typed in beside it.
+    //
+    // ScriptRunCeiling is RunElevated's own wall - one elevated script, waited
+    // for to here and then killed. DownloadCeiling is the package pull.
+    // PackageInstallCeiling is the longer wall the 0323 install and uninstall
+    // scripts are given: they unpack and bind a driver, and a signed driver
+    // install is minutes of work, not seconds.
+    internal static readonly TimeSpan ScriptRunCeiling = TimeSpan.FromMinutes(5);
+    internal static readonly TimeSpan DownloadCeiling = TimeSpan.FromMinutes(5);
+    internal static readonly TimeSpan PackageInstallCeiling = TimeSpan.FromMinutes(15);
+
+    static readonly HttpClient Http = new() { Timeout = DownloadCeiling };
 
     static DriverInstaller()
     {
@@ -131,11 +144,7 @@ internal static class DriverInstaller
             return InstallOutcome.Failed;
         }
 
-        var result = System.Windows.Forms.MessageBox.Show(
-            plan.Prompt,
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
-            System.Windows.Forms.MessageBoxIcon.Information);
+        var result = AskOkCancel(plan.Prompt, System.Windows.Forms.MessageBoxIcon.Information);
         if (result != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_OFFER trackpadv1 aborted cancelled");
@@ -216,11 +225,7 @@ internal static class DriverInstaller
             return InstallOutcome.Failed;
         }
 
-        var result = System.Windows.Forms.MessageBox.Show(
-            plan.Prompt,
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
-            System.Windows.Forms.MessageBoxIcon.Warning);
+        var result = AskOkCancel(plan.Prompt, System.Windows.Forms.MessageBoxIcon.Warning);
         if (result != System.Windows.Forms.DialogResult.OK)
         {
             Logger.Log("DRIVER_V1V2_STOCK_ABORTED cancelled");
@@ -269,7 +274,7 @@ internal static class DriverInstaller
             $"-NoProfile -ExecutionPolicy Bypass -File \"{temp}\"",
             workingDirectory: Path.GetTempPath(),
             windowStyle: ProcessWindowStyle.Normal,
-            timeout: TimeSpan.FromMinutes(5));
+            timeout: ScriptRunCeiling);
     }
 
     static string BuildV1V2StockUnbindScript(string pid)
@@ -358,10 +363,8 @@ foreach ($id in $restart) {
     // with an error — never fall back to PATH-A.
     internal static async Task<InstallOutcome> OfferV3KmdfInstallAsync(CancellationToken ct = default)
     {
-        var prompt = System.Windows.Forms.MessageBox.Show(
+        var prompt = AskOkCancel(
             "The Magic Mouse 2024 (0323) KMDF driver is self-signed. Test Mode must be on and Memory Integrity (HVCI) must be off before Windows will load it.\n\nOK continues with Install-KMDF.cmd. Cancel aborts.",
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
@@ -372,7 +375,7 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            extractDir = await DownloadV3DefaultBranchAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -408,7 +411,7 @@ foreach ($id in $restart) {
                 $"/c \"{script}\"",
                 workingDirectory: Path.GetDirectoryName(script),
                 windowStyle: ProcessWindowStyle.Normal,
-                timeout: TimeSpan.FromMinutes(15));
+                timeout: PackageInstallCeiling);
         }
         catch (Exception ex) when (IsUacDeclined(ex))
         {
@@ -438,10 +441,8 @@ foreach ($id in $restart) {
         if (WarnsKmdfDisplacement(currentStatus))
             body += "\n\n" + KmdfDisplacementWarning();
 
-        var prompt = System.Windows.Forms.MessageBox.Show(
+        var prompt = AskOkCancel(
             body + "\n\nOK continues. Cancel aborts.",
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
@@ -452,7 +453,7 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            extractDir = await DownloadV3DefaultBranchAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -487,7 +488,7 @@ foreach ($id in $restart) {
                 $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
                 workingDirectory: Path.GetDirectoryName(script),
                 windowStyle: ProcessWindowStyle.Normal,
-                timeout: TimeSpan.FromMinutes(15));
+                timeout: PackageInstallCeiling);
         }
         catch (Exception ex) when (IsUacDeclined(ex))
         {
@@ -529,10 +530,8 @@ foreach ($id in $restart) {
     // Never FLIP:NoFilter.
     internal static async Task<InstallOutcome> OfferV3StockRestoreAsync(CancellationToken ct = default)
     {
-        var prompt = System.Windows.Forms.MessageBox.Show(
+        var prompt = AskOkCancel(
             "This restores the Magic Mouse 2024 (0323) to stock Windows HID (HidBth). No KMDF bind and no patched Apple filter. Test Mode is not required.\n\nOK continues. Cancel aborts.",
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
@@ -543,7 +542,7 @@ foreach ($id in $restart) {
         string extractDir;
         try
         {
-            extractDir = await DownloadV3DefaultBranchAsync(ct);
+            extractDir = await DownloadV3DefaultBranchAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -578,7 +577,7 @@ foreach ($id in $restart) {
                     $"/c \"{kmdfUninstall}\"",
                     workingDirectory: Path.GetDirectoryName(kmdfUninstall),
                     windowStyle: ProcessWindowStyle.Normal,
-                    timeout: TimeSpan.FromMinutes(15));
+                    timeout: PackageInstallCeiling);
                 completedSteps++;
             }
 
@@ -590,7 +589,7 @@ foreach ($id in $restart) {
                     $"-NoProfile -ExecutionPolicy Bypass -File \"{pathAUninstall}\"",
                     workingDirectory: Path.GetDirectoryName(pathAUninstall),
                     windowStyle: ProcessWindowStyle.Normal,
-                    timeout: TimeSpan.FromMinutes(15));
+                    timeout: PackageInstallCeiling);
                 completedSteps++;
             }
         }
@@ -678,10 +677,8 @@ foreach ($id in $restart) {
             return InstallOutcome.Unavailable;
         }
 
-        var prompt = System.Windows.Forms.MessageBox.Show(
+        var prompt = AskOkCancel(
             KeyboardSdpPatchPrompt(mac),
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
             System.Windows.Forms.MessageBoxIcon.Warning);
         if (prompt != System.Windows.Forms.DialogResult.OK)
         {
@@ -726,9 +723,9 @@ foreach ($id in $restart) {
         var url = DriverPackageCatalog.V3ZipUrl;
 
         Logger.Log($"DRIVER_PULL url={url}");
-        await using (var net = await Http.GetStreamAsync(url, ct))
+        await using (var net = await Http.GetStreamAsync(url, ct).ConfigureAwait(false))
         await using (var file = File.Create(zipPath))
-            await net.CopyToAsync(file, ct);
+            await net.CopyToAsync(file, ct).ConfigureAwait(false);
 
         if (Directory.Exists(extractDir))
             Directory.Delete(extractDir, recursive: true);
@@ -979,7 +976,7 @@ foreach ($id in $restart) {
         using var p = Process.Start(psi);
         if (p is null)
             throw new InvalidOperationException("Could not start elevated process (UAC cancelled?).");
-        if (!p.WaitForExit((int)(timeout ?? TimeSpan.FromMinutes(5)).TotalMilliseconds))
+        if (!p.WaitForExit((int)(timeout ?? ScriptRunCeiling).TotalMilliseconds))
         {
             try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
             throw new InvalidOperationException($"{fileName} timed out.");
@@ -988,15 +985,37 @@ foreach ($id in $restart) {
             throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited {p.ExitCode}.");
     }
 
+    // Every dialog this class raises goes through the UI thread. The offers
+    // themselves now run off the message pump - TrayMenu.BlockingCommands
+    // says which clicks leave it, and all of these do - and a window put up
+    // from a thread-pool thread is a window with no pump behind it.
+    //
+    // An answer, so the Func hop: with no pump left it throws rather than
+    // handing back a DialogResult nobody gave.
+    static System.Windows.Forms.DialogResult AskOkCancel(
+        string text, System.Windows.Forms.MessageBoxIcon icon) =>
+        UiDispatch.ToUiThread(() => System.Windows.Forms.MessageBox.Show(
+            text,
+            "Magic Tray",
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            icon));
+
     // Offer* returns its outcome instead of throwing it, so the explanation
     // has to be shown here or the user never sees why nothing happened.
+    //
+    // A statement, so the Action hop: the reason is in the log above, and
+    // with no pump left the dialog is dropped rather than raised on the
+    // worker that got here.
     static void ShowBlocked(string message)
     {
         Logger.Log($"DRIVER_BLOCKED err={message}");
-        System.Windows.Forms.MessageBox.Show(
-            message,
-            "Magic Tray",
-            System.Windows.Forms.MessageBoxButtons.OK,
-            System.Windows.Forms.MessageBoxIcon.Error);
+        UiDispatch.ToUiThread(() =>
+        {
+            System.Windows.Forms.MessageBox.Show(
+                message,
+                "Magic Tray",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Error);
+        });
     }
 }
