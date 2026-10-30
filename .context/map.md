@@ -11,7 +11,7 @@ Path index of this repo. Device catalog is code, not this table (`AGENTS.md`, `l
 | `MagicMouseTray/DriverPackageCatalog.cs` | Driver URLs and package names |
 | `MagicMouseTray/SystemConfigChecker.cs` | Bound-driver signature read; unknown never claims an unchecked driver |
 | `MagicMouseTray.Tests/` | Unit tests (Windows-only TFM) |
-| `docs/` | magictray.app pages plus operator docs (`ALERTS.md`, `DRIVER-MATRIX.md`, `TESTED.md`, `ENABLE-DISABLE.md`, `TEST-PLAN.md`, `SEARCH.md`) |
+| `docs/` | magictray.app pages plus operator docs (`ALERTS.md`, `DRIVER-MATRIX.md`, `TESTED.md`, `ENABLE-DISABLE.md`, `TEST-PLAN.md`, `SEARCH.md`, `OBSERVABILITY.md`, `RELEASING.md`, `CLOUDFLARE.md`) |
 | `design/` | Design notes (parity, tray UI, drivers, trackpad, alerts). Not the shipped catalog |
 | `specs/` | `github-drafts.md`, `outreach-drafts.md`, `webmaster-setup.md` |
 | `scripts/` | Release verify/package, site and version checks, keyboard SDP patch, diagnose/recover |
