@@ -175,7 +175,7 @@
             "name": "Which Apple devices has a tester confirmed?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Three so far: the 2024 Magic Mouse (0323), the AA-battery Magic Mouse v1 (030D) and the 2011 Apple Wireless Keyboard (0239). The rest should work, but nobody has reported back yet."
+              "text": "Three so far: the 2024 Magic Mouse (0323), the AA-battery Magic Mouse v1 (030D) and the 2011 Apple Wireless Keyboard (0239). The Magic Mouse v2 (0269) has two field reports rather than a confirmation. The rest should work, but nobody has reported back yet."
             }
           },
           {
@@ -229,7 +229,7 @@
       </div>
 
       <h2 id="works">Which devices show a battery percentage?</h2>
-      <p>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad Magic Tray recognises. A keyboard needs a <a href="keyboard.html#unlock">one-time unlock</a> first. Nothing else needs anything extra.</p>
+      <p>Every Apple Magic Mouse, Magic Keyboard and Magic Trackpad Magic Tray recognises. A keyboard needs a <a href="keyboard.html#unlock">one-time unlock</a> first. Nothing else needs anything extra. Only three devices have been confirmed by a tester so far, and two Magic Mouse v2 reports are still an open question.</p>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Apple device battery support, scrollable table">
       <table>
         <caption>Every Apple device Magic Tray recognises, the code Windows shows for it, and whether it reports a battery percent</caption>
@@ -238,7 +238,7 @@
         </thead>
         <tbody>
           <tr><td>Magic Mouse v1 · AA batteries</td><td><code>030D</code></td><td>Confirmed</td></tr>
-          <tr><td>Magic Mouse v2 · Lightning</td><td><code>0269</code></td><td>Should work, unconfirmed</td></tr>
+          <tr><td>Magic Mouse v2 · Lightning</td><td><code>0269</code></td><td>Yes on the stock Windows driver, reported by two testers, one of whom saw 83%. Both saw none while Apple's scrolling driver was bound, but Magic Tray had a battery-detection fault of its own then, fixed in the next version, so try again on that one. <a href="https://github.com/LesleyMurfin/magic-tray/issues/124">The first report</a>, <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">the second</a>.</td></tr>
           <tr><td>Magic Mouse 2024 · USB-C</td><td><code>0323</code></td><td>Confirmed</td></tr>
           <tr><td>Apple Wireless Mouse · AA batteries</td><td><code>0310</code></td><td>Should work, unconfirmed</td></tr>
           <tr><td>Magic Keyboard family</td><td><code>0239</code> <code>024F</code> <code>0250</code> <code>0267</code> <code>026C</code> <code>029C</code></td><td>After the <a href="keyboard.html#unlock">unlock</a>. 2011 keyboard confirmed.</td></tr>
@@ -304,7 +304,7 @@
         </details>
         <details>
           <summary>Which Apple devices has a tester confirmed? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body"><p>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The rest should work, but nobody has reported back yet.</p></div>
+          <div class="a-body"><p>Three so far: the 2024 Magic Mouse (<code>0323</code>), the AA-battery Magic Mouse v1 (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). The Magic Mouse v2 (<code>0269</code>) has two field reports rather than a confirmation. The rest should work, but nobody has reported back yet.</p></div>
         </details>
         <details>
           <summary>How do I check my Apple Magic Trackpad battery on Windows? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>

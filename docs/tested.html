@@ -11,7 +11,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Magic Tray">
   <meta property="og:title" content="Tested Apple devices on Windows 10 and 11: hardware reports">
-  <meta property="og:description" content="Three Apple devices have been confirmed by a tester on Windows. Everything else Magic Tray recognises should work, but nobody has reported back yet.">
+  <meta property="og:description" content="Three Apple devices have been confirmed by a tester on Windows, and the Magic Mouse v2 (0269) has two reports rather than a confirmation. Everything else is still unreported.">
   <meta property="og:url" content="https://magictray.app/tested.html">
   <meta property="og:image" content="https://magictray.app/og.png">
   <meta property="og:image:width" content="1200">
@@ -112,7 +112,7 @@
             "name": "Which Apple devices has a tester confirmed on Windows 10 or 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Three: the Magic Mouse 2024 (0323), the Magic Mouse v1 with AA batteries (030D) and the 2011 Apple Wireless Keyboard (0239). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth."
+              "text": "Three: the Magic Mouse 2024 (0323), the Magic Mouse v1 with AA batteries (030D) and the 2011 Apple Wireless Keyboard (0239). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth. A fourth device, the Magic Mouse v2 (0269), has two field reports rather than a confirmation: issue #124 and issue #164 both say that Apple's driver shows no battery percent, and that stock Windows shows the percent and does not scroll - 73% in #124 and 83% in #164. Both reports predate a battery-detection fix, so the missing percent is an open question rather than a verdict on the driver."
             }
           },
           {
@@ -149,10 +149,11 @@
       <header class="page-intro">
         <p class="kicker"><a href="./">Magic Tray</a> · tested devices</p>
         <h1>Tested Apple devices on Windows 10 and 11</h1>
-        <p class="lead">Three devices are confirmed. Everything else Magic Tray recognises should work, but nobody has reported back.</p>
+        <p class="lead">Three devices are confirmed. A fourth, the Magic Mouse v2 <code>0269</code>, has two field reports covering part of the picture, with an open question in them. Everything else Magic Tray recognises should work, but nobody has reported back.</p>
       </header>
 
-      <h2 id="reports">Confirmed by a tester</h2>
+      <h2 id="reports">Reports so far</h2>
+      <p>One row per tester, per device, per transport, per Magic Tray version, per driver. Every row below is a device someone ran Magic Tray on and reported back.</p>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Every device a tester has run Magic Tray on, scrollable table">
       <table>
         <caption>Devices a tester has run Magic Tray on, and what they reported</caption>
@@ -163,9 +164,14 @@
           <tr><td>Magic Mouse 2024 (USB-C, v3)</td><td><code>0323</code></td><td>Bluetooth</td><td>1.1.0</td><td>Windows 11</td><td>ok (30%)</td><td>KMDF</td><td>n/a</td><td>LesleyMurfin</td><td>2026-09-02</td><td>Live tray</td></tr>
           <tr><td>Magic Mouse v1</td><td><code>030D</code></td><td>Bluetooth</td><td>1.1.0</td><td>Windows 11</td><td>ok (100%)</td><td>Boot Camp</td><td>n/a</td><td>LesleyMurfin</td><td>2026-09-01</td><td>Live tray; unified Feature 0x47 after poll</td></tr>
           <tr><td>Apple Wireless Keyboard (2011)</td><td><code>0239</code></td><td>Bluetooth</td><td>1.1.0</td><td>Windows 11</td><td>ok (16%)</td><td>n/a</td><td>patched</td><td>LesleyMurfin</td><td>2026-09-02</td><td>Live tray</td></tr>
+          <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Bluetooth</td><td>not stated</td><td>Windows 11</td><td>no reading</td><td>Boot Camp</td><td>n/a</td><td>@centralcaetite</td><td>2026-09-07</td><td>Reported in <a href="https://github.com/LesleyMurfin/magic-tray/issues/124">#124</a>: scroll works on Apple's driver, tray found no battery. Taken before the battery-discovery fix, so the cause is open</td></tr>
+          <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Bluetooth</td><td>not stated</td><td>Windows 11</td><td>ok (73%)</td><td>Stock</td><td>n/a</td><td>@centralcaetite</td><td>2026-09-07</td><td>Same report: percent shows on stock Windows, no scrolling at all. The percent itself arrived in a later comment on the same issue, 2026-10-19</td></tr>
+          <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Bluetooth</td><td>1.1.0</td><td>Windows 11 Pro 26H2</td><td>no reading</td><td>Boot Camp</td><td>n/a</td><td>@AlecMakarov</td><td>2026-10-12</td><td>Reported in <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">#164</a>: tray row reads "Battery unavailable" on Apple's driver. Taken before the battery-discovery fix, so the cause is open</td></tr>
+          <tr><td>Magic Mouse v2</td><td><code>0269</code></td><td>Bluetooth</td><td>1.1.0</td><td>Windows 11 Pro 26H2</td><td>ok (83%)</td><td>Stock</td><td>n/a</td><td>@AlecMakarov</td><td>2026-10-12</td><td>Same report: 83% shows on stock Windows, no scrolling at all</td></tr>
         </tbody>
       </table>
       </div>
+      <p class="note">The four <code>0269</code> rows are two reports, not a confirmation. Between them they cover which driver was bound, whether the wheel scrolled and whether a percent appeared, and both testers have now quoted a stock-Windows percent - 73% in <a href="https://github.com/LesleyMurfin/magic-tray/issues/124">#124</a> and 83% in <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">#164</a>; #124 still states no Magic Tray version. They also both predate a fix on this branch: Magic Tray kept only one HID interface per device, so a mouse whose battery sits on a second interface could be reported as having no battery at all. That fault alone could produce the Boot Camp rows, so nothing here says Apple's driver costs a v2 its percent, however many testers report it. A <code>0269</code> report on the next version, on each driver, would settle it. Nothing there is copied to the Apple Wireless Mouse <code>0310</code>, which still has no report at all.</p>
 
       <h2 id="needed">Needs a tester</h2>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Devices Magic Tray recognises that nobody has confirmed yet, scrollable table">
@@ -214,7 +220,7 @@
             <li><span class="num">5</span><div class="step-body"><strong>Badge</strong><p>Mice: <code>KMDF</code>, <code>Boot Camp</code>, <code>Stock</code>, <code>Patched Apple</code> or <code>Not bound</code>. Keyboards: SDP <code>patched</code> or <code>unpatched</code>. Otherwise <code>n/a</code>.</p></div></li>
           </ol>
         </div>
-        <p>Add <strong>one row</strong> — one per PID, transport and version — to <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md"><code>docs/TESTED.md</code></a> in a pull request. Sign the commit (<code>git commit -s</code>).</p>
+        <p>Add <strong>one row</strong> — one per PID, transport, version and driver — to <a href="https://github.com/LesleyMurfin/magic-tray/blob/main/docs/TESTED.md"><code>docs/TESTED.md</code></a> in a pull request. Tried more than one driver? Send one row per driver, because battery and scroll can differ between them. Sign the commit (<code>git commit -s</code>).</p>
       </details>
       <details id="catalog">
         <summary>The device catalog</summary>
@@ -231,7 +237,7 @@
       <div class="accordion two-col">
         <details>
           <summary>Which Apple devices has a tester confirmed on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body"><p>Three: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth.</p></div>
+          <div class="a-body"><p>Three: the Magic Mouse 2024 (<code>0323</code>), the Magic Mouse v1 with AA batteries (<code>030D</code>) and the 2011 Apple Wireless Keyboard (<code>0239</code>). All three were confirmed on Windows 11 with Magic Tray 1.1.0 over Bluetooth. A fourth device, the Magic Mouse v2 (<code>0269</code>), has two field reports rather than a confirmation: <a href="https://github.com/LesleyMurfin/magic-tray/issues/124">issue #124</a> and <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">issue #164</a> both say that Apple's driver shows no battery percent, and that stock Windows shows the percent and does not scroll - 73% in #124 and 83% in #164. Both reports predate a battery-detection fix, so the missing percent is an open question rather than a verdict on the driver.</p></div>
         </details>
         <details>
           <summary>Does my Magic Keyboard or Magic Trackpad work on Windows 10 or 11? <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>

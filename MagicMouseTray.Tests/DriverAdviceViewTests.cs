@@ -397,14 +397,28 @@ public class DriverAdviceViewTests
         Assert.Equal("Patched Apple: pointer, one of scroll or battery", v3[1]);
         Assert.Equal("Stock Windows: pointer, battery, no scroll", v3[2]);
 
-        // v1's battery is measured (Feature 0x47, 97% on the reference PC);
-        // v2's has never been read, and says so with a question mark rather
-        // than by vanishing from the row or by reading as "no battery".
+        // Three v1/v2 battery stories, and the Stock row is where a user can
+        // actually see which one their mouse is in.
+        // v1 (030d): measured on this project's own hardware, Feature 0x47.
         Assert.Equal("Boot Camp: pointer, scroll, battery (recommended)",
             DriverAdviceView.OptionRowsShort(DeviceKind.MagicMouseV1, "030d")[0]);
+
+        // v2 (0269), issues #124 and #164: two testers saw the percent on Stock
+        // Windows, where the wheel is dead, so that row claims it outright. On
+        // Boot Camp both saw none - but this app's own pre-fix discovery defect
+        // could have caused that, and both of them were running the build that
+        // carries it, so the row keeps the question mark rather than hardening
+        // into "no battery" and blaming Apple's driver for our bug.
         var v2 = DriverAdviceView.OptionRowsShort(DeviceKind.MagicMouseV2, "0269");
         Assert.Equal("Boot Camp: pointer, scroll, battery? (recommended)", v2[0]);
+        Assert.Equal("Stock Windows: pointer, battery, no scroll", v2[1]);
         Assert.DoesNotContain(v2, r => r.Contains("no battery", StringComparison.Ordinal));
+
+        // 0310, the Apple Wireless Mouse: nobody has ever seen one on either
+        // driver, so even the Stock row stays a question.
+        var wireless = DriverAdviceView.OptionRowsShort(DeviceKind.MagicMouseV1, "0310");
+        Assert.Equal("Boot Camp: pointer, scroll, battery? (recommended)", wireless[0]);
+        Assert.Equal("Stock Windows: pointer, battery?, no scroll", wireless[1]);
 
         // A keyboard has no wheel and no pointer of its own: absent from the
         // short row, never rendered as a dead capability.

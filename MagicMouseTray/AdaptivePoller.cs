@@ -36,7 +36,17 @@ internal sealed class AdaptivePoller : IDisposable
     internal static readonly TimeSpan DeviceSetProbeInterval = TimeSpan.FromSeconds(15);
 
 
-    internal AdaptivePoller(Config config) => _config = config;
+    internal AdaptivePoller(Config config)
+    {
+        _config = config;
+        // The learned battery channel per PID is persisted in config.ini, but the objects that
+        // read batteries (MouseBatteryDevice) are rebuilt by DeviceRegistry.Discover on every
+        // cycle and never see a Config. This is the one place that owns both the process's
+        // single Config instance and the thread the reads happen on, so it is where the
+        // reader's learned-answer store is pointed at that instance. Config remains the only
+        // writer of the file - nothing here loads a second copy.
+        BatteryChannelMemory.Attach(config);
+    }
 
     // Reads one device's battery with a hard timeout and exception guard so a single slow or
     // throwing device can't stall the poll loop. On timeout/throw the device is logged (so the
@@ -179,6 +189,17 @@ internal sealed class AdaptivePoller : IDisposable
                 {
                     if (!_lastSeen.TryGetValue(name, out var meta)) continue;
                     _consecutiveFailures.Remove(name);
+                    // A device that stopped being discovered cannot "fail" a read, so its
+                    // partial learned-channel streak must not survive to be spent on its
+                    // reconnect - MouseBatteryDevice's LIMITATION note names this as the
+                    // poller's job, because only a cycle knows what discovery returned.
+                    //
+                    // NOT covered, and no seam is invented to pretend otherwise: reaching it
+                    // needs DeviceRegistry.Discover to return a live HID node on one cycle and
+                    // not the next, and neither exists on the host this suite runs on. Deleting
+                    // it leaves the suite green and costs a reconnecting device its clean slate:
+                    // inherited strikes plus one fresh failure drop a channel that still works.
+                    BatteryChannelMemory.ClearFailedReads(meta.Pid);
                     if (ShouldSkipPid(_config, meta.Pid)) continue;
                     BatteryChanged?.Invoke(-1, name, meta.Kind, meta.Pid);
                 }

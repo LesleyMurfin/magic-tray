@@ -77,4 +77,8 @@ NEED A HAND?
 Read the guides at https://magictray.app/
 Report a problem at https://github.com/LesleyMurfin/magic-tray/issues
 
+Reporting a battery problem? Open Diagnostics, click "Run mm-hid-report.ps1",
+and attach the report file it saves. It records what your device tells Windows
+about its battery, with your Bluetooth address removed.
+
 Magic Tray is free and open source under the MIT licence.

@@ -31,10 +31,13 @@ Run mm-devmgr-dump.ps1             ← if snapshot missing and this exists
 | Run diagnose-and-recover.ps1 | `scripts/diagnose-and-recover.ps1` | All catalog PIDs, both filter services, USB phantom vs BTHENUM, config.ini, debug.log tail. Tray does **not** pass `-Repair`. |
 | Run mm-bt-stack-snapshot.ps1 | `scripts/mm-bt-stack-snapshot.ps1` | BT HID stack + filter chain. Preferred over devmgr. |
 | Run mm-devmgr-dump.ps1 | `scripts/mm-devmgr-dump.ps1` | Fallback when snapshot is absent. |
+| Run mm-hid-report.ps1 | `scripts/mm-hid-report.ps1` | Read-only HID capture: every present Apple interface, its collections and which battery channel answers on each. Always its own slot, never the stack-dump slot. |
 
 Not on the menu: mm-rev-eng, mm-magicutilities-capture, ETW/tracelog, wheel counter, mm-state-flip, or any other lab script.
 
 Snapshot vs devmgr: one stack-dump slot. Prefer `mm-bt-stack-snapshot.ps1`; use `mm-devmgr-dump.ps1` only if snapshot is not found.
+
+`mm-hid-report.ps1` against `debug.log`: the script probes **every** interface on every run, so its capture is always the full picture. `debug.log` is not, and must not be read as a contradiction. On a learned channel the tray reads one interface with one HID call, and its `MOUSE_CHANNEL_TRY` / `MOUSE_CHANNEL_OK` / `MOUSE_BATTERY_OK` trio is flushed only when the set differs word-for-word from that PID's previous one - so the log names one channel, once, where the report lists them all. A channel the report shows answering, with no matching repeated `MOUSE_CHANNEL_OK` beside it in the log, means **unchanged**, not stopped: same channel, same percent. `MOUSE_CHANNEL_FAIL` is never de-duplicated, so any disagreement the other way - the report reads a percent the tray could not - is in the log in full, every poll. Full behaviour: [docs/ENABLE-DISABLE.md](../docs/ENABLE-DISABLE.md#tray-show-in-magic-tray-and-windows-device).
 
 ## Resolver
 
@@ -76,7 +79,7 @@ WindowsDesktop, resolver only. No live HID. No `Process.Start`.
 - Snapshot missing, devmgr present → stack-dump path is devmgr.
 - Missing name → null. Allowlist does not include mm-rev-eng, mm-magicutilities-capture, mm-state-flip, or ETW scripts.
 - `StartInfo` is `powershell.exe` with `-File` and the script path. Arguments do not mention `driver-state.txt`.
-- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run diagnose-and-recover.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`. No `PATH-A` in labels.
+- Labels are exactly `Run capture-state.ps1`, `Run diagnose-driver.ps1`, `Run diagnose-and-recover.ps1`, `Run mm-bt-stack-snapshot.ps1`, `Run mm-devmgr-dump.ps1`, `Run mm-hid-report.ps1`. No `PATH-A` in labels.
 
 ## Non-goals
 
