@@ -168,6 +168,8 @@ internal static class DeviceCapability
                 return "Scroll: not working (two drivers registered)";
             case RepairProblem.FilterPackageMissing:
                 return ScrollNoPackage;
+            case RepairProblem.ScrollNotchesNotDelivered:
+                return ScrollNotchesDropped;
         }
 
         // No snapshot at all: FilterPackagePresent is the reader's always-set
@@ -191,6 +193,7 @@ internal static class DeviceCapability
         // read as a fault here. Counters standing still cannot tell an idle
         // mouse from a broken one, so it is not an accusation either - the user
         // asserts the symptom through the ScrollHelpItemLabel item instead.
+
         if (f.MultitouchAdvancing == true)
             return "Scroll: working";
         if (f.FilterInStack == true)
@@ -201,6 +204,8 @@ internal static class DeviceCapability
     const string ScrollServiceStopped = "Scroll: not working (driver service not running)";
     const string ScrollNotAttached = "Scroll: not working (driver not attached)";
     const string ScrollNoPackage = "Scroll: not installed (no scroll driver on this PC)";
+    // A measured fault, from the prompted two-gesture probe only.
+    const string ScrollNotchesDropped = "Scroll: not working (driver drops scroll it reads)";
 
     internal static string BatteryRow(CapabilityFacts f)
     {

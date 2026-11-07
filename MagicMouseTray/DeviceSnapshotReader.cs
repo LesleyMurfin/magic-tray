@@ -36,7 +36,8 @@ internal static class DeviceSnapshotReader
     // planner must never turn into a finding. Passed in rather than polled
     // here: this reader never opens a HID handle.
     internal static IReadOnlyList<DeviceSnapshot> Read(
-        Config config, IReadOnlyDictionary<string, int>? lastBatteryByPid)
+        Config config,
+        IReadOnlyDictionary<string, int>? lastBatteryByPid)
     {
         // sc query spawns a process, so each distinct bound service name is
         // queried once for the whole menu open.
@@ -162,7 +163,7 @@ internal static class DeviceSnapshotReader
         // Registration is not attachment. LowerFilters plus a RUNNING service
         // both read healthy after a reboot that rebuilt the stack without the
         // filter, so the live device stack is asked directly - the same property
-        // scripts/capture-state.ps1:152-157 measures. Only asked when there is
+        // scripts/capture-state.ps1:146-155 measures. Only asked when there is
         // something to prove: no live BTHENUM instance, or nothing bound, means
         // a PC with no Apple mouse never pays for a CM query.
         bool? filterInStack = bth.InstanceCount > 0 && bound is not null
@@ -199,6 +200,21 @@ internal static class DeviceSnapshotReader
                 ? pct
                 : null;
 
+        // The correlated battery probe, taken at the 0x90 read that SURVIVED
+        // the poller's per-device collapse and published from there
+        // (AdaptivePoller.cs:173-174). This reader still opens no HID handle:
+        // it only picks up what the battery poll already measured, and gets
+        // null when that is absent or older than DeviceDiagReader
+        // .BatteryProbeMaxAge.
+        //
+        // Only a v3 with a live stack and a KMDF-family filter bound can have
+        // one: the Apple Boot Camp filter publishes no Diag block at all, so
+        // anything else would be a snapshot of a service that has none.
+        BatteryProbe? batteryProbe =
+            bth.InstanceCount > 0 && RepairPlanner.IsKmdfFamily(bound)
+                ? DeviceDiagReader.LatestBatteryProbe(pid, DateTimeOffset.UtcNow)
+                : null;
+
         // Null means there is no enabled_<pid> line at all, which the planner
         // reads as "this PC does not own this catalog device".
         bool? configEnabled = config.HasDeviceEnabledEntry(pid)
@@ -220,7 +236,8 @@ internal static class DeviceSnapshotReader
                 + $"cands={(candidates.Count > 0 ? string.Join(",", candidates) : "none")} "
                 + $"pointer={Tri(pointerChildLive)} mt_advancing={Tri(multitouchAdvancing)} "
                 + $"watcher={Tri(watcherHealthy)} "
-                + $"batt={(lastBatteryPct?.ToString() ?? "unknown")}");
+                + $"batt={(lastBatteryPct?.ToString() ?? "unknown")} "
+                + $"probe={DescribeProbe(batteryProbe)}");
         }
 
         return new DeviceSnapshot(
@@ -249,7 +266,12 @@ internal static class DeviceSnapshotReader
             multitouchAdvancing,
             // Machine-wide watcher state, read once per sweep.
             watcherHealthy,
-            lastBatteryPct);
+            lastBatteryPct,
+            // By NAME, not position: the probe is the record's trailing
+            // optional field, so a misplaced positional argument would compile
+            // silently. It is the winning collection's or nothing - null is no
+            // evidence and raises no finding.
+            BatteryProbe: batteryProbe);
     }
 
     static string Tri(bool? value) => value switch
@@ -258,6 +280,28 @@ internal static class DeviceSnapshotReader
         false => "false",
         null => "unknown",
     };
+
+    // zero=true is the truncation fingerprint; zero=unknown is a read that did
+    // not answer at all (wrong report id, or the IOCTL failed while the device
+    // re-enumerated). Those two must never look alike in the log, because one
+    // is a fault and the other is a device mid-restart.
+    //
+    // advanced is the pair's own verdict and span is the interval it was
+    // measured across: the probe carries no remembered advance timestamp,
+    // because the only interval the delta may be judged over is the pair taken
+    // around the read itself (DeviceDiagReader.PairMaxSpan). Logging the span
+    // is what makes a false "advanced" readable after the fact.
+    static string DescribeProbe(BatteryProbe? probe) => probe is null
+        ? "none"
+        : $"zero={Tri(probe.ZeroReport)}"
+            + $",advanced={IFilterDiagReader.TouchStreamAdvanced(probe.DiagBefore, probe.DiagAfter)}"
+            + $",span={PairSpan(probe)}"
+            + $",corroborated={probe.DiagAfter?.TruncationCorroborated == true}";
+
+    static string PairSpan(BatteryProbe probe) =>
+        probe.DiagBefore is { } before && probe.DiagAfter is { } after
+            ? ((int)(after.TakenAt - before.TakenAt).TotalMilliseconds).ToString() + "ms"
+            : "none";
 
     // Every filter-family service named on the live stack, kept verbatim so a
     // repair acts on the names the device really loads. Order is the caller's

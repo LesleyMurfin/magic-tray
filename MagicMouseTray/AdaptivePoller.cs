@@ -62,6 +62,7 @@ internal sealed class AdaptivePoller : IDisposable
     // Ranks a battery reading when collapsing a device's multiple HID collections to one:
     // a real percentage (0-100) beats -2 (present but unreadable) beats -1 (not found).
     static int ReadingRank(int pct) => pct >= 0 ? pct + 2 : (pct == -2 ? 1 : 0);
+
     // True when the Discover DeviceName set differs (order and duplicates ignored).
     internal static bool DeviceSetChanged(IEnumerable<string> oldNames, IEnumerable<string> newNames)
     {
@@ -137,11 +138,40 @@ internal sealed class AdaptivePoller : IDisposable
                             continue;
 
                         int best = -1;
+
+                        // The probe travels WITH the reading that won rather
+                        // than beside it: the number the tray publishes and the
+                        // fact the planner judges have to come from the same
+                        // HID collection, and carrying it here makes that true
+                        // by construction instead of by trusting the shape of
+                        // the group.
+                        //
+                        // Today the group is a single device, so nothing here
+                        // can mis-pair: DeviceRegistry.TryClassify rejects
+                        // every v3 path that is not the battery collection
+                        // (DeviceRegistry.cs:121-122, so COL01 is never a
+                        // device at all), Discover then keeps one device per
+                        // PID (:46-50), and each DeviceName in KnownMice maps
+                        // to exactly one PID. A reading of -1 additionally
+                        // never carries a probe: every -1 return in
+                        // MouseBatteryDevice is upstream of its CaptureProbe.
+                        BatteryProbe? bestProbe = null;
                         foreach (var device in group)
                         {
                             int pct = ReadBatteryGuarded(device, DeviceReadTimeout);
-                            if (ReadingRank(pct) > ReadingRank(best)) best = pct;
+                            if (ReadingRank(pct) <= ReadingRank(best))
+                                continue;
+
+                            best = pct;
+                            bestProbe = (device as MouseBatteryDevice)?.LastProbe;
                         }
+
+                        // Publish only the survivor. A group with no v3 probe at
+                        // all publishes nothing, which leaves the snapshot's
+                        // field null - no evidence, and no evidence raises
+                        // nothing.
+                        if (bestProbe is not null)
+                            DeviceDiagReader.PublishBatteryProbe(pid, bestProbe);
 
                         if (best == -1)
                         {

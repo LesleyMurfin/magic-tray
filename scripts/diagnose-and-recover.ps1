@@ -75,7 +75,7 @@ function Test-InstanceMatchesPid {
     $low = $InstanceId.ToLowerInvariant()
     # A PID alone is not unique across vendors: BTHENUM\{00001124-...}_VID&0000045e_
     # PID&030d is a Microsoft mouse carrying the Magic Mouse v1 PID, and the app
-    # rejects it too (DeviceEnable.MatchesInstance, DeviceEnable.cs:100-121;
+    # rejects it too (DeviceEnable.MatchesInstance, DeviceEnable.cs:101-122;
     # fixture DeviceEnableTests.cs:58-60). So a match needs an Apple vendor id
     # PRESENT, not merely no other vendor's - VID_05AC on USB/HID, _VID&0001004c_
     # or _VID&000205ac_ on BTHENUM, which are the only three VidPattern values in

@@ -418,7 +418,7 @@ internal static class DriverAdvisor
     //
     // These two kinds were the one family this layer could only speak about in
     // the negative. DriverHealthChecker never looks at them - it is called
-    // with skipNonScroll: true (DriverHealthChecker.cs:406) and its gate at
+    // with skipNonScroll: true (DriverHealthChecker.cs:385) and its gate at
     // :494-498 drops every PID in NonScrollApplePids - so their DriverStatus
     // arrives null, CurrentOptionId cannot name an option, and the advice fell
     // through to UnidentifiedStateClause: "The driver bound to this device has
