@@ -93,9 +93,10 @@ public class DriverAdvisorTests
     // battery as feature report 0x47 (usage page 0x0006 usage 0x0020), and a
     // paired v1 returned 97 percent through it -
     // "MOUSE_BATTERY_OK device=Magic Mouse v1 pct=97% (unified Feature 0x47)"
-    // with "REPAIR_SNAPSHOT pid=030d ... bound=applewirelessmouse svc=running
-    // ... batt=97" on the same tick. So Boot Camp - the bound state that was
-    // measured - may claim Works.
+    // with "REPAIR_SNAPSHOT pid=030d ... bound=applewirelessmouse svc=true
+    // pkg=true ... batt=97" on the same tick (the capture predates the
+    // tri-state format and read svc=running then). So Boot Camp - the bound
+    // state that was measured - may claim Works.
     [Fact]
     public void A_v1_on_boot_camp_claims_the_battery_it_was_measured_reading()
     {
@@ -452,7 +453,7 @@ public class DriverAdvisorTests
     // The read stock driver: keyboards and trackpads
     // -----------------------------------------------------------------------
     // DriverHealthChecker never looks at these kinds (skipNonScroll: true,
-    // DriverHealthChecker.cs:406, gate at :494-498), so their DriverStatus is
+    // DriverHealthChecker.cs:449, gate at :537), so their DriverStatus is
     // null or a cross-family leftover forever - and the advice used to say
     // "The driver bound to this device has not been read yet". On a Magic
     // Keyboard that is false: the driver is readable, and it is Microsoft's

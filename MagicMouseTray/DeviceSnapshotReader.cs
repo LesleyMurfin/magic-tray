@@ -40,7 +40,7 @@ internal static class DeviceSnapshotReader
     {
         // sc query spawns a process, so each distinct bound service name is
         // queried once for the whole menu open.
-        var serviceCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var serviceCache = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
         var snapshots = new List<DeviceSnapshot>();
 
         // The watcher is machine-wide, and reading its state means touching the
@@ -69,7 +69,7 @@ internal static class DeviceSnapshotReader
         ReadPid(
             pid,
             config,
-            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase),
             ReadWatcherHealth(),
             null);
 
@@ -108,7 +108,7 @@ internal static class DeviceSnapshotReader
     static DeviceSnapshot ReadPid(
         string pid,
         Config config,
-        Dictionary<string, bool> serviceCache,
+        Dictionary<string, bool?> serviceCache,
         bool? watcherHealthy,
         IReadOnlyDictionary<string, int>? lastBatteryByPid)
     {
@@ -129,22 +129,24 @@ internal static class DeviceSnapshotReader
         // the leftover's state and reported a dead wheel on a healthy mouse.
         var candidates = CollectFilterCandidates(bth, hidService, hidFilters);
 
-        string? bound = null;
-        bool serviceRunning = false;
+        // Queried lazily: a candidate that answers RUNNING wins outright
+        // (ResolveBoundFilter), so the names after it are never spawned in the
+        // healthy case. Only the all-negative path needs every answer, because
+        // telling "none of them runs" from "one of them did not answer" needs
+        // the whole list; the cache keeps even that to one sc.exe per distinct
+        // name for the whole sweep.
+        var states = new List<(string Name, bool? Running)>(candidates.Count);
         foreach (var candidate in candidates)
         {
-            if (!KernelServiceRunning(candidate, serviceCache))
-                continue;
-            bound = candidate;
-            serviceRunning = true;
-            break;
+            var running = KernelServiceRunning(candidate, serviceCache);
+            states.Add((candidate, running));
+            if (running == true)
+                break;
         }
-        // None of them runs (or none is bound at all): fall back to the first in
-        // precedence order so a repair still has a service name to act on.
-        if (bound is null && candidates.Count > 0)
-            bound = candidates[0];
 
-        bool packagePresent;
+        bool? serviceRunning = ResolveBoundFilter(states, out var bound);
+
+        bool? packagePresent;
         if (bound is null)
         {
             // Nothing filter-like is bound, so there is no service to ask about:
@@ -216,7 +218,7 @@ internal static class DeviceSnapshotReader
             // log line is indistinguishable from a field that read false.
             Logger.Log(
                 $"REPAIR_SNAPSHOT pid={pid} bt={bth.InstanceCount} usb={usbPhantoms} "
-                + $"bound={bound ?? "none"} svc={(serviceRunning ? "running" : "stopped")} "
+                + $"bound={bound ?? "none"} svc={Tri(serviceRunning)} pkg={Tri(packagePresent)} "
                 + $"cands={(candidates.Count > 0 ? string.Join(",", candidates) : "none")} "
                 + $"pointer={Tri(pointerChildLive)} mt_advancing={Tri(multitouchAdvancing)} "
                 + $"watcher={Tri(watcherHealthy)} "
@@ -294,9 +296,61 @@ internal static class DeviceSnapshotReader
         return kmdf;
     }
 
+    // Which filter on this stack is the effective one, and is it running?
+    // Pure: the live sc.exe queries are done by the caller and handed in as the
+    // tri-state each one answered, in the stack's own precedence order. The
+    // caller may stop querying at the first RUNNING answer, so the list can end
+    // there - which changes nothing below, since that answer wins outright.
+    //
+    // Registry order is not precedence of truth - the reference 0323 names the
+    // stopped leftover "MagicMouseDriver" first and the running
+    // "MagicMouseDriver204Scroll" second - so a candidate that ANSWERED
+    // RUNNING wins outright, whatever any other query said or failed to say.
+    // Past that:
+    //   nothing filter-like on the stack  - nothing was asked, nothing is
+    //                                       bound and nothing is claimed.
+    //   every query answered, none running - a measured false, which is the
+    //                                       USB-C charge incident rule 1
+    //                                       exists for. bound falls back to the
+    //                                       first name so a repair has a
+    //                                       service to act on.
+    //   any query did not answer           - unknown: the name that failed
+    //                                       could be the running filter, and
+    //                                       calling that "stopped" is what let
+    //                                       a healthy mouse be offered an
+    //                                       elevated stack restart.
+    internal static bool? ResolveBoundFilter(
+        IReadOnlyList<(string Name, bool? Running)> candidates, out string? bound)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Running == true)
+            {
+                bound = candidate.Name;
+                return true;
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            bound = null;
+            return null;
+        }
+
+        bound = candidates[0].Name;
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Running is null)
+                return null;
+        }
+        return false;
+    }
+
     // sc query spawns a process, so every distinct name is asked at most once
     // per menu open - a stack with two family filters must not double the cost.
-    static bool KernelServiceRunning(string serviceName, Dictionary<string, bool> cache)
+    // The cache holds the tri-state answer, so a query that failed is not
+    // retried as if it had come back "stopped".
+    static bool? KernelServiceRunning(string serviceName, Dictionary<string, bool?> cache)
     {
         if (cache.TryGetValue(serviceName, out var running))
             return running;
@@ -305,24 +359,87 @@ internal static class DeviceSnapshotReader
         return running;
     }
 
-    // Present means the service key exists AND the .sys it points at is on disk.
-    // A leftover key whose file was deleted is not a usable package.
-    static bool ServicePackagePresent(string serviceName)
+    // Present means the service key exists AND the .sys it would load - the one
+    // its ImagePath names, or the drivers-directory default the SCM falls back
+    // to - is on disk. A leftover key whose file was deleted is not a usable
+    // package.
+    //
+    // keyPresent: true the key opened, false there is no such key on this PC,
+    //             null the registry read threw.
+    // imageOnDisk: true the resolved ImagePath was found, false it was not,
+    //              null there was no path to test at all - ImagePath was
+    //              unparseable, or absent on a service that has no default.
+    // A read that threw must not be reported as "not installed": rule 6 sends
+    // that user to install a driver that may well be there already.
+    internal static bool? InterpretServicePackage(bool? keyPresent, bool? imageOnDisk)
     {
+        if (keyPresent is null)
+            return null;
+        if (keyPresent == false)
+            return false;
+        return imageOnDisk;
+    }
+
+    static bool? ServicePackagePresent(string serviceName)
+    {
+        bool? keyPresent = null;
+        bool? imageOnDisk = null;
         try
         {
             using var key = Registry.LocalMachine.OpenSubKey(
                 ServicesBase + "\\" + serviceName, writable: false);
-            if (key is null)
-                return false;
-
-            var image = ResolveDriverImagePath(key.GetValue("ImagePath") as string);
-            return image is not null && File.Exists(image);
+            keyPresent = key is not null;
+            if (key is not null)
+            {
+                var image = ResolveServiceImage(
+                    serviceName, key.GetValue("ImagePath"), key.GetValue("Type") as int?);
+                if (image is not null)
+                    imageOnDisk = File.Exists(image);
+            }
         }
         catch
         {
-            return false;
+            // Whatever was learned before the throw stands, and the rest stays
+            // unknown: a failed read leaves the fields null, which the snapshot
+            // log prints as pkg=unknown.
         }
+
+        return InterpretServicePackage(keyPresent, imageOnDisk);
+    }
+
+    // Which file this service would load, or null when that cannot be decided.
+    //
+    // An ABSENT ImagePath is not a failed read: for a driver service the SCM
+    // loads %SystemRoot%\System32\drivers\<ServiceName>.sys instead, so the
+    // answer is still computable and the probe stays measured. KB103000
+    // ("CurrentControlSet\Services Subkey Entries") documents that default
+    // under ImagePath and Type, and it is a DRIVER default: a Win32 service
+    // with no ImagePath has nothing to fall back on.
+    //
+    // A value that is PRESENT but unparseable - a blob instead of a string, or
+    // a string ResolveDriverImagePath refuses - is a different state: the key
+    // named something and we could not read it, which stays unknown. An empty
+    // or whitespace value names nothing, so it counts as absent.
+    internal static string? ResolveServiceImage(
+        string serviceName, object? declaredImagePath, int? serviceType) =>
+        declaredImagePath switch
+        {
+            string declared when !string.IsNullOrWhiteSpace(declared)
+                => ResolveDriverImagePath(declared),
+            null or string => DefaultDriverImage(serviceName, serviceType),
+            _ => null,
+        };
+
+    // SERVICE_KERNEL_DRIVER (1) and SERVICE_FILE_SYSTEM_DRIVER (2) are the two
+    // types the drivers-directory default applies to; every other type, and a
+    // Type that is missing or not a DWORD, leaves the question unanswered.
+    static string? DefaultDriverImage(string serviceName, int? serviceType)
+    {
+        if (serviceType is not (1 or 2) || string.IsNullOrWhiteSpace(serviceName))
+            return null;
+        return UnderWindows(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            @"System32\drivers\" + serviceName + ".sys");
     }
 
     // ImagePath forms seen in the wild: "\SystemRoot\System32\drivers\x.sys",

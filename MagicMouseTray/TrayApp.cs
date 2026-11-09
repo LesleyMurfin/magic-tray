@@ -229,7 +229,7 @@ internal static class TrayMenu
     // The devices whose driver story is Windows' own: a keyboard, a trackpad,
     // anything that is not one of this app's mice. They get no Driver submenu
     // and no DriverStatus worth showing - DriverHealthChecker deliberately
-    // skips them (DriverHealthChecker.cs:406, 494-498), and Classify would
+    // skips them (DriverHealthChecker.cs:449, 537), and Classify would
     // call a Magic Keyboard an "unknown Apple mouse" if it did not - so the
     // driver they are actually on has to be READ instead
     // (StockDriverReader.ForPid).
@@ -2933,11 +2933,11 @@ internal sealed class TrayApp : IDisposable
     // What OK actually does, appended to every guided dialog.
     static string ConsequenceText(RepairFinding finding)
     {
-        // FilterNotInStack is the one restart finding where the scroll driver service is
-        // already RUNNING: the fault is that Windows rebuilt this mouse's device stack
-        // without the filter attached to it (docs/v3.html:149-157). Telling the user that OK
-        // "starts the scroll driver service" would contradict the finding's own evidence and
-        // leave them looking for a stopped service.
+        // FilterNotInStack is the one restart finding where the scroll driver service was
+        // never read as stopped: the fault is that Windows rebuilt this mouse's device stack
+        // without the filter attached to it (docs/TEST-PLAN.md row D18). Telling the user
+        // that OK "starts the scroll driver service" would contradict the finding's own
+        // evidence and leave them looking for a stopped service.
         if (finding.Problem == RepairProblem.FilterNotInStack)
         {
             return "OK rebuilds this mouse's Bluetooth connection so Windows loads the scroll "
@@ -3042,9 +3042,9 @@ internal sealed class TrayApp : IDisposable
                 outcome = RepairOutcome.Failed;
             }
 
-            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
-            // RUNNING was already true before the repair: that contradiction is the whole
-            // finding. Attachment is the only honest proof, so re-read it here, still off the
+            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, which
+            // the finding never claimed was false: the fault is attachment, not the service.
+            // Attachment is the only honest proof, so re-read it here, still off the
             // UI thread (registry plus one CM property query).
             bool? inStack = null;
             if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)

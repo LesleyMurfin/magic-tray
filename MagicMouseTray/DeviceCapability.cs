@@ -170,8 +170,10 @@ internal static class DeviceCapability
                 return ScrollNoPackage;
         }
 
-        // No snapshot at all: FilterPackagePresent is the reader's always-set
-        // field, so a null here means nothing about the stack was readable.
+        // Null means no snapshot was taken for this device at all, or the
+        // package probe itself could not answer (DeviceSnapshot.FilterPackagePresent
+        // is tri-state): either way nothing about the driver is known, and the
+        // row says so rather than claiming the driver is missing.
         if (f.FilterPackagePresent is null)
             return "Scroll: unknown (driver state not readable)";
 
