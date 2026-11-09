@@ -477,6 +477,371 @@ internal static class TrayMenu
             or DriverStatus.StockKmdf;
     }
 
+    // The third source of device rows, after the poll and the health sweep.
+    //
+    // A device the user stopped in Windows loses both of the sources above.
+    // The poll (DeviceRegistry.Discover) walks live HID interfaces and an
+    // administratively disabled devnode has none, so nothing is enumerated
+    // and nothing is read. ShouldShowHealthRow cannot cover the gap either:
+    // the health sweep parses BTHENUM with skipNonScroll:true and drops every
+    // keyboard and trackpad PID on purpose, because those devices must never
+    // feed a mouse driver status. So the row disappeared together with the
+    // only in-app "Start this device in Windows", and the user had to open
+    // Device Manager to undo a click they made in this app.
+    //
+    // The evidence this row is drawn from is the pair nobody was asking: the
+    // BTHENUM instance key is still in the registry while the device is
+    // stopped (DeviceSnapshot.BthenumLiveCount counts those keys), and the
+    // PID is in this app's own catalog. No devnode means there is nothing to
+    // start, and a PID the catalog cannot name is not ours to name either.
+
+    // What such a row says about the battery: nothing. -1 is BatteryLabel's
+    // "No reading", and since nothing is polling this device, the last
+    // percent it ever reported is history rather than a fact about now.
+    internal const int OfflineRowPct = -1;
+
+    // The catalog's own name for a bare PID, or null for a PID this app ships
+    // no support for. Production reads the name and the kind together through
+    // TryCatalogEntry (OfflineRows); this one-value form exists for the
+    // catalog-coverage test that walks every PID the health sweep skips.
+    internal static string? CatalogName(string? pid) =>
+        TryCatalogEntry(pid, out var name, out _) ? name : null;
+
+    // The catalog row behind a bare PID: the name this app shows for it, and
+    // the kind that name resolves to. Both come out of the same table entry,
+    // so a row cannot describe one device and behave as another - and
+    // KindForNameTests pins DeviceCapability.KindForName to these same two
+    // tables, so the name and the kind here agree with it by construction.
+    static bool TryCatalogEntry(string? pid, out string name, out DeviceKind kind)
+    {
+        if (!string.IsNullOrEmpty(pid))
+        {
+            foreach (var m in MouseBatteryDevice.KnownMice)
+            {
+                if (PidTailEq(m.PidPattern, pid))
+                {
+                    name = m.DisplayName;
+                    kind = m.Kind;
+                    return true;
+                }
+            }
+            foreach (var k in KeyboardBatteryDevice.KnownKeyboards)
+            {
+                if (PidTailEq(k.PidPattern, pid))
+                {
+                    name = k.DisplayName;
+                    kind = DeviceKind.MagicKeyboard;
+                    return true;
+                }
+            }
+        }
+        name = "";
+        kind = default;
+        return false;
+    }
+
+    // The four-hex tail of a catalog pattern ("PID&0239", "PID_0239") against
+    // a bare PID, which is the form registry keys and tray rows both use.
+    // Registry keys spell it upper case and poll results do not, so the match
+    // is case-insensitive. Not EndsWith: a shorter string would match every
+    // PID that happens to end in it.
+    static bool PidTailEq(string pattern, string pid) =>
+        pid.Length == 4
+        && pattern.Length >= 4
+        && pattern.AsSpan(pattern.Length - 4).Equals(pid, StringComparison.OrdinalIgnoreCase);
+
+    // Does this device need a row that nothing else on the menu will draw?
+    // Every clause is evidence about THIS device, and absence from the shown
+    // set is the whole signal: no liveness guess may veto the row, because
+    // every veto here is another way to lose the Start item for a device that
+    // still has one. A device with a live pointer child the poll nonetheless
+    // failed to read is missing from the menu just as completely as a stopped
+    // one.
+    //
+    // That includes a device turned off with "Show in Magic Tray": the poller
+    // skips its PID (AdaptivePoller.ShouldSkipPid), so it is absent, so it
+    // draws a row here - and that is the intended answer, not an oversight. A
+    // hidden mouse already behaves this way (ShouldShowHealthRow never reads
+    // the config), the row labels itself "Off in this app", and hiding a row
+    // must not be a way to lose the only item that starts the device again.
+    internal static bool ShouldShowOfflineRow(
+        IEnumerable<string> shownPids, string? pid, string? catalogName, DeviceSnapshot? snapshot)
+    {
+        if (string.IsNullOrEmpty(pid) || string.IsNullOrEmpty(catalogName))
+            return false;
+        // Another device's snapshot is not evidence about this one, and no
+        // snapshot at all means the sweep never measured it.
+        if (snapshot is null || !PidEq(snapshot.Pid, pid))
+            return false;
+        // No BTHENUM instance: Windows has never been paired with this device
+        // on this PC, or the pairing was removed. Charge-cable phantoms under
+        // Enum\USB / Enum\HID are counted separately and are not a pairing.
+        if (snapshot.BthenumLiveCount == 0)
+            return false;
+        foreach (var shown in shownPids)
+        {
+            if (PidEq(shown, pid))
+                return false;
+        }
+        return true;
+    }
+
+    // One row per device the menu is missing, in the sweep's own order and
+    // named once. shownPids is what the poll rows and the health rows between
+    // them have already put on the menu.
+    internal static IReadOnlyList<OfflineDeviceRow> OfflineRows(
+        IEnumerable<string> shownPids, IEnumerable<DeviceSnapshot> snapshots)
+    {
+        var rows = new List<OfflineDeviceRow>();
+        var drawn = new HashSet<string>(shownPids, StringComparer.OrdinalIgnoreCase);
+        foreach (var s in snapshots)
+        {
+            if (!TryCatalogEntry(s.Pid, out var name, out var kind))
+                continue;
+            if (!ShouldShowOfflineRow(drawn, s.Pid, name, s))
+                continue;
+            drawn.Add(s.Pid);
+            rows.Add(new OfflineDeviceRow(s.Pid, name, kind, OfflineRowPct));
+        }
+        return rows;
+    }
+
+    // The mutating tray commands whose consent dialog the menu raises itself,
+    // and the exact words each one shows before it changes anything. The rule
+    // they state is the one the rest of this menu already kept: the cost is on
+    // screen before the user agrees to it, rather than after Windows has
+    // raised its own prompt. The click handlers build their items and their
+    // dialogs out of these entries and run behind Consented, so an entry here
+    // is the text the user actually reads.
+    //
+    // "Restore scroll mode" was the one that did not ask. It ran an elevated
+    // registry write and a device restart on a single click - the same cost
+    // as the flip one row above it, with none of the consent.
+    //
+    // Not every command that mutates: the three driver radios and "Fix
+    // battery reads" change driver state too, and their consent is raised one
+    // level down, inside DriverInstaller.OfferV3KmdfInstallAsync,
+    // OfferV3PathAInstallAsync, OfferV3StockRestoreAsync and
+    // OfferKeyboardSdpPatch - each an OK/Cancel prompt that runs nothing on
+    // Cancel. This table is the half of the rule the menu keeps itself.
+    //
+    // The ids are stable so a command can be named without depending on its
+    // wording, and the labels are the menu's own constants, so an entry
+    // cannot describe an item the menu does not have, or miss the wording
+    // when one of them is renamed.
+    internal const string CommandReadBattery = "read-battery";
+    internal const string CommandRestoreScrollMode = "restore-scroll-mode";
+    internal const string CommandStartInWindows = "start-in-windows";
+    internal const string CommandStopInWindows = "stop-in-windows";
+
+    internal static TrayDeviceCommand ReadBatteryCommand(string pid) =>
+        new(CommandReadBattery, ModeFlipView.MenuItemLabel(), ModeFlipView.OfferText(pid));
+
+    // hasRecordedSetting is ModeFlip.HasRecordedRestore(), read at click time:
+    // with nothing recorded the restore elevates nothing and writes nothing,
+    // and the offer says that instead of charging for an approval, a setting
+    // and a device restart the click will not spend.
+    internal static TrayDeviceCommand RestoreScrollModeCommand(bool hasRecordedSetting) =>
+        new(CommandRestoreScrollMode, ModeFlipView.RestoreItemLabel,
+            ModeFlipView.RestoreOfferText(hasRecordedSetting));
+
+    internal static TrayDeviceCommand StartInWindowsCommand =>
+        new(CommandStartInWindows, StartInWindows, StartInWindowsPrompt);
+
+    internal static TrayDeviceCommand StopInWindowsCommand =>
+        new(CommandStopInWindows, StopInWindows, StopInWindowsPrompt);
+
+    // Every command above, in one list, so a test can read the wording of all
+    // four at once. It is hand-maintained and the menu does not iterate it -
+    // BuildDeviceRow and BuildWindowsDeviceMenu build their items from the
+    // four factories one at a time - so this list pins the words of the
+    // commands that exist, and a fifth mutating item added tomorrow has to be
+    // added here by hand. The runtime guard for the one it would miss is
+    // Consented below, which fail-closes on empty consent text.
+    internal static IReadOnlyList<TrayDeviceCommand> MutatingCommands(
+        string pid, bool hasRecordedSetting) =>
+    [
+        ReadBatteryCommand(pid),
+        RestoreScrollModeCommand(hasRecordedSetting),
+        StartInWindowsCommand,
+        StopInWindowsCommand,
+    ];
+
+    // The gate each of those commands runs behind. ask puts the command's own
+    // consent text on screen and answers true only for OK, and the caller
+    // reaches the elevated action only through a true answer - so "state the
+    // cost, then change the device" is this one method rather than a
+    // hand-written copy inside every click handler.
+    //
+    // A command carrying no consent text is never asked and never runs, so an
+    // unworded mutating command cannot change anything at runtime - that is
+    // the half of the rule this method can keep on its own, whether or not
+    // the list above names the command.
+    internal static bool Consented(TrayDeviceCommand command, Func<string, bool> ask)
+    {
+        ArgumentNullException.ThrowIfNull(ask);
+        if (string.IsNullOrWhiteSpace(command.ConfirmText))
+            return false;
+        return ask(command.ConfirmText);
+    }
+
+    // ---- blocking work ---------------------------------------------------
+
+    // The ids of the commands that are NOT in the consent table above,
+    // because their consent is raised one level down (DriverInstaller's own
+    // OK/Cancel) or because they are not mutations at all. They are named
+    // here for the same reason the four above are: a command has to be
+    // nameable without depending on its wording.
+    internal const string CommandFixBatteryReads = "fix-battery-reads";
+    internal const string CommandV1V2StockRestore = "v1v2-stock-restore";
+    internal const string CommandV1V2BootCampPage = "v1v2-boot-camp-page";
+    internal const string CommandTrackpadV1BootCampPage = "trackpad-v1-boot-camp-page";
+    internal const string CommandV3KmdfInstall = "v3-kmdf-install";
+    internal const string CommandV3PathAInstall = "v3-patha-install";
+    internal const string CommandV3StockRestore = "v3-stock-restore";
+    internal const string CommandRepairApply = "repair-apply";
+    internal const string CommandStaleFilterRemoval = "stale-filter-removal";
+
+    // How long each of the tray's action commands can really block for, and
+    // therefore whether it is allowed to run on the UI thread. These thirteen
+    // are the commands a click launches work from; a menu item that only
+    // reads state is not one of them and is not described here - Diagnostics
+    // -> Check for problems now runs RefreshFindings inline, and both repair
+    // clicks take their own pre-flight snapshot before they reach this table.
+    // That is how they behaved before this table existed and the table does
+    // not change it. The handlers are built from these entries the same way
+    // the consent dialogs are built from MutatingCommands: the click looks
+    // its command up, and the entry decides whether the work goes to a worker
+    // thread.
+    //
+    // The ceilings are read from the constants the poll loops actually wait
+    // on, never retyped here, so a budget that moves moves in one place. They
+    // bound the waiting, not the whole click: a consent dialog the user has
+    // not answered, a zip extraction and a UAC prompt all sit outside them.
+    // What the table decides is the one thing it can decide safely - whether
+    // the command may stay on the pump at all. The two Boot Camp
+    // items are here precisely because they block on nothing - they open a
+    // documented page and return - so a zero ceiling is a real state and not
+    // a predicate that answers "no" to everything.
+    internal static readonly IReadOnlyList<TrayBlockingCommand> BlockingCommands =
+    [
+        // The flip's wall is its own ready budget, plus the restore grace the
+        // script is allowed after it, plus the Mode B re-read both of them
+        // run once the script is terminal (ModeFlip.WaitForModeB, after
+        // AwaitTerminal has already returned). The restore is the last two.
+        new(CommandReadBattery,
+            TimeSpan.FromMilliseconds(
+                ModeFlip.DefaultTimeoutMs + ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
+            RunsOffUiThread: true),
+        new(CommandRestoreScrollMode,
+            TimeSpan.FromMilliseconds(ModeFlip.RestoreGraceMs + ModeFlip.ModeBVerifyMs),
+            RunsOffUiThread: true),
+
+        // Start/Stop in Windows: one elevated pnputil pass, then the status
+        // sidecar poll, to DeviceEnable's own ceiling.
+        new(CommandStartInWindows, DeviceEnable.ElevatedWaitCeiling, RunsOffUiThread: true),
+        new(CommandStopInWindows, DeviceEnable.ElevatedWaitCeiling, RunsOffUiThread: true),
+
+        // One elevated script each, waited for with RunElevated's ordinary
+        // ceiling.
+        new(CommandFixBatteryReads, DriverInstaller.ScriptRunCeiling, RunsOffUiThread: true),
+        new(CommandV1V2StockRestore, DriverInstaller.ScriptRunCeiling, RunsOffUiThread: true),
+
+        // The documented Boot Camp pages: a browser launch, and nothing to
+        // wait for afterwards.
+        new(CommandV1V2BootCampPage, TimeSpan.Zero, RunsOffUiThread: false),
+        new(CommandTrackpadV1BootCampPage, TimeSpan.Zero, RunsOffUiThread: false),
+
+        // The 0323 radios pull the driver package first and then wait on the
+        // installer, so the honest ceiling is the download plus the elevated
+        // step - and Stock runs two elevated steps one after the other, the
+        // KMDF uninstall and then the PATH-A uninstall.
+        new(CommandV3KmdfInstall,
+            DriverInstaller.DownloadCeiling + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+        new(CommandV3PathAInstall,
+            DriverInstaller.DownloadCeiling + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+        new(CommandV3StockRestore,
+            DriverInstaller.DownloadCeiling
+                + DriverInstaller.PackageInstallCeiling
+                + DriverInstaller.PackageInstallCeiling,
+            RunsOffUiThread: true),
+
+        // The two repair flows. They go through StartTrayCommand like every
+        // other row, and their sidecar poll has its own wall.
+        new(CommandRepairApply, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
+        new(CommandStaleFilterRemoval, DeviceRepair.SidecarWaitCeiling, RunsOffUiThread: true),
+    ];
+
+    // Fail closed. A lookup that answered with a default entry would hand back
+    // a zero ceiling, and a zero ceiling is a licence to run the work on the
+    // UI thread - the exact defect this table exists to stop, reintroduced by
+    // a typo.
+    internal static TrayBlockingCommand BlockingCommand(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        foreach (var command in BlockingCommands)
+        {
+            if (string.Equals(command.Id, id, StringComparison.Ordinal))
+                return command;
+        }
+        throw new InvalidOperationException($"No blocking-work entry for tray command '{id}'.");
+    }
+
+    // Work that blocks on nothing may stay on the message pump; work that can
+    // block for any length of time may not. The ceiling decides it, not the
+    // entry's own RunsOffUiThread flag: the ceiling is the claim that cannot
+    // be wrong by accident.
+    internal static bool MayRunOnUiThread(TrayBlockingCommand command) =>
+        command.Ceiling == TimeSpan.Zero;
+
+    // One elevated tray command at a time, and the refusal said out loud.
+    //
+    // The frozen message pump used to be this gate by accident: a click that
+    // ran its elevated work inline could not show the menu again until the
+    // work returned, so there was no second click to race the first. Now that
+    // the work leaves the pump the menu is live for the whole five to twenty
+    // minutes an install takes, and a second click would start a second run
+    // against the same fixed paths - DriverInstaller's one zip and one
+    // extract directory under CacheRoot, which the first run's installer is
+    // executing out of - or a second UAC prompt and a second pnputil pass on
+    // the device the first run is still restarting.
+    //
+    // ModeFlip already refuses its own second cycle exactly this way
+    // (Interlocked.CompareExchange on _cycleInFlight); this is that refusal
+    // for every command the table sends off the pump. Null is free, and the
+    // value is the holder's id, so a refused click can say in the log what it
+    // was turned away by.
+    static string? _commandInFlight;
+
+    internal static bool TryStartCommand(string id, out string inFlight)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var holder = Interlocked.CompareExchange(ref _commandInFlight, id, null);
+        inFlight = holder ?? "";
+        return holder is null;
+    }
+
+    // Once per TryStartCommand that returned true, from the caller's own
+    // finally: a gate left shut by a report that threw is a tray that refuses
+    // every elevated click until the user restarts it.
+    internal static void FinishCommand() => Interlocked.Exchange(ref _commandInFlight, null);
+
+    // What the refused click says. Silence would read as a dead menu item,
+    // which is what the frozen pump already looked like. Not named Command*:
+    // that prefix is the id space the blocking table is checked against.
+    //
+    // "Still busy" and not "still running": the gate is held until the first
+    // command has reported, so a result dialog waiting to be read is inside
+    // this window too.
+    internal const string ElevatedCommandBusy =
+        "Magic Tray is still busy with another command that needs administrator rights, and "
+        + "it runs them one at a time: a second one would ask you to approve a second "
+        + "administrator step while the first is still working - and where the two use the "
+        + "same driver download folder or the same device, it would also undo it.\n\nLet the "
+        + "first one finish - close any message it has left open, and allow several minutes "
+        + "for a driver install - then try again. Nothing was changed by this click.";
 
     internal static string RowLabel(
         string name, int pct, string? badge, string extras, bool? enabledInApp)
@@ -613,6 +978,34 @@ internal static class TrayMenu
         return string.Join(" | ", parts) + suffix;
     }
 }
+
+// One device the tray menu would otherwise be missing: Windows still holds a
+// BTHENUM devnode for it, but nothing is driving it, so neither the poll nor
+// the driver health sweep produced a row - and the row is what carries
+// "Start this device in Windows". Built by TrayMenu.OfflineRows from a
+// DeviceSnapshot and the device catalog, which between them are the only
+// evidence there is about a device nothing can read.
+internal readonly record struct OfflineDeviceRow(
+    string Pid, string Name, DeviceKind Kind, int Pct);
+
+// One tray command that changes the device or its driver, and the exact text
+// shown before it is allowed to. ConfirmText is nullable so that a command
+// with no consent is something this type can express - and therefore
+// something MutatingCommandConsentTests can catch - instead of a shape that
+// only exists as a missing dialog in the menu code.
+internal readonly record struct TrayDeviceCommand(
+    string Id, string Label, string? ConfirmText);
+
+// One tray command and the longest it can hold the thread it runs on.
+//
+// Ceiling is the wait the code actually performs - zero for a command that
+// blocks on nothing - and RunsOffUiThread is the entry's own statement of
+// where it is run. The two are kept separate so they can disagree in a test
+// rather than only in production: TrayMenu.MayRunOnUiThread answers on the
+// ceiling alone, because a ceiling is measured from the loop that waits and
+// a flag is only typed in.
+internal readonly record struct TrayBlockingCommand(
+    string Id, TimeSpan Ceiling, bool RunsOffUiThread);
 
 // One device's answer to "which driver is Windows actually using, and where
 // does the battery percent come from" for the devices this app installs
@@ -1495,6 +1888,25 @@ internal sealed class TrayApp : IDisposable
             menu.Items.Insert(insertAt++, row);
         }
 
+        // Last, and only for the devices the two loops above did not draw: a
+        // device Windows is not driving right now. It polls nothing and the
+        // health sweep skips its PID, so without this the user lost the row
+        // AND the "Start this device in Windows" item on it - the only way
+        // back from a Stop they did here. The snapshots the finding sweep
+        // already published are the evidence; BuildDeviceRow gives the row
+        // the same Windows device submenu every other row has, and
+        // OfflineRowPct keeps it honest about the battery (nothing is being
+        // read, so the row claims no reading).
+        foreach (var offline in TrayMenu.OfflineRows(shownPids, _snapshots))
+        {
+            var offlineKey = $"offline:{offline.Pid}";
+            if (_deviceMenuItems.ContainsKey(offlineKey)) continue;
+            shownPids.Add(offline.Pid);
+            var row = BuildDeviceRow(offline.Name, offline.Pct, offline.Kind, offline.Pid);
+            _deviceMenuItems[offlineKey] = row;
+            menu.Items.Insert(insertAt++, row);
+        }
+
         if (_deviceBatteries.Count == 0 && _deviceMenuItems.Count > 0)
         {
             _deviceSection.Text = _deviceMenuItems.Count == 1
@@ -1589,7 +2001,8 @@ internal sealed class TrayApp : IDisposable
         if (TrayMenu.ShowFixKeyboard(kind, pct))
         {
             var fix = new ToolStripMenuItem(TrayMenu.MenuText("Fix battery reads")) { ForeColor = Color.OrangeRed };
-            fix.Click += (_, _) => RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
+            fix.Click += (_, _) => RunDriverAction(
+                TrayMenu.CommandFixBatteryReads, DriverInstaller.OfferKeyboardSdpPatch);
             item.DropDownItems.Add(fix);
         }
 
@@ -1597,8 +2010,9 @@ internal sealed class TrayApp : IDisposable
         {
             var offerPid = pid;
             var bootCamp = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.TrackpadV1BootCampLabel));
-            bootCamp.Click += (_, _) =>
-                RunDriverAction(() => DriverInstaller.OfferTrackpadV1BootCamp(offerPid));
+            bootCamp.Click += (_, _) => RunDriverAction(
+                TrayMenu.CommandTrackpadV1BootCampPage,
+                () => DriverInstaller.OfferTrackpadV1BootCamp(offerPid));
             item.DropDownItems.Add(bootCamp);
         }
 
@@ -1618,6 +2032,7 @@ internal sealed class TrayApp : IDisposable
             };
             if (status != DriverStatus.PatchedKmdf)
                 kmdf.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3KmdfInstall,
                     () => OfferThenRemember(
                         Config.Driver0323Kmdf, () => DriverInstaller.OfferV3KmdfInstallAsync()));
             else
@@ -1639,6 +2054,7 @@ internal sealed class TrayApp : IDisposable
             var appleRouteStatus = status;
             if (status != DriverStatus.PathAPatched)
                 patchedApple.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3PathAInstall,
                     () => OfferThenRemember(
                         Config.Driver0323PathA,
                         () => DriverInstaller.OfferV3PathAInstallAsync(appleRouteStatus)));
@@ -1652,6 +2068,7 @@ internal sealed class TrayApp : IDisposable
             };
             if (status != DriverStatus.StockKmdf)
                 stock.Click += (_, _) => _ = RunDriverActionAsync(
+                    TrayMenu.CommandV3StockRestore,
                     () => OfferThenRemember(
                         Config.Driver0323Stock, () => DriverInstaller.OfferV3StockRestoreAsync()));
             else
@@ -1669,28 +2086,28 @@ internal sealed class TrayApp : IDisposable
                 var flipPid = pid;
                 var flipName = name;
                 var flipKind = kind;
-                var flip = new ToolStripMenuItem(TrayMenu.MenuText(ModeFlipView.MenuItemLabel()));
+                var flipCommand = TrayMenu.ReadBatteryCommand(flipPid);
+                var flip = new ToolStripMenuItem(TrayMenu.MenuText(flipCommand.Label));
                 flip.Click += (_, _) =>
                 {
                     // The one confirmation, stating the cost before consent.
                     // Cancel does nothing at all: nothing elevated, nothing
                     // written, and no driver choice persisted - a reading does
                     // not change which driver the user picked.
-                    var answer = System.Windows.Forms.MessageBox.Show(
-                        ModeFlipView.OfferText(flipPid), TrayMenu.ProductName,
-                        System.Windows.Forms.MessageBoxButtons.OKCancel,
-                        System.Windows.Forms.MessageBoxIcon.Information);
-                    if (answer != System.Windows.Forms.DialogResult.OK)
+                    if (!TrayMenu.Consented(flipCommand, AskOkCancelInfo))
                         return;
-                    _ = RunDriverActionAsync(async () =>
-                    {
-                        // Off the UI thread: the cycle blocks on an elevated
-                        // script, and ModeFlip's own budget is 45 s to reach
-                        // battery mode plus the restore on top of that.
-                        var result = await Task.Run(
-                            () => ModeFlip.ReadBatteryViaFlip(ModeFlip.ReadCol02BatteryPercent));
-                        ReportModeFlip(result, flipName, flipKind, flipPid);
-                    });
+                    // Off the UI thread: the cycle blocks on an elevated
+                    // script, and ModeFlip's own budget is 45 s to reach
+                    // battery mode plus the restore on top of that.
+                    StartTrayCommand(
+                        TrayMenu.CommandReadBattery,
+                        () => ModeFlip.ReadBatteryViaFlip(ModeFlip.ReadCol02BatteryPercent),
+                        result =>
+                        {
+                            ReportModeFlip(result, flipName, flipKind, flipPid);
+                            FinishDriverAction();
+                        },
+                        DriverActionFailed);
                 };
                 driverMenu.DropDownItems.Add(flip);
 
@@ -1698,11 +2115,31 @@ internal sealed class TrayApp : IDisposable
                 // for (ModeFlip.RestoreWarning, ModeFlipView.RestoreItemLabel),
                 // so it is on this driver whether or not a flip has run yet.
                 var restore = new ToolStripMenuItem(TrayMenu.MenuText(ModeFlipView.RestoreItemLabel));
-                restore.Click += (_, _) => _ = RunDriverActionAsync(async () =>
+                restore.Click += (_, _) =>
                 {
-                    var result = await Task.Run(ModeFlip.RestoreModeB);
-                    ReportModeFlip(result, null, flipKind, flipPid);
-                });
+                    // The same gate the flip above has. What this click costs
+                    // depends on whether ModeFlip recorded a setting to put
+                    // back, so the offer is worded on that reading and the
+                    // reading is taken HERE, at click time: a flip run after
+                    // this menu was built writes the sentinel the restore
+                    // then has to spend an approval, a registry write and a
+                    // device restart on. It used to pay all three on a single
+                    // click with nothing on screen. Cancel does nothing at
+                    // all - nothing elevated, nothing written, nothing
+                    // restarted.
+                    var command = TrayMenu.RestoreScrollModeCommand(ModeFlip.HasRecordedRestore());
+                    if (!TrayMenu.Consented(command, AskOkCancelInfo))
+                        return;
+                    StartTrayCommand(
+                        TrayMenu.CommandRestoreScrollMode,
+                        ModeFlip.RestoreModeB,
+                        result =>
+                        {
+                            ReportModeFlip(result, null, flipKind, flipPid);
+                            FinishDriverAction();
+                        },
+                        DriverActionFailed);
+                };
                 driverMenu.DropDownItems.Add(restore);
             }
 
@@ -1722,7 +2159,8 @@ internal sealed class TrayApp : IDisposable
                 Checked = status == DriverStatus.Ok
             };
             if (TrayMenu.V1V2BootCampRadioEnabled(status))
-                bootCamp.Click += (_, _) => RunDriverAction(DriverInstaller.OfferV1V2ScrollFix);
+                bootCamp.Click += (_, _) => RunDriverAction(
+                    TrayMenu.CommandV1V2BootCampPage, DriverInstaller.OfferV1V2ScrollFix);
             else
                 bootCamp.Enabled = false;
             driverMenu.DropDownItems.Add(bootCamp);
@@ -1733,7 +2171,9 @@ internal sealed class TrayApp : IDisposable
             };
             var stockPid = pid;
             if (TrayMenu.V1V2StockRadioEnabled(status))
-                stock.Click += (_, _) => RunDriverAction(() => DriverInstaller.OfferV1V2StockRestore(stockPid));
+                stock.Click += (_, _) => RunDriverAction(
+                    TrayMenu.CommandV1V2StockRestore,
+                    () => DriverInstaller.OfferV1V2StockRestore(stockPid));
             else
                 stock.Enabled = false;
             driverMenu.DropDownItems.Add(stock);
@@ -1866,6 +2306,26 @@ internal sealed class TrayApp : IDisposable
         return snapshot.PointerChildLive;
     }
 
+    // The tray's side of TrayMenu.Consented: one OK/Cancel dialog carrying the
+    // command's own text, where only OK is a yes - closing the dialog counts
+    // as Cancel. Two of them because the icon is part of the message: Warning
+    // where the command itself is the risky thing (a device stopped in
+    // Windows, a device started again), Information where the command is a
+    // routine action with a stated pause.
+    static bool AskOkCancelInfo(string text) =>
+        System.Windows.Forms.MessageBox.Show(
+            text, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Information)
+        == System.Windows.Forms.DialogResult.OK;
+
+    static bool AskOkCancelWarning(string text) =>
+        System.Windows.Forms.MessageBox.Show(
+            text, TrayMenu.ProductName,
+            System.Windows.Forms.MessageBoxButtons.OKCancel,
+            System.Windows.Forms.MessageBoxIcon.Warning)
+        == System.Windows.Forms.DialogResult.OK;
+
     // One elevated PnP change, with every outcome DeviceEnable can report
     // said in its own words. Nothing here rolls the tray state back: the tray
     // state is not what this changes.
@@ -1885,32 +2345,37 @@ internal sealed class TrayApp : IDisposable
             return;
         }
 
-        var confirm = System.Windows.Forms.MessageBox.Show(
-            enable ? TrayMenu.StartInWindowsPrompt : TrayMenu.StopInWindowsPrompt,
-            TrayMenu.ProductName,
-            System.Windows.Forms.MessageBoxButtons.OKCancel,
-            System.Windows.Forms.MessageBoxIcon.Warning);
-        if (confirm != System.Windows.Forms.DialogResult.OK)
+        var command = enable ? TrayMenu.StartInWindowsCommand : TrayMenu.StopInWindowsCommand;
+        if (!TrayMenu.Consented(command, AskOkCancelWarning))
             return;
 
-        DeviceEnableResult result;
-        try
-        {
-            result = DeviceEnable.Apply(pid, enable);
-        }
-        catch (Exception ex)
-        {
-            // Apply is total for every device outcome, so what is left here is
-            // a refusal raised before anything launched (an uncatalogued PID,
-            // a guard in BuildScript). Its own words are the honest report.
-            Logger.Log($"DEVICE_ENABLE_REFUSED pid={pid} err={ex.Message}");
-            System.Windows.Forms.MessageBox.Show(
-                ex.Message, TrayMenu.ProductName,
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Warning);
-            return;
-        }
+        // DeviceEnable.Apply launches the elevated step and then polls its
+        // status sidecar to DeviceEnable.ElevatedWaitCeiling, so this is the
+        // call that used to hold the message pump for up to two minutes. The
+        // table says it leaves the UI thread; the report comes back on it.
+        StartTrayCommand(
+            command.Id,
+            () => DeviceEnable.Apply(pid, enable),
+            result => ReportWindowsDeviceState(pid, enable, nameForModal, result),
+            ex =>
+            {
+                // Apply is total for every device outcome, so what is left here is
+                // a refusal raised before anything launched (an uncatalogued PID,
+                // a guard in BuildScript). Its own words are the honest report.
+                Logger.Log($"DEVICE_ENABLE_REFUSED pid={pid} err={ex.Message}");
+                System.Windows.Forms.MessageBox.Show(
+                    ex.Message, TrayMenu.ProductName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+            });
+    }
 
+    // Everything the attempt produced, said on the UI thread: this touches
+    // modal dialogs, the critical alert and the tray icon, none of which may
+    // be reached from the worker that ran the elevated step.
+    void ReportWindowsDeviceState(
+        string pid, bool enable, string? nameForModal, DeviceEnableResult result)
+    {
         Logger.Log($"DEVICE_WINDOWS_STATE pid={pid} enable={(enable ? "true" : "false")} "
             + $"outcome={result.Outcome}");
         _poller.RefreshNow();
@@ -2005,15 +2470,96 @@ internal sealed class TrayApp : IDisposable
     // nothing (BuildDeviceRow, flip handler).
     async Task OfferThenRemember(string driver, Func<Task<InstallOutcome>> offer)
     {
-        var outcome = await offer();
+        var outcome = await offer().ConfigureAwait(false);
         if (outcome == InstallOutcome.Confirmed)
         {
-            _config.SetDriver0323(driver);
-            Logger.Log($"DRIVER_CHOICE_SAVED driver={driver}");
+            // The offer now runs on a worker thread, and Config holds no lock
+            // of its own - every other write to it is a menu click. So the
+            // write goes back to the thread those clicks run on, and the whole
+            // file is still only ever rewritten from one thread.
+            //
+            // The line that says it was saved is inside the hop, because the
+            // hop is dropped when the host has already gone: a choice that
+            // was never written must not read as one that was.
+            UiDispatch.ToUiThread(() =>
+            {
+                _config.SetDriver0323(driver);
+                Logger.Log($"DRIVER_CHOICE_SAVED driver={driver}");
+            });
             return;
         }
 
         Logger.Log($"DRIVER_CHOICE_NOT_SAVED driver={driver} outcome={outcome}");
+    }
+
+    // Where every blocking tray click runs, decided by the command's own
+    // entry in TrayMenu.BlockingCommands rather than by what each handler
+    // remembers. A nonzero ceiling means the work goes to a worker thread and
+    // comes back through one hop; a zero ceiling - the two Boot Camp pages,
+    // which open a browser and return - stays here, because a hop would only
+    // cost a context switch.
+    //
+    // Fire and forget by design: a click handler returns immediately and the
+    // answer arrives later, which is the whole point. The failure callback is
+    // what makes that safe - UiDispatch.RunThenReport hands a thrown refusal
+    // to it on the UI thread instead of leaving it on a task nobody awaits.
+    //
+    // And because the handler returns, the menu it came from is live again:
+    // TrayMenu.TryStartCommand is what stops the next click starting a
+    // second elevated run beside this one.
+    void StartTrayCommand<T>(
+        string commandId, Func<T> work, Action<T> report, Action<Exception> failed)
+    {
+        var command = TrayMenu.BlockingCommand(commandId);
+        if (TrayMenu.MayRunOnUiThread(command))
+        {
+            // No gate: a zero ceiling is work that returns before the pump
+            // can deliver another click, so there is no window to race in.
+            //
+            // Same split as the hop below, so the two branches cannot report
+            // differently: failed() is for work that threw, never for a
+            // report that did.
+            T value;
+            try { value = work(); }
+            catch (Exception ex) { failed(ex); return; }
+            report(value);
+            return;
+        }
+
+        if (!TrayMenu.TryStartCommand(command.Id, out var inFlight))
+        {
+            RefuseSecondCommand(command.Id, inFlight);
+            return;
+        }
+
+        Logger.Log($"TRAY_COMMAND id={command.Id} off_ui=true ceiling={command.Ceiling}");
+        _ = ReleaseWhenReported(
+            UiDispatch.RunThenReport(work, report, failed, UiDispatch.ToUiThread));
+    }
+
+    // The gate is held until the REPORT has been made, not until the work
+    // returns: FinishDriverAction and ReportWindowsDeviceState rebuild the
+    // menu the next click comes from, and the machine is not settled until
+    // they have.
+    static async Task ReleaseWhenReported(Task hop)
+    {
+        try { await hop.ConfigureAwait(false); }
+        finally { TrayMenu.FinishCommand(); }
+    }
+
+    // What a second click gets. The dialog goes through the one hop every
+    // other dialog uses: this is called from a click handler, so it is
+    // already on the UI thread and the Invoke runs inline.
+    static void RefuseSecondCommand(string id, string inFlight)
+    {
+        Logger.Log($"TRAY_COMMAND_REFUSED id={id} in_flight={inFlight}");
+        UiDispatch.ToUiThread(() =>
+        {
+            System.Windows.Forms.MessageBox.Show(
+                TrayMenu.ElevatedCommandBusy, TrayMenu.ProductName,
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Warning);
+        });
     }
 
     // Offer* report their own outcome and explain their own failures
@@ -2021,42 +2567,97 @@ internal sealed class TrayApp : IDisposable
     // here for Cancelled/Failed/Unavailable - that would be a second dialog
     // for one answer. The catch stays as the backstop for the guard refusals
     // Plan*/Execute* still throw.
-    void RunDriverAction(Func<InstallOutcome> offer)
+    void RunDriverAction(string commandId, Func<InstallOutcome> offer) =>
+        StartTrayCommand(
+            commandId,
+            offer,
+            outcome =>
+            {
+                Logger.Log($"DRIVER_ACTION outcome={outcome}");
+                FinishDriverAction();
+            },
+            DriverActionFailed);
+
+    // The async half of the same rule, for the three 0323 offers: they pull a
+    // driver package before they elevate, so their work is a Task rather than
+    // a Func<T> and Task.Run is the hop. The entry still decides, the gate
+    // still refuses a second start, and the report still comes back on the UI
+    // thread through one Invoke.
+    async Task RunDriverActionAsync(string commandId, Func<Task> action)
     {
+        var command = TrayMenu.BlockingCommand(commandId);
+        var inline = TrayMenu.MayRunOnUiThread(command);
+
+        // Nothing to wait on is nothing to race, so the two Boot Camp pages
+        // neither take the gate nor leave the pump. Everything else does: the
+        // three 0323 ids share DriverInstaller's single zip and single
+        // extract directory, and the menu is live for the whole of the
+        // download and the install that follows it.
+        if (!inline && !TrayMenu.TryStartCommand(command.Id, out var inFlight))
+        {
+            RefuseSecondCommand(command.Id, inFlight);
+            return;
+        }
+
+        Exception? failure = null;
         try
         {
-            var outcome = offer();
-            Logger.Log($"DRIVER_ACTION outcome={outcome}");
+            if (inline)
+            {
+                await action();
+            }
+            else
+            {
+                Logger.Log($"TRAY_COMMAND id={command.Id} off_ui=true ceiling={command.Ceiling}");
+                // ConfigureAwait(false) for the same reason DriverInstaller's
+                // own awaits carry it: nothing between here and the hop below
+                // needs the UI thread, and queuing it there is what put a
+                // fifteen-minute WaitForExit on the message pump.
+                await Task.Run(action).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
-            Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
-            ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
+            failure = ex;
         }
+
+        try
+        {
+            // Before the hop, because the hop can be dropped: with the WPF
+            // host gone there is no thread left to toast from, and this is
+            // the only place the thrown refusal is written down.
+            if (failure is not null)
+                Logger.Log($"DRIVER_ACTION_CARRIES_FAILURE err={failure.Message}");
+            UiDispatch.ToUiThread(() =>
+            {
+                if (failure is not null)
+                    DriverActionFailed(failure);
+                else
+                    FinishDriverAction();
+            });
+        }
+        finally
+        {
+            if (!inline)
+                TrayMenu.FinishCommand();
+        }
+    }
+
+    void DriverActionFailed(Exception ex)
+    {
+        Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
+        ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
+        FinishDriverAction();
+    }
+
+    // The tail every driver action shares: re-read what the machine says now,
+    // then repaint. On the UI thread, because the last two touch the menu.
+    void FinishDriverAction()
+    {
         _health = ReadHealth();
         _poller.RefreshNow();
         RefreshFindings();
         UpdateDeviceMenuItems();
-    }
-
-    async Task RunDriverActionAsync(Func<Task> action)
-    {
-        try
-        {
-            await action();
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"DRIVER_ACTION_FAIL err={ex.Message}");
-            ToastNotifier.ShowError(TrayMenu.ProductName, ex.Message);
-        }
-        _health = ReadHealth();
-        _poller.RefreshNow();
-        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-        {
-            RefreshFindings();
-            UpdateDeviceMenuItems();
-        });
     }
 
     // The advice row: the short form in the menu, the full paragraph on click.
@@ -2138,12 +2739,12 @@ internal sealed class TrayApp : IDisposable
         Logger.Log($"MODE_FLIP_UI outcome={result.Outcome} percent={result.Percent} "
             + $"restored={result.RestoredToModeB} detail={result.Detail}");
 
-        // Null once the WPF host has shut down: a normal exit race, and the
-        // verbatim outcome is already in the log above either way.
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null)
-            return;
-        dispatcher.Invoke(() =>
+        // The one seam, and the same drop this used to spell out for itself:
+        // Application.Current is null once the WPF host has shut down, a
+        // normal exit race, and the verbatim outcome is already in the log
+        // above either way. This is called from inside a marshal hop, so the
+        // Invoke behind it runs the body inline rather than queueing it.
+        UiDispatch.ToUiThread(() =>
         {
             // A real percent enters by the same door a poll read uses, so the
             // tooltip, the device row and this dialog cannot state different
@@ -2170,6 +2771,10 @@ internal sealed class TrayApp : IDisposable
     // modal there would hold the tray icon off the screen until somebody
     // answered it. InvokeAsync from the dispatcher's own thread posts the work
     // and returns, so the ctor finishes and the icon appears first.
+    //
+    // Which is why it is not UiDispatch.ToUiThread: that hop is a blocking
+    // Invoke, and a blocking Invoke from the dispatcher's own thread would
+    // run this modal inline and be the very stall this is written to avoid.
     void OfferStaleModeARestore()
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
@@ -2183,14 +2788,18 @@ internal sealed class TrayApp : IDisposable
                 System.Windows.Forms.MessageBoxIcon.Warning);
             if (answer != System.Windows.Forms.DialogResult.OK)
                 return;
-            _ = RunDriverActionAsync(async () =>
-            {
-                // Off the UI thread for the same reason the flip is: the
-                // restore waits on an elevated script and then re-reads the
-                // end state before it will claim anything.
-                var result = await Task.Run(ModeFlip.RestoreModeB);
-                ReportModeFlip(result, null, DeviceKind.MagicMouseV3, ModeFlip.V3Pid);
-            });
+            // Off the UI thread for the same reason the flip is: the restore
+            // waits on an elevated script and then re-reads the end state
+            // before it will claim anything.
+            StartTrayCommand(
+                TrayMenu.CommandRestoreScrollMode,
+                ModeFlip.RestoreModeB,
+                result =>
+                {
+                    ReportModeFlip(result, null, DeviceKind.MagicMouseV3, ModeFlip.V3Pid);
+                    FinishDriverAction();
+                },
+                DriverActionFailed);
         });
     }
 
@@ -2561,7 +3170,10 @@ internal sealed class TrayApp : IDisposable
     //
     // Both readings cross together because they are read together: the
     // configuration section and the device rows are repainted from the one
-    // trip the refresh already pays for.
+    // trip the refresh already pays for. Not UiDispatch.ToUiThread for the
+    // same reason as the startup offer: this is a repaint the poller posts
+    // and walks away from, and the seam's Invoke would hold the poll thread
+    // until the pump got to it.
     void PublishConfigFacts(
         IReadOnlyList<ConfigFact>? facts, IReadOnlyDictionary<string, StockFacts>? stock)
     {
@@ -3029,44 +3641,56 @@ internal sealed class TrayApp : IDisposable
         }
 
         Logger.Log($"REPAIR_APPLY_START pid={pid} problem={problem} service={service}");
-        _ = Task.Run(() =>
-        {
-            RepairOutcome outcome;
-            try
+        // Through the table like every other blocking click: the row's
+        // ceiling is DeviceRepair.SidecarWaitCeiling, which is what the
+        // elevated step plus its sidecar poll can really take, and the gate
+        // it takes is what stops a second repair - or a driver install -
+        // running beside this one.
+        StartTrayCommand<(RepairOutcome Outcome, bool? InStack)>(
+            TrayMenu.CommandRepairApply,
+            () =>
             {
-                outcome = DeviceRepair.Apply(pid, service);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"REPAIR_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
-            }
-
-            // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
-            // RUNNING was already true before the repair: that contradiction is the whole
-            // finding. Attachment is the only honest proof, so re-read it here, still off the
-            // UI thread (registry plus one CM property query).
-            bool? inStack = null;
-            if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)
-            {
+                RepairOutcome outcome;
                 try
                 {
-                    inStack = DeviceSnapshotReader.ReadPid(pid, _config).FilterInStack;
+                    outcome = DeviceRepair.Apply(pid, service);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"REPAIR_VERIFY_FAIL pid={pid} err={ex.Message}");
+                    Logger.Log($"REPAIR_APPLY_FAIL pid={pid} err={ex.Message}");
+                    outcome = RepairOutcome.Failed;
                 }
-            }
 
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null)
+                // For FilterNotInStack, Ok only means the script's sc query poll saw RUNNING, and
+                // RUNNING was already true before the repair: that contradiction is the whole
+                // finding. Attachment is the only honest proof, so re-read it here, still off the
+                // UI thread (registry plus one CM property query).
+                bool? inStack = null;
+                if (outcome == RepairOutcome.Ok && problem == RepairProblem.FilterNotInStack)
+                {
+                    try
+                    {
+                        inStack = DeviceSnapshotReader.ReadPid(pid, _config).FilterInStack;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"REPAIR_VERIFY_FAIL pid={pid} err={ex.Message}");
+                    }
+                }
+
+                // Written here, off the UI thread, because the hop that
+                // carries it can be dropped when the host is already gone.
+                Logger.Log($"REPAIR_APPLY_OUTCOME pid={pid} outcome={outcome}");
+                return (outcome, inStack);
+            },
+            answer => OnRepairApplied(pid, answer.Outcome, problem, answer.InStack),
+            ex =>
             {
-                Logger.Log($"REPAIR_APPLY_RESULT pid={pid} outcome={outcome} ui=gone");
-                return;
-            }
-            dispatcher.Invoke(() => OnRepairApplied(pid, outcome, problem, inStack));
-        });
+                // Apply catches its own failures above, so this is a refusal
+                // raised before the script ran. The user still gets told.
+                Logger.Log($"REPAIR_APPLY_REFUSED pid={pid} err={ex.Message}");
+                OnRepairApplied(pid, RepairOutcome.Failed, problem, null);
+            });
     }
 
     void OnRepairApplied(string pid, RepairOutcome outcome, RepairProblem problem, bool? inStack)
@@ -3271,28 +3895,37 @@ internal sealed class TrayApp : IDisposable
     void StartStaleFilterRemoval(string pid, string keep, string[] remove)
     {
         Logger.Log($"REPAIR_STALE_START pid={pid} keep={keep} remove={string.Join(",", remove)}");
-        // Elevated registry edit plus restart-device and the sidecar poll can take minutes.
-        _ = Task.Run(() =>
-        {
-            RepairOutcome outcome;
-            try
+        // Elevated registry edit plus restart-device and the sidecar poll can
+        // take minutes, which is the row's ceiling, so this goes through the
+        // table and takes the same one-at-a-time gate as every other click
+        // that elevates.
+        StartTrayCommand(
+            TrayMenu.CommandStaleFilterRemoval,
+            () =>
             {
-                outcome = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
-            }
-            catch (Exception ex)
+                RepairOutcome outcome;
+                try
+                {
+                    outcome = DeviceRepair.ApplyRemoveStaleFilters(pid, keep, remove);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"REPAIR_STALE_APPLY_FAIL pid={pid} err={ex.Message}");
+                    outcome = RepairOutcome.Failed;
+                }
+                // Off the UI thread, because the hop that carries it can be
+                // dropped when the host has already gone.
+                Logger.Log($"REPAIR_STALE_OUTCOME pid={pid} outcome={outcome}");
+                return outcome;
+            },
+            outcome => OnStaleFilterRemoved(pid, outcome),
+            ex =>
             {
-                Logger.Log($"REPAIR_STALE_APPLY_FAIL pid={pid} err={ex.Message}");
-                outcome = RepairOutcome.Failed;
-            }
-
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null)
-            {
-                Logger.Log($"REPAIR_STALE_RESULT pid={pid} outcome={outcome} ui=gone");
-                return;
-            }
-            dispatcher.Invoke(() => OnStaleFilterRemoved(pid, outcome));
-        });
+                // ApplyRemoveStaleFilters catches its own failures above, so
+                // this is a refusal raised before the script ran.
+                Logger.Log($"REPAIR_STALE_REFUSED pid={pid} err={ex.Message}");
+                OnStaleFilterRemoved(pid, RepairOutcome.Failed);
+            });
     }
 
     void OnStaleFilterRemoved(string pid, RepairOutcome outcome)
@@ -3379,6 +4012,7 @@ internal sealed class TrayApp : IDisposable
             // Same rule as the radio it routes to: the choice is remembered
             // only once the install is confirmed.
             _ = RunDriverActionAsync(
+                TrayMenu.CommandV3KmdfInstall,
                 () => OfferThenRemember(
                     Config.Driver0323Kmdf, () => DriverInstaller.OfferV3KmdfInstallAsync()));
             return;
@@ -3386,19 +4020,23 @@ internal sealed class TrayApp : IDisposable
 
         if (DriverInstaller.IsTrackpadV1BootCampPid(pid))
         {
-            RunDriverAction(() => DriverInstaller.OfferTrackpadV1BootCamp(pid));
+            RunDriverAction(
+                TrayMenu.CommandTrackpadV1BootCampPage,
+                () => DriverInstaller.OfferTrackpadV1BootCamp(pid));
             return;
         }
 
         if (Array.Exists(DriverHealthChecker.AppleFilterPids, p => TrayMenu.PidEq(p, pid)))
         {
-            RunDriverAction(DriverInstaller.OfferV1V2ScrollFix);
+            RunDriverAction(
+                TrayMenu.CommandV1V2BootCampPage, DriverInstaller.OfferV1V2ScrollFix);
             return;
         }
 
         if (DriverHealthChecker.IsKeyboardPid(pid))
         {
-            RunDriverAction(DriverInstaller.OfferKeyboardSdpPatch);
+            RunDriverAction(
+                TrayMenu.CommandFixBatteryReads, DriverInstaller.OfferKeyboardSdpPatch);
             return;
         }
 
