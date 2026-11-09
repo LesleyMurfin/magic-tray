@@ -174,7 +174,7 @@ internal static class TrayMenu
 
         var sb = new System.Text.StringBuilder(text);
         sb.Append("\n\n").Append(DriverAdviceView.OptionsHeader());
-        foreach (var row in DriverAdviceView.OptionRows(kind, pid))
+        foreach (var row in DriverAdviceView.OptionRows(kind, pid, sdp))
             sb.Append("\n\n").Append(row);
         return sb.ToString();
     }
@@ -1706,7 +1706,7 @@ internal sealed class TrayApp : IDisposable
                 driverMenu.DropDownItems.Add(restore);
             }
 
-            AddDriverChoices(driverMenu.DropDownItems, kind, pid, separator: true);
+            AddDriverChoices(driverMenu.DropDownItems, kind, pid, stockFacts.Sdp, separator: true);
 
             item.DropDownItems.Add(driverMenu);
         }
@@ -1738,7 +1738,7 @@ internal sealed class TrayApp : IDisposable
                 stock.Enabled = false;
             driverMenu.DropDownItems.Add(stock);
 
-            AddDriverChoices(driverMenu.DropDownItems, kind, pid, separator: true);
+            AddDriverChoices(driverMenu.DropDownItems, kind, pid, stockFacts.Sdp, separator: true);
 
             item.DropDownItems.Add(driverMenu);
         }
@@ -1758,7 +1758,7 @@ internal sealed class TrayApp : IDisposable
             item.DropDownItems.Add(BuildAdviceItem(kind, pid, status, stockFacts));
 
             // The predictions do NOT sit with them.
-            AddDriverChoices(item.DropDownItems, kind, pid, separator: false);
+            AddDriverChoices(item.DropDownItems, kind, pid, stockFacts.Sdp, separator: false);
         }
 
         item.DropDownItems.Add(BuildShowInTrayItem(pid, name));
@@ -2105,8 +2105,13 @@ internal sealed class TrayApp : IDisposable
     // row in the screenshots. OptionsHeader stays as the first row INSIDE the
     // submenu: the collapsed label says what the block is, the header says
     // outright that it is a prediction and not a reading.
+    //
+    // sdp is the SDP cache patch reading for this device, which is what a
+    // Magic Keyboard's battery prediction IS - so the rows are drawn from it
+    // rather than from a default that would call a patched keyboard unknown.
     static void AddDriverChoices(
-        ToolStripItemCollection into, DeviceKind kind, string pid, bool separator)
+        ToolStripItemCollection into, DeviceKind kind, string pid,
+        SdpPatchState? sdp, bool separator)
     {
         if (!DriverAdviceView.ShowOptions(kind, pid))
             return;
@@ -2117,7 +2122,7 @@ internal sealed class TrayApp : IDisposable
         var choices = new ToolStripMenuItem(TrayMenu.MenuText(TrayMenu.DriverChoicesLabel));
         choices.DropDownItems.Add(
             new ToolStripMenuItem(TrayMenu.MenuText(DriverAdviceView.OptionsHeader())) { Enabled = false });
-        foreach (var row in DriverAdviceView.OptionRowsShort(kind, pid))
+        foreach (var row in DriverAdviceView.OptionRowsShort(kind, pid, sdp))
             choices.DropDownItems.Add(new ToolStripMenuItem(TrayMenu.MenuText(row)) { Enabled = false });
         into.Add(choices);
     }

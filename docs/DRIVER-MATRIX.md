@@ -29,14 +29,18 @@ hex digits after `PID_`). Then:
   no driver at all, and no scroll.
 - **Magic Mouse v1 (AA batteries) `030D`, Magic Mouse v2 (Lightning) `0269`, Apple Wireless
   Mouse (AA) `0310`.** Install **Apple's own mouse driver** (`applewirelessmouse.sys`). Scroll
-  works, battery percent works, and **no Windows security setting has to change** - Apple signed
-  the file and Microsoft countersigned it. You do **not** run Apple's Boot Camp installer; see
-  [the two install routes](#the-two-install-routes-for-the-apple-filter).
+  works on all three, and **no Windows security setting has to change** - Apple signed the file
+  and Microsoft countersigned it. The tray reads battery percent on all three; only the `030D`
+  is **MEASURED** here (97%, Feature `0x47`). `0269` and `0310` are **UNMEASURED**, so the
+  driver advice predicts Unknown for them, not the v1's result. You do **not** run Apple's
+  Boot Camp installer; see [the two install routes](#the-two-install-routes-for-the-apple-filter).
 - **Magic Keyboard / Apple Wireless Keyboard.** There is nothing to scroll and no driver to
   install. Battery percent needs one **registry patch** you run once:
   [`scripts/kbd-patch-cachedservices.ps1`](../scripts/kbd-patch-cachedservices.ps1).
-- **Magic Trackpad.** Pointer and battery work on Windows' own driver. This project ships **no**
-  trackpad scroll or gesture driver, and there is no radio to pick.
+- **Magic Trackpad.** The pointer works on Windows' own driver, and the tray reads the battery
+  percent off the same stack. No trackpad has been hardware-tested in this project, so that read
+  is **UNMEASURED** here and the driver advice predicts Unknown rather than yes. This project
+  ships **no** trackpad scroll or gesture driver, and there is no radio to pick.
 
 If you only remember one thing: **scroll on a Magic Mouse always comes from a vendor filter
 driver sitting under Windows' HID stack. Battery percent never does - it comes off the mouse
@@ -162,10 +166,10 @@ keyboard erases the patch**. Details: [README, Keyboard battery](../README.md#ke
 
 ### Magic Trackpad
 
-Pointer and battery, on Windows' own driver. No vendor scroll filter in this project applies to a
-trackpad, and no gesture driver is shipped. **The trackpad battery path has not been
-hardware-tested in this project** - the tray reads it like any other Apple battery, but no
-measurement is on record here.
+Pointer on Windows' own driver, and the battery percent off the same stack if Windows exposes
+it. No vendor scroll filter in this project applies to a trackpad, and no gesture driver is
+shipped. **The trackpad battery path has not been hardware-tested in this project** - the tray
+reads it like any other Apple battery, but no measurement is on record here.
 
 ---
 

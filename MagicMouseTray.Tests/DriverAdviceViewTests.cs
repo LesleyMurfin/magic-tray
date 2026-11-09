@@ -111,7 +111,7 @@ public class DriverAdviceViewTests
 
         Assert.StartsWith(TrayMenu.V3RadioStockWindows, row);
         Assert.Contains("not apply", row);
-        Assert.Contains("battery yes", row);
+        Assert.Contains("battery unknown", row);
         Assert.DoesNotContain("scroll no", row);
         Assert.DoesNotContain("not working", row);
         Assert.DoesNotContain("dead", row);
@@ -408,7 +408,7 @@ public class DriverAdviceViewTests
 
         // A keyboard has no wheel and no pointer of its own: absent from the
         // short row, never rendered as a dead capability.
-        Assert.Equal("Stock Windows: battery (recommended)",
+        Assert.Equal("Stock Windows: battery? (recommended)",
             Assert.Single(DriverAdviceView.OptionRowsShort(DeviceKind.MagicKeyboard, "0320")));
     }
 

@@ -487,9 +487,22 @@ public class TrayMenuTests
         Assert.DoesNotContain("not been read yet", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("not read yet", text, StringComparison.OrdinalIgnoreCase);
 
-        // The predictions still follow the reading, in their own block.
-        foreach (var row in DriverAdviceView.OptionRows(kind, pid))
+        // The predictions still follow the reading, in their own block - and
+        // they are the PATCHED keyboard's, because the dialog was given the
+        // patch state and a patched keyboard's battery was measured.
+        foreach (var row in DriverAdviceView.OptionRows(kind, pid, SdpPatchState.Applied))
             Assert.Contains(row, text, StringComparison.Ordinal);
+
+        // An unpatched keyboard earns no such claim: its rows are different,
+        // and they are what its own dialog carries.
+        var unpatched = TrayMenu.AdviceDialogText(
+            kind, pid, status: null, Keyboard0239, SdpPatchState.NotApplied);
+        var unpatchedRows = DriverAdviceView.OptionRows(kind, pid, SdpPatchState.NotApplied);
+        Assert.NotEqual(
+            DriverAdviceView.OptionRows(kind, pid, SdpPatchState.Applied),
+            unpatchedRows);
+        foreach (var row in unpatchedRows)
+            Assert.Contains(row, unpatched, StringComparison.Ordinal);
     }
 
     // The menu row is the short form and the dialog is the long one. Whatever
