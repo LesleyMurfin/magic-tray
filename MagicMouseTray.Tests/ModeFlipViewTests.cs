@@ -16,8 +16,15 @@ public class ModeFlipViewTests
     static ModeFlipOutcome[] AllOutcomes() =>
         (ModeFlipOutcome[])Enum.GetValues(typeof(ModeFlipOutcome));
 
-    static ModeFlipResult Result(ModeFlipOutcome outcome, int percent, bool restored) =>
-        new(outcome, percent, restored, "detail is log material, not screen material");
+    // The mouse is observed, not assumed: a result carries what the tray could
+    // actually see of it afterwards. InModeB is the default here only because
+    // it is what every pre-existing case in this file was written against.
+    static ModeFlipResult Result(
+        ModeFlipOutcome outcome,
+        int percent,
+        bool restored,
+        ModeBObservation observed = ModeBObservation.InModeB) =>
+        new(outcome, percent, restored, "detail is log material, not screen material", observed);
 
     // Drives the enum itself rather than a hand-written list, so adding a
     // ModeFlipOutcome without wording it fails here: ResultText has no default
@@ -88,18 +95,6 @@ public class ModeFlipViewTests
         Assert.DoesNotContain("may be dead", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("could not confirm", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
-    }
-
-    // Same outcome, unverified restore: now the warning and the fix are
-    // mandatory. Without this the flag would be free to be ignored on every
-    // branch except RestoreFailed.
-    [Fact]
-    public void BatteryUnreadable_WithoutVerifiedRestore_WarnsAndOffersTheFix()
-    {
-        var text = ModeFlipView.ResultText(Result(ModeFlipOutcome.BatteryUnreadable, -1, false));
-
-        Assert.Contains("may be dead", text, StringComparison.Ordinal);
-        Assert.Contains(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -203,5 +198,118 @@ public class ModeFlipViewTests
             yield return ModeFlipView.ResultText(Result(outcome, 57, true));
             yield return ModeFlipView.ResultText(Result(outcome, -1, false));
         }
+    }
+
+    // --- what the tray could see of the mouse ----------------------------
+
+    // The recorded value is provably back, and the mouse is not on the bus to
+    // be checked - switched off, asleep, out of range. Two opposite mistakes
+    // are available here and this text must make neither: scaring a user whose
+    // restore landed, or claiming a confirmation nothing confirmed.
+    [Fact]
+    public void RestoreProvenButMouseUnseen_NeitherWarnsNorClaimsAConfirmation()
+    {
+        var text = ModeFlipView.ResultText(
+            Result(ModeFlipOutcome.Ok, -1, restored: true, ModeBObservation.NotObservable));
+
+        // Not the dangerous branch: nothing here says the wheel may be dead,
+        // and nobody is sent to re-run a restore that already wrote its value.
+        Assert.DoesNotContain("may be dead", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("could not confirm", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
+
+        // Nor the confirmed one: the mouse was never looked at, so neither the
+        // headline nor the confirmation sentence is earned.
+        Assert.DoesNotContain("Scrolling is back on", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("checked the mouse", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("is back in scroll mode", text, StringComparison.Ordinal);
+
+        // What it does say: the setting went back, and why that is as far as
+        // the check could go.
+        Assert.Contains("setting", text, StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            Regex.IsMatch(text, "switched off|asleep|out of range|not connected", RegexOptions.IgnoreCase),
+            $"the unseen-mouse text does not say why the mouse could not be checked: {text}");
+
+        // And it is a different screen from the confirmed one, so a user
+        // cannot read one as the other.
+        Assert.NotEqual(
+            ModeFlipView.ResultText(Result(ModeFlipOutcome.Ok, -1, true, ModeBObservation.InModeB)),
+            text);
+    }
+
+    // The mirror case: the mouse IS on the bus and still has the shape where
+    // the wheel does not work. A correct registry value does not get to
+    // outvote a measurement that contradicts it.
+    [Fact]
+    public void RestoreProvenButMouseStillInBatteryMode_IsStillTheDangerousBranch()
+    {
+        var text = ModeFlipView.ResultText(
+            Result(ModeFlipOutcome.RestoreFailed, -1, restored: true, ModeBObservation.InModeA));
+
+        Assert.StartsWith("Scrolling may be dead right now.", text, StringComparison.Ordinal);
+        Assert.Contains(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("is back in scroll mode", text, StringComparison.Ordinal);
+    }
+
+    // --- the three outcomes that used to be worded as somebody else's -----
+
+    // A mouse parked in battery mode with no recovery record. The wheel is
+    // dead NOW, so this is not "nothing was changed", and the one-click
+    // restore has no recorded value to put back - pointing at it would point
+    // at a button that elevates nothing.
+    [Fact]
+    public void StrandedInModeA_NamesTheDeadWheelAndARouteThatCanActuallyWork()
+    {
+        var text = ModeFlipView.ResultText(Result(ModeFlipOutcome.StrandedInModeA, -1, false));
+
+        Assert.StartsWith("Scrolling is dead right now.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("nothing was changed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
+
+        // The measured way out, from docs/ENABLE-DISABLE.md: make Windows
+        // rebuild the layout from the driver package.
+        Assert.Contains("Bluetooth", text, StringComparison.Ordinal);
+        Assert.Contains("add it back", text, StringComparison.OrdinalIgnoreCase);
+
+        // And it is no longer the "you are not on that driver" screen.
+        Assert.NotEqual(ModeFlipView.ResultText(Result(ModeFlipOutcome.NotPathA, -1, false)), text);
+    }
+
+    // Another cycle holds this mouse right now, with the value already
+    // rewritten and the elevated script still running. Every reassurance the
+    // cancelled branch gives is false here.
+    [Fact]
+    public void CycleInFlight_NeverClaimsNothingWasWrittenOrThatTheMouseStayedPut()
+    {
+        var text = ModeFlipView.ResultText(Result(ModeFlipOutcome.CycleInFlight, -1, false));
+
+        Assert.DoesNotContain("no setting was written", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("never left scroll mode", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("nothing was changed", text, StringComparison.OrdinalIgnoreCase);
+        // It is not a refused administrator prompt either.
+        Assert.DoesNotContain("not approved", text, StringComparison.OrdinalIgnoreCase);
+
+        // What it is: a reading already under way, and a reason to wait.
+        Assert.Contains("already", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("wait", text, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(ModeFlipView.ResultText(Result(ModeFlipOutcome.Cancelled, -1, false)), text);
+    }
+
+    // The recovery record was taken while the patched Apple driver was bound
+    // and the user has chosen a different driver since. The restore refuses
+    // rather than binding a filter this stack never carried.
+    [Fact]
+    public void DriverChanged_SaysItRefusedAndWhy_WithoutPromisingARestore()
+    {
+        var text = ModeFlipView.ResultText(Result(ModeFlipOutcome.DriverChanged, -1, false));
+
+        Assert.Contains("driver", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("different driver", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("nothing was changed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("is back in scroll mode", text, StringComparison.Ordinal);
+        // Clicking the restore item again would refuse again, so it is not the
+        // thing to send the user to.
+        Assert.DoesNotContain(ModeFlipView.RestoreItemLabel, text, StringComparison.Ordinal);
     }
 }

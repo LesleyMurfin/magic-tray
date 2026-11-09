@@ -25,6 +25,28 @@
 // measurements, not commentary.
 namespace MagicMouseTray;
 
+// What userland can SEE of the v3 Magic Mouse's mode right now, measured from
+// the present HID device interface paths and nothing else.
+//
+// Tri-state, because the two ways of "not looking like scroll mode" have
+// opposite consequences: a split path means the wheel is dead right now, while
+// no v3 path at all means the mouse is switched off, asleep, out of range or
+// unpaired and NOTHING is proven about its mode. A single bool collapses those
+// two, and a caller that reads that bool as "the restore did not work" turns a
+// mouse which is simply not here into a dead-wheel warning.
+internal enum ModeBObservation
+{
+    // No v3 path on the bus at all: no evidence either way.
+    NotObservable,
+
+    // At least one v3 path carries a &col0x collection suffix: the stack has
+    // split and scroll is dead right now.
+    InModeA,
+
+    // At least one v3 path, none of them split: the shape scroll depends on.
+    InModeB,
+}
+
 internal static class V3RecycleManager
 {
     // True if any HID path is a v3 Magic Mouse in Mode A (col02 collection present in path).
@@ -33,28 +55,29 @@ internal static class V3RecycleManager
             IsV3Path(p) &&
             p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
-    // True if a v3 Magic Mouse is in Mode B, measured from the present HID interface
-    // paths ONLY: at least one v3 path exists and none of them carries a col0x split.
-    // No kernel-stack property is read here, so this does not prove the Apple filter is
-    // loaded - it proves the path shape scroll depends on. The same definition is used
-    // by the elevated script's Test-ModeB, so both sides agree.
-    // mouhid.sys DN_STARTED (Mouse class device) is a false positive in Mode A: mouhid
-    // stays bound to col01 and DN_STARTED remains True even when the device is in Mode A.
-    // Empirical: real Mode B confirm latency ~563ms (confirmed 2026-05-07).
-    internal static bool IsV3InModeB()
+    // The mode the present HID interface paths show. Path shape only: no
+    // kernel-stack property is read, so this is the shape scroll depends on
+    // and not proof the Apple filter is loaded. The elevated script's
+    // Test-ModeB measures the same shape.
+    // Measured: mouhid.sys stays bound to col01 with DN_STARTED true in Mode
+    // A, so it is a false positive; Mode B confirm latency ~563 ms (2026-05-07).
+    internal static ModeBObservation ObserveV3Mode(IEnumerable<string> hidPaths)
     {
-        var v3Paths = HidNative.EnumerateHidPaths()
-            .Where(IsV3Path)
-            .ToList();
+        ArgumentNullException.ThrowIfNull(hidPaths);
 
-        if (v3Paths.Count == 0) return false;
-
-        // In Mode B all v3 HID paths are unified - no &col0x collection suffixes
-        if (v3Paths.Any(p => p.Contains("&col0", StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        // Unified v3 HID paths (no &col0x) means Mode B.
-        return true;
+        var observed = ModeBObservation.NotObservable;
+        foreach (var path in hidPaths)
+        {
+            if (!IsV3Path(path))
+                continue;
+            // Mid-re-enumeration both shapes can be present at once, and the
+            // split one is the conservative reading: the unified path scroll
+            // needs is gone, so scroll is not safe to claim.
+            if (path.Contains("&col0", StringComparison.OrdinalIgnoreCase))
+                return ModeBObservation.InModeA;
+            observed = ModeBObservation.InModeB;
+        }
+        return observed;
     }
 
     // True if the HID device path belongs to a Magic Mouse v3 (BT or USB).
