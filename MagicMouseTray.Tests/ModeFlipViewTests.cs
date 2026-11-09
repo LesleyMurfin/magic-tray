@@ -197,6 +197,8 @@ public class ModeFlipViewTests
         yield return ModeFlipView.OfferText("0323");
         yield return ModeFlipView.OfferText("");
         yield return ModeFlipView.StartupRestoreOffer();
+        yield return ModeFlipView.RestoreOfferText(hasRecordedSetting: true);
+        yield return ModeFlipView.RestoreOfferText(hasRecordedSetting: false);
 
         foreach (var outcome in AllOutcomes())
         {

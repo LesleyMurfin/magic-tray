@@ -264,6 +264,19 @@ internal static class ModeFlip
             "A battery-mode cycle is already running. Nothing was changed.");
     }
 
+    // Is there a recorded setting for a restore to put back? The restore keys
+    // on exactly this pair of reads: with no parsable sentinel, or one naming
+    // no Apple-family filter, RestoreModeBCore observes the mouse and returns
+    // without elevating, writing or restarting anything (see the two refusals
+    // below). The consent dialog states the cost before any of that runs, so
+    // it reads this first: a user may not be charged an approval, a registry
+    // write and a device restart the click is not going to spend. Both reads
+    // are side-effect free.
+    internal static bool HasRecordedRestore() =>
+        TryParseSentinel(ReadAllTextOrNull(SentinelPath), out var sentinel)
+        && sentinel is not null
+        && RestoreSequence(sentinel) is not null;
+
     // One elevated restore, verified.
     //
     // The elevated script derives the keys it writes ITSELF. Out of the
