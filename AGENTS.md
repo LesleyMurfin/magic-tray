@@ -47,6 +47,24 @@ work she already approved. Off only on `stop adhd mode` / `normal mode`.
 
 Full rule: `rule://adhd-always` · `skill://i-have-adhd` · charter RULE #13.
 
+### PR Triage & Conditions Closure Rule (binding)
+
+Under RULE #13 / Repo Land Rules, when triaging, reviewing, or driving pull requests:
+
+1. **Audit all three PR surfaces:**
+   - **Inline code review threads** (review discussions, code comment threads)
+   - **Top-level PR comments** (general issue comments, bot/reviewer summaries)
+   - **PR body description checklist** (issue description tasklists and checklists)
+2. **Zero unattended triage conditions:** Never leave an open checkbox (`- [ ]`), unattended comment feedback, or pending condition verdict. Every item must be actively addressed.
+3. **Execute or issue immediately:**
+   - If within current scope: implement and verify the fix directly within the PR branch.
+   - If deferred or out of scope: immediately open a follow-up GitHub issue (`gh issue create --title "..." --body "..."`) and link the new issue URL as explicit rationale.
+4. **Update checkboxes to resolved (`- [x]`):**
+   - Check off every checklist item (`- [x]`) in PR comments and the PR body description, citing resolution evidence (commit SHA or created follow-up issue URL).
+   - Ensure no PR or workspace run completes or is presented with unchecked boxes (`- [ ]`), unresolved condition comments, or unassigned follow-ups.
+5. **Autonomous merge execution:**
+   - Per RULE #13, once all checklist items/triage conditions are resolved (`- [x]`), required CI is green, tests pass (red-then-green where applicable), and the PR is mergeable/clean, the owning bot executes the merge autonomously without stopping to ask Lesley or waiting on bot review stamps.
+
 ### Never a draft. Never someone else's repo.
 
 - **No draft PRs, ever.** If it needs approval, open it **ready-for-review**. A draft never gets reviewed.
@@ -153,6 +171,7 @@ Populate from the real run. Chat narrative alone is not enough for ingest. The r
 
 - Branch off `main`; open **ready-for-review** PRs only (never draft).
 - Lesley is never asked, assigned or requested to merge or review. The owning bot merges its own PR once verified ready (required CI green, red-then-green tests, agent-checked preview where one applies, mergeable/clean, repo land rules). Merges never depend on bot review stamps.
+- Follow the **PR Triage & Conditions Closure Rule**: audit all three PR surfaces (review threads, PR comments, body checklist), leave zero unattended `- [ ]` boxes, resolve inline or file immediate follow-up issues, update all boxes to `- [x]` with evidence, and merge autonomously when conditions and CI are satisfied.
 - Prefer smallest safe diff; evidence for every caller / blast claim.
 - Do not push directly to `main`.
 - DCO: every commit must include `Signed-off-by:`.
