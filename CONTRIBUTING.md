@@ -20,15 +20,24 @@ This certifies that you wrote the code or have the right to contribute it under 
 4. Open a PR that says what changed and why.
 
 `main` takes no direct pushes: every change lands through a pull request, and
-all nine checks have to pass first. They all run on every PR — what each one
-does is in [`.github/workflows/README.md`](.github/workflows/README.md). The
-five you can run yourself before pushing are:
+the checks marked required in
+[`.github/workflows/README.md`](.github/workflows/README.md) have to be green
+before it can merge. That table is the list; counting them here would only go
+stale the next time a workflow is added. A pull request shows more runs than
+it gates - anything not marked required there, a non-gating job or a
+third-party review bot, does not block the merge button. No required check
+filters by path, so every one of them runs on every pull request, whatever
+you touched. Where a check has a local equivalent it is the same script CI
+runs:
 
 ```powershell
 dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (needs Windows)
 pwsh -File scripts/check-site.ps1                                         # Site checks, if you touched docs/
+pwsh -File scripts/check-aeo.ps1                                          # aeo-checks, if you touched docs/ JSON-LD or head metadata
 pwsh -File scripts/check-version-sync.ps1                                 # Version sync, if you touched a version string
 python3 scripts/check-winget-manifest.py                                  # Winget manifest, if you touched packaging/winget (needs: pip install PyYAML)
+python3 scripts/check-workflow-pwsh.py                                    # PowerShell lint: pwsh inside .github/workflows/*.yml (needs: pip install PyYAML)
+pwsh -File scripts/check-redaction.ps1                                    # PowerShell lint: the ConvertTo-MacSafeText corpus, if you touched mm-hid-report.ps1
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
 ```
 

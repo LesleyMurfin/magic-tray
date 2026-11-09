@@ -19,6 +19,27 @@ internal static class Logger
 
     internal static string LogDir => Path.GetDirectoryName(LogPath)!;
 
+    // Test seam, null in the application - nothing shipped assigns it, and Log
+    // is the only reader. It exists because Config.SetThreshold and
+    // SetDeviceEnabled both call Log after releasing _gate, so the two
+    // ConfigTests gates named AssertAConcurrentWriterCannotSwallowASave drive
+    // those setters from a deliberately unthrottled thread - throttling it would
+    // narrow the enumeration window the gates exist to hit - and every iteration
+    // appended a line to the developer's installed application log, rotating its
+    // one spare generation away every few suite runs.
+    //
+    // Redirecting the environment instead would have cost no production surface
+    // at all, and does not work: on Windows LogPath resolves through
+    // SHGetKnownFolderPath(FOLDERID_RoamingAppData), which reads no environment
+    // variable, and LogPath is static readonly either way, so it is frozen by the
+    // type initializer before any test body could set one.
+    //
+    // Deliberately consulted ONLY by Log, so LogPath and LogDir keep the fixed
+    // value they have always had for the process lifetime and the readers that
+    // depend on that - ModeFlip.SentinelPath, TrayApp's open-logs and
+    // open-diagnostics-folder paths, BugReport.ReadLogTail - are untouched.
+    internal static string? LogPathOverride;
+
     const long MaxBytes = 1024 * 1024; // 1 MB rotation threshold
     static readonly object Lock = new();
     static string _appStartBanner = string.Empty;
@@ -45,20 +66,24 @@ internal static class Logger
         {
             lock (Lock)
             {
-                var dir = Path.GetDirectoryName(LogPath)!;
+                // Resolved once per write, inside the lock, so a rotation and the
+                // append that follows it can never disagree about which file they
+                // are working on.
+                var path = LogPathOverride ?? LogPath;
+                var dir = Path.GetDirectoryName(path)!;
                 Directory.CreateDirectory(dir);
 
-                if (File.Exists(LogPath) && new FileInfo(LogPath).Length >= MaxBytes)
+                if (File.Exists(path) && new FileInfo(path).Length >= MaxBytes)
                 {
-                    File.Move(LogPath, LogPath + ".1", overwrite: true);
+                    File.Move(path, path + ".1", overwrite: true);
                     if (!string.IsNullOrEmpty(_appStartBanner))
                     {
-                        File.AppendAllText(LogPath,
+                        File.AppendAllText(path,
                             $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {_appStartBanner}{Environment.NewLine}", new System.Text.UTF8Encoding(true));
                     }
                 }
 
-                File.AppendAllText(LogPath,
+                File.AppendAllText(path,
                     $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}", new System.Text.UTF8Encoding(true));
             }
         }

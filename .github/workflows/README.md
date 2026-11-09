@@ -1,65 +1,123 @@
 # Workflows
 
 Every check that runs on this repository, what it protects, and how to run it
-yourself before pushing. Ten workflow files; the first nine rows below are the
-checks that gate a pull request, and every one of them runs on every pull
-request. `no-draft-prs` also runs on pull requests and is not in the ruleset.
-All of them run on GitHub-hosted runners; none needs a self-hosted runner,
-and only the two release-side workflows need a secret.
+yourself before pushing. The two tables below are the list: one row per check
+run, with a `Required on main?` column. Read the gating set off that column
+rather than off a number in a sentence - a count written in prose is the one
+thing here that goes stale without anyone noticing.
 
-`main` is protected by a ruleset: no direct pushes, no force pushes, and all
-nine checks below must pass on a pull request before it can merge. There are no
-bypass actors — the maintainer goes through a PR too.
+## What gates a merge
 
-Because every one of the nine is a *required* check, none of them filters the
-`pull_request` trigger by path: a check skipped by a path filter never reports a
-conclusion, and a required check that never reports blocks the PR forever. The
-`push` triggers do keep their path filters, so main is not re-linted for
-nothing.
+`main` is protected by one ruleset, `main protection`: active, no bypass actors
+(the maintainer goes through a PR too), no branch deletion, no force push, a
+pull request required, and required status checks. There is no classic branch
+protection on `main`, so that ruleset is the whole gate. Every row marked
+**yes** below is one of its required contexts, and nothing else blocks the
+merge button. Re-derive that list at any time:
 
-| Check run | File | Trigger | Runner | Required on `main`? |
+```bash
+gh api repos/LesleyMurfin/magic-tray/rulesets/23525492 \
+  --jq '.rules[] | select(.type=="required_status_checks")
+                 | .parameters.required_status_checks[].context'
+```
+
+Because a required context has to report on every pull request, no required
+check filters its `pull_request` trigger by path: a check skipped by a path
+filter never reports a conclusion, and a required check that never reports
+blocks the PR forever. The `push` triggers do keep their path filters, so main
+is not re-linted for nothing.
+
+## What runs on a pull request
+
+Every row here appears on a pull request. Only the rows marked yes gate it.
+
+| Check run | Source | Trigger | Runner | Required on `main`? |
 |---|---|---|---|---|
 | `Build and test` | `ci.yml` | every PR, push `main`, dispatch | windows-latest | yes |
 | `Verify publish` | `ci.yml` | every PR, push `main`, dispatch | windows-latest | yes |
-| `PowerShell lint` | `ps-lint.yml` | every PR; push `main` on `**.ps1`; dispatch | ubuntu-latest | yes |
+| `PowerShell lint` | `ps-lint.yml` | every PR; push `main` on `**.ps1`, `PSScriptAnalyzerSettings.psd1`, `.github/workflows/**`, `scripts/check-workflow-pwsh.py`; dispatch | ubuntu-latest | yes |
 | `Workflow lint` | `actionlint.yml` | every PR; push `main` on `.github/workflows/**`; dispatch | ubuntu-latest | yes |
 | `CodeQL (csharp)` | `codeql.yml` | every PR, push `main`, Mondays 07:23 UTC, dispatch | ubuntu-latest | yes |
-| `Site checks` | `site.yml` | every PR; push `main` on `docs/**`; dispatch | ubuntu-latest | yes |
-| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`, `docs/install.txt`; dispatch | ubuntu-latest | yes |
+| `Site checks` | `site.yml` | every PR; push `main` on `docs/**`, `scripts/check-site.ps1`, the workflow; dispatch | ubuntu-latest | yes |
+| `Version sync` | `packaging.yml` | every PR; push `main` on `packaging/**`, csproj, `docs/index.html`, `docs/install.txt`, the checkers, the workflow; dispatch | ubuntu-latest | yes |
 | `Winget manifest` | `packaging.yml` | same as `Version sync` | ubuntu-latest | yes |
-| `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready | ubuntu-latest | yes |
+| `DCO sign-off` | `dco.yml` | PR opened/reopened/synchronize/ready_for_review | ubuntu-latest | yes |
+| `aeo-checks` | `ci.yml` | every PR, push `main`, dispatch | ubuntu-latest | no |
 | `no-draft-prs` | `no-draft-prs.yml` | PR opened/reopened/ready_for_review/converted_to_draft/synchronize | ubuntu-latest | no |
-| `Build and publish release` | `release.yml` | tag `v*` | windows-latest | n/a (release) |
-| `Submit to winget-pkgs` | `winget-submit.yml` | manual dispatch only | windows-latest | n/a (manual) |
+| `CodeQL` | GitHub Advanced Security app, no file in this repo | posted per PR beside `CodeQL (csharp)` | n/a | no |
+| `CodeRabbit` | `coderabbitai` app, no file in this repo | posted per PR; currently reports `skipped` | n/a | no |
+
+### More runs than gates
+
+A pull request shows more runs than the ruleset gates, and the checks tab does
+not say which is which. These are all of the extras:
+
+- `aeo-checks` - the `aeo-checks` job in `ci.yml`, which parses the JSON-LD
+  graph in `docs/`. It declares no `name:`, so GitHub falls back to the job id,
+  which is why it is the one lowercase run in the list. Not required: a broken
+  `@id` is worth seeing, not worth blocking a merge on.
+- `no-draft-prs` - `no-draft-prs.yml`. Fails while the pull request is a draft.
+  Not in the ruleset, so it does not block the merge button either.
+- `CodeQL` - the summary the GitHub Advanced Security app posts ("No new alerts
+  in code changed by this pull request"). The gating context is the
+  similarly-named `CodeQL (csharp)`, the `analyze` job in `codeql.yml`; this
+  second run belongs to a different app and is not in the ruleset.
+- `CodeRabbit` - a third-party review app. No file in this repository
+  configures it, it reports `skipped` here, and it never blocks a merge.
+
+To reconcile the two lists on a specific commit:
+
+```bash
+gh api repos/LesleyMurfin/magic-tray/commits/<sha>/check-runs \
+  --jq '.check_runs[] | "\(.name)\t\(.conclusion)\t\(.app.name)"'
+```
+
+## What never runs on a pull request
+
+| Workflow | File | Trigger | Runner |
+|---|---|---|---|
+| `Submit URLs to IndexNow` | `indexnow.yml` | push `main` on `docs/**`; dispatch | ubuntu-latest |
+| `Build and publish release` | `release.yml` | push tag `v*` | windows-latest |
+| `Submit to winget-pkgs` | `winget-submit.yml` | manual dispatch only | windows-latest |
+
+Everything in both tables runs on GitHub-hosted runners; nothing here needs a
+self-hosted runner, and only the two release-side workflows take a secret.
 
 ## Run the checks locally
 
-```powershell
-dotnet test MagicMouseTray.Tests/MagicMouseTray.Tests.csproj -c Release   # Build and test (Windows only)
-pwsh -File scripts/check-site.ps1                                         # Site checks
-pwsh -File scripts/check-version-sync.ps1                                 # Version sync
-python3 scripts/check-winget-manifest.py                                  # Winget manifest (needs PyYAML)
-Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 -Severity Error,Warning
-```
-
-`dotnet test` needs Windows: the test assembly targets
-`net8.0-windows10.0.17763.0`. Everything else is cross-platform.
+The commands live in [`CONTRIBUTING.md`](../../CONTRIBUTING.md#pull-requests),
+next to the rest of what a contributor has to do before opening a PR, and they
+are not repeated here: two copies of one list is how this file went stale in
+the first place. Where a check has a local equivalent it is the same script CI
+runs, so a green local run is a green check. `dotnet test` is the one command
+that needs Windows - the test assembly targets `net8.0-windows10.0.17763.0`;
+every other checker is cross-platform PowerShell 7 or Python.
 
 ---
 
-## ci.yml — `Build and test`, `Verify publish`
+## ci.yml — `Build and test`, `Verify publish`, `aeo-checks`
 
-- **Purpose**: the two gates that have to be green for any code change. `Build
-  and test` restores, builds and runs the xunit suite. `Verify publish` proves
-  the release path still works on an ordinary PR: it checks every `Content
-  Include` in the csproj still exists on disk (the MSB3030 class of break),
-  publishes the single-file exe, stages the keyboard-unlock and diagnostic
-  scripts, packages the portable ZIP with `scripts/package-release.ps1`, then
-  gates the result with `scripts/verify-release.ps1`.
-- **Runner**: windows-latest — the TFM is `net8.0-windows10.0.17763.0`, so the
-  tests cannot execute anywhere else.
+- **Purpose**: the two gates that have to be green for any code change, plus
+  one advisory job. `Build and test` restores, builds and runs the xunit suite.
+  `Verify publish` proves the release path still works on an ordinary PR: it
+  checks every `Content Include` in the csproj still exists on disk (the
+  MSB3030 class of break), publishes the single-file exe, stages the
+  keyboard-unlock and diagnostic scripts, packages the portable ZIP with
+  `scripts/package-release.ps1`, then gates the result with
+  `scripts/verify-release.ps1`.
+- **`aeo-checks`**: `scripts/check-aeo.ps1` parses the JSON-LD graph and the
+  head and footer metadata in `docs/`. Pages are served from `main` with no
+  build step, so CI is the only place that graph is parsed before a crawler
+  reads it, and a dangling `@id` costs entity resolution silently. It is the
+  one job in this file with no `name:`, so it reports under its job id, and it
+  is not in the ruleset. Link resolution and sitemap membership belong to
+  `Site checks`; the two scripts do not overlap.
+- **Runner**: windows-latest for `Build and test` and `Verify publish` - the
+  TFM is `net8.0-windows10.0.17763.0`, so the tests cannot execute anywhere
+  else. `aeo-checks` is ubuntu-latest; it only reads files.
 - **Permissions**: `contents: read`. **Concurrency**: `ci-<ref>`,
-  cancel-in-progress. **Timeout**: 20 min per job.
+  cancel-in-progress. **Timeout**: 20 min for each Windows job, 10 min for
+  `aeo-checks`.
 - **Artifacts**: `test-results` (TRX, `if: always()`) and `portable-zip` (the
   packaged ZIP plus its `.sha256`), 14-day retention — reviewers can download a
   PR build instead of rebuilding it.
@@ -93,12 +151,29 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 
 - **Purpose**: the shipped scripts are the half of this product that is not
   compiled. A syntax error in `package-release.ps1` breaks a tagged release; one
-  in `diagnose-driver.ps1` breaks a user's support session. Step 1 parses every
-  `.ps1` with the real PowerShell parser; step 2 runs PSScriptAnalyzer at
-  Error+Warning with `PSScriptAnalyzerSettings.psd1`.
-- **Runner**: ubuntu-latest. Both the parser and the analyzer are
-  cross-platform and neither loads the Windows-only cmdlets these scripts call,
-  so a Windows runner would buy nothing.
+  in `diagnose-driver.ps1` breaks a user's support session. The workflow parses
+  every `.ps1` with the real PowerShell parser, parses the PowerShell embedded
+  in workflow `run:` blocks (`scripts/check-workflow-pwsh.py`), runs the
+  redaction corpus (`scripts/check-redaction.ps1`), then runs PSScriptAnalyzer
+  at Error+Warning with `PSScriptAnalyzerSettings.psd1`. Named, not numbered,
+  on purpose: step ordinals are what rotted here last time.
+- **Why the workflow `run:` parser is here**: the `.ps1` glob never sees
+  PowerShell written inline in a workflow `run:` block. That gap shipped -
+  `indexnow.yml` carried a bare `$maxAttempts:` inside a string, PowerShell
+  read it as a scope qualifier, the whole step was a ParserError, and every
+  IndexNow submission had never once run with nothing red anywhere.
+- **Why the redaction corpus is here**: `ConvertTo-MacSafeText` in
+  `mm-hid-report.ps1` is the only control between a reporter's hardware
+  identifiers and a public issue. This workflow already owns the `.ps1` files
+  and carries no `pull_request` paths filter, so the corpus runs on every pull
+  request instead of being skipped by exactly the diffs that do not look like
+  they touch redaction.
+- **Runner**: ubuntu-latest. The parser and the analyzer are cross-platform and
+  neither loads the Windows-only cmdlets these scripts call. No script is
+  executed as a whole either: `check-redaction.ps1` does run PowerShell, but it
+  slices one pure string function out of `mm-hid-report.ps1` with the parser,
+  so that script's `Add-Type` P/Invoke block never compiles here. A Windows
+  runner would buy nothing.
 - **Pinned**: PSScriptAnalyzer `1.25.0`. Bump it deliberately — Dependabot does
   not see PowerShell Gallery modules.
 - **Permissions**: `contents: read`. **Timeout**: 10 min.
@@ -134,6 +209,26 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 - **Deliberately not a Pages deploy workflow**: adding one would switch the
   Pages source away from deploy-from-branch and take the custom domain with it.
 - **Permissions**: `contents: read`. **Timeout**: 10 min.
+
+## indexnow.yml — `Submit URLs to IndexNow`
+
+- **Purpose**: tells Bing, and through it the answer engines that reuse the
+  Bing index, that `docs/` changed, instead of waiting for the next natural
+  recrawl. Pages serves `docs/` verbatim from `main`, so a push that touches
+  `docs/` is the same event as "the published site changed".
+- **Never runs on a pull request**: push to `main` on `docs/**`, or manual
+  dispatch. It submits the live site, so there is nothing for it to do on a
+  branch, and it is not a check anyone can gate on.
+- **No hardcoded key or URL list**: the key is the one `docs/*.txt` whose base
+  name equals its own contents, and the URLs come from `docs/sitemap.xml`, so a
+  new page is submitted without anyone editing this workflow. HTTP 200 and 202
+  are success; everything else fails loudly with the response body, because a
+  403 (key not reachable) or 422 (URL off-host) otherwise looks like a working
+  pipeline.
+- **Permissions**: `contents: read`. **Timeout**: 5 min. **Concurrency**:
+  `indexnow-<ref>`, deliberately not cancel-in-progress - a submission is one
+  cheap request, and cancelling the older run could drop the ping for content
+  that is already live.
 
 ## packaging.yml — `Version sync`, `Winget manifest`
 
@@ -203,20 +298,28 @@ Anything added here follows the same rules:
 1. GitHub-hosted runners only; `windows-latest` only when Windows is genuinely
    required.
 2. Only `actions/*` and `github/codeql-action/*` actions. Any other tool is
-   installed from a version-pinned release download with a verified checksum —
-   with one exception, `pip install PyYAML==6.0.3` in `packaging.yml`, which is
-   version-pinned but not hash-pinned: a wheel hash is specific to the runner
-   image's Python minor version, so pinning one would turn a required check red
-   the next time the image moves.
+   installed from a version-pinned release download with a verified checksum -
+   with one exception, `pip install PyYAML==6.0.3` in `packaging.yml` and
+   `ps-lint.yml`, which is version-pinned but not hash-pinned: a wheel hash is
+   specific to the runner image's Python minor version, so pinning one would
+   turn a required check red the next time the image moves.
 3. Every `uses:` is a 40-character commit SHA with a trailing `# vX.Y.Z`
    comment. Dependabot (`.github/dependabot.yml`, weekly, 5-day cooldown,
    `chore(ci)` prefix) proposes the bumps.
 4. Every workflow declares an explicit minimal `permissions:` block; every job
-   declares `timeout-minutes`; everything except `release.yml` declares a
-   `concurrency:` group with `cancel-in-progress`.
+   declares `timeout-minutes`; every workflow but `release.yml` declares a
+   `concurrency:` group, with `cancel-in-progress: true` everywhere except
+   `indexnow.yml`, where cancelling the older run could drop the ping for
+   content that is already live.
 5. Repo-owned checks live in `scripts/check-*`, emit `::error
    file=…,line=…::` annotations, print a one-line summary, and exit non-zero.
    That way the same script is the CI gate and the local pre-push check.
 6. Tools that Dependabot cannot see are pinned in the workflow that uses them
    and named in this file: PSScriptAnalyzer `1.25.0`, actionlint `1.7.12`,
    PyYAML `6.0.3`.
+7. A new workflow, or a new job that reports its own check run, gets a row in
+   one of the two tables at the top of this file on the same pull request that
+   adds it - with its `Required on main?` answer filled in, and the ruleset
+   actually updated if that answer is yes. The tables are what `CONTRIBUTING.md`
+   sends contributors to, so a check that reports but is not listed there is
+   indistinguishable from a check nobody can account for.

@@ -108,7 +108,7 @@
         "@type": "HowTo",
         "@id": "https://magictray.app/drivers.html#v1v2",
         "name": "Get scrolling back on an Apple Magic Mouse with AA batteries or a Lightning port",
-        "description": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) take a driver Apple wrote years ago. It still works on Windows 10 and 11, and nothing else about Windows changes.",
+        "description": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) take a driver Apple wrote years ago. It still works on Windows 10 and 11, and nothing else about Windows changes. Two testers with a Magic Mouse v2 reported that on that driver Magic Tray found no battery percent, and that stock Windows showed the percent with no scrolling, one of them 83% (issues #124 and #164); the first of them also reported that the wheel scrolls on that driver. Magic Tray had a battery-detection fault of its own at the time of both reports, fixed in the next version, so look again on that version before concluding the percent is gone.",
         "totalTime": "PT10M",
         "step": [
           {
@@ -167,7 +167,7 @@
             "name": "Which driver does my Apple Magic Mouse need on Windows 10 or 11?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) all take Apple's own driver. The 2024 USB-C mouse (0323) has no finished scroll fix to download yet."
+              "text": "The Magic Mouse v1 (030D), the Magic Mouse v2 (0269) and the Apple Wireless Mouse (0310) all take Apple's own driver. Two testers with a Magic Mouse v2 reported that on that driver Magic Tray found no battery percent, and that stock Windows showed the percent with no scrolling, one of them 83% (issue #124 and issue #164); the first of them also reported that the wheel scrolls on that driver. Magic Tray had a battery-detection fault of its own at the time of both reports, fixed in the next version, so look again on that version before concluding the percent is gone. The 2024 USB-C mouse (0323) has no finished scroll fix to download yet."
             }
           },
           {
@@ -233,7 +233,7 @@
         <thead><tr><th>Your mouse</th><th>Code Windows shows</th><th>What it needs</th></tr></thead>
         <tbody>
           <tr><td>Magic Mouse, AA batteries</td><td><code>030D</code></td><td><a href="#v1v2">Apple's driver</a>, confirmed by a tester</td></tr>
-          <tr><td>Magic Mouse, Lightning port</td><td><code>0269</code></td><td><a href="#v1v2">Apple's driver</a>, unconfirmed</td></tr>
+          <tr><td>Magic Mouse, Lightning port</td><td><code>0269</code></td><td><a href="#v1v2">Apple's driver</a>. It scrolls, per the first of two reports; whether the battery percent survives it is still an open question, because neither tester saw a percent while Apple's driver was bound</td></tr>
           <tr><td>Magic Mouse 2024, USB-C port</td><td><code>0323</code></td><td><a href="#v3">Nothing to install yet</a></td></tr>
           <tr><td>Apple Wireless Mouse, AA batteries</td><td><code>0310</code></td><td><a href="#v1v2">Apple's driver</a>, unconfirmed</td></tr>
         </tbody>
@@ -246,6 +246,7 @@
 
       <h2 id="v1v2">AA, Lightning and Apple Wireless: Apple's own driver</h2>
       <p class="lead">The v1 (<code>030D</code>), v2 (<code>0269</code>) and Apple Wireless Mouse (<code>0310</code>) take a driver Apple wrote years ago. It still works on Windows 10 and 11.</p>
+      <p class="note">Two testers with a Magic Mouse v2 (<code>0269</code>) reported that on this driver Magic Tray found no battery percent, and that stock Windows showed the percent with no scrolling, one of them 83%: <a href="https://github.com/LesleyMurfin/magic-tray/issues/124">issue #124</a> and <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">issue #164</a>. The first of them also reported that the wheel scrolls on this driver. Magic Tray had a battery-detection fault of its own at the time of both reports, which the next version fixes, so nobody knows yet whether the driver had anything to do with it. If that is your mouse, install the next version and look again before you conclude the percent is gone. Either way, Apple's driver is still the one to install on a v2, because scrolling is the thing it fixes.</p>
       <div class="ident-grid">
         <article class="ident-card">
           <div class="ident-visual">
@@ -341,7 +342,7 @@
         </details>
         <details>
           <summary>Which driver does my Apple Magic Mouse need on Windows 10 or 11?<svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-          <div class="a-body"><p>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</p></div>
+          <div class="a-body"><p>The Magic Mouse v1 (<code>030D</code>), the Magic Mouse v2 (<code>0269</code>) and the Apple Wireless Mouse (<code>0310</code>) all take Apple's own driver. Two testers with a Magic Mouse v2 reported that on that driver Magic Tray found no battery percent, and that stock Windows showed the percent with no scrolling, one of them 83% (<a href="https://github.com/LesleyMurfin/magic-tray/issues/124">issue #124</a> and <a href="https://github.com/LesleyMurfin/magic-tray/issues/164">issue #164</a>); the first of them also reported that the wheel scrolls on that driver. Magic Tray had a battery-detection fault of its own at the time of both reports, fixed in the next version, so look again on that version before concluding the percent is gone. The 2024 USB-C mouse (<code>0323</code>) has no finished scroll fix to download yet.</p></div>
         </details>
         <details>
           <summary>Can I make the 2024 USB-C Magic Mouse scroll on Windows yet?<svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
