@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-using System.Diagnostics;
 
 namespace MagicMouseTray;
 
 // One interface's guarded read: the value (a percentage or a failure sentinel), whether the read
 // was abandoned at its budget, and what it actually cost. Took is what a group's wall-clock
 // budget is spent against, and it is reported by the read rather than measured by the scan so a
-// test can script a 4 s read without spending 4 s.
-internal readonly record struct GuardedRead(int Pct, bool TimedOut, TimeSpan Took);
+// test can script a 4 s read without spending 4 s. AlreadyRunning means no new read was
+// launched: a previous timed-out native call still owns the path.
+internal readonly record struct GuardedRead(int Pct, bool TimedOut, TimeSpan Took, bool AlreadyRunning = false);
 
-// How a scan performs one interface's read. Production passes AdaptivePoller.ReadBatteryGuarded;
+// How a scan performs one interface's read. Production passes its lifetime-owned InFlightBatteryReads.Read;
 // tests substitute a script, so an interface that never answers costs no wall clock and parks no
 // thread-pool worker that the rest of the suite then runs short of.
 internal delegate GuardedRead ReadLauncher(IBatteryDevice device, TimeSpan budget);
@@ -68,6 +68,7 @@ internal sealed class AdaptivePoller : IDisposable
     // Next interface index and rotation count for a device's scan, per DeviceName. See ReadDevice.
     readonly Dictionary<string, ScanState> _scanStart = new(StringComparer.OrdinalIgnoreCase);
     readonly WedgeTracker _wedges = new();
+    readonly InFlightBatteryReads _reads;
     // Refilled per group / per cycle rather than reallocated: ReadDevice only indexes its list
     // and Prune only enumerates. Holding them for the poller's lifetime is safe for the same
     // single-writer reason as the dictionaries above.
@@ -122,51 +123,12 @@ internal sealed class AdaptivePoller : IDisposable
         _config = config;
         _discover = discover ?? DeviceRegistry.Discover;
         _log = log ?? Logger.Log;
+        _reads = new InFlightBatteryReads(_log);
         _refresh = new RefreshSignal(_log);
     }
 
-    // Reads one device's battery with a hard timeout and exception guard so a single slow or
-    // throwing device can't stall the poll loop. On timeout/throw the device is logged (so the
-    // culprit is identifiable) and the reading is -1, matching the disconnected sentinel.
-    //
-    // That is deliberately NOT the sentinel the device layer mints for a read that failed:
-    // MouseBatteryDevice.ClassifyReadFailure answers -2 there, because the HID call came back
-    // failed and a call that fails is evidence the battery report is not arriving. A read this
-    // guard abandoned came back with nothing at all - it is still running, inside a driver that
-    // may yet answer - so it has established neither that nor anything else. -2 is the sole
-    // input to RepairPlanner's keyboard-gated rule 2d and to the elevated keyboard SDP patch
-    // offer, and claiming it on the evidence of a driver that hung would tell the user their
-    // pairing record is broken when all that is known is that a read is slow.
-    //
-    // TimedOut is reported separately from the value because the two failures have opposite
-    // costs. A throw came back immediately and left nothing behind. A timeout spent the whole
-    // budget AND leaked the worker: Task.Run cannot cancel a blocking HID IOCTL
-    // (HidD_GetFeature / HidD_GetInputReport), so the abandoned read keeps a thread-pool thread
-    // until the driver releases it, which on a wedged interface is never. BestReading needs to
-    // tell the two apart to bound the tick, and WedgeTracker needs it to stop paying for the same
-    // wedged interface on every later tick.
-    //
-    // Took is measured rather than assumed because the group budget is spent against it: a read
-    // that threw at once cost nothing and must not be billed a whole budget.
-    static GuardedRead ReadBatteryGuarded(IBatteryDevice device, TimeSpan timeout)
-    {
-        long started = Stopwatch.GetTimestamp();
-        try
-        {
-            var read = Task.Run(device.GetBatteryPercent);
-            if (read.Wait(timeout))
-                return new GuardedRead(read.Result, false, Stopwatch.GetElapsedTime(started));
-
-            Logger.Log($"POLL_DEVICE_TIMEOUT device={device.DeviceName} after={timeout} (read abandoned, treated as -1)");
-            return new GuardedRead(-1, true, Stopwatch.GetElapsedTime(started));
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"POLL_DEVICE_ERROR device={device.DeviceName} err={ex.GetBaseException().Message}");
-            return new GuardedRead(-1, false, Stopwatch.GetElapsedTime(started));
-        }
-    }
-
+    // Standalone scan helpers own a reader for that scan. The production loop passes _reads.Read
+    // explicitly, retaining outstanding native calls across cycles, refreshes and rediscovery.
     // Reads a group's HID collections in the order given and returns the first real percentage,
     // or, when none answers, the better of the two failure sentinels. Discovery returns one
     // device per interface path and no longer collapses a PID's collections; DeviceRegistry
@@ -205,7 +167,7 @@ internal sealed class AdaptivePoller : IDisposable
         IEnumerable<IBatteryDevice> group, TimeSpan perRead, TimeSpan groupBudget,
         ReadLauncher? launcher = null)
     {
-        launcher ??= ReadBatteryGuarded;
+        launcher ??= new InFlightBatteryReads().Read;
         int best = -1;
         bool bounded = groupBudget != TimeSpan.MaxValue;
         var spent = TimeSpan.Zero;
@@ -304,7 +266,7 @@ internal sealed class AdaptivePoller : IDisposable
         TimeSpan groupBudget, Dictionary<string, ScanState> scanStart,
         WedgeTracker? wedges = null, ReadLauncher? launcher = null)
     {
-        launcher ??= ReadBatteryGuarded;
+        launcher ??= new InFlightBatteryReads().Read;
         scanStart.TryGetValue(name, out var state);
         int start = state.Start % interfaces.Count;
 
@@ -330,6 +292,9 @@ internal sealed class AdaptivePoller : IDisposable
 
             var read = launcher(device, perRead);
             if (bounded) spent += read.Took;
+            // A previous native call still owns this path. This is neither a new timeout nor
+            // an answer: keep its strikes and continue to the other collections.
+            if (read.AlreadyRunning) continue;
             if (read.TimedOut) wedges?.RecordTimeout(device.DevicePath);
             else wedges?.RecordAnswer(device.DevicePath);
 
@@ -523,7 +488,7 @@ internal sealed class AdaptivePoller : IDisposable
 
                         int best = ReadDevice(
                             group.Key, _groupBuffer, DeviceReadTimeout, DeviceGroupBudget,
-                            _scanStart, _wedges);
+                            _scanStart, _wedges, _reads.Read);
 
                         if (best == -1)
                         {
