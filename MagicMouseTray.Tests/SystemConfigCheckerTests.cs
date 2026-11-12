@@ -270,7 +270,8 @@ public class SystemConfigCheckerTests
     [Fact]
     public void MissingWatcherOnBoundKmdf_IsAdvisoryOwnedByTheDriverPackage()
     {
-        // Fault B in docs/ENABLE-DISABLE.md:93-99. The tray must name the owner
+        // Fault B in docs/ENABLE-DISABLE.md, "Which dead-wheel fault is this -
+        // read the stack before you chase filters". The tray must name the owner
         // of the fix and offer something to read - never an action that sends F1.
         var facts = SystemConfigChecker.Evaluate(
             DeviceKind.MagicMouseV3, "0323", DriverStatus.PatchedKmdf,

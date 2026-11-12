@@ -35,7 +35,7 @@ internal static class HidNative
     internal static extern bool GetOverlappedResult(SafeFileHandle hFile,
         ref OVERLAPPED lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset,
         bool bInitialState, IntPtr lpName);
 
@@ -94,6 +94,15 @@ internal static class HidNative
         uint DeviceInterfaceDetailDataSize, out uint RequiredSize,
         IntPtr DeviceInfoData);
 
+    // Same API, unmanaged buffer: the managed struct below carries a fixed-size path field and
+    // therefore cannot be grown to a RequiredSize it does not already cover.
+    [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    internal static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr DeviceInfoSet,
+        ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData,
+        IntPtr DeviceInterfaceDetailData,
+        uint DeviceInterfaceDetailDataSize, out uint RequiredSize,
+        IntPtr DeviceInfoData);
+
     [DllImport("setupapi.dll")]
     internal static extern bool SetupDiDestroyDeviceInfoList(IntPtr DeviceInfoSet);
 
@@ -116,19 +125,108 @@ internal static class HidNative
                 if (!SetupDiEnumDeviceInterfaces(devs, IntPtr.Zero, ref guid, index++, ref iface))
                     yield break;
 
-                var detail = new SP_DEVICE_INTERFACE_DETAIL_DATA();
-                detail.cbSize = IntPtr.Size == 8 ? 8u : 6u;
-                SetupDiGetDeviceInterfaceDetail(devs, ref iface, ref detail, 512,
-                    out _, IntPtr.Zero);
-
-                if (!string.IsNullOrEmpty(detail.DevicePath))
-                    yield return detail.DevicePath;
+                if (TryGetInterfacePath(devs, ref iface, index - 1, out var path))
+                    yield return path;
             }
         }
         finally
         {
             SetupDiDestroyDeviceInfoList(devs);
         }
+    }
+
+    // Reads one enumerated interface's device path.
+    //
+    // Two defects met here and both dropped interfaces in silence, which is the worst failure
+    // this file can have: discovery, the tray rows and the repair offers can only ever see what
+    // this method yields. The size argument was the literal 512 against a field declared
+    // [MarshalAs(ByValTStr, SizeConst = 512)] - 512 WCHARs, i.e. a struct of 1028 bytes - so
+    // the call was told it had barely half the buffer it really had, and any path longer than
+    // ~254 characters came back ERROR_INSUFFICIENT_BUFFER. The return value was then discarded,
+    // so that failure left DevicePath empty and the interface was skipped without a log line.
+    //
+    // The fixed struct stays the fast path, one call per interface, now sized from the
+    // marshalled struct itself. When it genuinely is too small the call reports RequiredSize
+    // and the retry runs against an unmanaged block of exactly that size: cbSize is the header
+    // size the API expects (8 on 64-bit, 6 on 32-bit, a value chosen by alignment rules rather
+    // than by the field layout), while the path itself always begins at offset 4, right after
+    // that DWORD.
+    //
+    // This is a P/Invoke loop with no injectable seam, so it carries no unit test: the markers
+    // are the only evidence that an interface was lost, and until now there were none.
+    static bool TryGetInterfacePath(IntPtr devs, ref SP_DEVICE_INTERFACE_DATA iface, uint index, out string path)
+    {
+        uint headerSize = IntPtr.Size == 8 ? 8u : 6u;
+
+        var detail = new SP_DEVICE_INTERFACE_DETAIL_DATA { cbSize = headerSize };
+        if (SetupDiGetDeviceInterfaceDetail(devs, ref iface, ref detail,
+                (uint)Marshal.SizeOf<SP_DEVICE_INTERFACE_DETAIL_DATA>(), out uint required, IntPtr.Zero))
+        {
+            path = detail.DevicePath ?? string.Empty;
+            if (path.Length != 0) return true;
+            Logger.Log($"HID_ENUM_PATH_EMPTY index={index} (interface reported no device path; skipped)");
+            return false;
+        }
+
+        int err = Marshal.GetLastWin32Error();
+        if (required == 0)
+        {
+            // No size to retry with: the failure is not about the buffer.
+            Logger.Log($"HID_ENUM_PATH_FAILED index={index} err={err} (device path unreadable; interface skipped)");
+            path = string.Empty;
+            return false;
+        }
+
+        // RequiredSize is only trustworthy when the call that produced it failed for the reason
+        // we think it did. Taking it on faith cost three distinct ways to read or write outside
+        // the allocation, all of them silent:
+        //   - the WriteInt32 below is unconditional, so a required of 1..3 put four bytes into a
+        //     block of one to three;
+        //   - the path read used the unbounded PtrToStringUni overload, which walks forward to a
+        //     UTF-16 NUL with no relation at all to what was allocated, so a short block or one
+        //     the driver left unterminated kept reading into whatever followed it;
+        //   - (int)required is unchecked, so anything above int.MaxValue arrived at AllocHGlobal
+        //     negative, and the OutOfMemoryException it throws escapes TryGetInterfacePath, ends
+        //     the whole EnumerateHidPaths walk and surfaces as POLL_CYCLE_ERROR - losing every
+        //     later interface too, when the contract of this rewrite is that a bad interface is
+        //     skipped with a marker and the walk continues.
+        // A real detail buffer is the 4-byte header plus at least one WCHAR plus its NUL, and no
+        // HID device path approaches 64 KB, so anything outside that is a lying or corrupt size
+        // and is refused before a byte is allocated - with the same marker a hard failure gets,
+        // because the user-visible outcome is identical: this interface has no usable path.
+        if (required < 6 || required > 64 * 1024)
+        {
+            Logger.Log($"HID_ENUM_PATH_FAILED index={index} err={err} size={required} (implausible RequiredSize; interface skipped)");
+            path = string.Empty;
+            return false;
+        }
+
+        IntPtr block = Marshal.AllocHGlobal((int)required);
+        try
+        {
+            Marshal.WriteInt32(block, (int)headerSize);
+            if (!SetupDiGetDeviceInterfaceDetail(devs, ref iface, block, required, out _, IntPtr.Zero))
+            {
+                Logger.Log($"HID_ENUM_PATH_FAILED index={index} err={Marshal.GetLastWin32Error()} size={required} (device path unreadable; interface skipped)");
+                path = string.Empty;
+                return false;
+            }
+            // Bounded read: the path region is everything after the 4-byte header, so at most
+            // (required - 4) / 2 WCHARs. The bounded overload does not stop at a NUL, it returns
+            // the whole region, so the terminator is cut here; a driver that forgot to terminate
+            // simply yields the full region rather than a walk off the end of the block.
+            string raw = Marshal.PtrToStringUni(block + 4, (int)((required - 4) / 2)) ?? string.Empty;
+            int nul = raw.IndexOf('\0');
+            path = nul >= 0 ? raw[..nul] : raw;
+        }
+        finally { Marshal.FreeHGlobal(block); }
+
+        if (path.Length == 0)
+        {
+            Logger.Log($"HID_ENUM_PATH_EMPTY index={index} size={required} (interface reported no device path; skipped)");
+            return false;
+        }
+        return true;
     }
 
     [StructLayout(LayoutKind.Sequential)]

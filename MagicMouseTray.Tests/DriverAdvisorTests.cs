@@ -549,7 +549,8 @@ public class DriverAdvisorTests
         Assert.DoesNotContain("Fix battery reads", applied);
 
         // NotApplied: says what is missing and points at the offer that
-        // already exists on the row (TrayApp.cs:1493-1496).
+        // already exists on the row (the "Fix battery reads" item TrayApp
+        // builds under TrayMenu.ShowFixKeyboard).
         Assert.Contains("absent for this keyboard right now", notApplied);
         Assert.Contains("cannot read until it is there", notApplied);
         Assert.Contains("\"Fix battery reads\" item", notApplied);
@@ -582,9 +583,9 @@ public class DriverAdvisorTests
 
     // Trackpads do not use the SDP patch at all: 030E, 0265 and 0324 are in
     // MouseBatteryDevice.KnownMice, their percent comes off HID with nothing
-    // installed, the patch script is keyboard-only and TrayApp.cs:229-230 gates
-    // the offer on kind == MagicKeyboard. So no trackpad line may mention the
-    // patch, whatever SdpPatchState is handed in.
+    // installed, the patch script is keyboard-only and
+    // TrayMenu.ShowFixKeyboard gates the offer on kind == MagicKeyboard. So no
+    // trackpad line may mention the patch, whatever SdpPatchState is handed in.
     //
     // The line must also match the report channel the CODE takes (#134).
     // MouseBatteryDevice.GetBatteryPercent sends MagicMouseV3 / 0323 to

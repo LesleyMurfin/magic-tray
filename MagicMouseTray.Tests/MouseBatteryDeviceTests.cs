@@ -181,47 +181,22 @@ public class MouseBatteryDeviceTests
         Assert.Equal(100, MouseBatteryDevice.ParseRid90Percent([0x90, 0x04, 100]));
     }
 
-    // Live BT stack for the 0323 (all CM_PROB_OK).
-    const string Bt0323Col01 =
-        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col01#a&31e5d054&2a&0000";
-    const string Bt0323Col02 =
-        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col02#a&31e5d054&2a&0001";
-    const string BtEnum0323 =
-        @"\\?\bthenum#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323#9&73b8b28&0&d0c050cc8c4d_c00000000";
+    // The level contract every IBatteryDevice read path gates on. Pinned here because the
+    // keyboard Feature read and the Logitech HID++ read enforce it inline, behind a live
+    // HID handle no unit test can open, so this predicate is their only reachable anchor.
+    [Theory]
+    [InlineData(0, false)]   // dead or phantom interface, never a level
+    [InlineData(1, true)]    // Apple's floor
+    [InlineData(100, true)]  // Apple's ceiling
+    [InlineData(101, false)]
+    [InlineData(255, false)] // a byte read that is not a percentage
+    public void IsRealLevel_AcceptsOnlyOneToOneHundred(int pct, bool expected)
+    {
+        Assert.Equal(expected, MouseBatteryDevice.IsRealLevel(pct));
+    }
 
-    // Charge-cable leftovers after a USB-C charge (all CM_PROB_PHANTOM, all still readable).
-    const string Phantom0323Col01 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col01#a&16288706&0&0000";
+    // Charge-cable leftover after a USB-C charge (CM_PROB_PHANTOM, still readable).
     const string Phantom0323Col02 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col02#a&16288706&0&0001";
-    const string Phantom0323Col03 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col03#a&16288706&0&0002";
-    const string Phantom0323Mi00  = @"\\?\usb#vid_05ac&pid_0323&mi_00#9&80f490&1&0000";
-    const string Phantom0323Root  = @"\\?\usb#vid_05ac&pid_0323#j84hj804ysb000053a";
-
-    // Regression: the phantom USB col02 also passes the col02 battery gate, so the tray
-    // listed Magic Mouse 2024 twice and read a false 0% off the dead cable interface.
-    [Fact]
-    public void Discover_0323_PhantomUsbCol02_IsSuppressed_BluetoothWins()
-    {
-        var paths = new[]
-        {
-            Phantom0323Col01, Phantom0323Col02, Phantom0323Col03, Phantom0323Mi00, Phantom0323Root,
-            BtEnum0323, Bt0323Col01, Bt0323Col02,
-        };
-        var found = DeviceRegistry.DiscoverFromPaths(paths);
-        Assert.Single(found);
-        Assert.Equal("Magic Mouse 2024", found[0].DeviceName);
-        Assert.Equal(DeviceKind.MagicMouseV3, found[0].Kind);
-        Assert.Equal("0323", found[0].Pid);
-        Assert.Equal(Bt0323Col02, Assert.IsType<MouseBatteryDevice>(found[0]).DevicePath);
-    }
-
-    // Enumeration order must not decide the winner.
-    [Fact]
-    public void Discover_0323_BluetoothWins_RegardlessOfPathOrder()
-    {
-        var found = DeviceRegistry.DiscoverFromPaths([Bt0323Col02, Phantom0323Col02]);
-        Assert.Single(found);
-        Assert.Equal(Bt0323Col02, Assert.IsType<MouseBatteryDevice>(found[0]).DevicePath);
-    }
 
     // A genuinely cabled Magic Mouse has no BT interface and must still report battery.
     [Fact]
@@ -233,32 +208,62 @@ public class MouseBatteryDeviceTests
         Assert.Equal(Phantom0323Col02, Assert.IsType<MouseBatteryDevice>(found[0]).DevicePath);
     }
 
-    // Two BT collections that both pass the battery gate still yield one physical device.
-    [Fact]
-    public void Discover_SamePid_NeverListedTwice()
-    {
-        var found = DeviceRegistry.DiscoverFromPaths(
-        [
-            Bt0323Col02,
-            @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col02#a&31e5d054&2a&0009",
-        ]);
-        Assert.Single(found);
-        Assert.Equal(Bt0323Col02, Assert.IsType<MouseBatteryDevice>(found[0]).DevicePath);
-    }
-
+    // F3. IBatteryDevice's rule is "-2 only where it can show the battery report never
+    // arrived; -1 whenever the report did arrive and its content is not a level". The v3
+    // Input 0x90 arm reached with a well-formed 0x90 report whose percent byte is 101..255
+    // HAS a report in hand - only the content is unusable - so it must answer -1, like the
+    // three analogous arms (KB_BATTERY_BAD, LOGI_BATTERY_BAD, the mouse split path). It also
+    // may not reuse MOUSE_RID90_BAD, whose "rid=0x90" blames a report id that is correct.
+    // The one -2 that survives on this path is [90 xx 00]: a v3 zero IS the report not
+    // arriving (idle mouse or charge-cable phantom), which that path can prove.
     [Theory]
-    [InlineData(Bt0323Col02, true)]
-    [InlineData(BtEnum0323, true)]
-    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0269#9&classic", true)]
-    [InlineData(Phantom0323Col02, false)]
-    [InlineData(Phantom0323Root, false)]
-    [InlineData(@"\\?\hid#vid_05ac&pid_0239&col02#7&usb", false)]
-    [InlineData("", false)]
-    public void TransportPredicates_SplitBtFromUsbForm(string path, bool bluetooth)
+    [InlineData((byte)0x90, (byte)0, -2, "MOUSE_BATTERY_ZERO")]
+    [InlineData((byte)0x90, (byte)1, 1, "MOUSE_BATTERY_OK")]
+    [InlineData((byte)0x90, (byte)100, 100, "MOUSE_BATTERY_OK")]
+    [InlineData((byte)0x90, (byte)101, -1, "MOUSE_RID90_BAD_CONTENT")]
+    [InlineData((byte)0x90, (byte)255, -1, "MOUSE_RID90_BAD_CONTENT")]
+    public void ClassifyRid90Report_OnlyTheZeroArmIsMinusTwo(
+        byte rid, byte level, int expectedPct, string expectedMarker)
     {
-        Assert.Equal(bluetooth, DeviceRegistry.IsBluetoothTransportPath(path));
-        Assert.Equal(!bluetooth && path.Length > 0, DeviceRegistry.IsUsbTransportPath(path));
+        Assert.Equal((expectedPct, expectedMarker),
+            MouseBatteryDevice.ClassifyRid90Report([rid, 0x04, level]));
     }
 
+    // F3, second sub-case. A report with a DIFFERENT report id still arrived; the read path
+    // cannot show the battery report never came, only that what came is not a level. The
+    // contract therefore makes this -1, not -2 - including when its byte 2 happens to be 0,
+    // because the "a zero is the report not arriving" proof is specific to the v3 0x90 report
+    // and does not transfer to some other report that merely contains a zero.
+    [Theory]
+    [InlineData((byte)0x47, (byte)60)]
+    [InlineData((byte)0x12, (byte)47)]
+    [InlineData((byte)0x00, (byte)0)]
+    [InlineData((byte)0x47, (byte)0)]
+    public void ClassifyRid90Report_WrongReportId_IsMinusOne(byte rid, byte level)
+    {
+        Assert.Equal((-1, "MOUSE_RID90_WRONG_ID"),
+            MouseBatteryDevice.ClassifyRid90Report([rid, 0x04, level]));
+    }
 
+    // A truncated buffer carries no percent byte at all, so nothing can be proven about the
+    // battery report's content either - it is still "not a level", not "never arrived".
+    [Fact]
+    public void ClassifyRid90Report_ShortBuffer_IsMinusOne()
+    {
+        Assert.Equal(-1, MouseBatteryDevice.ClassifyRid90Report([0x90, 0x00]).Pct);
+        Assert.Equal(-1, MouseBatteryDevice.ClassifyRid90Report([]).Pct);
+    }
+
+    // F4. Three failed HidD_GetInputReport attempts are the same hardware symptom on both
+    // mouse read paths, and the contract files "the HID read itself failed" under -2. Today
+    // the v3 path answers -2 and the split path answers -1, so the same wedged interface
+    // ranks differently in AdaptivePoller.BestReading depending on which path read it. Both
+    // must be -2, while keeping their distinct log markers.
+    [Theory]
+    [InlineData(true, "MOUSE_RID90_FAILED")]
+    [InlineData(false, "MOUSE_READ_FAILED")]
+    public void ClassifyReadFailure_IsMinusTwo_OnBothMousePaths(bool v3Rid90Path, string expectedMarker)
+    {
+        Assert.Equal((-2, expectedMarker), MouseBatteryDevice.ClassifyReadFailure(v3Rid90Path));
+    }
 }

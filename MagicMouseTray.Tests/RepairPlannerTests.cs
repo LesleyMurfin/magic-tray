@@ -913,42 +913,401 @@ public class RepairPlannerTests
         Assert.Empty(RepairPlanner.Plan([]));
     }
 
+    // The all-clear sentence, verbatim. Ten docs/TEST-PLAN.md rows (D1, D1b,
+    // D11, D16, D19, D21, D22, D24, D27, D30) and ENABLE-DISABLE.md:25 are read
+    // off this exact string while a tester watches the menu on hardware, so the
+    // literal itself is part of the contract and is pinned once, below.
+    private const string AllClear = "No driver or connection problems found";
+
+    // What the row must say instead when the planner could not read the
+    // driver/connection evidence it is about to vouch for. Two of the four
+    // driver/connection signals are tri-states whose null means "never
+    // measured" (FilterInStack, PointerChildLive), and DeviceSnapshotReader
+    // leaves both null whenever DEVPKEY_Device_Stack is unreadable or no
+    // Bluetooth COL01 key exists. In that state rules 2b and 2c are correctly
+    // silent (TEST-PLAN D19, D26: unknown is never a fault), findings.Count is
+    // 0, and the sentence above would claim a clean bill of health for a
+    // signal nothing ever looked at - the same false reassurance, one level in,
+    // that narrowing "No problems found" to this scope set out to remove.
+    private const string AllClearUnverified =
+        "No driver or connection problems found - some checks could not run";
+
+    // The healthy reference-PC v3 shape: live BTHENUM instances, exactly one
+    // bound filter, package present, service RUNNING. Every rule in PlanOne is
+    // silent on it whatever the two tri-states read, so in these tests the
+    // evidence state is the only thing that can move the label.
+    private static DeviceSnapshot HealthyV3(
+        bool? filterInStack = true,
+        bool? pointerChildLive = true,
+        int? lastBatteryPct = null)
+        => Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: filterInStack,
+            pointerChildLive: pointerChildLive,
+            lastBatteryPct: lastBatteryPct);
+
+    // Wording pin, one line per arm, kept deliberately separate from the
+    // behaviour tests below: the two sentences are quoted by the TEST-PLAN rows
+    // listed above, so a rename has to be a deliberate edit here too.
     [Fact]
-    public void MenuLabel_NoFindings_SaysNoProblemsFound()
+    public void MenuLabel_AllClearWording_IsTheSentenceTheTestPlanReadsOffHardware()
     {
-        Assert.Equal("No problems found", RepairPlanner.MenuLabel([]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [HealthyV3()]));
+        Assert.Equal(
+            AllClearUnverified, RepairPlanner.MenuLabel([], [HealthyV3(filterInStack: null)]));
+    }
+
+    // The full claim is earned, not default: it is only spoken when every
+    // driver/connection signal the rules consume was actually resolved on this
+    // PC. This is the contrast arm - the same device with one signal unread
+    // must not get the same sentence.
+    [Fact]
+    public void MenuLabel_NoFindingsAndEverySignalResolved_ClaimsTheFullScope()
+    {
+        var resolved = HealthyV3();
+
+        Assert.Empty(RepairPlanner.Plan([resolved]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [resolved]));
+        Assert.NotEqual(
+            RepairPlanner.MenuLabel([], [resolved]),
+            RepairPlanner.MenuLabel([], [HealthyV3(filterInStack: null)]));
+    }
+
+    // D19 state: DEVPKEY_Device_Stack unreadable, so FilterInStack is null and
+    // rule 2b stays silent - correctly, unknown is never a fault. The label is
+    // what must change: a checker that could not read driver attachment may not
+    // report that there are no driver problems.
+    [Fact]
+    public void MenuLabel_NoFindingsWithStackEvidenceUnread_DoesNotClaimTheUnreadSignal()
+    {
+        var stackUnknown = HealthyV3(filterInStack: null);
+
+        Assert.Empty(RepairPlanner.Plan([stackUnknown]));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [stackUnknown]));
+    }
+
+    // D26 state: no Bluetooth COL01 child key at all (or the probe failed), so
+    // PointerChildLive is null and rule 2c stays silent. Each signal degrades
+    // the claim on its own - the stack read above succeeded here, and that is
+    // still not enough to vouch for the connection.
+    [Fact]
+    public void MenuLabel_NoFindingsWithPointerEvidenceUnread_DoesNotClaimTheUnreadSignal()
+    {
+        var pointerUnknown = HealthyV3(pointerChildLive: null);
+
+        Assert.Empty(RepairPlanner.Plan([pointerUnknown]));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [pointerUnknown]));
+    }
+
+    // Both unread at once is the reference failure mode (DeviceSnapshotReader
+    // gates both probes on live BTHENUM instances, and the stack probe on a
+    // bound filter as well), and one unread device among otherwise fully
+    // measured ones is enough: the row speaks for the whole PC, so the weakest
+    // evidence on it wins.
+    [Fact]
+    public void MenuLabel_NoFindingsWithAnyDeviceUnmeasured_DegradesTheWholeRow()
+    {
+        var unmeasured = HealthyV3(filterInStack: null, pointerChildLive: null);
+        var measured = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: true);
+
+        Assert.Empty(RepairPlanner.Plan([unmeasured]));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [unmeasured]));
+        Assert.Empty(RepairPlanner.Plan([measured, unmeasured]));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [measured, unmeasured]));
+    }
+
+    // The ownership gate (BthenumLiveCount == 0 and no enabled_<pid> entry) is
+    // the 22-findings regression: a catalog device this PC never had is not a
+    // problem. It is not missing evidence either - the reader never probes it,
+    // on purpose, so its null tri-states must not drag the row down to the
+    // weaker claim on a PC whose real devices were fully measured.
+    [Fact]
+    public void MenuLabel_UnownedCatalogDeviceWithNoEvidence_DoesNotDegradeTheAllClear()
+    {
+        var owned = HealthyV3();
+        var neverOnThisPc = Snap(
+            pid: "0267",
+            bthenumLiveCount: 0,
+            usbPhantomCount: 0,
+            configEnabled: null,
+            filterInStack: null,
+            pointerChildLive: null,
+            multitouchAdvancing: null,
+            scrollWatcherHealthy: null);
+
+        Assert.Empty(RepairPlanner.Plan([owned, neverOnThisPc]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [owned, neverOnThisPc]));
+    }
+
+    // Same discipline one step in: DeviceSnapshotReader only asks for
+    // DEVPKEY_Device_Stack when something filter-like is bound (the
+    // `filterInStack` assignment in DeviceSnapshotReader.ReadPid, which calls
+    // DeviceStackReader.ContainsFilter only when bth.InstanceCount > 0 and
+    // bound is not null), so on a connected Magic Keyboard - no
+    // vendor scroll filter applies to it at all (TEST-PLAN D31) - FilterInStack
+    // is null by construction and forever. That is a signal with nothing to
+    // measure, not a failed measurement, and treating it as a gap would pin the
+    // weaker wording permanently on every keyboard-only PC. A bound filter
+    // whose stack read failed is the real gap, and still degrades.
+    [Fact]
+    public void MenuLabel_NothingBoundSoNoStackToRead_IsNotAMissingMeasurement()
+    {
+        var keyboard = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: true,
+            filterInStack: null);
+        var boundButUnread = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: true,
+            filterCandidates: [BoundKmdfVariant],
+            filterInStack: null);
+
+        Assert.Empty(RepairPlanner.Plan([keyboard]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [keyboard]));
+        Assert.Empty(RepairPlanner.Plan([boundButUnread]));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [boundButUnread]));
+    }
+
+    // Replaces MenuLabel_NoFindings_ClaimsOnlyDriverAndConnection, which only
+    // compared the sentence to itself and so was satisfied by any rename. The
+    // scope claim is a behaviour: the planner is deliberately silent about a
+    // mouse battery sentinel (-2 "present but blocked", -3 three collapsed
+    // no-readings - see PlanOne_MouseBatteryBlocked_RaisesNothing), and the row
+    // above that silence still speaks, because battery is outside what it
+    // claims. The same device with an unread DRIVER signal does not get that
+    // sentence - which is what makes this a scope test and not a greeting.
+    [Fact]
+    public void MenuLabel_MouseBatterySentinelOutOfScope_StillEmitsTheScopedAllClear()
+    {
+        var blocked = HealthyV3(lastBatteryPct: -2);
+        var collapsed = HealthyV3(lastBatteryPct: -3);
+
+        var findings = RepairPlanner.Plan([blocked, collapsed]);
+
+        Assert.Empty(findings);
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel(findings, [blocked, collapsed]));
+        Assert.Equal(
+            AllClearUnverified,
+            RepairPlanner.MenuLabel(
+                [],
+                [blocked, HealthyV3(pointerChildLive: null, lastBatteryPct: -3)]));
+    }
+
+    // The same defect class as the four tests above, one level further out.
+    // EvidenceComplete can only inspect snapshots that EXIST, but a device
+    // whose read threw is not in the list at all: DeviceSnapshotReader wraps
+    // every PID in its own try/catch, logs "REPAIR_SNAPSHOT_FAILED pid=...
+    // err=..." and simply does not add it (the CatalogPids loop in
+    // DeviceSnapshotReader.Read). Nothing else can be missing - ReadPid always
+    // returns a snapshot for the PIDs it survives, including catalog devices
+    // this PC never owned - so "fewer snapshots than devices attempted" means
+    // exactly "a read threw".
+    // A partially measured device degrades the claim; a device that could not
+    // be read AT ALL is the most complete failure of the lot and must degrade
+    // it too, otherwise the row speaks the unqualified all-clear for a device
+    // it never saw.
+    //
+    // MenuLabel cannot see that from findings + snapshots alone, so the count
+    // of devices the sweep ATTEMPTED is passed in. It is the minimum that can
+    // express the gap, and it leaves both existing parameters' meaning intact.
+    [Fact]
+    public void MenuLabel_NoFindingsAndEveryAttemptedDeviceRead_ClaimsTheFullScope()
+    {
+        var mouse = HealthyV3();
+        var keyboard = Snap(
+            pid: "0267",
+            bthenumLiveCount: 1,
+            boundFilterName: null,
+            filterPackagePresent: true);
+
+        Assert.Empty(RepairPlanner.Plan([mouse, keyboard]));
+        Assert.Equal(
+            AllClear,
+            RepairPlanner.MenuLabel([], [mouse, keyboard], attemptedDeviceCount: 2));
+    }
+
+    // Two devices attempted, one snapshot back: the device that threw is
+    // invisible to every per-snapshot test, and the one that survived is
+    // flawlessly measured. The row still may not claim the full scope.
+    [Fact]
+    public void MenuLabel_AttemptedDeviceMissingFromTheList_DegradesTheWholeRow()
+    {
+        var fullyResolved = HealthyV3();
+
+        Assert.Empty(RepairPlanner.Plan([fullyResolved]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [fullyResolved], 1));
+        Assert.Equal(
+            AllClearUnverified,
+            RepairPlanner.MenuLabel([], [fullyResolved], attemptedDeviceCount: 2));
+    }
+
+    // The degenerate end of the same failure: every read threw, so the list is
+    // empty, Plan is empty and today's label is the unqualified all-clear read
+    // off nothing whatsoever.
+    [Fact]
+    public void MenuLabel_EverySnapshotReadThrew_DoesNotSpeakForDevicesItNeverRead()
+    {
+        Assert.Empty(RepairPlanner.Plan([]));
+        Assert.Equal(
+            AllClearUnverified, RepairPlanner.MenuLabel([], [], attemptedDeviceCount: 3));
+    }
+
+    // A caller that did not run a sweep has no attempted count to give, and an
+    // absent count must not invent a gap: with nothing supplied the list IS the
+    // whole sweep, which is the contract every case above this block was
+    // written against. This is what keeps those cases untouched.
+    [Fact]
+    public void MenuLabel_AttemptedCountNotSupplied_TreatsTheListAsTheWholeSweep()
+    {
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [HealthyV3()]));
+        Assert.Equal(AllClear, RepairPlanner.MenuLabel([], [HealthyV3()], 0));
+        Assert.Equal(AllClearUnverified, RepairPlanner.MenuLabel([], [HealthyV3(pointerChildLive: null)]));
+    }
+
+    // One gap, one sentence. A missing device is not a new KIND of ignorance
+    // deserving its own wording: ten docs/TEST-PLAN.md rows and
+    // docs/ENABLE-DISABLE.md are read off these two literals on hardware, so a
+    // third variant would be a silent contract break.
+    [Fact]
+    public void MenuLabel_MissingDeviceAndUnreadSignal_ShareOneDegradedSentence()
+    {
+        var deviceNeverRead = RepairPlanner.MenuLabel([], [HealthyV3()], attemptedDeviceCount: 2);
+        var signalNeverRead = RepairPlanner.MenuLabel([], [HealthyV3(filterInStack: null)]);
+
+        Assert.Equal(AllClearUnverified, deviceNeverRead);
+        Assert.Equal(signalNeverRead, deviceNeverRead);
+    }
+
+    // The ownership exemption says a catalog device this PC never had is not a
+    // gap, because the reader skips its probes ON PURPOSE and still returns a
+    // snapshot for it. A device whose read THREW returned nothing at all, and
+    // the exemption must not be stretched to cover it: the first arm is the
+    // exemption still standing, the second is the same PC with one more device
+    // attempted than came back.
+    [Fact]
+    public void MenuLabel_UnownedDeviceExemptionDoesNotCoverADeviceThatThrew()
+    {
+        var owned = HealthyV3();
+        var neverOnThisPc = Snap(
+            pid: "0267",
+            bthenumLiveCount: 0,
+            usbPhantomCount: 0,
+            configEnabled: null,
+            filterInStack: null,
+            pointerChildLive: null,
+            multitouchAdvancing: null,
+            scrollWatcherHealthy: null);
+
+        Assert.Empty(RepairPlanner.Plan([owned, neverOnThisPc]));
+        Assert.Equal(
+            AllClear,
+            RepairPlanner.MenuLabel([], [owned, neverOnThisPc], attemptedDeviceCount: 2));
+        Assert.Equal(
+            AllClearUnverified,
+            RepairPlanner.MenuLabel([], [owned, neverOnThisPc], attemptedDeviceCount: 3));
+    }
+
+    // Incomplete evidence only ever softens the ALL-CLEAR. A device that threw
+    // is no different: once there is something to report, the fault keeps the
+    // bare voice the rest of the menu is ranked against, byte for byte.
+    [Fact]
+    public void MenuLabel_FindingsPresentWhileADeviceThrew_KeepsTheFaultVoice()
+    {
+        var stopped = Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: false);
+        var v1Gone = Snap(pid: "030d", configEnabled: false);
+
+        var one = RepairPlanner.Plan([stopped]);
+        var two = RepairPlanner.Plan([stopped, v1Gone]);
+
+        Assert.Single(one);
+        Assert.Equal(2, two.Count);
+        Assert.Equal(
+            one[0].Title,
+            RepairPlanner.MenuLabel(one, [stopped], attemptedDeviceCount: 23));
+        Assert.Equal(
+            "2 problems found",
+            RepairPlanner.MenuLabel(two, [stopped, v1Gone], attemptedDeviceCount: 23));
     }
 
     [Fact]
     public void MenuLabel_SingleFinding_IsThatFindingsTitle()
     {
-        var finding = RepairPlanner.PlanOne(Snap(
+        var snapshot = Snap(
             pid: "0323",
             bthenumLiveCount: 2,
             boundFilterName: BoundKmdfVariant,
             filterPackagePresent: true,
-            filterServiceRunning: false));
+            filterServiceRunning: false);
+        var finding = RepairPlanner.PlanOne(snapshot);
 
         Assert.NotNull(finding);
-        Assert.Equal(finding.Title, RepairPlanner.MenuLabel([finding]));
+        Assert.Equal(finding.Title, RepairPlanner.MenuLabel([finding], [snapshot]));
     }
 
     [Fact]
     public void MenuLabel_SeveralFindings_IsSummaryNotTheEmptyLabel()
     {
-        var v3 = RepairPlanner.PlanOne(Snap(
+        var v3Snapshot = Snap(
             pid: "0323",
             bthenumLiveCount: 2,
             boundFilterName: BoundKmdfVariant,
             filterPackagePresent: true,
-            filterServiceRunning: false));
-        var v1 = RepairPlanner.PlanOne(Snap(pid: "030d", configEnabled: false));
+            filterServiceRunning: false);
+        var v1Snapshot = Snap(pid: "030d", configEnabled: false);
+        var v3 = RepairPlanner.PlanOne(v3Snapshot);
+        var v1 = RepairPlanner.PlanOne(v1Snapshot);
 
         Assert.NotNull(v3);
         Assert.NotNull(v1);
 
-        var label = RepairPlanner.MenuLabel([v3, v1]);
+        var label = RepairPlanner.MenuLabel([v3, v1], [v3Snapshot, v1Snapshot]);
         Assert.False(string.IsNullOrWhiteSpace(label));
-        Assert.NotEqual(RepairPlanner.MenuLabel([]), label);
+        Assert.NotEqual(RepairPlanner.MenuLabel([], [HealthyV3()]), label);
+    }
+
+    // A confirmed fault keeps the bare fault voice the rest of the menu is
+    // ranked against (the PRECEDENCE note in ConfigFactView), and incomplete
+    // evidence must not soften it: once there is something to report, what was
+    // NOT measured is no longer the headline. Both findings arms stay exactly
+    // as they are, on a PC where both tri-states are unread.
+    [Fact]
+    public void MenuLabel_FindingsPresentWhileEvidenceIsIncomplete_KeepsTheFaultVoice()
+    {
+        var stopped = Snap(
+            pid: "0323",
+            bthenumLiveCount: 2,
+            boundFilterName: BoundKmdfVariant,
+            filterPackagePresent: true,
+            filterServiceRunning: false,
+            filterInStack: null,
+            pointerChildLive: null);
+        var v1Gone = Snap(pid: "030d", configEnabled: false);
+
+        var one = RepairPlanner.Plan([stopped]);
+        var two = RepairPlanner.Plan([stopped, v1Gone]);
+
+        Assert.Single(one);
+        Assert.Equal(one[0].Title, RepairPlanner.MenuLabel(one, [stopped]));
+        Assert.Equal(2, two.Count);
+        Assert.Equal("2 problems found", RepairPlanner.MenuLabel(two, [stopped, v1Gone]));
     }
 }

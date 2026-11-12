@@ -1017,9 +1017,17 @@ $doneWaitMs = __DONEWAIT_MS__
 $nonce = '__NONCE__'
 $hidUuidPrefix = '{00001124-0000-1000-8000-00805f9b34fb}'
 
+# The status file is the channel the tray polls, so a failed append loses a phase
+# the tray will never see; the console line above has already gone out, which is
+# why the loss is recoverable only from a console-hosted run. Write-Host, NOT
+# Write-Phase, in the catch: recursing into the function whose append just failed
+# would recurse once per failure with no exit. The write stays best-effort - a
+# transcript that cannot be appended to must never abort the flip that is already
+# half-applied to LowerFilters.
 function Write-Phase([string]$line) {
     Write-Host ('MODE_FLIP ' + $line)
-    try { Add-Content -LiteralPath $statusFile -Value $line -Encoding ASCII } catch { }
+    try { Add-Content -LiteralPath $statusFile -Value $line -Encoding ASCII }
+    catch { Write-Host ('MODE_FLIP status-write-failed err=' + $_.Exception.Message + ' lost=' + $line) }
 }
 
 function Test-Vid([string]$n) {
@@ -1710,14 +1718,17 @@ exit 1
     //
     // In Mode A BOTH collections are present: col01 is the standard HID mouse
     // page and answers nothing useful, col02 is the vendor collection that
-    // carries input report 0x90. DeviceRegistry.Discover returns whichever the
-    // SetupDi enumeration yielded first, so it silently read -1 from col01 -
-    // col02 has to be targeted by name.
+    // carries input report 0x90. This enumerates HID paths itself and never
+    // goes through DeviceRegistry, so neither thing that keeps the tray off
+    // col01 is in play: DeviceRegistry.TryClassify's V3 arm returns null for
+    // any 0323 path that is not the battery collection
+    // (Is0323BatteryCollectionPath), so col01 never becomes a device there at
+    // all, and AdaptivePoller.BestReading ranks a device's group when one does
+    // survive. A one-shot read has neither gate nor group, and nothing would
+    // stop it taking the -1 from col01 - so col02 has to be targeted by name.
     internal static int ReadCol02BatteryPercent()
     {
-        var path = HidNative.EnumerateHidPaths().FirstOrDefault(p =>
-            V3RecycleManager.IsV3Path(p)
-            && p.Contains("col02", StringComparison.OrdinalIgnoreCase));
+        var path = SelectBluetoothCol02(HidNative.EnumerateHidPaths());
         if (path is null)
         {
             Logger.Log($"{LogPrefix} phase=battery_read col02=none");
@@ -1727,6 +1738,32 @@ exit 1
         return new MouseBatteryDevice(path, V3DisplayName(), DeviceKind.MagicMouseV3)
             .GetBatteryPercent();
     }
+
+    // The Bluetooth v3 col02 out of an arbitrary HID path enumeration, or null.
+    //
+    // IsV3Path answers vid/pid only and is documented as "BT or USB" - its
+    // second arm exists to match the USB spelling, and eight other call sites
+    // want that meaning - so it cannot decide transport here. The flip creates
+    // a BLUETOOTH col02; if the mouse spent the cycle on the USB-C cable a live
+    // USB col02 sits in the same enumeration, also passes IsV3Path and also
+    // carries "col02". A plain first-match then takes whichever one Windows
+    // happened to enumerate first and reads a different transport's device,
+    // driving a correctly flipped mouse to BatteryUnreadable. So the transport
+    // and collection gates live here, on top of IsV3Path's vid/pid gate.
+    //
+    // Transport is recognised the way the rest of the repo spells it: a BT HID
+    // interface path carries the HID-over-Bluetooth service GUID
+    // {00001124-0000-1000-8000-00805f9b34fb} and the "_vid&" form, where USB
+    // paths use "vid_". Everything is ordinal/case-insensitive because Windows
+    // hands these paths back in whatever case the enumerator used, and the
+    // caller's own string is returned unchanged so the log and the device open
+    // use exactly what was enumerated.
+    internal static string? SelectBluetoothCol02(IEnumerable<string> paths) =>
+        paths.FirstOrDefault(p =>
+            V3RecycleManager.IsV3Path(p)
+            && p.Contains("{00001124-0000-1000-8000-00805f9b34fb}", StringComparison.OrdinalIgnoreCase)
+            && p.Contains("_vid&", StringComparison.OrdinalIgnoreCase)
+            && p.Contains("col02", StringComparison.OrdinalIgnoreCase));
 
     static string V3DisplayName()
     {

@@ -27,6 +27,15 @@ internal static class DeviceSnapshotReader
 
     readonly record struct HidLayer(int PhantomCount, bool Col01, bool Col02);
 
+    // How many devices a Read sweep ATTEMPTS, i.e. the size of the catalog it
+    // walks. Read adds one snapshot per catalog PID and ReadPid answers even
+    // for a device this PC never owned, so the only way a PID leaves no
+    // snapshot is the catch below that logs REPAIR_SNAPSHOT_FAILED. That
+    // makes "this count minus the returned list length" exactly the number of
+    // reads that threw, which is what RepairPlanner.EvidenceComplete needs to
+    // stop the all-clear row speaking for a device it never saw.
+    internal static int AttemptedDeviceCount => CatalogPids().Count;
+
     internal static IReadOnlyList<DeviceSnapshot> Read(Config config) => Read(config, null);
 
     // lastBatteryByPid: the tray's most recent battery reading per PID, with
@@ -162,7 +171,7 @@ internal static class DeviceSnapshotReader
         // Registration is not attachment. LowerFilters plus a RUNNING service
         // both read healthy after a reboot that rebuilt the stack without the
         // filter, so the live device stack is asked directly - the same property
-        // scripts/capture-state.ps1:152-157 measures. Only asked when there is
+        // Test-StackHasFilter (scripts/capture-state.ps1) measures. Only asked when there is
         // something to prove: no live BTHENUM instance, or nothing bound, means
         // a PC with no Apple mouse never pays for a CM query.
         bool? filterInStack = bth.InstanceCount > 0 && bound is not null

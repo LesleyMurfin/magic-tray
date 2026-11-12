@@ -729,4 +729,89 @@ public class ModeFlipTests
                 ModeFlip.DetailFor(outcome, -1, restoredToModeB: true), StringComparison.Ordinal);
         }
     }
+
+    // --- the col02 the flip reads back ------------------------------------
+    //
+    // ReadCol02BatteryPercent must read the battery off the BLUETOOTH col02 the
+    // flip just created. A mouse that was on the USB-C cable during the cycle
+    // leaves a live USB col02 in the same enumeration, and that one answers for
+    // a different transport: taking it drives a correctly flipped mouse to
+    // BatteryUnreadable. V3RecycleManager.IsV3Path cannot make that call - it
+    // is documented as "BT or USB" and its second arm exists to match the USB
+    // spelling - so the transport gate belongs in the selection itself.
+    const string BtV3Col02 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col02#a&31e5d054&2a&0001";
+    const string BtV3Col01 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col01#a&31e5d054&2a&0000";
+    const string BtV3Col03 =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323&col03#a&31e5d054&2a&0002";
+    const string BtV3Parent =
+        @"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0323#a&31e5d054&2a&0000";
+    const string UsbV3Col01 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col01#a&16288706&0&0000";
+    const string UsbV3Col02 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col02#a&16288706&0&0001";
+    const string UsbV3Col03 = @"\\?\hid#vid_05ac&pid_0323&mi_01&col03#a&16288706&0&0002";
+
+    // Both transports live at once is the whole failure: the USB col02 passes
+    // IsV3Path and carries "col02", so a plain first-match takes whichever one
+    // Windows happened to enumerate first. Enumeration order is not ours to
+    // control, so the answer must not depend on it.
+    [Fact]
+    public void SelectBluetoothCol02_BothTransportsPresent_TakesBluetooth_InEitherOrder()
+    {
+        Assert.Equal(BtV3Col02, ModeFlip.SelectBluetoothCol02(
+            [UsbV3Col01, UsbV3Col02, UsbV3Col03, BtV3Col01, BtV3Col02]));
+        Assert.Equal(BtV3Col02, ModeFlip.SelectBluetoothCol02(
+            [BtV3Col01, BtV3Col02, UsbV3Col01, UsbV3Col02]));
+    }
+
+    // Cable only, no BT col02: there is nothing for this read to use. Reporting
+    // "no col02" is honest - the caller turns it into -1 and the cycle says the
+    // battery was unreadable - while answering off the cable reports a number
+    // the flip did not produce.
+    [Fact]
+    public void SelectBluetoothCol02_UsbOnly_SelectsNothing()
+    {
+        Assert.Null(ModeFlip.SelectBluetoothCol02([UsbV3Col01, UsbV3Col02, UsbV3Col03]));
+    }
+
+    // col01 is the pointer collection and col03 is neither; only col02 carries
+    // input report 0x90. The collection-less Mode B parent is not it either.
+    [Fact]
+    public void SelectBluetoothCol02_OnlyCol02IsEverSelected()
+    {
+        Assert.Null(ModeFlip.SelectBluetoothCol02([BtV3Col01, BtV3Col03, BtV3Parent]));
+        Assert.Equal(BtV3Col02, ModeFlip.SelectBluetoothCol02(
+            [BtV3Col01, BtV3Col03, BtV3Parent, BtV3Col02]));
+    }
+
+    // A Magic Keyboard and a v2 mouse both expose a BT col02 of their own, and a
+    // third-party HID device can sit in the same enumeration. The flip read is
+    // about one device: the 0323.
+    [Theory]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&000205ac_pid&0239&col02#9&kbd")]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0001004c_pid&0269&col02#9&v2")]
+    [InlineData(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&046d_pid&b023&col02#9&other")]
+    public void SelectBluetoothCol02_NonV3Device_IsNeverSelected(string path)
+    {
+        Assert.Null(ModeFlip.SelectBluetoothCol02([path]));
+    }
+
+    // Windows hands these paths back in whatever case the enumerator used -
+    // SetupAPI upper-cases the device key, the interface path is lower-case on
+    // the reference PC. Matching must be ordinal/case-insensitive throughout,
+    // transport GUID and collection suffix alike.
+    [Fact]
+    public void SelectBluetoothCol02_PathCaseIsIgnored()
+    {
+        var upper = BtV3Col02.ToUpperInvariant();
+        Assert.Equal(upper, ModeFlip.SelectBluetoothCol02([UsbV3Col02, upper]));
+    }
+
+    // Called on a cycle where nothing enumerated at all. The caller logs
+    // "col02=none" and returns -1; this must not throw on the way there.
+    [Fact]
+    public void SelectBluetoothCol02_EmptyEnumeration_ReturnsNull()
+    {
+        Assert.Null(ModeFlip.SelectBluetoothCol02([]));
+    }
 }

@@ -75,8 +75,8 @@ namespace MagicMouseTray;
 //    InfPath=hidserv.inf   Provider=Microsoft  Version=10.0.26100.1
 //    Stack=\Driver\HidBth                        LowerFilters=[] UpperFilters=[]
 //    Status=OK  Present=True  CM_PROB_NONE  status word 0x0180200A
-//    (the vendor collection the battery Feature cap lives on -
-//     DeviceRegistry.cs:138-140)
+//    (the vendor collection the battery Feature cap lives on - the col02 gate
+//     in DeviceRegistry.TryClassify)
 //
 //  HID\{00001124-...}_VID&000205ac_PID&0239&Col03\a&eaf9d13&9&0002  class HIDClass
 //    Service=(empty)  Driver={745a17a0-74d3-11d0-b6fe-00a0c90f57da}\0006
@@ -101,9 +101,9 @@ internal static class StockDriverReader
     const string ClassBase = @"SYSTEM\CurrentControlSet\Control\Class";
 
     // Bluetooth HID-profile transport GUID, same constant and same reason as
-    // DeviceDiagReader.cs:30 (private there, so not shareable without editing
-    // that file). A live BT HID child key carries it; the USB charge-cable
-    // phantoms do not.
+    // DeviceDiagReader.BtTransportGuid (private there, so not shareable without
+    // editing that file). A live BT HID child key carries it; the USB
+    // charge-cable phantoms do not.
     const string BtTransportGuid = "{00001124-0000-1000-8000-00805f9b34fb}";
 
     // The Bluetooth transport and enumerator services. HidBth is the BT HID
@@ -114,14 +114,15 @@ internal static class StockDriverReader
     static readonly string[] TransportServices =
         ["HidBth", "BthEnum", "BthPort", "BTHUSB", "BthLEEnum", "BthMini"];
 
-    // NORMAL = present devices only, same reason as DeviceStackReader.cs:37-40
-    // and DeviceDiagReader.cs:32-35: a charge-cable phantom or a stale pairing
-    // record must never be allowed to answer a question about the live stack.
+    // NORMAL = present devices only, same reason as DeviceStackReader's CM_LOCATE_DEVNODE_NORMAL
+    // and DeviceDiagReader.CM_LOCATE_DEVNODE_NORMAL: a charge-cable phantom or
+    // a stale pairing record must never be allowed to answer a question about
+    // the live stack.
     const uint CM_LOCATE_DEVNODE_NORMAL = 0;
     const uint CR_SUCCESS = 0x00000000;
     const uint CR_NO_SUCH_DEVNODE = 0x0000000D;
     // cfgmgr32.h: the size-probe return of the two-call read in ReadDriverStack,
-    // and the value DeviceStackReader.cs:43 declares for the identical pattern.
+    // and the value DeviceStackReader declares for the identical pattern.
     // 0x00000001 is CR_DEFAULT, which the probe never returns, so the size check
     // never matched and every stack read came back empty.
     const uint CR_BUFFER_SMALL = 0x0000001A;
@@ -361,12 +362,12 @@ internal static class StockDriverReader
 
     // EVERY collection of the live Bluetooth HID stack, which is why this is not
     // DeviceDiagReader.ClassifyPointerKey: that one answers "is this the POINTER
-    // child" and returns None for COL02 and above (DeviceDiagReader.cs:538-540).
-    // Here COL02/COL03 are legitimate nodes to report on.
+    // child" and returns None for COL02 and above. Here COL02/COL03 are
+    // legitimate nodes to report on.
     //
     // The VID_ / &MI_ / USB\ forms are the USB charge-cable phantoms and are
-    // rejected outright, same as DeviceDiagReader.cs:519-522: a phantom COL01
-    // exists on the reference PC after any USB-C charge.
+    // rejected outright, by the same transport gate ClassifyPointerKey opens
+    // with: a phantom COL01 exists on the reference PC after any USB-C charge.
     internal static bool IsBluetoothHidChildKey(string? deviceKeyName, string pid)
     {
         if (string.IsNullOrEmpty(deviceKeyName) || string.IsNullOrEmpty(pid))
@@ -395,7 +396,7 @@ internal static class StockDriverReader
     //
     // (private there, so this is a second copy rather than an edit to a file
     // this change does not own; the P/Invoke declarations below are duplicated
-    // for the same reason DeviceDiagReader.cs:613-616 duplicates its own.)
+    // for the same reason DeviceDiagReader duplicates its own CM_Locate_DevNodeW.)
     static (string? InfPath, string? Provider, string? Version) ReadSoftwareKey(
         RegistryKey instanceKey)
     {
@@ -472,7 +473,7 @@ internal static class StockDriverReader
     }
 
     // DEVPKEY_Device_Stack, the repo's existing ground truth for what is
-    // ATTACHED (DeviceStackReader.cs:18-22), reduced to LEAF driver names:
+    // ATTACHED (DeviceStackReader's file header), reduced to LEAF driver names:
     // "\Driver\kbdclass" -> "kbdclass". The leaf is what a caller can render and
     // what the family predicates elsewhere are written against; the "\Driver\"
     // prefix carries no information for either.
@@ -540,8 +541,8 @@ internal static class StockDriverReader
             + $"version={info.Version ?? "none"} nodes={nodes.Count} resolved={resolved}";
     }
 
-    // devpkey.h line 156 (Windows SDK), same key DeviceStackReader.cs:25-33
-    // declares:
+    // devpkey.h line 156 (Windows SDK), the same key
+    // DeviceStackReader.DevpkeyDeviceStack declares:
     //   DEFINE_DEVPROPKEY(DEVPKEY_Device_Stack,
     //     0x540b947e, 0x8b40, 0x45bc, 0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2,
     //     14);   // DEVPROP_TYPE_STRING_LIST
