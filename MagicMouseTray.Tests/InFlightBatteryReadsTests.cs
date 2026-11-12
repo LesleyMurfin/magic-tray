@@ -50,7 +50,7 @@ public sealed class InFlightBatteryReadsTests : IDisposable
 
         Assert.False(wedges.ShouldSkip(device.DevicePath));
         Assert.Equal(1, launches);
-        Assert.Single(_logs.Where(line => line.StartsWith("POLL_DEVICE_TIMEOUT")));
+        Assert.Single(_logs, line => line.StartsWith("POLL_DEVICE_TIMEOUT"));
         Assert.Contains(_logs, line => line.StartsWith("POLL_DEVICE_READ_PENDING"));
     }
 
